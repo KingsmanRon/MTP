@@ -54,6 +54,19 @@ class CryptoService:
         The payload is canonicalized (sorted keys, no whitespace) before hashing
         to ensure deterministic results.
 
+        CROSS-LANGUAGE COMPATIBILITY WARNING:
+        - This uses Python's json.dumps() which may have subtle differences from
+          other languages (e.g., floating-point precision, Unicode normalization)
+        - For SDK developers in other languages (Node.js, Go, Rust):
+          * Use the SAME separators: ",:" (no spaces)
+          * Use the SAME key sorting: lexicographic/alphabetic
+          * Use UTF-8 encoding
+          * Match Python's float precision (17 significant digits)
+          * Use the reference Python implementation for edge cases
+
+        RECOMMENDED FOR PRODUCTION: Consider upgrading to RFC 8785 (JCS - JSON
+        Canonicalization Scheme) for strict deterministic serialization.
+
         Args:
             payload: The payload dictionary to hash.
 
@@ -61,7 +74,13 @@ class CryptoService:
             Lowercase hexadecimal SHA-256 hash.
         """
         # Canonicalize: sort keys, no whitespace, ensure consistent encoding
-        canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+        # ensure_ascii=False is critical for Unicode consistency
+        canonical = json.dumps(
+            payload,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,  # Preserve Unicode characters
+        )
         return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
     @staticmethod

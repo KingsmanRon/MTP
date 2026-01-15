@@ -408,16 +408,52 @@ async def verify_action(
         # =================================================================
         # STEP 3: Check Nonce (Replay Attack Prevention)
         # =================================================================
-        if redis_conn:
-            nonce_key = f"mtp:nonce:{agent.id}:{request_data.nonce}"
-            # SETNX with 10 minute expiry
+        # CRITICAL: Fail Closed - Redis is REQUIRED for replay protection
+        if not redis_conn:
+            logger.critical(
+                f"SECURITY: Redis unavailable, cannot verify nonce for agent {agent.id}. "
+                "Rejecting request to prevent replay attacks (FAIL CLOSED)."
+            )
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Verification service temporarily unavailable. Nonce verification requires cache layer.",
+            )
+
+        nonce_key = f"mtp:nonce:{agent.id}:{request_data.nonce}"
+        # SETNX with 10 minute expiry
+        try:
             nonce_fresh = await redis_conn.set(nonce_key, "1", ex=600, nx=True)
-            if not nonce_fresh:
-                logger.warning(f"Replay attack detected for agent {agent.id}")
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Nonce already used. Replay attack detected.",
-                )
+        except Exception as e:
+            logger.critical(f"SECURITY: Redis operation failed during nonce check: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Verification service temporarily unavailable. Nonce verification failed.",
+            )
+
+        if not nonce_fresh:
+            logger.warning(f"Replay attack detected for agent {agent.id}, nonce: {request_data.nonce[:16]}...")
+            # Log to database for forensics
+            audit_entry = AuditLogEntry(
+                agent_id=agent.id,
+                action_type=request_data.action_type,
+                action_hash=action_hash,
+                payload=request_data.payload,
+                verdict=ActionVerdict.BLOCKED,
+                verdict_reason="REPLAY ATTACK: Nonce already used",
+                signature=signature_bytes,
+                signature_valid=True,  # Signature was valid, but nonce was reused
+                request_ip=request.client.host if request.client else None,
+                request_user_agent=request.headers.get("user-agent"),
+                response_time_ms=None,
+                trust_score_at_time=agent.trust_score,
+                chain_previous_hash=None,
+            )
+            await database.insert_audit_log(audit_entry)
+
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Nonce already used. Replay attack detected.",
+            )
 
         # =================================================================
         # STEP 4: Evaluate Policies

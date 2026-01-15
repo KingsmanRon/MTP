@@ -91,9 +91,19 @@ class MTPClient:
         nonce: str,
         timestamp: datetime,
     ) -> str:
-        """Compute the hash that will be signed."""
-        # Compute payload hash
-        payload_canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+        """
+        Compute the hash that will be signed.
+
+        CRITICAL: This MUST match the server's canonicalization exactly.
+        Uses ensure_ascii=False for Unicode consistency.
+        """
+        # Compute payload hash - MUST match server exactly
+        payload_canonical = json.dumps(
+            payload,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+        )
         payload_hash = hashlib.sha256(payload_canonical.encode("utf-8")).hexdigest()
 
         # Create signing payload
@@ -105,7 +115,12 @@ class MTPClient:
             "timestamp": timestamp.isoformat(),
         }
 
-        signing_canonical = json.dumps(signing_data, sort_keys=True, separators=(",", ":"))
+        signing_canonical = json.dumps(
+            signing_data,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+        )
         return hashlib.sha256(signing_canonical.encode("utf-8")).hexdigest()
 
     def _sign_message(self, message_hash: str) -> str:
