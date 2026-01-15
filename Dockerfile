@@ -63,7 +63,6 @@ WORKDIR /app
 COPY --chown=mtp:mtp api/ ./api/
 COPY --chown=mtp:mtp mcp_server/ ./mcp_server/
 COPY --chown=mtp:mtp workers/ ./workers/
-COPY --chown=mtp:mtp config/ ./config/
 
 # -----------------------------------------------------------------------------
 # Stage 3: Core API Service

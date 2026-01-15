@@ -19,6 +19,7 @@ import hashlib
 import json
 import logging
 import os
+import secrets
 import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
@@ -154,6 +155,34 @@ async def get_db() -> Database:
 async def get_redis() -> Optional[redis.Redis]:
     """Dependency to get Redis connection."""
     return redis_client
+
+
+async def verify_master_admin_key(
+    x_admin_key: str = Header(..., alias="X-Admin-Key"),
+) -> bool:
+    """
+    Verify master admin key for platform administration.
+
+    SECURITY: This key should ONLY be used for creating organizations.
+    Set MASTER_ADMIN_KEY environment variable to a secure random string.
+    """
+    master_key = os.getenv("MASTER_ADMIN_KEY")
+
+    if not master_key:
+        logger.critical("MASTER_ADMIN_KEY not configured! Admin endpoints are unprotected!")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Admin authentication not configured",
+        )
+
+    if not secrets.compare_digest(x_admin_key, master_key):
+        logger.warning(f"Invalid master admin key attempted from request")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid admin credentials",
+        )
+
+    return True
 
 
 async def verify_api_key(
@@ -572,11 +601,14 @@ async def get_agent_public_info(
 async def create_organization(
     request_data: CreateOrganizationRequest,
     database: Database = Depends(get_db),
+    _authenticated: bool = Depends(verify_master_admin_key),
 ):
     """
     Create a new organization.
 
     Returns the organization ID and API key (shown only once).
+
+    SECURITY: Requires X-Admin-Key header with master admin credentials.
     """
     # Generate API key
     api_key, api_key_hash = CryptoService.generate_api_key()
@@ -692,6 +724,97 @@ async def update_agent_status(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Agent {agent_id} not found",
         )
+
+
+@app.post(
+    "/admin/api-keys/rotate",
+    tags=["Admin"],
+)
+async def rotate_api_key(
+    org_id: UUID = Depends(verify_api_key),
+    database: Database = Depends(get_db),
+):
+    """
+    Rotate API key for an organization.
+
+    This generates a new API key and deactivates the old one.
+    The new key is returned only once.
+
+    CRITICAL: Store the new key immediately. The old key will be deactivated.
+    """
+    # Generate new API key
+    new_api_key, new_api_key_hash = CryptoService.generate_api_key()
+
+    async with database.acquire() as conn:
+        # Deactivate all existing keys for this org
+        await conn.execute(
+            """
+            UPDATE api_keys
+            SET is_active = false, updated_at = NOW()
+            WHERE org_id = $1 AND is_active = true
+            """,
+            org_id,
+        )
+
+        # Insert new API key
+        await conn.execute(
+            """
+            INSERT INTO api_keys (org_id, key_hash, key_prefix, name, scopes)
+            VALUES ($1, $2, $3, $4, $5)
+            """,
+            org_id,
+            new_api_key_hash,
+            new_api_key[:8],
+            "Rotated API Key",
+            ["read", "write", "verify"],
+        )
+
+    logger.warning(f"API key rotated for organization {org_id}")
+
+    return {
+        "api_key": new_api_key,
+        "message": "API key rotated successfully. Store this key securely. It will not be shown again.",
+        "warning": "Your previous API key has been deactivated.",
+    }
+
+
+@app.delete(
+    "/admin/api-keys/{key_prefix}",
+    tags=["Admin"],
+)
+async def revoke_api_key(
+    key_prefix: str,
+    org_id: UUID = Depends(verify_api_key),
+    database: Database = Depends(get_db),
+):
+    """
+    Revoke a specific API key by its prefix.
+
+    WARNING: This will immediately deactivate the key.
+    Ensure you have another active key before revoking.
+    """
+    async with database.acquire() as conn:
+        result = await conn.execute(
+            """
+            UPDATE api_keys
+            SET is_active = false, updated_at = NOW()
+            WHERE org_id = $1 AND key_prefix = $2 AND is_active = true
+            """,
+            org_id,
+            key_prefix,
+        )
+
+        if result == "UPDATE 0":
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="API key not found or already revoked",
+            )
+
+    logger.warning(f"API key {key_prefix}... revoked for organization {org_id}")
+
+    return {
+        "message": f"API key {key_prefix}... has been revoked successfully.",
+    }
 
 
 # =============================================================================

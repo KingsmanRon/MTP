@@ -373,3 +373,55 @@ class CryptoService:
     def compute_public_key_fingerprint(public_key: bytes) -> str:
         """Compute SHA-256 fingerprint of a public key."""
         return hashlib.sha256(public_key).hexdigest()
+
+    @staticmethod
+    def sign_webhook_payload(payload: dict[str, Any], secret: str) -> str:
+        """
+        Sign a webhook payload with HMAC-SHA256.
+
+        This signature should be sent in the X-MTP-Signature header.
+
+        Args:
+            payload: JSON-serializable payload to sign.
+            secret: Webhook secret key from organization.
+
+        Returns:
+            Hex-encoded HMAC signature.
+        """
+        import json
+
+        payload_str = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+        signature = hmac.new(
+            secret.encode("utf-8"),
+            payload_str.encode("utf-8"),
+            hashlib.sha256,
+        ).hexdigest()
+        return signature
+
+    @staticmethod
+    def verify_webhook_signature(
+        payload: dict[str, Any],
+        signature: str,
+        secret: str,
+    ) -> bool:
+        """
+        Verify a webhook signature.
+
+        Args:
+            payload: The webhook payload.
+            signature: The signature from X-MTP-Signature header.
+            secret: The webhook secret key.
+
+        Returns:
+            True if signature is valid, False otherwise.
+        """
+        import json
+
+        payload_str = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+        expected_signature = hmac.new(
+            secret.encode("utf-8"),
+            payload_str.encode("utf-8"),
+            hashlib.sha256,
+        ).hexdigest()
+
+        return secrets.compare_digest(signature, expected_signature)
