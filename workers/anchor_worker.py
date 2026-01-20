@@ -58,7 +58,7 @@ BATCH_INTERVAL_SECONDS = int(os.getenv("ANCHOR_BATCH_INTERVAL", str(BATCH_INTERV
 MAX_RETRIES = int(os.getenv("ANCHOR_MAX_RETRIES", "5"))
 
 # Base L2 Chain ID
-BASE_CHAIN_ID = 8453
+BASE_CHAIN_ID = int(os.getenv("BLOCKCHAIN_CHAIN_ID", "8453"))
 
 # AnchorRegistry ABI (minimal for anchoring)
 ANCHOR_REGISTRY_ABI = [
