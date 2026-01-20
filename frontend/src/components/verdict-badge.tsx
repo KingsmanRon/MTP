@@ -1,0 +1,38 @@
+import { cn, getVerdictBadgeStyles } from "@/lib/utils";
+import { CheckCircle, XCircle, Clock, AlertTriangle } from "lucide-react";
+import type { ActionVerdict } from "@/lib/api";
+
+interface VerdictBadgeProps {
+  verdict: ActionVerdict;
+  showIcon?: boolean;
+}
+
+export function VerdictBadge({ verdict, showIcon = true }: VerdictBadgeProps) {
+  const icons = {
+    approved: CheckCircle,
+    blocked: XCircle,
+    rate_limited: Clock,
+    signature_invalid: AlertTriangle,
+  };
+
+  const labels = {
+    approved: "Approved",
+    blocked: "Blocked",
+    rate_limited: "Rate Limited",
+    signature_invalid: "Invalid Signature",
+  };
+
+  const Icon = icons[verdict];
+
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border",
+        getVerdictBadgeStyles(verdict)
+      )}
+    >
+      {showIcon && <Icon className="w-3 h-3" />}
+      {labels[verdict]}
+    </span>
+  );
+}

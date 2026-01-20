@@ -854,6 +854,673 @@ async def revoke_api_key(
 
 
 # =============================================================================
+# FRONTEND SUPPORT ENDPOINTS
+# =============================================================================
+
+
+@app.get(
+    "/admin/agents",
+    tags=["Admin"],
+)
+async def list_agents(
+    org_id: UUID = Depends(verify_api_key),
+    database: Database = Depends(get_db),
+):
+    """
+    List all agents for the organization.
+    """
+    async with database.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT id, org_id, name, public_key_fingerprint, trust_score, status,
+                   daily_limit_usd, per_action_limit_usd, allowed_actions, blocked_actions,
+                   rate_limit_per_minute, last_action_at, total_actions_count,
+                   total_blocked_count, metadata, created_at, updated_at
+            FROM agents
+            WHERE org_id = $1
+            ORDER BY created_at DESC
+            """,
+            org_id,
+        )
+
+    return [
+        {
+            "id": str(row["id"]),
+            "org_id": str(row["org_id"]),
+            "name": row["name"],
+            "public_key_fingerprint": row["public_key_fingerprint"],
+            "trust_score": row["trust_score"],
+            "status": row["status"],
+            "daily_limit_usd": float(row["daily_limit_usd"]),
+            "per_action_limit_usd": float(row["per_action_limit_usd"]),
+            "allowed_actions": row["allowed_actions"],
+            "blocked_actions": row["blocked_actions"],
+            "rate_limit_per_minute": row["rate_limit_per_minute"],
+            "last_action_at": row["last_action_at"].isoformat() if row["last_action_at"] else None,
+            "total_actions_count": row["total_actions_count"],
+            "total_blocked_count": row["total_blocked_count"],
+            "metadata": row["metadata"],
+            "created_at": row["created_at"].isoformat(),
+            "updated_at": row["updated_at"].isoformat(),
+        }
+        for row in rows
+    ]
+
+
+@app.get(
+    "/admin/agents/{agent_id}",
+    tags=["Admin"],
+)
+async def get_agent(
+    agent_id: UUID,
+    org_id: UUID = Depends(verify_api_key),
+    database: Database = Depends(get_db),
+):
+    """
+    Get a specific agent by ID.
+    """
+    try:
+        agent = await database.get_agent_by_id(agent_id)
+
+        if agent.org_id != org_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Cannot access agent from a different organization",
+            )
+
+        return {
+            "id": str(agent.id),
+            "org_id": str(agent.org_id),
+            "name": agent.name,
+            "public_key_fingerprint": agent.public_key_fingerprint,
+            "trust_score": agent.trust_score,
+            "status": agent.status.value,
+            "daily_limit_usd": float(agent.daily_limit_usd),
+            "per_action_limit_usd": float(agent.per_action_limit_usd),
+            "allowed_actions": agent.allowed_actions,
+            "blocked_actions": agent.blocked_actions,
+            "rate_limit_per_minute": agent.rate_limit_per_minute,
+            "last_action_at": agent.last_action_at.isoformat() if agent.last_action_at else None,
+            "total_actions_count": agent.total_actions_count,
+            "total_blocked_count": agent.total_blocked_count,
+            "metadata": agent.metadata,
+            "created_at": agent.created_at.isoformat(),
+            "updated_at": agent.updated_at.isoformat(),
+        }
+
+    except AgentNotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Agent {agent_id} not found",
+        )
+
+
+@app.patch(
+    "/admin/agents/{agent_id}",
+    tags=["Admin"],
+)
+async def update_agent(
+    agent_id: UUID,
+    updates: dict[str, Any],
+    org_id: UUID = Depends(verify_api_key),
+    database: Database = Depends(get_db),
+):
+    """
+    Update agent configuration (limits, allowed_actions, etc.).
+    """
+    try:
+        agent = await database.get_agent_by_id(agent_id)
+
+        if agent.org_id != org_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Cannot modify agent from a different organization",
+            )
+
+        # Build update query dynamically
+        allowed_fields = {
+            "name", "daily_limit_usd", "per_action_limit_usd",
+            "allowed_actions", "blocked_actions", "rate_limit_per_minute", "metadata"
+        }
+
+        filtered_updates = {k: v for k, v in updates.items() if k in allowed_fields}
+
+        if not filtered_updates:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No valid fields to update",
+            )
+
+        set_clauses = [f"{key} = ${i+2}" for i, key in enumerate(filtered_updates.keys())]
+        set_clauses.append("updated_at = NOW()")
+
+        query = f"""
+            UPDATE agents
+            SET {', '.join(set_clauses)}
+            WHERE id = $1
+            RETURNING *
+        """
+
+        async with database.acquire() as conn:
+            row = await conn.fetchrow(query, agent_id, *filtered_updates.values())
+
+        return {
+            "agent_id": str(agent_id),
+            "updated_fields": list(filtered_updates.keys()),
+            "message": "Agent updated successfully",
+        }
+
+    except AgentNotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Agent {agent_id} not found",
+        )
+
+
+@app.get(
+    "/admin/alerts",
+    tags=["Admin"],
+)
+async def list_alerts(
+    status_filter: Optional[str] = None,
+    severity: Optional[str] = None,
+    limit: int = 50,
+    offset: int = 0,
+    org_id: UUID = Depends(verify_api_key),
+    database: Database = Depends(get_db),
+):
+    """
+    List security alerts for the organization.
+    """
+    query = """
+        SELECT sa.*, a.name as agent_name
+        FROM security_alerts sa
+        JOIN agents a ON sa.agent_id = a.id
+        WHERE a.org_id = $1
+    """
+    params: list[Any] = [org_id]
+    param_count = 1
+
+    if status_filter == "open":
+        query += " AND sa.acknowledged = false AND sa.resolved = false"
+    elif status_filter == "acknowledged":
+        query += " AND sa.acknowledged = true AND sa.resolved = false"
+    elif status_filter == "resolved":
+        query += " AND sa.resolved = true"
+
+    if severity:
+        param_count += 1
+        query += f" AND sa.severity = ${param_count}"
+        params.append(severity)
+
+    query += f" ORDER BY sa.created_at DESC LIMIT ${param_count + 1} OFFSET ${param_count + 2}"
+    params.extend([limit, offset])
+
+    async with database.acquire() as conn:
+        rows = await conn.fetch(query, *params)
+
+        # Get total count
+        count_query = """
+            SELECT COUNT(*) as total
+            FROM security_alerts sa
+            JOIN agents a ON sa.agent_id = a.id
+            WHERE a.org_id = $1
+        """
+        count_row = await conn.fetchrow(count_query, org_id)
+
+    return {
+        "alerts": [
+            {
+                "id": str(row["id"]),
+                "agent_id": str(row["agent_id"]),
+                "agent_name": row["agent_name"],
+                "severity": row["severity"],
+                "alert_type": row["alert_type"],
+                "title": row["title"],
+                "description": row["description"],
+                "evidence": row["evidence"],
+                "acknowledged": row["acknowledged"],
+                "acknowledged_by": row["acknowledged_by"],
+                "acknowledged_at": row["acknowledged_at"].isoformat() if row["acknowledged_at"] else None,
+                "resolved": row["resolved"],
+                "resolved_at": row["resolved_at"].isoformat() if row["resolved_at"] else None,
+                "created_at": row["created_at"].isoformat(),
+            }
+            for row in rows
+        ],
+        "total": count_row["total"],
+    }
+
+
+@app.post(
+    "/admin/alerts/{alert_id}/acknowledge",
+    tags=["Admin"],
+)
+async def acknowledge_alert(
+    alert_id: UUID,
+    org_id: UUID = Depends(verify_api_key),
+    database: Database = Depends(get_db),
+):
+    """
+    Acknowledge a security alert.
+    """
+    async with database.acquire() as conn:
+        # Verify alert belongs to org
+        row = await conn.fetchrow(
+            """
+            SELECT sa.id
+            FROM security_alerts sa
+            JOIN agents a ON sa.agent_id = a.id
+            WHERE sa.id = $1 AND a.org_id = $2
+            """,
+            alert_id,
+            org_id,
+        )
+
+        if not row:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Alert not found",
+            )
+
+        await conn.execute(
+            """
+            UPDATE security_alerts
+            SET acknowledged = true, acknowledged_at = NOW()
+            WHERE id = $1
+            """,
+            alert_id,
+        )
+
+    return {"alert_id": str(alert_id), "acknowledged": True}
+
+
+@app.post(
+    "/admin/alerts/{alert_id}/resolve",
+    tags=["Admin"],
+)
+async def resolve_alert(
+    alert_id: UUID,
+    resolution: dict[str, str],
+    org_id: UUID = Depends(verify_api_key),
+    database: Database = Depends(get_db),
+):
+    """
+    Resolve a security alert.
+    """
+    async with database.acquire() as conn:
+        # Verify alert belongs to org
+        row = await conn.fetchrow(
+            """
+            SELECT sa.id
+            FROM security_alerts sa
+            JOIN agents a ON sa.agent_id = a.id
+            WHERE sa.id = $1 AND a.org_id = $2
+            """,
+            alert_id,
+            org_id,
+        )
+
+        if not row:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Alert not found",
+            )
+
+        await conn.execute(
+            """
+            UPDATE security_alerts
+            SET resolved = true, resolved_at = NOW(), resolution_notes = $2
+            WHERE id = $1
+            """,
+            alert_id,
+            resolution.get("resolution", ""),
+        )
+
+    return {"alert_id": str(alert_id), "resolved": True}
+
+
+@app.get(
+    "/admin/audit/search",
+    tags=["Admin"],
+)
+async def search_audit_logs(
+    agent_id: Optional[UUID] = None,
+    action_type: Optional[str] = None,
+    verdict: Optional[str] = None,
+    start: Optional[str] = None,
+    end: Optional[str] = None,
+    limit: int = 50,
+    offset: int = 0,
+    org_id: UUID = Depends(verify_api_key),
+    database: Database = Depends(get_db),
+):
+    """
+    Search audit logs with filters.
+    """
+    query = """
+        SELECT al.*, a.name as agent_name
+        FROM audit_logs al
+        JOIN agents a ON al.agent_id = a.id
+        WHERE a.org_id = $1
+    """
+    params: list[Any] = [org_id]
+    param_count = 1
+
+    if agent_id:
+        param_count += 1
+        query += f" AND al.agent_id = ${param_count}"
+        params.append(agent_id)
+
+    if action_type:
+        param_count += 1
+        query += f" AND al.action_type = ${param_count}"
+        params.append(action_type)
+
+    if verdict:
+        param_count += 1
+        query += f" AND al.verdict = ${param_count}"
+        params.append(verdict)
+
+    if start:
+        param_count += 1
+        query += f" AND al.timestamp >= ${param_count}"
+        params.append(start)
+
+    if end:
+        param_count += 1
+        query += f" AND al.timestamp <= ${param_count}"
+        params.append(end)
+
+    query += f" ORDER BY al.timestamp DESC LIMIT ${param_count + 1} OFFSET ${param_count + 2}"
+    params.extend([limit, offset])
+
+    async with database.acquire() as conn:
+        rows = await conn.fetch(query, *params)
+
+        # Get total count
+        count_query = """
+            SELECT COUNT(*) as total
+            FROM audit_logs al
+            JOIN agents a ON al.agent_id = a.id
+            WHERE a.org_id = $1
+        """
+        count_row = await conn.fetchrow(count_query, org_id)
+
+    return {
+        "logs": [
+            {
+                "id": str(row["id"]),
+                "agent_id": str(row["agent_id"]),
+                "agent_name": row["agent_name"],
+                "timestamp": row["timestamp"].isoformat(),
+                "action_type": row["action_type"],
+                "action_hash": row["action_hash"],
+                "payload": row["payload"],
+                "verdict": row["verdict"],
+                "verdict_reason": row["verdict_reason"],
+                "signature_valid": row["signature_valid"],
+                "request_ip": row["request_ip"],
+                "request_user_agent": row["request_user_agent"],
+                "response_time_ms": row["response_time_ms"],
+                "trust_score_at_time": row["trust_score_at_time"],
+                "merkle_root_id": str(row["merkle_root_id"]) if row["merkle_root_id"] else None,
+                "merkle_leaf_index": row["merkle_leaf_index"],
+            }
+            for row in rows
+        ],
+        "total": count_row["total"],
+    }
+
+
+@app.get(
+    "/admin/audit/{log_id}",
+    tags=["Admin"],
+)
+async def get_audit_log(
+    log_id: UUID,
+    org_id: UUID = Depends(verify_api_key),
+    database: Database = Depends(get_db),
+):
+    """
+    Get a specific audit log by ID.
+    """
+    async with database.acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            SELECT al.*, a.name as agent_name
+            FROM audit_logs al
+            JOIN agents a ON al.agent_id = a.id
+            WHERE al.id = $1 AND a.org_id = $2
+            """,
+            log_id,
+            org_id,
+        )
+
+    if not row:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Audit log not found",
+        )
+
+    return {
+        "id": str(row["id"]),
+        "agent_id": str(row["agent_id"]),
+        "agent_name": row["agent_name"],
+        "timestamp": row["timestamp"].isoformat(),
+        "action_type": row["action_type"],
+        "action_hash": row["action_hash"],
+        "payload": row["payload"],
+        "verdict": row["verdict"],
+        "verdict_reason": row["verdict_reason"],
+        "signature_valid": row["signature_valid"],
+        "request_ip": row["request_ip"],
+        "request_user_agent": row["request_user_agent"],
+        "response_time_ms": row["response_time_ms"],
+        "trust_score_at_time": row["trust_score_at_time"],
+        "merkle_root_id": str(row["merkle_root_id"]) if row["merkle_root_id"] else None,
+        "merkle_leaf_index": row["merkle_leaf_index"],
+    }
+
+
+@app.get(
+    "/admin/audit/{log_id}/proof",
+    tags=["Admin"],
+)
+async def get_merkle_proof(
+    log_id: UUID,
+    org_id: UUID = Depends(verify_api_key),
+    database: Database = Depends(get_db),
+):
+    """
+    Get Merkle proof for an audit log for on-chain verification.
+    """
+    async with database.acquire() as conn:
+        # Get the audit log and its merkle info
+        row = await conn.fetchrow(
+            """
+            SELECT al.*, mp.merkle_root, mp.tx_hash, mp.block_number, mp.anchored_at
+            FROM audit_logs al
+            JOIN agents a ON al.agent_id = a.id
+            LEFT JOIN merkle_proofs mp ON al.merkle_root_id = mp.id
+            WHERE al.id = $1 AND a.org_id = $2
+            """,
+            log_id,
+            org_id,
+        )
+
+    if not row:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Audit log not found",
+        )
+
+    if not row["merkle_root_id"]:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Audit log has not been anchored to blockchain yet",
+        )
+
+    # In production, compute the actual Merkle proof from stored data
+    # For now, return the stored proof information
+    return {
+        "leaf": row["action_hash"],
+        "proof": [],  # Would be computed from stored Merkle tree
+        "positions": [],
+        "merkle_root": row["merkle_root"],
+        "tx_hash": row["tx_hash"],
+        "block_number": row["block_number"],
+        "anchored_at": row["anchored_at"].isoformat() if row["anchored_at"] else None,
+    }
+
+
+@app.get(
+    "/admin/usage",
+    tags=["Admin"],
+)
+async def get_usage_metrics(
+    start: str,
+    end: str,
+    org_id: UUID = Depends(verify_api_key),
+    database: Database = Depends(get_db),
+):
+    """
+    Get usage metrics for billing and monitoring.
+    """
+    async with database.acquire() as conn:
+        # Overall metrics
+        metrics_row = await conn.fetchrow(
+            """
+            SELECT
+                COUNT(*) as total_verifications,
+                COUNT(*) FILTER (WHERE al.verdict = 'approved') as approved_count,
+                COUNT(*) FILTER (WHERE al.verdict = 'blocked') as blocked_count,
+                COALESCE(SUM((al.payload->>'amount')::numeric) FILTER (WHERE al.verdict = 'approved'), 0) as total_spend_usd,
+                COUNT(DISTINCT al.agent_id) as active_agents
+            FROM audit_logs al
+            JOIN agents a ON al.agent_id = a.id
+            WHERE a.org_id = $1 AND al.timestamp >= $2 AND al.timestamp <= $3
+            """,
+            org_id,
+            start,
+            end,
+        )
+
+        # Daily breakdown
+        daily_rows = await conn.fetch(
+            """
+            SELECT
+                DATE(al.timestamp) as date,
+                COUNT(*) as verifications,
+                COUNT(*) FILTER (WHERE al.verdict = 'approved') as approved,
+                COUNT(*) FILTER (WHERE al.verdict = 'blocked') as blocked,
+                COALESCE(SUM((al.payload->>'amount')::numeric) FILTER (WHERE al.verdict = 'approved'), 0) as spend_usd
+            FROM audit_logs al
+            JOIN agents a ON al.agent_id = a.id
+            WHERE a.org_id = $1 AND al.timestamp >= $2 AND al.timestamp <= $3
+            GROUP BY DATE(al.timestamp)
+            ORDER BY DATE(al.timestamp)
+            """,
+            org_id,
+            start,
+            end,
+        )
+
+    return {
+        "total_verifications": metrics_row["total_verifications"],
+        "approved_count": metrics_row["approved_count"],
+        "blocked_count": metrics_row["blocked_count"],
+        "total_spend_usd": float(metrics_row["total_spend_usd"]),
+        "active_agents": metrics_row["active_agents"],
+        "period_start": start,
+        "period_end": end,
+        "daily_breakdown": [
+            {
+                "date": row["date"].isoformat(),
+                "verifications": row["verifications"],
+                "approved": row["approved"],
+                "blocked": row["blocked"],
+                "spend_usd": float(row["spend_usd"]),
+            }
+            for row in daily_rows
+        ],
+    }
+
+
+@app.get(
+    "/admin/organization",
+    tags=["Admin"],
+)
+async def get_organization(
+    org_id: UUID = Depends(verify_api_key),
+    database: Database = Depends(get_db),
+):
+    """
+    Get organization information.
+    """
+    try:
+        org = await database.get_organization_by_id(org_id)
+
+        return {
+            "id": str(org.id),
+            "name": org.name,
+            "billing_tier": org.billing_tier.value,
+            "contact_email": org.contact_email,
+            "webhook_url": org.webhook_url,
+            "daily_limit_usd": float(org.daily_limit_usd),
+            "monthly_limit_usd": float(org.monthly_limit_usd),
+            "metadata": org.metadata,
+            "created_at": org.created_at.isoformat(),
+            "updated_at": org.updated_at.isoformat(),
+        }
+
+    except OrganizationNotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Organization not found",
+        )
+
+
+@app.get(
+    "/admin/api-keys",
+    tags=["Admin"],
+)
+async def list_api_keys(
+    org_id: UUID = Depends(verify_api_key),
+    database: Database = Depends(get_db),
+):
+    """
+    List all API keys for the organization.
+    """
+    async with database.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT id, org_id, key_prefix, name, scopes, is_active, expires_at,
+                   last_used_at, created_at
+            FROM api_keys
+            WHERE org_id = $1
+            ORDER BY created_at DESC
+            """,
+            org_id,
+        )
+
+    return [
+        {
+            "id": str(row["id"]),
+            "org_id": str(row["org_id"]),
+            "key_prefix": row["key_prefix"],
+            "name": row["name"],
+            "scopes": row["scopes"],
+            "is_active": row["is_active"],
+            "expires_at": row["expires_at"].isoformat() if row["expires_at"] else None,
+            "last_used_at": row["last_used_at"].isoformat() if row["last_used_at"] else None,
+            "created_at": row["created_at"].isoformat(),
+        }
+        for row in rows
+    ]
+
+
+# =============================================================================
 # MAIN ENTRY POINT
 # =============================================================================
 
