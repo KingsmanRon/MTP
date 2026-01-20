@@ -26,7 +26,6 @@ from uuid import UUID
 
 import asyncpg
 from web3 import Web3
-from web3.middleware import ExtraDataToPOAMiddleware
 from eth_account import Account
 from eth_account.signers.local import LocalAccount
 
@@ -47,13 +46,15 @@ DATABASE_URL = os.getenv(
 )
 
 # Blockchain
-BASE_RPC_URL = os.getenv("BASE_RPC_URL", "https://mainnet.base.org")
+BLOCKCHAIN_PROVIDER_URL = os.getenv("BLOCKCHAIN_PROVIDER_URL", "https://mainnet.base.org")
 ANCHOR_CONTRACT_ADDRESS = os.getenv("ANCHOR_CONTRACT_ADDRESS")
-PRIVATE_KEY = os.getenv("BLOCKCHAIN_PRIVATE_KEY")  # Without 0x prefix
+BLOCKCHAIN_PRIVATE_KEY = os.getenv("BLOCKCHAIN_PRIVATE_KEY")  # With or without 0x prefix
 
 # Worker settings
 BATCH_SIZE = int(os.getenv("ANCHOR_BATCH_SIZE", "1000"))
-BATCH_INTERVAL_SECONDS = int(os.getenv("ANCHOR_BATCH_INTERVAL", "3600"))  # 1 hour
+# Support both ANCHOR_INTERVAL_MINUTES (new) and ANCHOR_BATCH_INTERVAL (old, seconds)
+BATCH_INTERVAL_MINUTES = int(os.getenv("ANCHOR_INTERVAL_MINUTES", "60"))  # Default: 1 hour
+BATCH_INTERVAL_SECONDS = int(os.getenv("ANCHOR_BATCH_INTERVAL", str(BATCH_INTERVAL_MINUTES * 60)))
 MAX_RETRIES = int(os.getenv("ANCHOR_MAX_RETRIES", "5"))
 
 # Base L2 Chain ID
@@ -209,8 +210,9 @@ class BlockchainService:
         """
         self.w3 = Web3(Web3.HTTPProvider(rpc_url))
 
-        # Add POA middleware for Base L2
-        self.w3.middleware_onion.inject(ExtraDataToPOAMiddleware, layer=0)
+        # Note: ExtraDataToPOAMiddleware was removed in web3.py v7+
+        # Base L2 (and modern EVM chains) don't require POA middleware
+        # The chain handles extraData correctly by default
 
         self.contract_address = Web3.to_checksum_address(contract_address)
         self.contract = self.w3.eth.contract(
@@ -681,7 +683,7 @@ async def main():
         logger.error("ANCHOR_CONTRACT_ADDRESS environment variable is required")
         sys.exit(1)
 
-    if not PRIVATE_KEY:
+    if not BLOCKCHAIN_PRIVATE_KEY:
         logger.error("BLOCKCHAIN_PRIVATE_KEY environment variable is required")
         sys.exit(1)
 
@@ -692,9 +694,9 @@ async def main():
     logger.info("Database connection established")
 
     blockchain_service = BlockchainService(
-        rpc_url=BASE_RPC_URL,
+        rpc_url=BLOCKCHAIN_PROVIDER_URL,
         contract_address=ANCHOR_CONTRACT_ADDRESS,
-        private_key=PRIVATE_KEY,
+        private_key=BLOCKCHAIN_PRIVATE_KEY,
     )
 
     if not blockchain_service.is_connected():
