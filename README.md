@@ -46,6 +46,17 @@ MTP is a production-ready **Verification & Liability Platform** for AI Agents. T
 │  (Supabase)   │           │ "Forensic Recorder"│          │   (React)     │
 │  + TimescaleDB│           │  Merkle → Base L2 │           │ "Verified UI" │
 └───────────────┘           └───────────────────┘           └───────────────┘
+                                                                    │
+                                       ┌────────────────────────────┘
+                                       ▼
+                    ┌──────────────────────────────────────┐
+                    │       Frontend Dashboard             │
+                    │       "Management Console"           │
+                    │  ┌────────────┬────────────────────┐ │
+                    │  │Admin Console│   Agent Portal    │ │
+                    │  │Audit Explorer│ Public Verify    │ │
+                    │  └────────────┴────────────────────┘ │
+                    └──────────────────────────────────────┘
 ```
 
 ---
@@ -80,12 +91,21 @@ The **"Forensic Recorder"** for immutable audit trails.
 
 ### Component D: Trust Badge (`trust_widget/`)
 
-The **"Front End"** for end-user verification.
+The **"Embeddable Widget"** for end-user verification.
 
 - Lightweight React component
 - Displays verified status and trust score
 - Queries public API endpoint
 - Real-time refresh capability
+
+### Component E: Frontend Dashboard (`frontend/`)
+
+The **"Management Console"** for organizations and developers.
+
+- **Admin Console**: Organization management, agent policies, security alerts, API keys
+- **Agent Portal**: Developer dashboard, credentials, verification playground
+- **Audit Explorer**: Log search, Merkle proof verification, compliance exports
+- **Public Verification**: Public agent trust verification page
 
 ---
 
@@ -95,7 +115,7 @@ The **"Front End"** for end-user verification.
 
 - Python 3.12+
 - Docker & Docker Compose
-- Node.js 18+ (for Trust Badge widget)
+- Node.js 18+ (for Frontend Dashboard and Trust Badge widget)
 
 ### 1. Clone & Configure
 
@@ -177,6 +197,31 @@ Add to your AI agent's MCP configuration:
 }
 ```
 
+### 5. Start Frontend Dashboard (Optional)
+
+```bash
+cd frontend
+
+# Install dependencies
+npm install
+
+# Copy environment template
+cp .env.example .env.local
+# Edit .env.local with your API URL
+
+# Start development server
+npm run dev
+```
+
+The dashboard will be available at `http://localhost:3000` with four interfaces:
+
+| Interface | URL | Purpose |
+|-----------|-----|---------|
+| Admin Console | `/admin` | Manage agents, alerts, API keys |
+| Agent Portal | `/portal` | Developer dashboard, test verification |
+| Audit Explorer | `/audit` | Search logs, verify proofs, export |
+| Public Verify | `/verify` | Public agent trust verification |
+
 ---
 
 ## API Reference
@@ -243,6 +288,28 @@ Get public trust information for the Trust Badge.
   "last_action_at": "2024-01-15T10:30:00Z"
 }
 ```
+
+### Admin API Endpoints (Authenticated)
+
+All admin endpoints require the `X-API-Key` header.
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/admin/agents` | GET | List all agents for organization |
+| `/admin/agents/{id}` | GET | Get specific agent details |
+| `/admin/agents/{id}` | PATCH | Update agent configuration |
+| `/admin/agents/{id}/status` | PATCH | Update agent status |
+| `/admin/alerts` | GET | List security alerts |
+| `/admin/alerts/{id}/acknowledge` | POST | Acknowledge an alert |
+| `/admin/alerts/{id}/resolve` | POST | Resolve an alert |
+| `/admin/audit/search` | GET | Search audit logs with filters |
+| `/admin/audit/{id}` | GET | Get specific audit log |
+| `/admin/audit/{id}/proof` | GET | Get Merkle proof for verification |
+| `/admin/usage` | GET | Get usage metrics |
+| `/admin/organization` | GET | Get organization info |
+| `/admin/api-keys` | GET | List API keys |
+| `/admin/api-keys/rotate` | POST | Rotate API key |
+| `/admin/api-keys/{prefix}` | DELETE | Revoke API key |
 
 ---
 
