@@ -1,4 +1,4 @@
-# MTP Local Development Guide
+# Inntris Local Development Guide
 
 ## Quick Start (5 minutes)
 
@@ -11,8 +11,8 @@
 ### 1. Clone and Setup
 
 ```bash
-git clone https://github.com/your-org/mtp.git
-cd mtp
+git clone https://github.com/your-org/inntris.git
+cd inntris
 
 # Create Python virtual environment
 python -m venv venv
@@ -42,10 +42,10 @@ docker compose ps
 
 ```bash
 # Run schema
-docker compose exec postgres psql -U postgres -d mtp -f /docker-entrypoint-initdb.d/schemas.sql
+docker compose exec postgres psql -U postgres -d inntris -f /docker-entrypoint-initdb.d/schemas.sql
 
 # Or connect manually and run schemas.sql
-psql postgresql://postgres:postgres@localhost:5432/mtp < database/schemas.sql
+psql postgresql://postgres:postgres@localhost:5432/inntris < database/schemas.sql
 ```
 
 ### 4. Configure Environment
@@ -61,7 +61,7 @@ Default `.env` for local development:
 
 ```env
 # Database
-DATABASE_URL=postgresql://postgres:postgres@localhost:5432/mtp
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/inntris
 
 # Redis
 REDIS_URL=redis://localhost:6379
@@ -199,13 +199,13 @@ Add to `~/.config/claude/claude_desktop_config.json`:
 ```json
 {
   "mcpServers": {
-    "mtp-guard": {
+    "inntris-guard": {
       "command": "python",
       "args": ["-m", "mcp_server.server"],
       "env": {
-        "MTP_API_URL": "http://localhost:8000",
-        "MTP_AGENT_ID": "YOUR_AGENT_UUID",
-        "MTP_PRIVATE_KEY_B64": "YOUR_BASE64_PRIVATE_KEY"
+        "Inntris_API_URL": "http://localhost:8000",
+        "Inntris_AGENT_ID": "YOUR_AGENT_UUID",
+        "Inntris_PRIVATE_KEY_B64": "YOUR_BASE64_PRIVATE_KEY"
       }
     }
   }
@@ -215,7 +215,7 @@ Add to `~/.config/claude/claude_desktop_config.json`:
 ### Test MCP Tools
 
 In Claude Desktop, ask:
-> "Use the mtp_guard tool to verify a $50 financial transaction to vendor@example.com"
+> "Use the inntris_guard tool to verify a $50 financial transaction to vendor@example.com"
 
 Expected response:
 ```
@@ -232,16 +232,16 @@ Trust Score: 50
 
 ```bash
 # Drop and recreate
-docker compose exec postgres psql -U postgres -c "DROP DATABASE IF EXISTS mtp;"
-docker compose exec postgres psql -U postgres -c "CREATE DATABASE mtp;"
-docker compose exec postgres psql -U postgres -d mtp -f /docker-entrypoint-initdb.d/schemas.sql
+docker compose exec postgres psql -U postgres -c "DROP DATABASE IF EXISTS inntris;"
+docker compose exec postgres psql -U postgres -c "CREATE DATABASE inntris;"
+docker compose exec postgres psql -U postgres -d inntris -f /docker-entrypoint-initdb.d/schemas.sql
 ```
 
 ### View Database
 
 ```bash
 # Connect to PostgreSQL
-docker compose exec postgres psql -U postgres -d mtp
+docker compose exec postgres psql -U postgres -d inntris
 
 # Common queries
 SELECT * FROM organizations;
@@ -269,7 +269,7 @@ print(f"Hash: {hash}")
 ## Project Structure
 
 ```
-mtp/
+inntris/
 ├── api/                    # Core API (FastAPI)
 │   ├── __init__.py
 │   ├── main.py            # Application entry point

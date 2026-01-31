@@ -1,6 +1,8 @@
-# MTP Frontend Dashboard
+# Inntris Core Frontend Dashboard
 
-The **Management Console** for the Machine Trust Protocol - a Next.js 14 application providing comprehensive interfaces for organizations, developers, and compliance teams.
+The **Management Console** for Inntris Core - a Next.js 14 application providing comprehensive interfaces for organizations, developers, and compliance teams.
+
+*Protecting Intellect. The Universal Liability Shield for Autonomous Agents.*
 
 ## Overview
 

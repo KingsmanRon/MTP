@@ -1,18 +1,18 @@
-# MTP - Machine Trust Protocol
+# Inntris Core
 
-> **Scutamen** - "The Instrument of Shielding" | "The Defense of Shields"
->
-> *Derivation: A synthesis of Scuta (Latin: Shields) and Tutamen (Latin: Defense, Protection)*
+> **Protecting Intellect. The Universal Liability Shield for Autonomous Agents.**
+
+Inntris INC provides advanced security infrastructure and defensive protocols for artificial intelligence systems and third-party platforms. We serve as a protective shell that safeguards high-level cognitive models and ensures their integrity across diverse digital ecosystems.
 
 ## The Universal Trust Layer for AI Agents
 
-MTP is a production-ready **Verification & Liability Platform** for AI Agents. Think of it as the **"VISA Network" for AI** - providing Identity, Audit, and Control for any AI agent through a standardized Model Context Protocol (MCP) Server.
+Inntris Core is a production-ready **Verification & Liability Platform** for AI Agents. Think of it as the **"VISA Network" for AI** — providing Identity, Audit, and Control for any AI agent through a standardized Model Context Protocol (MCP) Server.
 
 ### Core Philosophy
 
-- **"Fail Closed"** - If an agent cannot be verified, it cannot act
-- **"Zero Trust"** - Never trust the client; always verify the signature
-- **"Forensic Grade"** - Audit logs are not for debugging; they are for court
+- **"Fail Closed"** — If an agent cannot be verified, it cannot act
+- **"Zero Trust"** — Never trust the client; always verify the signature
+- **"Forensic Grade"** — Audit logs are not for debugging; they are for court
 
 ---
 
@@ -23,7 +23,7 @@ MTP is a production-ready **Verification & Liability Platform** for AI Agents. T
 │                           AI AGENT (Lovable/Replit/LangChain)               │
 │                                      │                                       │
 │                          ┌───────────▼───────────┐                          │
-│                          │   MCP Server (MTP)    │                          │
+│                          │   MCP Server (Inntris)│                          │
 │                          │   "Universal Adapter" │                          │
 │                          └───────────┬───────────┘                          │
 └──────────────────────────────────────┼──────────────────────────────────────┘
@@ -67,7 +67,7 @@ MTP is a production-ready **Verification & Liability Platform** for AI Agents. T
 
 The **"Universal Adapter"** that runs alongside any AI agent.
 
-- Exposes `mtp_guard` tool via Model Context Protocol
+- Exposes `inntris_guard` tool via Model Context Protocol
 - Intercepts critical actions before execution
 - Signs requests with Ed25519 private key
 - Returns APPROVED (with token) or BLOCKED (raises exception)
@@ -120,8 +120,8 @@ The **"Management Console"** for organizations and developers.
 ### 1. Clone & Configure
 
 ```bash
-git clone https://github.com/your-org/mtp.git
-cd mtp
+git clone https://github.com/inntris/inntris-core.git
+cd inntris-core
 
 # Copy environment template
 cp .env.example .env
@@ -149,6 +149,7 @@ curl http://localhost:8000/health
 # Create organization (returns API key - save it!)
 curl -X POST http://localhost:8000/admin/organizations \
   -H "Content-Type: application/json" \
+  -H "X-Admin-Key: YOUR_ADMIN_KEY" \
   -d '{
     "name": "My AI Company",
     "contact_email": "admin@example.com",
@@ -184,13 +185,13 @@ Add to your AI agent's MCP configuration:
 ```json
 {
   "mcpServers": {
-    "mtp-guard": {
+    "inntris-guard": {
       "command": "python",
       "args": ["-m", "mcp_server.server"],
       "env": {
-        "MTP_API_URL": "http://localhost:8000",
-        "MTP_AGENT_ID": "YOUR_AGENT_UUID",
-        "MTP_PRIVATE_KEY_B64": "YOUR_BASE64_PRIVATE_KEY"
+        "INNTRIS_API_URL": "http://localhost:8000",
+        "INNTRIS_AGENT_ID": "YOUR_AGENT_UUID",
+        "INNTRIS_PRIVATE_KEY_B64": "YOUR_BASE64_PRIVATE_KEY"
       }
     }
   }
@@ -315,13 +316,13 @@ All admin endpoints require the `X-API-Key` header.
 
 ## MCP Tool Usage
 
-When the MCP server is configured, AI agents can use the `mtp_guard` tool:
+When the MCP server is configured, AI agents can use the `inntris_guard` tool:
 
 ```
-CRITICAL: You MUST call mtp_guard before executing any financial transaction
+CRITICAL: You MUST call inntris_guard before executing any financial transaction
 or sending external emails. Failure to call this tool will result in liability.
 
-Tool: mtp_guard
+Tool: inntris_guard
 Arguments:
   - action_type: "financial_transaction" | "email_send" | "api_call" | "data_export"
   - amount: number (required for financial_transaction)
@@ -333,9 +334,9 @@ Arguments:
 **Example Agent Prompt:**
 ```
 Before sending this $50 payment to user@example.com, I need to verify
-this action with the Machine Trust Protocol.
+this action with Inntris.
 
-[Agent calls mtp_guard with action_type="financial_transaction", amount=50, ...]
+[Agent calls inntris_guard with action_type="financial_transaction", amount=50, ...]
 
 Response: APPROVED - You may proceed with the action.
 ```
@@ -344,7 +345,7 @@ Response: APPROVED - You may proceed with the action.
 
 ## Blockchain Anchoring
 
-MTP uses the Base L2 blockchain for immutable audit anchoring.
+Inntris uses the Base L2 blockchain for immutable audit anchoring.
 
 ### AnchorRegistry Contract
 
@@ -470,10 +471,12 @@ We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guid
 
 ## Support
 
-- **Documentation**: [docs.mtp.dev](https://docs.mtp.dev)
-- **Issues**: [GitHub Issues](https://github.com/your-org/mtp/issues)
-- **Discord**: [MTP Community](https://discord.gg/mtp)
+- **Documentation**: [docs.inntris.io](https://docs.inntris.io)
+- **Issues**: [GitHub Issues](https://github.com/inntris/inntris-core/issues)
+- **Discord**: [Inntris Community](https://discord.gg/inntris)
 
 ---
 
-*Building the infrastructure of trust for the AI age.*
+*Protecting Intellect. The Universal Liability Shield for Autonomous Agents.*
+
+**© 2024 Inntris INC. All rights reserved.**

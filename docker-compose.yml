@@ -1,8 +1,10 @@
 # =============================================================================
-# MACHINE TRUST PROTOCOL - DOCKER COMPOSE
+# INNTRIS CORE - DOCKER COMPOSE
 # =============================================================================
-# Production-ready orchestration for MTP services
+# Production-ready orchestration for Inntris services
 # Includes: PostgreSQL, Redis, Core API, Anchor Worker
+# Protecting Intellect. The Universal Liability Shield for Autonomous Agents.
+# © 2024 Inntris INC. All rights reserved.
 # =============================================================================
 
 version: "3.9"
@@ -13,31 +15,31 @@ services:
   # ===========================================================================
   postgres:
     image: timescale/timescaledb:latest-pg15
-    container_name: mtp-postgres
+    container_name: inntris-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-mtp}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mtp_secure_password}
-      POSTGRES_DB: ${POSTGRES_DB:-mtp}
+      POSTGRES_USER: ${POSTGRES_USER:-inntris}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-inntris_secure_password}
+      POSTGRES_DB: ${POSTGRES_DB:-inntris}
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./database/schemas.sql:/docker-entrypoint-initdb.d/01-schemas.sql:ro
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-mtp} -d ${POSTGRES_DB:-mtp}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-inntris} -d ${POSTGRES_DB:-inntris}"]
       interval: 10s
       timeout: 5s
       retries: 5
     networks:
-      - mtp-network
+      - inntris-network
 
   # ===========================================================================
   # CACHE: Redis
   # ===========================================================================
   redis:
     image: redis:7-alpine
-    container_name: mtp-redis
+    container_name: inntris-redis
     restart: unless-stopped
     command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
     volumes:
@@ -50,7 +52,7 @@ services:
       timeout: 5s
       retries: 5
     networks:
-      - mtp-network
+      - inntris-network
 
   # ===========================================================================
   # CORE API: The Central Bank
@@ -60,11 +62,11 @@ services:
       context: .
       dockerfile: Dockerfile
       target: api
-    container_name: mtp-api
+    container_name: inntris-api
     restart: unless-stopped
     environment:
       - ENVIRONMENT=${ENVIRONMENT:-production}
-      - DATABASE_URL=postgresql://${POSTGRES_USER:-mtp}:${POSTGRES_PASSWORD:-mtp_secure_password}@postgres:5432/${POSTGRES_DB:-mtp}
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-inntris}:${POSTGRES_PASSWORD:-inntris_secure_password}@postgres:5432/${POSTGRES_DB:-inntris}
       - REDIS_URL=redis://redis:6379
       - SERVER_SECRET=${SERVER_SECRET}
       - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-*}
@@ -83,11 +85,11 @@ services:
       retries: 3
       start_period: 10s
     networks:
-      - mtp-network
+      - inntris-network
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.mtp-api.rule=Host(`api.mtp.local`)"
-      - "traefik.http.services.mtp-api.loadbalancer.server.port=8000"
+      - "traefik.http.routers.inntris-api.rule=Host(`api.mtp.local`)"
+      - "traefik.http.services.inntris-api.loadbalancer.server.port=8000"
 
   # ===========================================================================
   # ANCHOR WORKER: The Forensic Recorder
@@ -97,11 +99,11 @@ services:
       context: .
       dockerfile: Dockerfile
       target: anchor-worker
-    container_name: mtp-anchor-worker
+    container_name: inntris-anchor-worker
     restart: unless-stopped
     environment:
       - ENVIRONMENT=${ENVIRONMENT:-production}
-      - DATABASE_URL=postgresql://${POSTGRES_USER:-mtp}:${POSTGRES_PASSWORD:-mtp_secure_password}@postgres:5432/${POSTGRES_DB:-mtp}
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-inntris}:${POSTGRES_PASSWORD:-inntris_secure_password}@postgres:5432/${POSTGRES_DB:-inntris}
       - BASE_RPC_URL=${BASE_RPC_URL:-https://mainnet.base.org}
       - ANCHOR_CONTRACT_ADDRESS=${ANCHOR_CONTRACT_ADDRESS}
       - BLOCKCHAIN_PRIVATE_KEY=${BLOCKCHAIN_PRIVATE_KEY}
@@ -111,7 +113,7 @@ services:
       postgres:
         condition: service_healthy
     networks:
-      - mtp-network
+      - inntris-network
 
   # ===========================================================================
   # MCP SERVER: Universal Adapter (Standalone)
@@ -123,20 +125,20 @@ services:
       context: .
       dockerfile: Dockerfile
       target: mcp-server
-    container_name: mtp-mcp-server
+    container_name: inntris-mcp-server
     restart: "no"
     profiles:
       - mcp  # Only start with: docker compose --profile mcp up
     environment:
-      - MTP_API_URL=http://api:8000
-      - MTP_AGENT_ID=${MTP_AGENT_ID}
-      - MTP_PRIVATE_KEY_B64=${MTP_PRIVATE_KEY_B64}
-      - MTP_TIMEOUT=30
+      - INNTRIS_API_URL=http://api:8000
+      - INNTRIS_AGENT_ID=${INNTRIS_AGENT_ID}
+      - INNTRIS_PRIVATE_KEY_B64=${INNTRIS_PRIVATE_KEY_B64}
+      - INNTRIS_TIMEOUT=30
     depends_on:
       api:
         condition: service_healthy
     networks:
-      - mtp-network
+      - inntris-network
     stdin_open: true
     tty: true
 
@@ -145,7 +147,7 @@ services:
   # ===========================================================================
   traefik:
     image: traefik:v2.10
-    container_name: mtp-traefik
+    container_name: inntris-traefik
     restart: unless-stopped
     profiles:
       - proxy  # Only start with: docker compose --profile proxy up
@@ -162,14 +164,14 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
     networks:
-      - mtp-network
+      - inntris-network
 
   # ===========================================================================
   # OPTIONAL: pgAdmin for Database Management
   # ===========================================================================
   pgadmin:
     image: dpage/pgadmin4:latest
-    container_name: mtp-pgadmin
+    container_name: inntris-pgadmin
     restart: unless-stopped
     profiles:
       - tools  # Only start with: docker compose --profile tools up
@@ -181,7 +183,7 @@ services:
     depends_on:
       - postgres
     networks:
-      - mtp-network
+      - inntris-network
 
 # =============================================================================
 # VOLUMES
@@ -196,7 +198,7 @@ volumes:
 # NETWORKS
 # =============================================================================
 networks:
-  mtp-network:
+  inntris-network:
     driver: bridge
     ipam:
       config:

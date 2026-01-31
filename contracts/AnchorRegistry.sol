@@ -3,10 +3,11 @@ pragma solidity ^0.8.20;
 
 /**
  * @title AnchorRegistry
- * @author MTP Team
+ * @author Inntris INC
  * @notice Immutable registry for anchoring audit log Merkle roots on Base L2
- * @dev This contract stores Merkle roots from the MTP audit system, providing
+ * @dev This contract stores Merkle roots from the Inntris Core audit system, providing
  *      cryptographic proof that audit logs existed at a specific point in time.
+ *      Protecting Intellect. The Universal Liability Shield for Autonomous Agents.
  *
  * SECURITY CONSIDERATIONS:
  * - Merkle roots are immutable once anchored

@@ -1,8 +1,8 @@
-# MTP Go-to-Market Strategy
+# Inntris Go-to-Market Strategy
 
 ## Executive Summary
 
-MTP (Machine Trust Protocol) is positioned as the **universal trust layer for AI agents**. Our go-to-market strategy focuses on establishing MTP as the industry standard through strategic partnerships with AI platform providers, followed by enterprise direct sales and financial institution expansion.
+Inntris (Machine Trust Protocol) is positioned as the **universal trust layer for AI agents**. Our go-to-market strategy focuses on establishing Inntris as the industry standard through strategic partnerships with AI platform providers, followed by enterprise direct sales and financial institution expansion.
 
 ---
 
@@ -18,7 +18,7 @@ MTP (Machine Trust Protocol) is positioned as the **universal trust layer for AI
 - Cohere, AI21, Mistral
 
 **Value Proposition:**
-> "MTP provides the verification standard your enterprise customers are asking for."
+> "Inntris provides the verification standard your enterprise customers are asking for."
 
 **Why They Care:**
 - Enterprise customers demand audit trails
@@ -108,11 +108,11 @@ MTP (Machine Trust Protocol) is positioned as the **universal trust layer for AI
 
 ### Positioning Statement
 
-> For **AI-powered enterprises** who need **accountability for autonomous agent actions**, MTP is a **verification and audit platform** that provides **cryptographic identity, policy enforcement, and court-admissible audit trails**. Unlike **custom logging solutions or API gateways**, MTP offers **a complete, standardized trust layer purpose-built for AI agents**.
+> For **AI-powered enterprises** who need **accountability for autonomous agent actions**, Inntris is a **verification and audit platform** that provides **cryptographic identity, policy enforcement, and court-admissible audit trails**. Unlike **custom logging solutions or API gateways**, Inntris offers **a complete, standardized trust layer purpose-built for AI agents**.
 
 ### Competitive Matrix
 
-| Capability | MTP | Custom Logging | API Gateways | Blockchain-Only |
+| Capability | Inntris | Custom Logging | API Gateways | Blockchain-Only |
 |------------|-----|----------------|--------------|-----------------|
 | Agent Identity | ✅ Ed25519 | ❌ None | ❌ None | ⚠️ Wallet-based |
 | Policy Enforcement | ✅ Full | ❌ None | ⚠️ Rate limits | ❌ None |
@@ -297,15 +297,15 @@ MTP (Machine Trust Protocol) is positioned as the **universal trust layer for AI
 
 ### AI Platform Outreach
 
-**Subject:** MTP — Verification Standard for [Platform] Agents
+**Subject:** Inntris — Verification Standard for [Platform] Agents
 
 > Hi [Name],
 >
-> I'm building MTP (Machine Trust Protocol), a verification layer for AI agents that provides cryptographic identity, policy enforcement, and forensic audit trails.
+> I'm building Inntris (Machine Trust Protocol), a verification layer for AI agents that provides cryptographic identity, policy enforcement, and forensic audit trails.
 >
-> We've built native MCP integration and believe MTP could become the trust standard for the [Platform] agent ecosystem.
+> We've built native MCP integration and believe Inntris could become the trust standard for the [Platform] agent ecosystem.
 >
-> Enterprise customers are increasingly asking about accountability for agent actions. MTP answers: "Who did what, when, and was it authorized?"
+> Enterprise customers are increasingly asking about accountability for agent actions. Inntris answers: "Who did what, when, and was it authorized?"
 >
 > Would you be open to a 20-minute call to explore potential collaboration?
 >
@@ -319,7 +319,7 @@ MTP (Machine Trust Protocol) is positioned as the **universal trust layer for AI
 >
 > As [Company] expands its use of AI agents, how are you thinking about accountability and audit trails?
 >
-> MTP provides:
+> Inntris provides:
 > - Cryptographic verification of every agent action
 > - Spending and rate limits to prevent runaway agents
 > - Court-admissible audit logs with blockchain proof

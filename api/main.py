@@ -1,7 +1,8 @@
 """
-Machine Trust Protocol - Core Enforcer API
+Inntris Core - Verification & Liability Platform
 
 The "Central Bank" for AI Agent Verification.
+Protecting Intellect. The Universal Liability Shield for Autonomous Agents.
 
 This API provides:
 - Identity verification via Ed25519 signatures
@@ -11,6 +12,8 @@ This API provides:
 
 Philosophy: "Fail Closed" - If verification fails, the action is blocked.
 Philosophy: "Zero Trust" - Never trust the client; always verify the signature.
+
+© 2024 Inntris INC. All rights reserved.
 """
 
 import asyncio
@@ -85,7 +88,7 @@ async def lifespan(app: FastAPI):
     """Application lifecycle management."""
     global db, redis_client
 
-    logger.info(f"Starting MTP Core API v{__version__} in {ENVIRONMENT} mode")
+    logger.info(f"Starting Inntris Core API v{__version__} in {ENVIRONMENT} mode")
 
     # Initialize database
     try:
@@ -112,7 +115,7 @@ async def lifespan(app: FastAPI):
     if redis_client:
         await redis_client.close()
 
-    logger.info("MTP Core API shutdown complete")
+    logger.info("Inntris Core API shutdown complete")
 
 
 # =============================================================================
@@ -120,8 +123,8 @@ async def lifespan(app: FastAPI):
 # =============================================================================
 
 app = FastAPI(
-    title="MTP Core Enforcer API",
-    description="The Central Bank for AI Agent Verification",
+    title="Inntris Core API",
+    description="The Central Bank for AI Agent Verification - Protecting Intellect",
     version=__version__,
     lifespan=lifespan,
     docs_url="/docs" if ENVIRONMENT != "production" else None,
@@ -391,7 +394,7 @@ async def verify_action(
             # Push security alert to Redis for immediate processing
             if redis_conn:
                 await redis_conn.lpush(
-                    "mtp:security_alerts",
+                    "inntris:security_alerts",
                     json.dumps({
                         "type": "SIGNATURE_INVALID",
                         "agent_id": str(agent.id),
@@ -419,7 +422,7 @@ async def verify_action(
                 detail="Verification service temporarily unavailable. Nonce verification requires cache layer.",
             )
 
-        nonce_key = f"mtp:nonce:{agent.id}:{request_data.nonce}"
+        nonce_key = f"inntris:nonce:{agent.id}:{request_data.nonce}"
         # SETNX with 10 minute expiry
         try:
             nonce_fresh = await redis_conn.set(nonce_key, "1", ex=600, nx=True)
@@ -545,7 +548,7 @@ async def verify_action(
         # Push audit event to Redis queue for async processing
         if redis_conn:
             await redis_conn.lpush(
-                "mtp:audit_events",
+                "inntris:audit_events",
                 json.dumps({
                     "audit_id": str(audit_id),
                     "agent_id": str(agent.id),

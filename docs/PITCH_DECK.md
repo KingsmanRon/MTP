@@ -1,11 +1,13 @@
-# MTP - Machine Trust Protocol
+# Inntris Core
 ## Pitch Deck & Presentation Guide
+
+*Protecting Intellect. The Universal Liability Shield for Autonomous Agents.*
 
 ---
 
 ## The One-Liner
 
-> **"MTP is the VISA network for AI agents — providing identity, audit, and liability for every autonomous action."**
+> **"Inntris is the VISA network for AI agents — providing identity, audit, and liability for every autonomous action."**
 
 ---
 
@@ -57,19 +59,19 @@ No audit trail → No accountability → Lawsuit
 
 ## Slide 3: The Solution
 
-### MTP: The Universal Trust Layer
+### Inntris: The Universal Trust Layer
 
 ```
 ┌─────────────────────────────────────────────────────┐
 │                    AI AGENT                         │
 │                       │                             │
 │              ┌────────▼────────┐                   │
-│              │   MTP Guard     │ ← "Can I do this?"│
+│              │   Inntris Guard     │ ← "Can I do this?"│
 │              └────────┬────────┘                   │
 └───────────────────────┼─────────────────────────────┘
                         │
          ┌──────────────▼──────────────┐
-         │      MTP Core API           │
+         │      Inntris Core API           │
          │  ✓ Verify Identity          │
          │  ✓ Check Limits             │
          │  ✓ Log to Audit Trail       │
@@ -94,7 +96,7 @@ No audit trail → No accountability → Lawsuit
 ```
 1. Agent wants to send $500 payment
         ↓
-2. MTP Guard intercepts the action
+2. Inntris Guard intercepts the action
         ↓
 3. Signs request with Ed25519 private key
         ↓
@@ -166,21 +168,21 @@ No audit trail → No accountability → Lawsuit
 **Scenario 1: Approved Transaction**
 ```
 Agent: "Transfer $50 to vendor@example.com"
-MTP: ✓ APPROVED (within limits, valid signature)
+Inntris: ✓ APPROVED (within limits, valid signature)
 Result: Transaction proceeds, logged forever
 ```
 
 **Scenario 2: Blocked Transaction**
 ```
 Agent: "Transfer $5,000 to vendor@example.com"
-MTP: ✗ BLOCKED (exceeds per-action limit of $500)
+Inntris: ✗ BLOCKED (exceeds per-action limit of $500)
 Result: Transaction stopped, alert generated
 ```
 
 **Scenario 3: Security Alert**
 ```
 Agent: [Attempts to replay old transaction]
-MTP: ✗ BLOCKED (nonce already used - replay attack)
+Inntris: ✗ BLOCKED (nonce already used - replay attack)
 Result: Agent flagged, trust score reduced
 ```
 
@@ -208,7 +210,7 @@ Result: Agent flagged, trust score reduced
 
 ### Phase 1: AI Platform Partnerships (Now)
 **Target:** Anthropic, OpenAI, Google, Microsoft
-**Value prop:** "MTP is the trust standard for MCP"
+**Value prop:** "Inntris is the trust standard for MCP"
 **Ask:** Protocol adoption, co-marketing
 
 ### Phase 2: Enterprise Direct (Q2-Q3)
@@ -230,7 +232,7 @@ Result: Agent flagged, trust score reduced
 | **Internal logging** | Custom per company | No standard, not court-grade |
 | **API gateways** | Rate limiting only | No identity, no audit trail |
 | **Blockchain oracles** | On-chain verification | Too slow, too expensive |
-| **MTP** | Purpose-built for agents | Complete solution |
+| **Inntris** | Purpose-built for agents | Complete solution |
 
 ### Our Moat
 1. **First mover** in agent verification
@@ -267,10 +269,10 @@ Result: Agent flagged, trust score reduced
 ## Slide 13: The Ask
 
 ### For AI Companies
-> "Adopt MTP as the verification standard for your agent ecosystem."
+> "Adopt Inntris as the verification standard for your agent ecosystem."
 
 ### For Enterprises
-> "Pilot MTP to protect your organization from agent liability."
+> "Pilot Inntris to protect your organization from agent liability."
 
 ### For Investors
 > "Join us in building the trust infrastructure for the AI age."

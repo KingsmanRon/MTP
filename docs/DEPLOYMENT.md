@@ -1,8 +1,8 @@
-# MTP Deployment Guide
+# Inntris Deployment Guide
 
 ## Overview
 
-This guide covers deploying MTP for a live demonstration using:
+This guide covers deploying Inntris for a live demonstration using:
 - **Supabase** — PostgreSQL database
 - **Railway** or **Render** — API and Worker hosting
 - **MetaMask** — Blockchain wallet for anchoring
@@ -160,7 +160,7 @@ Save these values:
 
 1. Click **New Project**
 2. Select **Deploy from GitHub repo**
-3. Connect your MTP repository
+3. Connect your Inntris repository
 4. Railway will detect the project
 
 ### 4.3 Configure API Service
@@ -269,7 +269,7 @@ Worker will start and run on schedule.
 ### 6.2 Import Project
 
 1. Click **Add New** → **Project**
-2. Import your MTP repository
+2. Import your Inntris repository
 3. Configure:
    - **Framework Preset:** Next.js
    - **Root Directory:** `frontend`

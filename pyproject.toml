@@ -1,22 +1,24 @@
 # =============================================================================
-# MACHINE TRUST PROTOCOL - PROJECT CONFIGURATION
+# INNTRIS CORE - PROJECT CONFIGURATION
 # =============================================================================
+# Protecting Intellect. The Universal Liability Shield for Autonomous Agents.
+# © 2024 Inntris INC. All rights reserved.
 
 [build-system]
 requires = ["setuptools>=69.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "mtp"
+name = "inntris"
 version = "1.0.0"
-description = "Machine Trust Protocol - Verification & Liability Platform for AI Agents"
+description = "Inntris Core - Verification & Liability Platform for AI Agents"
 readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.12"
 authors = [
-    {name = "MTP Team"}
+    {name = "Inntris INC"}
 ]
-keywords = ["ai", "agents", "verification", "blockchain", "audit", "mcp"]
+keywords = ["ai", "agents", "verification", "blockchain", "audit", "mcp", "inntris"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
@@ -55,14 +57,14 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/your-org/mtp"
-Documentation = "https://docs.mtp.dev"
-Repository = "https://github.com/your-org/mtp"
+Homepage = "https://github.com/inntris/inntris-core"
+Documentation = "https://docs.inntris.io"
+Repository = "https://github.com/inntris/inntris-core"
 
 [project.scripts]
-mtp-api = "api.main:main"
-mtp-worker = "workers.anchor_worker:main"
-mtp-server = "mcp_server.server:main"
+inntris-api = "api.main:main"
+inntris-worker = "workers.anchor_worker:main"
+inntris-server = "mcp_server.server:main"
 
 # -----------------------------------------------------------------------------
 # Tool Configuration

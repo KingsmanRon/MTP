@@ -1,9 +1,10 @@
 """
-Machine Trust Protocol - MCP Server
+Inntris Core - MCP Server
 
 The "Universal Adapter" that runs alongside AI Agents.
+Protecting Intellect. The Universal Liability Shield for Autonomous Agents.
 
-This server exposes MTP verification tools to any AI agent via the
+This server exposes Inntris verification tools to any AI agent via the
 Model Context Protocol (MCP). It intercepts critical actions and
 ensures they are verified before execution.
 
@@ -13,6 +14,8 @@ Usage:
 
 Integration:
     Compatible with: Lovable, Replit, LangChain, Claude, and any MCP-compatible agent.
+
+© 2024 Inntris INC. All rights reserved.
 """
 
 import asyncio
@@ -44,19 +47,19 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Environment configuration
-MTP_API_URL = os.getenv("MTP_API_URL", "http://localhost:8000")
-MTP_AGENT_ID = os.getenv("MTP_AGENT_ID")
-MTP_PRIVATE_KEY_B64 = os.getenv("MTP_PRIVATE_KEY_B64")  # Base64-encoded Ed25519 private key
-MTP_TIMEOUT = int(os.getenv("MTP_TIMEOUT", "30"))
+INNTRIS_API_URL = os.getenv("INNTRIS_API_URL", "http://localhost:8000")
+INNTRIS_AGENT_ID = os.getenv("INNTRIS_AGENT_ID")
+INNTRIS_PRIVATE_KEY_B64 = os.getenv("INNTRIS_PRIVATE_KEY_B64")  # Base64-encoded Ed25519 private key
+INNTRIS_TIMEOUT = int(os.getenv("INNTRIS_TIMEOUT", "30"))
 
 # =============================================================================
-# MTP CLIENT
+# INNTRIS CLIENT
 # =============================================================================
 
 
-class MTPClient:
+class InntrisClient:
     """
-    Client for communicating with the MTP Core API.
+    Client for communicating with the Inntris Core API.
 
     Handles signature generation and verification requests.
     """
@@ -68,17 +71,17 @@ class MTPClient:
         private_key: bytes,
     ):
         """
-        Initialize MTP client.
+        Initialize Inntris client.
 
         Args:
-            api_url: URL of the MTP Core API.
+            api_url: URL of the Inntris Core API.
             agent_id: UUID of this agent.
             private_key: 32-byte Ed25519 private key seed.
         """
         self.api_url = api_url.rstrip("/")
         self.agent_id = agent_id
         self._signing_key = SigningKey(private_key, encoder=RawEncoder)
-        self._http_client = httpx.AsyncClient(timeout=MTP_TIMEOUT)
+        self._http_client = httpx.AsyncClient(timeout=INNTRIS_TIMEOUT)
 
     async def close(self):
         """Close HTTP client."""
@@ -189,7 +192,7 @@ class MTPClient:
             elif response.status_code == 401:
                 error_detail = response.json().get("detail", "Signature verification failed")
                 logger.error(f"SECURITY: Signature rejected - {error_detail}")
-                raise MTPVerificationError(
+                raise InntrisVerificationError(
                     verdict="signature_invalid",
                     reason=error_detail,
                 )
@@ -197,7 +200,7 @@ class MTPClient:
             elif response.status_code == 403:
                 error_detail = response.json().get("detail", "Policy violation")
                 logger.warning(f"Action BLOCKED by policy: {error_detail}")
-                raise MTPVerificationError(
+                raise InntrisVerificationError(
                     verdict="blocked",
                     reason=error_detail,
                 )
@@ -205,7 +208,7 @@ class MTPClient:
             elif response.status_code == 429:
                 error_detail = response.json().get("detail", "Rate limit exceeded")
                 logger.warning(f"Action RATE LIMITED: {error_detail}")
-                raise MTPVerificationError(
+                raise InntrisVerificationError(
                     verdict="rate_limited",
                     reason=error_detail,
                 )
@@ -213,33 +216,33 @@ class MTPClient:
             elif response.status_code == 404:
                 error_detail = response.json().get("detail", "Agent not found")
                 logger.error(f"Agent not registered: {error_detail}")
-                raise MTPVerificationError(
+                raise InntrisVerificationError(
                     verdict="blocked",
                     reason=error_detail,
                 )
 
             else:
                 logger.error(f"Unexpected response: {response.status_code} - {response.text}")
-                raise MTPVerificationError(
+                raise InntrisVerificationError(
                     verdict="error",
                     reason=f"Unexpected API response: {response.status_code}",
                 )
 
         except httpx.RequestError as e:
             logger.error(f"Network error during verification: {e}")
-            raise MTPVerificationError(
+            raise InntrisVerificationError(
                 verdict="error",
                 reason=f"Network error: {str(e)}",
             )
 
 
-class MTPVerificationError(Exception):
-    """Exception raised when MTP verification fails."""
+class InntrisVerificationError(Exception):
+    """Exception raised when Inntris verification fails."""
 
     def __init__(self, verdict: str, reason: str):
         self.verdict = verdict
         self.reason = reason
-        super().__init__(f"MTP Verification Failed [{verdict}]: {reason}")
+        super().__init__(f"Inntris Verification Failed [{verdict}]: {reason}")
 
 
 # =============================================================================
@@ -247,28 +250,28 @@ class MTPVerificationError(Exception):
 # =============================================================================
 
 # Initialize MCP server
-server = Server("mtp-guard")
+server = Server("inntris-guard")
 
-# Global MTP client (initialized on startup)
-mtp_client: Optional[MTPClient] = None
+# Global Inntris client (initialized on startup)
+inntris_client: Optional[InntrisClient] = None
 
 
-def get_mtp_client() -> MTPClient:
-    """Get the initialized MTP client."""
-    if mtp_client is None:
-        raise RuntimeError("MTP client not initialized. Check configuration.")
-    return mtp_client
+def get_inntris_client() -> InntrisClient:
+    """Get the initialized Inntris client."""
+    if inntris_client is None:
+        raise RuntimeError("Inntris client not initialized. Check configuration.")
+    return inntris_client
 
 
 @server.list_tools()
 async def list_tools() -> list[Tool]:
-    """List available MTP tools."""
+    """List available Inntris tools."""
     return [
         Tool(
-            name="mtp_guard",
+            name="inntris_guard",
             description="""CRITICAL: You MUST call this tool before executing any financial transaction or sending external emails. Failure to call this tool will result in liability.
 
-This tool verifies your action with the Machine Trust Protocol (MTP) before execution.
+This tool verifies your action with Inntris Core before execution.
 If verification fails, you MUST NOT proceed with the action.
 
 Required for:
@@ -319,7 +322,7 @@ The tool returns APPROVED or BLOCKED. Only proceed if APPROVED.""",
             },
         ),
         Tool(
-            name="mtp_check_status",
+            name="inntris_check_status",
             description="""Check the current trust status and remaining limits for this agent.
 
 Use this tool to:
@@ -334,7 +337,7 @@ Use this tool to:
             },
         ),
         Tool(
-            name="mtp_log_audit",
+            name="inntris_log_audit",
             description="""Log an informational audit entry without requiring verification.
 
 Use this for logging important events that don't require pre-approval,
@@ -376,12 +379,12 @@ Note: This creates an audit record but does not return an approval token.""",
 async def call_tool(name: str, arguments: dict[str, Any]) -> CallToolResult:
     """Handle tool calls."""
     try:
-        if name == "mtp_guard":
-            return await handle_mtp_guard(arguments)
-        elif name == "mtp_check_status":
-            return await handle_mtp_check_status(arguments)
-        elif name == "mtp_log_audit":
-            return await handle_mtp_log_audit(arguments)
+        if name == "inntris_guard":
+            return await handle_inntris_guard(arguments)
+        elif name == "inntris_check_status":
+            return await handle_inntris_check_status(arguments)
+        elif name == "inntris_log_audit":
+            return await handle_inntris_log_audit(arguments)
         else:
             return CallToolResult(
                 content=[TextContent(type="text", text=f"Unknown tool: {name}")],
@@ -398,13 +401,13 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> CallToolResult:
         )
 
 
-async def handle_mtp_guard(arguments: dict[str, Any]) -> CallToolResult:
+async def handle_inntris_guard(arguments: dict[str, Any]) -> CallToolResult:
     """
-    Handle the mtp_guard tool call.
+    Handle the inntris_guard tool call.
 
     This is the primary verification gate for all critical actions.
     """
-    client = get_mtp_client()
+    client = get_inntris_client()
 
     action_type = arguments.get("action_type")
     if not action_type:
@@ -463,7 +466,7 @@ You may proceed with the action."""
             isError=False,
         )
 
-    except MTPVerificationError as e:
+    except InntrisVerificationError as e:
         # Format rejection response
         response_text = f"""BLOCKED: {e.reason}
 
@@ -478,9 +481,9 @@ DO NOT proceed with this action. The request has been logged for audit purposes.
         )
 
 
-async def handle_mtp_check_status(arguments: dict[str, Any]) -> CallToolResult:
-    """Handle the mtp_check_status tool call."""
-    client = get_mtp_client()
+async def handle_inntris_check_status(arguments: dict[str, Any]) -> CallToolResult:
+    """Handle the inntris_check_status tool call."""
+    client = get_inntris_client()
 
     try:
         # Query public agent info
@@ -523,9 +526,9 @@ Verified Since: {info.get('verified_since', 'N/A')}"""
         )
 
 
-async def handle_mtp_log_audit(arguments: dict[str, Any]) -> CallToolResult:
-    """Handle the mtp_log_audit tool call."""
-    client = get_mtp_client()
+async def handle_inntris_log_audit(arguments: dict[str, Any]) -> CallToolResult:
+    """Handle the inntris_log_audit tool call."""
+    client = get_inntris_client()
 
     event_type = arguments.get("event_type")
     message = arguments.get("message")
@@ -559,7 +562,7 @@ async def handle_mtp_log_audit(arguments: dict[str, Any]) -> CallToolResult:
             isError=False,
         )
 
-    except MTPVerificationError as e:
+    except InntrisVerificationError as e:
         return CallToolResult(
             content=[TextContent(
                 type="text",
@@ -575,31 +578,31 @@ async def handle_mtp_log_audit(arguments: dict[str, Any]) -> CallToolResult:
 
 async def run_server():
     """Run the MCP server."""
-    global mtp_client
+    global inntris_client
 
     # Validate configuration
-    if not MTP_AGENT_ID:
-        raise ValueError("MTP_AGENT_ID environment variable is required")
+    if not INNTRIS_AGENT_ID:
+        raise ValueError("INNTRIS_AGENT_ID environment variable is required")
 
-    if not MTP_PRIVATE_KEY_B64:
-        raise ValueError("MTP_PRIVATE_KEY_B64 environment variable is required")
+    if not INNTRIS_PRIVATE_KEY_B64:
+        raise ValueError("INNTRIS_PRIVATE_KEY_B64 environment variable is required")
 
     try:
-        private_key = base64.b64decode(MTP_PRIVATE_KEY_B64)
+        private_key = base64.b64decode(INNTRIS_PRIVATE_KEY_B64)
         if len(private_key) != 32:
             raise ValueError(f"Private key must be 32 bytes, got {len(private_key)}")
     except Exception as e:
-        raise ValueError(f"Invalid MTP_PRIVATE_KEY_B64: {e}")
+        raise ValueError(f"Invalid INNTRIS_PRIVATE_KEY_B64: {e}")
 
-    # Initialize MTP client
-    mtp_client = MTPClient(
-        api_url=MTP_API_URL,
-        agent_id=MTP_AGENT_ID,
+    # Initialize Inntris client
+    inntris_client = InntrisClient(
+        api_url=INNTRIS_API_URL,
+        agent_id=INNTRIS_AGENT_ID,
         private_key=private_key,
     )
 
-    logger.info(f"MTP MCP Server starting for agent {MTP_AGENT_ID}")
-    logger.info(f"Connecting to MTP API at {MTP_API_URL}")
+    logger.info(f"Inntris MCP Server starting for agent {INNTRIS_AGENT_ID}")
+    logger.info(f"Connecting to Inntris API at {INNTRIS_API_URL}")
 
     try:
         # Run the MCP server
@@ -610,7 +613,7 @@ async def run_server():
                 server.create_initialization_options(),
             )
     finally:
-        await mtp_client.close()
+        await inntris_client.close()
 
 
 def main():
