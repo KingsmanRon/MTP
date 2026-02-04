@@ -1,9 +1,9 @@
 #!/bin/bash
 
 ##############################################################################
-# Machine Trust Protocol - Production Testing Script
+# Inntris Core - Production Testing Script
 #
-# This script validates the entire MTP deployment end-to-end.
+# This script validates the entire Inntris deployment end-to-end.
 #
 # Usage:
 #   ./production_test.sh <API_URL> <MASTER_ADMIN_KEY>
@@ -49,7 +49,7 @@ MASTER_ADMIN_KEY=$2
 API_URL=${API_URL%/}
 
 echo -e "${BLUE}╔════════════════════════════════════════════════════════════╗${NC}"
-echo -e "${BLUE}║  Machine Trust Protocol - Production Test Suite          ║${NC}"
+echo -e "${BLUE}║  Inntris Core - Production Test Suite          ║${NC}"
 echo -e "${BLUE}╚════════════════════════════════════════════════════════════╝${NC}"
 echo ""
 echo -e "${YELLOW}API URL:${NC} $API_URL"
@@ -369,7 +369,7 @@ TOTAL_TESTS=$((TESTS_PASSED + TESTS_FAILED))
 if [ $TESTS_FAILED -eq 0 ]; then
     echo -e "${GREEN}✅ ALL TESTS PASSED!${NC} ($TESTS_PASSED/$TOTAL_TESTS)"
     echo ""
-    echo -e "${GREEN}🎉 Your MTP deployment is PRODUCTION READY!${NC}"
+    echo -e "${GREEN}🎉 Your Inntris deployment is PRODUCTION READY!${NC}"
     echo ""
     echo "Next steps:"
     echo "  1. Save the organization ID and API key"

@@ -1,11 +1,11 @@
 /**
- * Machine Trust Protocol - Trust Badge Widget
+ * Inntris Core - Trust Badge Widget
  *
  * A lightweight React component that displays the verification status
  * of an AI agent. Shows a "Verified Shield" with trust score to end-users.
  *
  * Usage:
- *   <TrustBadge agentId="uuid-here" apiUrl="https://api.mtp.dev" />
+ *   <TrustBadge agentId="uuid-here" apiUrl="https://api.inntris.io" />
  */
 
 import React, { useEffect, useState, useCallback } from 'react';
@@ -29,7 +29,7 @@ interface AgentInfo {
 interface TrustBadgeProps {
   /** UUID of the agent to display */
   agentId: string;
-  /** MTP API URL */
+  /** Inntris API URL */
   apiUrl?: string;
   /** Badge size variant */
   size?: 'small' | 'medium' | 'large';
@@ -165,7 +165,7 @@ const LoadingSpinner: React.FC = () => (
 
 export const TrustBadge: React.FC<TrustBadgeProps> = ({
   agentId,
-  apiUrl = 'https://api.mtp.dev',
+  apiUrl = 'https://api.inntris.io',
   size = 'medium',
   showDetails = true,
   className = '',
@@ -265,7 +265,7 @@ export const TrustBadge: React.FC<TrustBadgeProps> = ({
           : error
             ? 'Unverified'
             : agentInfo?.is_verified
-              ? 'MTP Verified'
+              ? 'Inntris Verified'
               : agentInfo?.status === 'pending_verification'
                 ? 'Pending'
                 : 'Not Verified'}

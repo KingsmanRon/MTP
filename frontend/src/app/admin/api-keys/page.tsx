@@ -39,7 +39,7 @@ import {
 const mockApiKeys = [
   {
     id: "key1",
-    key_prefix: "mtp_live",
+    key_prefix: "inntris_live",
     name: "Production API Key",
     scopes: ["read", "write", "verify"],
     is_active: true,
@@ -49,7 +49,7 @@ const mockApiKeys = [
   },
   {
     id: "key2",
-    key_prefix: "mtp_test",
+    key_prefix: "inntris_test",
     name: "Development Key",
     scopes: ["read", "verify"],
     is_active: true,
@@ -59,7 +59,7 @@ const mockApiKeys = [
   },
   {
     id: "key3",
-    key_prefix: "mtp_ci",
+    key_prefix: "inntris_ci",
     name: "CI/CD Key",
     scopes: ["read"],
     is_active: false,
@@ -79,7 +79,7 @@ export default function APIKeysPage() {
 
   const handleCreateKey = () => {
     // Mock key generation
-    setGeneratedKey("mtp_live_sk_" + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15));
+    setGeneratedKey("inntris_live_sk_" + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15));
     setShowCreateDialog(false);
     setShowNewKeyDialog(true);
     setNewKeyName("");
@@ -97,7 +97,7 @@ export default function APIKeysPage() {
         <div>
           <h1 className="text-3xl font-bold">API Keys</h1>
           <p className="text-muted-foreground">
-            Manage API keys for accessing the MTP API
+            Manage API keys for accessing the Inntris API
           </p>
         </div>
         <div className="flex gap-2">
@@ -119,7 +119,7 @@ export default function APIKeysPage() {
           <div>
             <p className="font-medium">Keep your API keys secure</p>
             <p className="text-sm text-muted-foreground">
-              API keys grant access to your MTP organization. Never share them publicly or commit them to version control.
+              API keys grant access to your Inntris organization. Never share them publicly or commit them to version control.
             </p>
           </div>
         </CardContent>
@@ -138,7 +138,7 @@ export default function APIKeysPage() {
             <EmptyState
               icon={Key}
               title="No API keys"
-              description="Create your first API key to start using the MTP API."
+              description="Create your first API key to start using the Inntris API."
               action={
                 <Button onClick={() => setShowCreateDialog(true)}>
                   <Plus className="h-4 w-4 mr-2" />
@@ -215,7 +215,7 @@ export default function APIKeysPage() {
           <DialogHeader>
             <DialogTitle>Create API Key</DialogTitle>
             <DialogDescription>
-              Create a new API key for accessing the MTP API. The key will only be shown once.
+              Create a new API key for accessing the Inntris API. The key will only be shown once.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">

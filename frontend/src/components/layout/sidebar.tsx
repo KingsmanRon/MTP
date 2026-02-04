@@ -65,7 +65,7 @@ export function Sidebar({ variant }: SidebarProps) {
         {!collapsed && (
           <Link href="/" className="flex items-center gap-2">
             <Shield className="h-6 w-6 text-primary" />
-            <span className="font-semibold">MTP</span>
+            <span className="font-semibold">Inntris</span>
           </Link>
         )}
         <button
@@ -108,7 +108,7 @@ export function Sidebar({ variant }: SidebarProps) {
       {/* Footer */}
       <div className="p-4 border-t">
         {!collapsed && (
-          <p className="text-xs text-muted-foreground">Machine Trust Protocol</p>
+          <p className="text-xs text-muted-foreground">Inntris Core</p>
         )}
       </div>
     </aside>

@@ -2,7 +2,7 @@
 
 ## Executive Summary
 
-Inntris (Machine Trust Protocol) is positioned as the **universal trust layer for AI agents**. Our go-to-market strategy focuses on establishing Inntris as the industry standard through strategic partnerships with AI platform providers, followed by enterprise direct sales and financial institution expansion.
+Inntris (Inntris Core) is positioned as the **universal trust layer for AI agents**. Our go-to-market strategy focuses on establishing Inntris as the industry standard through strategic partnerships with AI platform providers, followed by enterprise direct sales and financial institution expansion.
 
 ---
 
@@ -301,7 +301,7 @@ Inntris (Machine Trust Protocol) is positioned as the **universal trust layer fo
 
 > Hi [Name],
 >
-> I'm building Inntris (Machine Trust Protocol), a verification layer for AI agents that provides cryptographic identity, policy enforcement, and forensic audit trails.
+> I'm building Inntris (Inntris Core), a verification layer for AI agents that provides cryptographic identity, policy enforcement, and forensic audit trails.
 >
 > We've built native MCP integration and believe Inntris could become the trust standard for the [Platform] agent ecosystem.
 >

@@ -1,7 +1,7 @@
 # =============================================================================
-# MACHINE TRUST PROTOCOL - PYTHON DEPENDENCIES
+# INNTRIS CORE - PYTHON DEPENDENCIES
 # =============================================================================
-# Production dependencies for all MTP components
+# Production dependencies for all Inntris components
 # Python 3.12+
 # =============================================================================
 

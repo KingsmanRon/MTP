@@ -1,5 +1,5 @@
 """
-Database connection and operations for the MTP Core API.
+Database connection and operations for the Inntris Core API.
 
 Uses asyncpg for high-performance async PostgreSQL operations.
 """
@@ -44,7 +44,7 @@ class OrganizationNotFoundError(DatabaseError):
 
 class Database:
     """
-    Async database interface for MTP operations.
+    Async database interface for Inntris operations.
 
     This class provides all database operations with connection pooling
     and proper error handling for forensic-grade reliability.

@@ -88,7 +88,7 @@ services:
       - inntris-network
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.inntris-api.rule=Host(`api.mtp.local`)"
+      - "traefik.http.routers.inntris-api.rule=Host(`api.inntris.local`)"
       - "traefik.http.services.inntris-api.loadbalancer.server.port=8000"
 
   # ===========================================================================

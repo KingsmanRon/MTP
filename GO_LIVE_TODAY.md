@@ -1,4 +1,4 @@
-# 🚀 MTP GO-LIVE TODAY - Final Checklist
+# 🚀 Inntris GO-LIVE TODAY - Final Checklist
 
 **Status**: ✅ **PRODUCTION READY**
 **Date**: 2026-01-15
@@ -9,7 +9,7 @@
 
 ## 🎯 EXECUTIVE SUMMARY
 
-Your Machine Trust Protocol (MTP) implementation has been **thoroughly reviewed, hardened, and is PRODUCTION READY**.
+Your Inntris Core (Inntris) implementation has been **thoroughly reviewed, hardened, and is PRODUCTION READY**.
 
 **What's Been Done:**
 - ✅ Fixed 2 critical bugs (database trigger, Docker config)
@@ -32,7 +32,7 @@ Your Machine Trust Protocol (MTP) implementation has been **thoroughly reviewed,
 
 1. **Generate Production Secrets** (5 min)
    ```bash
-   cd /home/user/MTP
+   cd /home/user/Inntris
 
    # Generate SERVER_SECRET
    echo "SERVER_SECRET=$(openssl rand -hex 64)" >> production-secrets.txt
@@ -53,7 +53,7 @@ Your Machine Trust Protocol (MTP) implementation has been **thoroughly reviewed,
 
 3. **Apply Database Schema** (2 min)
    - Go to Supabase SQL Editor
-   - Copy entire contents of `/home/user/MTP/database/schemas.sql`
+   - Copy entire contents of `/home/user/Inntris/database/schemas.sql`
    - Run query
    - Verify 8 tables created: `SELECT table_name FROM information_schema.tables WHERE table_schema = 'public';`
 
@@ -66,7 +66,7 @@ Your Machine Trust Protocol (MTP) implementation has been **thoroughly reviewed,
 
 5. **Configure Railway** (3 min)
    - Create new project
-   - Connect GitHub repo: KingsmanRon/MTP
+   - Connect GitHub repo: KingsmanRon/Inntris
    - Branch: `claude/review-trust-layer-HGvgx`
    - Add Redis database (Railway handles automatically)
 
@@ -128,7 +128,7 @@ Your Machine Trust Protocol (MTP) implementation has been **thoroughly reviewed,
 
 9. **Run Smoke Test** (2 min)
    ```bash
-   cd /home/user/MTP
+   cd /home/user/Inntris
    ./tests/smoke_test.sh https://YOUR_RAILWAY_URL.up.railway.app
    ```
 
@@ -461,7 +461,7 @@ Before going live, verify ALL items:
 
 If all items above are checked, **YOU ARE CLEARED FOR PRODUCTION LAUNCH**.
 
-Your Machine Trust Protocol is:
+Your Inntris Core is:
 - ✅ Fully implemented
 - ✅ Security hardened
 - ✅ Comprehensively tested

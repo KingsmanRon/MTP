@@ -27,7 +27,7 @@ export default function CredentialsPage() {
 
   const handleDownloadKeys = () => {
     // In production, this would download the actual key file
-    const keyContent = `# MTP Agent Keys
+    const keyContent = `# Inntris Agent Keys
 # Agent ID: ${mockCredentials.agent_id}
 # Generated: ${mockCredentials.created_at}
 
@@ -41,7 +41,7 @@ ${mockCredentials.public_key_fingerprint}
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = "mtp-agent-keys.txt";
+    a.download = "inntris-agent-keys.txt";
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -206,9 +206,9 @@ message_hash = hashlib.sha256(
 signature = signing_key.sign(message_hash.encode())
 signature_b64 = base64.b64encode(signature.signature).decode()
 
-# Send to MTP API
+# Send to Inntris API
 response = requests.post(
-    "https://api.mtp.dev/verify",
+    "https://api.inntris.io/verify",
     json={
         "agent_id": "${mockCredentials.agent_id}",
         "action_type": "financial_transaction",

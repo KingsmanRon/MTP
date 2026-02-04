@@ -1,5 +1,5 @@
 """
-Cryptographic operations for the MTP Core API.
+Cryptographic operations for the Inntris Core API.
 
 Uses Ed25519 signatures via pynacl for agent authentication.
 SECURITY: This module is critical for the integrity of the entire system.
@@ -398,7 +398,7 @@ class CryptoService:
         """
         Sign a webhook payload with HMAC-SHA256.
 
-        This signature should be sent in the X-MTP-Signature header.
+        This signature should be sent in the X-Inntris-Signature header.
 
         Args:
             payload: JSON-serializable payload to sign.
@@ -428,7 +428,7 @@ class CryptoService:
 
         Args:
             payload: The webhook payload.
-            signature: The signature from X-MTP-Signature header.
+            signature: The signature from X-Inntris-Signature header.
             secret: The webhook secret key.
 
         Returns:

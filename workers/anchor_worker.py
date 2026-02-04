@@ -1,5 +1,5 @@
 """
-Machine Trust Protocol - Blockchain Anchor Worker
+Inntris Core - Blockchain Anchor Worker
 
 The "Forensic Recorder" that anchors audit logs to Base L2.
 
@@ -42,7 +42,7 @@ logger = logging.getLogger(__name__)
 # Database
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
-    "postgresql://postgres:postgres@localhost:5432/mtp"
+    "postgresql://postgres:postgres@localhost:5432/inntris"
 )
 
 # Blockchain

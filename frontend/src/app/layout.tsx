@@ -15,7 +15,7 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "MTP - Machine Trust Protocol",
+  title: "Inntris Core - The Universal Liability Shield",
   description: "The Security Assurance Layer for AI Agents",
   icons: {
     icon: "/favicon.ico",

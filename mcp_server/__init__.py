@@ -1,5 +1,5 @@
 """
-Machine Trust Protocol - MCP Server
+Inntris Core - MCP Server
 
 The Universal Adapter for AI Agent Integration.
 """

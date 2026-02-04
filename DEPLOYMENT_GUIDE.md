@@ -1,8 +1,8 @@
-# 🚀 Machine Trust Protocol - Production Deployment Guide
+# 🚀 Inntris Core - Production Deployment Guide
 
 **CRITICAL: Read this entire guide before deploying to production.**
 
-This guide provides step-by-step instructions for deploying MTP to production using:
+This guide provides step-by-step instructions for deploying Inntris to production using:
 - **Railway** (API + Worker + Redis)
 - **Supabase** (PostgreSQL Database)
 - **Coinbase/Base** (Blockchain Anchoring)
@@ -39,8 +39,8 @@ python3 --version
 **CRITICAL: Generate these BEFORE starting deployment. Store them in a password manager.**
 
 ```bash
-# Navigate to your MTP directory
-cd /home/user/MTP
+# Navigate to your Inntris directory
+cd /home/user/Inntris
 
 # Generate SERVER_SECRET (64-byte hex string for HMAC signing)
 openssl rand -hex 64
@@ -81,7 +81,7 @@ openssl rand -base64 32
 ### 2.3 Apply Database Schema
 1. In Supabase dashboard, go to **SQL Editor**
 2. Click **"New query"**
-3. Copy the ENTIRE contents of `/home/user/MTP/database/schemas.sql`
+3. Copy the ENTIRE contents of `/home/user/Inntris/database/schemas.sql`
 4. Paste into the SQL editor
 5. Click **"Run"** (bottom right)
 6. **Verify**: You should see "Success. No rows returned" and no errors
@@ -159,7 +159,7 @@ cast wallet new
 **METHOD A: Using Foundry (Recommended)**
 ```bash
 # Navigate to contracts directory
-cd /home/user/MTP
+cd /home/user/Inntris
 
 # Install dependencies (if not already done)
 forge install OpenZeppelin/openzeppelin-contracts
@@ -183,7 +183,7 @@ forge create contracts/AnchorRegistry.sol:AnchorRegistry \
 **METHOD B: Using Remix IDE (Alternative)**
 1. Go to https://remix.ethereum.org
 2. Create new file: `AnchorRegistry.sol`
-3. Paste contents from `/home/user/MTP/contracts/AnchorRegistry.sol`
+3. Paste contents from `/home/user/Inntris/contracts/AnchorRegistry.sol`
 4. Compile with Solidity 0.8.20
 5. Deploy:
    - Environment: **Injected Provider - MetaMask**
@@ -214,7 +214,7 @@ cast send YOUR_CONTRACT_ADDRESS \
 ### 4.1 Prepare GitHub Repository
 ```bash
 # Ensure you're on the correct branch
-cd /home/user/MTP
+cd /home/user/Inntris
 git status  # Should show claude/review-trust-layer-HGvgx
 
 # Commit any pending changes
@@ -225,14 +225,14 @@ git commit -m "Production deployment preparation"
 git push -u origin claude/review-trust-layer-HGvgx
 
 # IMPORTANT: Note your GitHub repository URL
-# Format: https://github.com/YOUR_USERNAME/MTP
+# Format: https://github.com/YOUR_USERNAME/Inntris
 ```
 
 ### 4.2 Create Railway Project
 1. Go to https://railway.app/dashboard
 2. Click **"New Project"**
 3. Select **"Deploy from GitHub repo"**
-4. Authenticate GitHub and select your MTP repository
+4. Authenticate GitHub and select your Inntris repository
 5. Select branch: `claude/review-trust-layer-HGvgx`
 
 ### 4.3 Add Redis Service
@@ -243,7 +243,7 @@ git push -u origin claude/review-trust-layer-HGvgx
 
 ### 4.4 Configure Environment Variables
 
-1. Click on your **MTP service** (the one deployed from GitHub)
+1. Click on your **Inntris service** (the one deployed from GitHub)
 2. Go to **"Variables"** tab
 3. Add **ALL** of these variables:
 
@@ -329,7 +329,7 @@ Railway will automatically deploy your API service. Now add the worker:
 2. Check **"Logs"** tab:
    ```
    Expected logs:
-   - "MTP Core API starting"
+   - "Inntris Core API starting"
    - "Database connection pool established"
    - "Redis connection established"
    ```
@@ -363,7 +363,7 @@ curl https://YOUR_RAILWAY_URL.up.railway.app/health
 ### 5.2 Create First Organization
 ```bash
 # Use the test script (see Step 6)
-cd /home/user/MTP/tests
+cd /home/user/Inntris/tests
 ./production_test.sh
 ```
 
@@ -381,7 +381,7 @@ curl -X POST https://YOUR_RAILWAY_URL.up.railway.app/admin/organizations \
 # RESPONSE - SAVE THIS!
 {
   "organization_id": "uuid-here",
-  "api_key": "mtp_live_...",  # SAVE THIS - SHOWN ONLY ONCE!
+  "api_key": "inntris_live_...",  # SAVE THIS - SHOWN ONLY ONCE!
   "message": "Store this API key securely..."
 }
 ```
@@ -436,7 +436,7 @@ curl -X POST https://YOUR_RAILWAY_URL.up.railway.app/admin/agents \
 
 ### 6.1 Run Automated Tests
 ```bash
-cd /home/user/MTP
+cd /home/user/Inntris
 chmod +x tests/production_test.sh
 ./tests/production_test.sh https://YOUR_RAILWAY_URL.up.railway.app YOUR_MASTER_ADMIN_KEY
 ```
@@ -599,7 +599,7 @@ After completing all steps above:
 - ⬜ Tested rate limiting
 - ⬜ Reviewed security settings
 
-**Congratulations! Your Machine Trust Protocol is now live in production! 🎉**
+**Congratulations! Your Inntris Core is now live in production! 🎉**
 
 ---
 

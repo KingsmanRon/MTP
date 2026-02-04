@@ -113,7 +113,7 @@ export default function PublicVerifyPage() {
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
           <Link href="/" className="flex items-center gap-2">
             <Shield className="h-6 w-6 text-primary" />
-            <span className="font-semibold">MTP</span>
+            <span className="font-semibold">Inntris</span>
           </Link>
           <Button variant="ghost" size="sm" onClick={handleCopy}>
             {copied ? <Check className="h-4 w-4 mr-2" /> : <Copy className="h-4 w-4 mr-2" />}
@@ -150,7 +150,7 @@ export default function PublicVerifyPage() {
               </h1>
               <p className="text-muted-foreground">
                 {agent.is_verified
-                  ? "This agent is verified by the Machine Trust Protocol"
+                  ? "This agent is verified by the Inntris Core"
                   : "This agent has not completed verification"}
               </p>
             </div>
@@ -182,7 +182,7 @@ export default function PublicVerifyPage() {
                 {agent.is_verified && (
                   <Badge variant="outline" className="bg-primary/10 text-primary">
                     <Shield className="h-3 w-3 mr-1" />
-                    MTP Verified
+                    Inntris Verified
                   </Badge>
                 )}
               </div>
@@ -250,7 +250,7 @@ export default function PublicVerifyPage() {
             <CardContent>
               <div className="p-3 bg-muted rounded-lg">
                 <code className="text-xs break-all">
-                  {`<script src="https://mtp.dev/badge.js" data-agent="${agent.agent_id}"></script>`}
+                  {`<script src="https://inntris.io/badge.js" data-agent="${agent.agent_id}"></script>`}
                 </code>
               </div>
             </CardContent>
@@ -301,7 +301,7 @@ export default function PublicVerifyPage() {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Shield className="h-5 w-5 text-muted-foreground" />
-              <span className="text-muted-foreground">Machine Trust Protocol</span>
+              <span className="text-muted-foreground">Inntris Core</span>
             </div>
             <p className="text-sm text-muted-foreground">
               Forensic-grade verification for AI agents

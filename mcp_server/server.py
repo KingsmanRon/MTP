@@ -146,7 +146,7 @@ class InntrisClient:
         1. Generates a unique nonce
         2. Computes the action hash
         3. Signs the hash with the agent's private key
-        4. Sends the verification request to MTP Core API
+        4. Sends the verification request to Inntris Core API
 
         Args:
             action_type: Type of action (e.g., 'financial_transaction')
@@ -156,7 +156,7 @@ class InntrisClient:
             Verification response from the API
 
         Raises:
-            MTPVerificationError: If verification fails
+            InntrisVerificationError: If verification fails
         """
         # Generate nonce and timestamp
         nonce = secrets.token_urlsafe(32)

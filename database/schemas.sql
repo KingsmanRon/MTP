@@ -1,5 +1,5 @@
 -- =============================================================================
--- MACHINE TRUST PROTOCOL (MTP) - DATABASE SCHEMA
+-- INNTRIS CORE - DATABASE SCHEMA
 -- =============================================================================
 -- Version: 1.0.0
 -- Database: PostgreSQL 15+ with TimescaleDB extension (optional)
@@ -437,9 +437,9 @@ ALTER TABLE security_alerts ENABLE ROW LEVEL SECURITY;
 -- INSERT INTO organizations (id, name, billing_tier, contact_email, api_key_hash)
 -- VALUES (
 --     '00000000-0000-0000-0000-000000000001',
---     'MTP Test Organization',
+--     'Inntris Test Organization',
 --     'enterprise',
---     'admin@mtp-test.local',
+--     'admin@inntris-test.local',
 --     decode(encode(digest('test-api-key-do-not-use-in-production', 'sha256'), 'hex'), 'hex')
 -- );
 
@@ -447,13 +447,13 @@ ALTER TABLE security_alerts ENABLE ROW LEVEL SECURITY;
 -- GRANTS (Configure based on your role setup)
 -- =============================================================================
 
--- Example grants for a 'mtp_api' role:
--- GRANT SELECT, INSERT ON audit_logs TO mtp_api;
--- GRANT SELECT, INSERT, UPDATE ON agents TO mtp_api;
--- GRANT SELECT ON organizations TO mtp_api;
--- GRANT SELECT, INSERT, UPDATE ON merkle_proofs TO mtp_api;
--- GRANT SELECT, INSERT, UPDATE ON security_alerts TO mtp_api;
--- GRANT SELECT, INSERT, UPDATE, DELETE ON rate_limit_windows TO mtp_api;
+-- Example grants for a 'inntris_api' role:
+-- GRANT SELECT, INSERT ON audit_logs TO inntris_api;
+-- GRANT SELECT, INSERT, UPDATE ON agents TO inntris_api;
+-- GRANT SELECT ON organizations TO inntris_api;
+-- GRANT SELECT, INSERT, UPDATE ON merkle_proofs TO inntris_api;
+-- GRANT SELECT, INSERT, UPDATE ON security_alerts TO inntris_api;
+-- GRANT SELECT, INSERT, UPDATE, DELETE ON rate_limit_windows TO inntris_api;
 
 -- =============================================================================
 -- END OF SCHEMA

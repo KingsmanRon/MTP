@@ -1,5 +1,5 @@
 """
-Policy Engine for the MTP Core API.
+Policy Engine for the Inntris Core API.
 
 Evaluates agent actions against configured rules and limits.
 "Zero Trust" - Every action is verified against all applicable policies.

@@ -1,8 +1,8 @@
-# 🔐 Machine Trust Protocol - Security Checklist
+# 🔐 Inntris Core - Security Checklist
 
 **FOR PRODUCTION DEPLOYMENT - CRITICAL REVIEW REQUIRED**
 
-This checklist ensures your MTP deployment meets security best practices for handling financial transactions and sensitive data.
+This checklist ensures your Inntris deployment meets security best practices for handling financial transactions and sensitive data.
 
 ---
 

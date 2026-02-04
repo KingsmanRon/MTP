@@ -1,5 +1,5 @@
 # =============================================================================
-# MACHINE TRUST PROTOCOL - PRODUCTION DOCKERFILE
+# INNTRIS CORE - PRODUCTION DOCKERFILE
 # =============================================================================
 # Multi-stage build for minimal production image
 # Targets: Core API, MCP Server, Anchor Worker
@@ -51,7 +51,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq5 \
     curl \
     && rm -rf /var/lib/apt/lists/* \
-    && groupadd -r mtp && useradd -r -g mtp mtp
+    && groupadd -r inntris && useradd -r -g inntris inntris
 
 # Copy virtual environment from builder
 COPY --from=builder /opt/venv /opt/venv
@@ -60,9 +60,9 @@ COPY --from=builder /opt/venv /opt/venv
 WORKDIR /app
 
 # Copy application code
-COPY --chown=mtp:mtp api/ ./api/
-COPY --chown=mtp:mtp mcp_server/ ./mcp_server/
-COPY --chown=mtp:mtp workers/ ./workers/
+COPY --chown=inntris:inntris api/ ./api/
+COPY --chown=inntris:inntris mcp_server/ ./mcp_server/
+COPY --chown=inntris:inntris workers/ ./workers/
 
 # -----------------------------------------------------------------------------
 # Stage 3: Core API Service
@@ -77,7 +77,7 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
 
 # Switch to non-root user
-USER mtp
+USER inntris
 
 # Run the API
 CMD ["python", "-m", "uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]
@@ -88,7 +88,7 @@ CMD ["python", "-m", "uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "
 FROM production-base as mcp-server
 
 # MCP Server runs via stdio, no port needed
-USER mtp
+USER inntris
 
 # Run the MCP server
 CMD ["python", "-m", "mcp_server.server"]
@@ -99,7 +99,7 @@ CMD ["python", "-m", "mcp_server.server"]
 FROM production-base as anchor-worker
 
 # No port needed for background worker
-USER mtp
+USER inntris
 
 # Run the anchor worker
 CMD ["python", "-m", "workers.anchor_worker"]

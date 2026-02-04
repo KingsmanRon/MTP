@@ -9,7 +9,7 @@ export default function HomePage() {
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Shield className="h-8 w-8 text-primary" />
-            <span className="text-xl font-bold">MTP</span>
+            <span className="text-xl font-bold">Inntris</span>
           </div>
           <nav className="flex items-center gap-6">
             <Link href="/admin" className="text-muted-foreground hover:text-foreground transition">
@@ -35,7 +35,7 @@ export default function HomePage() {
       <main className="container mx-auto px-4 py-20">
         <div className="max-w-4xl mx-auto text-center">
           <h1 className="text-5xl font-bold tracking-tight mb-6">
-            Machine Trust Protocol
+            Inntris Core
           </h1>
           <p className="text-xl text-muted-foreground mb-8">
             The Security Assurance Layer for AI Agents. Cryptographic verification,
@@ -100,7 +100,7 @@ export default function HomePage() {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Shield className="h-5 w-5 text-muted-foreground" />
-              <span className="text-muted-foreground">Machine Trust Protocol</span>
+              <span className="text-muted-foreground">Inntris Core</span>
             </div>
             <p className="text-sm text-muted-foreground">
               Forensic-grade verification for the agentic era

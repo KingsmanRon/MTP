@@ -1,8 +1,8 @@
-# MTP Scaling & Architecture Recommendations
+# Inntris Scaling & Architecture Recommendations
 
 **For Phase 2 Improvements (After Initial Production Launch)**
 
-This document addresses architectural considerations for scaling MTP beyond 10,000 transactions/hour and 100+ organizations.
+This document addresses architectural considerations for scaling Inntris beyond 10,000 transactions/hour and 100+ organizations.
 
 ---
 
@@ -378,8 +378,8 @@ class WebhookWorker:
                         org.webhook_url,
                         json=payload,
                         headers={
-                            "X-MTP-Signature": signature,
-                            "X-MTP-Event": "security_alert",
+                            "X-Inntris-Signature": signature,
+                            "X-Inntris-Event": "security_alert",
                         },
                         timeout=10,
                     )

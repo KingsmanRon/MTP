@@ -100,7 +100,7 @@ export default function AdminDashboard() {
       <div>
         <h1 className="text-3xl font-bold">Dashboard</h1>
         <p className="text-muted-foreground">
-          Overview of your MTP deployment and agent activity
+          Overview of your Inntris deployment and agent activity
         </p>
       </div>
 

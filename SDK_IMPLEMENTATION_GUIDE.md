@@ -1,8 +1,8 @@
-# MTP SDK Implementation Guide (Cross-Language)
+# Inntris SDK Implementation Guide (Cross-Language)
 
-**CRITICAL: For Building MTP Clients in Node.js, Go, Rust, Java, etc.**
+**CRITICAL: For Building Inntris Clients in Node.js, Go, Rust, Java, etc.**
 
-This document specifies the EXACT requirements for implementing MTP signature verification in languages other than Python. Even small deviations will cause signature verification failures.
+This document specifies the EXACT requirements for implementing Inntris signature verification in languages other than Python. Even small deviations will cause signature verification failures.
 
 ---
 
@@ -486,4 +486,4 @@ Check server logs for:
 
 **Last Updated**: 2026-01-15
 **Version**: 1.0.0
-**Maintained By**: MTP Core Team
+**Maintained By**: Inntris Core Team

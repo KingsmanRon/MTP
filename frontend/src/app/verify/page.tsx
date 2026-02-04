@@ -25,7 +25,7 @@ export default function VerifyLandingPage() {
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
           <Link href="/" className="flex items-center gap-2">
             <Shield className="h-6 w-6 text-primary" />
-            <span className="font-semibold">MTP</span>
+            <span className="font-semibold">Inntris</span>
           </Link>
           <nav className="flex items-center gap-4">
             <Link href="/admin" className="text-sm text-muted-foreground hover:text-foreground">
@@ -49,7 +49,7 @@ export default function VerifyLandingPage() {
             </div>
             <h1 className="text-4xl font-bold mb-4">Verify an AI Agent</h1>
             <p className="text-xl text-muted-foreground">
-              Check the trust status and verification history of any MTP-registered agent
+              Check the trust status and verification history of any Inntris-registered agent
             </p>
           </div>
 
@@ -166,7 +166,7 @@ export default function VerifyLandingPage() {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Shield className="h-5 w-5 text-muted-foreground" />
-              <span className="text-muted-foreground">Machine Trust Protocol</span>
+              <span className="text-muted-foreground">Inntris Core</span>
             </div>
             <p className="text-sm text-muted-foreground">
               Forensic-grade verification for AI agents

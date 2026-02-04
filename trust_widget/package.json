@@ -1,7 +1,7 @@
 {
-  "name": "@mtp/trust-badge",
+  "name": "@inntris/trust-badge",
   "version": "1.0.0",
-  "description": "Trust Badge widget for Machine Trust Protocol verified agents",
+  "description": "Trust Badge widget for Inntris Core verified agents",
   "main": "dist/index.js",
   "module": "dist/index.esm.js",
   "types": "dist/index.d.ts",
@@ -28,7 +28,7 @@
     "typescript": "^5.3.0"
   },
   "keywords": [
-    "mtp",
+    "inntris",
     "machine-trust-protocol",
     "ai",
     "verification",
@@ -39,6 +39,6 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/your-org/mtp"
+    "url": "https://github.com/your-org/inntris"
   }
 }

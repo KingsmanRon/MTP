@@ -1,7 +1,7 @@
 #!/bin/bash
 
 ##############################################################################
-# Machine Trust Protocol - Smoke Test (Quick Health Check)
+# Inntris Core - Smoke Test (Quick Health Check)
 #
 # This is a fast, non-destructive health check for production deployments.
 # Run this after every deployment to ensure basic functionality.
@@ -31,7 +31,7 @@ fi
 API_URL=${1%/}
 
 echo -e "${BLUE}═══════════════════════════════════════${NC}"
-echo -e "${BLUE}  MTP Smoke Test${NC}"
+echo -e "${BLUE}  Inntris Smoke Test${NC}"
 echo -e "${BLUE}═══════════════════════════════════════${NC}"
 echo ""
 

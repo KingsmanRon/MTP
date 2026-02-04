@@ -41,7 +41,7 @@ This guide covers deploying Inntris for a live demonstration using:
 1. Go to [supabase.com](https://supabase.com) and sign in
 2. Click **New Project**
 3. Configure:
-   - **Name:** `mtp-production`
+   - **Name:** `inntris-production`
    - **Database Password:** Generate a strong password (save this!)
    - **Region:** Choose closest to your users
 4. Click **Create new project**
@@ -139,7 +139,7 @@ python -c "import secrets; print(secrets.token_hex(64))"
 python -c "import secrets; print(secrets.token_hex(32))"
 
 # Generate test API key (for demo)
-python -c "import secrets; print(f'mtp_{secrets.token_urlsafe(32)}')"
+python -c "import secrets; print(f'inntris_{secrets.token_urlsafe(32)}')"
 ```
 
 Save these values:

@@ -131,7 +131,7 @@ export default function PlaygroundPage() {
       mockResult = {
         verdict: "approved",
         verdict_reason: "All verification checks passed",
-        approval_token: "mtp_" + crypto.randomUUID().replace(/-/g, ""),
+        approval_token: "inntris_" + crypto.randomUUID().replace(/-/g, ""),
         trust_score: 85,
         audit_id: crypto.randomUUID(),
         timestamp: new Date().toISOString(),
@@ -158,7 +158,7 @@ export default function PlaygroundPage() {
       <div>
         <h1 className="text-3xl font-bold">Verification Playground</h1>
         <p className="text-muted-foreground">
-          Test verification requests and see how MTP evaluates your actions
+          Test verification requests and see how Inntris evaluates your actions
         </p>
       </div>
 
