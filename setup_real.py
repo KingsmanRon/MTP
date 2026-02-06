@@ -14,12 +14,11 @@ def setup():
     print(f"🚀 Connecting to Brain at: {API_URL}")
 
     # ---------------------------------------------------------
-    # STEP 1: CREATE ORGANIZATION (The Fix)
+    # STEP 1: CREATE ORGANIZATION
     # ---------------------------------------------------------
     print("\n[1] Creating Organization...")
     
-    # FIX: We removed "billing_tier" entirely. 
-    # The API will default to 'free', bypassing the strict validation error.
+    # We remove "billing_tier" to let backend use default (bypassing enum error)
     org_payload = {
         "name": "Global Bank Corp",
         "contact_email": "demo@bank.com",
@@ -54,18 +53,18 @@ def setup():
         print("✅ Keys Generated")
 
         # ---------------------------------------------------------
-        # STEP 3: REGISTER AGENT
+        # STEP 3: REGISTER AGENT (The Fix)
         # ---------------------------------------------------------
         print("\n[3] Registering Agent...")
         agent_res = requests.post(
             f"{API_URL}/admin/agents",
             headers={"X-API-Key": api_key},
             json={
-                "org_id": org_id,
+                "org_id": str(org_id), # Ensure this is a string
                 "name": "Transfer Agent 007",
                 "public_key": public_key_b64,
-                "daily_limit_usd": 10000.0,
-                "per_action_limit_usd": 5000.0,
+                "daily_limit_usd": "10000.00",      # FIX: Send as String for Decimal Strict Mode
+                "per_action_limit_usd": "5000.00",  # FIX: Send as String for Decimal Strict Mode
                 "allowed_actions": ["transfer_funds", "financial_transaction"],
                 "metadata": {"department": "treasury"}
             }
