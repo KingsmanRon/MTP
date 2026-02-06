@@ -53,7 +53,8 @@ class VerifyActionRequest(BaseModel):
     The agent sends this payload with its cryptographic signature.
     CRITICAL: The signature MUST cover the entire payload hash.
     """
-    model_config = ConfigDict(strict=True)
+    # UPDATED: strict=False allows JSON strings to be parsed into Types (UUID, Decimal)
+    model_config = ConfigDict(strict=False)
 
     agent_id: UUID = Field(..., description="Unique identifier of the requesting agent")
     action_type: str = Field(
@@ -106,7 +107,8 @@ class VerifyActionRequest(BaseModel):
 
 class RegisterAgentRequest(BaseModel):
     """Request to register a new agent with the platform."""
-    model_config = ConfigDict(strict=True)
+    # UPDATED: strict=False allows JSON strings to be parsed into Types (UUID, Decimal)
+    model_config = ConfigDict(strict=False)
 
     org_id: UUID = Field(..., description="Organization ID")
     name: str = Field(..., min_length=1, max_length=255, description="Agent display name")
@@ -137,7 +139,8 @@ class RegisterAgentRequest(BaseModel):
 
 class CreateOrganizationRequest(BaseModel):
     """Request to create a new organization."""
-    model_config = ConfigDict(strict=True)
+    # UPDATED: strict=False allows JSON strings to be parsed into Types (UUID, Decimal)
+    model_config = ConfigDict(strict=False)
 
     name: str = Field(..., min_length=1, max_length=255, description="Organization name")
     contact_email: str = Field(..., description="Primary contact email")
