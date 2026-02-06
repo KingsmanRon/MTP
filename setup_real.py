@@ -7,17 +7,17 @@ from nacl.signing import SigningKey
 # CONFIGURATION
 # ==========================================
 API_URL = "https://inntris-api.up.railway.app"
-MASTER_KEY = "xUtQP7w0$zX,738(cap%avv,PA"
+MASTER_KEY = "xUtQP7w0$zX,738(cap%avv,PA"  # <--- Updated Key
 
 def setup():
     print(f"🚀 Connecting to Brain at: {API_URL}")
 
     # 1. Create Organization
     print("\n[1] Creating Organization...")
-    # Using 'enterprise' as it is a standard tier in your system
+    # Changed tier to 'free' to pass validation
     org_payload = {
         "name": "Global Bank Corp",
-        "billing_tier": "enterprise", 
+        "billing_tier": "free", 
         "contact_email": "demo@bank.com",
         "webhook_url": "https://bank.com/webhook"
     }
@@ -31,7 +31,6 @@ def setup():
         
         if org_res.status_code != 201:
             print(f"❌ Failed to create org: {org_res.status_code} - {org_res.text}")
-            print("💡 Hint: Check if MASTER_ADMIN_KEY matches your Railway Variable exactly.")
             return
 
         org_data = org_res.json()
@@ -43,11 +42,8 @@ def setup():
         print("\n[2] Generating Cryptographic Identity...")
         signing_key = SigningKey.generate()
         
-        # CRITICAL FIX: Export raw 32-byte seed for TweetNaCl compatibility
-        # This allows the JS side to do: nacl.sign.keyPair.fromSeed(decodeBase64(PRIVATE_KEY))
+        # EXPORT RAW SEED (32 bytes) for JS Compatibility
         private_key_seed_b64 = base64.b64encode(bytes(signing_key)).decode('utf-8')
-        
-        # Public key is derived normally for the server
         public_key_b64 = base64.b64encode(bytes(signing_key.verify_key)).decode('utf-8')
         print("✅ Keys Generated")
 
@@ -62,7 +58,7 @@ def setup():
                 "public_key": public_key_b64,
                 "daily_limit_usd": 10000.0,
                 "per_action_limit_usd": 5000.0,
-                "allowed_actions": ["transfer_funds", "financial_transaction"],
+                "allowed_actions": ["transfer_funds"],
                 "metadata": {"department": "treasury"}
             }
         )
@@ -83,7 +79,6 @@ def setup():
 
     except Exception as e:
         print(f"❌ Connection Error: {str(e)}")
-        print("💡 Is the API running? Check Railway logs.")
 
 if __name__ == "__main__":
     setup()
