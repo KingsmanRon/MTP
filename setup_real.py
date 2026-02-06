@@ -7,7 +7,7 @@ from nacl.signing import SigningKey
 # CONFIGURATION
 # ==========================================
 API_URL = "https://inntris-api.up.railway.app"
-MASTER_KEY = "xUtQ\P7w0$zX\,738(c:a\p%avv,PA"
+MASTER_KEY = "xUtQP7w0$zX,738(cap%avv,PA"
 
 def setup():
     print(f"🚀 Connecting to Brain at: {API_URL}")
