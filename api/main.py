@@ -132,11 +132,19 @@ app = FastAPI(
 )
 
 # CORS configuration
+origins = ["*"] if ENVIRONMENT == "development" else [
+    origin.strip() for origin in os.getenv("ALLOWED_ORIGINS", "").split(",") if origin.strip()
+]
+
+# If wildcard is explicitly set in production, handle it
+if ENVIRONMENT != "development" and os.getenv("ALLOWED_ORIGINS", "").strip() == "*":
+    origins = ["*"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"] if ENVIRONMENT == "development" else os.getenv("ALLOWED_ORIGINS", "").split(","),
-    allow_credentials=True,
-    allow_methods=["GET", "POST"],
+    allow_origins=origins,
+    allow_credentials=False if origins == ["*"] else True,  # Can't use credentials with wildcard
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 
