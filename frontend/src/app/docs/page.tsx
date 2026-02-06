@@ -64,17 +64,17 @@ export default function DocsPage() {
             for AI agents — ensuring accountability for every autonomous action.
           </p>
           <div className="flex flex-wrap justify-center gap-4">
-            <Button size="lg" asChild>
-              <Link href="#getting-started">
+            <Link href="#getting-started">
+              <Button size="lg">
                 Get Started
                 <ArrowRight className="ml-2 h-4 w-4" />
-              </Link>
-            </Button>
-            <Button size="lg" variant="outline" asChild>
-              <Link href="/admin">
+              </Button>
+            </Link>
+            <Link href="/admin">
+              <Button size="lg" variant="outline">
                 View Dashboard
-              </Link>
-            </Button>
+              </Button>
+            </Link>
           </div>
         </div>
       </section>
