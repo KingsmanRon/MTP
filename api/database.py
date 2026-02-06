@@ -176,7 +176,7 @@ class Database:
             last_action_at=row["last_action_at"],
             total_actions_count=row["total_actions_count"],
             total_blocked_count=row["total_blocked_count"],
-            metadata=dict(row["metadata"]) if row["metadata"] else {},
+            metadata=row["metadata"] if row["metadata"] else {},
             created_at=row["created_at"],
             updated_at=row["updated_at"],
         )
@@ -297,7 +297,7 @@ class Database:
             webhook_url=row["webhook_url"],
             daily_limit_usd=row["daily_limit_usd"],
             monthly_limit_usd=row["monthly_limit_usd"],
-            metadata=dict(row["metadata"]) if row["metadata"] else {},
+            metadata=row["metadata"] if row["metadata"] else {},
             created_at=row["created_at"],
             updated_at=row["updated_at"],
         )
