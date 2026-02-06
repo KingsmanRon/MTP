@@ -318,16 +318,17 @@ export default function VerifyPage() {
               </div>
 
               {/* View on Explorer */}
-              <Button variant="outline" className="w-full" asChild>
-                <a
-                  href={`https://basescan.org/tx/${verificationResult.merkle.tx_hash}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
+              <a
+                href={`https://basescan.org/tx/${verificationResult.merkle.tx_hash}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-full"
+              >
+                <Button variant="outline" className="w-full">
                   <ExternalLink className="h-4 w-4 mr-2" />
-                  View on BaseScan
-                </a>
-              </Button>
+                  View on Explorer
+                </Button>
+              </a>
             </CardContent>
           )}
         </Card>
