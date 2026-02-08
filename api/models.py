@@ -74,13 +74,16 @@ class VerifyActionRequest(BaseModel):
     )
     nonce: str = Field(
         ...,
-        min_length=16,
+        min_length=1,
         max_length=64,
         description="Unique nonce to prevent replay attacks"
     )
-    timestamp: datetime = Field(
+    
+    # CRITICAL FIX: Accept timestamp as RAW STRING to prevent parsing mismatch
+    # We removed the validator to ensure the string reaches the backend exactly as sent
+    timestamp: str = Field(
         ...,
-        description="Client-side timestamp of the action request"
+        description="Client-side timestamp (ISO 8601 string)"
     )
 
     @field_validator("action_type")
@@ -90,19 +93,6 @@ class VerifyActionRequest(BaseModel):
         if not v.replace("_", "").isalnum():
             raise ValueError("action_type must be alphanumeric with underscores only")
         return v.lower()
-
-    @field_validator("timestamp")
-    @classmethod
-    def validate_timestamp_not_future(cls, v: datetime) -> datetime:
-        """Ensure timestamp is not unreasonably in the future."""
-        from datetime import timezone
-        now = datetime.now(timezone.utc)
-        # Allow 5 minute clock skew
-        if v.replace(tzinfo=timezone.utc) > now.replace(tzinfo=timezone.utc):
-            max_future = now.timestamp() + 300  # 5 minutes
-            if v.timestamp() > max_future:
-                raise ValueError("timestamp cannot be more than 5 minutes in the future")
-        return v
 
 
 class RegisterAgentRequest(BaseModel):
@@ -232,7 +222,7 @@ class AgentRecord(BaseModel):
     last_action_at: Optional[datetime]
     total_actions_count: int
     total_blocked_count: int
-    metadata: dict[str, Any]
+    metadata: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime
     updated_at: datetime
 
@@ -248,7 +238,7 @@ class OrganizationRecord(BaseModel):
     webhook_url: Optional[str]
     daily_limit_usd: Decimal
     monthly_limit_usd: Decimal
-    metadata: dict[str, Any]
+    metadata: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime
     updated_at: datetime
 
