@@ -113,7 +113,7 @@ class CryptoService:
             "action_type": action_type,
             "payload_hash": CryptoService.compute_payload_hash(payload),
             "nonce": nonce,
-            "timestamp": timestamp.isoformat(),
+            ""timestamp": timestamp if isinstance(timestamp, str) else timestamp.isoformat(),
         }
         return CryptoService.compute_payload_hash(signing_data)
 
