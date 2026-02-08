@@ -137,7 +137,7 @@ class Database:
             last_action_at=row["last_action_at"],
             total_actions_count=row["total_actions_count"],
             total_blocked_count=row["total_blocked_count"],
-            metadata=row["metadata"] if row["metadata"] else {},
+            metadata=json.loads(row["metadata"]) if isinstance(row["metadata"], str) else (row["metadata"] or {}),
             created_at=row["created_at"],
             updated_at=row["updated_at"],
         )
@@ -176,7 +176,7 @@ class Database:
             last_action_at=row["last_action_at"],
             total_actions_count=row["total_actions_count"],
             total_blocked_count=row["total_blocked_count"],
-            metadata=row["metadata"] if row["metadata"] else {},
+            metadata=json.loads(row["metadata"]) if isinstance(row["metadata"], str) else (row["metadata"] or {}),
             created_at=row["created_at"],
             updated_at=row["updated_at"],
         )
