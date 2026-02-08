@@ -353,12 +353,14 @@ async def verify_action(
         # =================================================================
         # STEP 2: Verify Ed25519 Signature (CRITICAL)
         # =================================================================
+       ts_string = request_data.timestamp.isoformat().replace("+00:00", "Z")
+
         action_hash = CryptoService.compute_action_hash(
             agent_id=str(request_data.agent_id),
             action_type=request_data.action_type,
             payload=request_data.payload,
             nonce=request_data.nonce,
-            timestamp=request_data.timestamp,
+            timestamp=ts_string, # <--- Passing String, not datetime object
         )
 
         try:
@@ -396,6 +398,7 @@ async def verify_action(
                 response_time_ms=int((time.time() - start_time) * 1000),
                 trust_score_at_time=agent.trust_score,
                 chain_previous_hash=await database.get_last_audit_hash(agent.id),
+                metadata={}, # Explicitly empty metadata to be safe
             )
             audit_id = await database.insert_audit_log(audit_entry)
 
@@ -415,7 +418,6 @@ async def verify_action(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail=verdict_reason,
             )
-
         # =================================================================
         # STEP 3: Check Nonce (Replay Attack Prevention)
         # =================================================================
