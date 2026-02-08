@@ -353,7 +353,7 @@ async def verify_action(
         # =================================================================
         # STEP 2: Verify Ed25519 Signature (CRITICAL)
         # =================================================================
-       ts_string = request_data.timestamp.isoformat().replace("+00:00", "Z")
+        ts_string = request_data.timestamp.isoformat().replace("+00:00", "Z")
 
         action_hash = CryptoService.compute_action_hash(
             agent_id=str(request_data.agent_id),
