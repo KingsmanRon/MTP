@@ -137,7 +137,7 @@ class Database:
             last_action_at=row["last_action_at"],
             total_actions_count=row["total_actions_count"],
             total_blocked_count=row["total_blocked_count"],
-            mmetadata=row["metadata"] if row["metadata"] else {},
+            metadata=row["metadata"] if row["metadata"] else {},
             created_at=row["created_at"],
             updated_at=row["updated_at"],
         )
