@@ -3,10 +3,9 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
 import {
   ArrowLeft,
   CheckCircle2,
@@ -124,16 +123,17 @@ export default function VerificationPage() {
         </div>
         <div className="flex gap-2">
           {isAnchored && (
-            <Button variant="outline" asChild>
-              <a 
-                href={`${BLOCK_EXPLORER_URL}/tx/${proof.tx_hash}`} 
-                target="_blank" 
-                rel="noopener noreferrer"
-              >
+            /* FIXED: Wrap Button in anchor tag instead of using asChild */
+            <a 
+              href={`${BLOCK_EXPLORER_URL}/tx/${proof.tx_hash}`} 
+              target="_blank" 
+              rel="noopener noreferrer"
+            >
+              <Button variant="outline">
                 <Blocks className="mr-2 h-4 w-4" />
                 View on BaseScan
-              </a>
-            </Button>
+              </Button>
+            </a>
           )}
         </div>
       </div>
