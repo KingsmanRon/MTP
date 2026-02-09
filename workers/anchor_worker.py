@@ -585,5 +585,57 @@ class AnchorWorker:
             )
 
 
+# =============================================================================
+# MAIN ENTRY POINT
+# =============================================================================
+
+async def main():
+    """Main entry point for the anchor worker."""
+    # Validate configuration
+    if not ANCHOR_CONTRACT_ADDRESS:
+        logger.error("ANCHOR_CONTRACT_ADDRESS environment variable is required")
+        sys.exit(1)
+
+    if not BLOCKCHAIN_PRIVATE_KEY:
+        logger.error("BLOCKCHAIN_PRIVATE_KEY environment variable is required")
+        sys.exit(1)
+
+    # Initialize services
+    logger.info("Initializing anchor worker...")
+
+    db_service = await DatabaseService.create(DATABASE_URL)
+    logger.info("Database connection established")
+
+    blockchain_service = BlockchainService(
+        rpc_url=BLOCKCHAIN_PROVIDER_URL,
+        contract_address=ANCHOR_CONTRACT_ADDRESS,
+        private_key=BLOCKCHAIN_PRIVATE_KEY,
+    )
+
+    if not blockchain_service.is_connected():
+        logger.error("Failed to connect to blockchain")
+        sys.exit(1)
+
+    balance = blockchain_service.get_balance()
+    logger.info(f"Blockchain connected. Balance: {balance} ETH")
+
+    # Create worker
+    worker = AnchorWorker(db_service, blockchain_service)
+
+    # Handle shutdown signals
+    def signal_handler(sig, frame):
+        logger.info(f"Received signal {sig}, initiating shutdown...")
+        asyncio.create_task(worker.stop())
+
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
+
+    try:
+        await worker.start()
+    finally:
+        await db_service.close()
+        logger.info("Anchor worker shutdown complete")
+
+
 if __name__ == "__main__":
     asyncio.run(main())
