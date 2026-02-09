@@ -1,9 +1,3 @@
-/**
- * MTP API Client
- *
- * Type-safe API client for the MTP Core Enforcer API.
- */
-
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 // =============================================================================
@@ -75,8 +69,11 @@ export interface AuditLog {
   request_user_agent: string | null;
   response_time_ms: number | null;
   trust_score_at_time: number;
+  // Blockchain Anchoring Fields
   merkle_root_id: string | null;
   merkle_leaf_index: number | null;
+  transaction_hash?: string | null; // Added for UI linking
+  chain_id?: number | null;         // Added for explorer linking
 }
 
 export interface MerkleProof {
