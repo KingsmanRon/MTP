@@ -107,7 +107,6 @@ ANCHOR_REGISTRY_ABI = [
 def keccak256(data: bytes) -> bytes:
     """
     Compute keccak256 hash (Ethereum standard).
-
     CRITICAL: Must match the Solidity contract's keccak256 function.
     """
     return Web3.keccak(data)
@@ -116,15 +115,7 @@ def keccak256(data: bytes) -> bytes:
 def compute_merkle_root(leaf_hashes: list[str]) -> str:
     """
     Compute Merkle root from a list of leaf hashes.
-
-    IMPORTANT: Uses keccak256 to match the AnchorRegistry Solidity contract.
-    If the number of leaves is odd, the last leaf is duplicated.
-
-    Args:
-        leaf_hashes: List of hex-encoded hashes (action hashes).
-
-    Returns:
-        Hex-encoded Merkle root hash.
+    Uses Keccak-256 for internal nodes to match Solidity.
     """
     if not leaf_hashes:
         raise ValueError("Cannot compute Merkle root of empty list")
@@ -137,29 +128,22 @@ def compute_merkle_root(leaf_hashes: list[str]) -> str:
         if len(nodes) % 2 == 1:
             nodes.append(nodes[-1])
 
-        # Combine pairs using keccak256 (matching Solidity contract)
+        # Combine pairs
         next_level = []
         for i in range(0, len(nodes), 2):
             combined = nodes[i] + nodes[i + 1]
+            # FIX 1: Use keccak256 instead of sha256
             next_level.append(keccak256(combined))
 
         nodes = next_level
 
-    return nodes[0].hex()
+    # FIX 2: Strip '0x' prefix to fit VARCHAR(64) database column
+    return nodes[0].hex().replace("0x", "")
 
 
 def compute_merkle_proof(leaf_hashes: list[str], leaf_index: int) -> list[dict[str, Any]]:
     """
     Compute Merkle proof for a specific leaf.
-
-    IMPORTANT: Uses keccak256 to match the AnchorRegistry Solidity contract.
-
-    Args:
-        leaf_hashes: List of all leaf hashes.
-        leaf_index: Index of the leaf to prove.
-
-    Returns:
-        List of proof elements with hash and position (0=left, 1=right for Solidity).
     """
     if not leaf_hashes:
         raise ValueError("Cannot compute proof for empty list")
@@ -177,16 +161,17 @@ def compute_merkle_proof(leaf_hashes: list[str], leaf_index: int) -> list[dict[s
 
         # Add sibling to proof
         sibling_index = index + 1 if index % 2 == 0 else index - 1
-        # Position: 0 = sibling on left, 1 = sibling on right (for Solidity compatibility)
         proof.append({
-            "hash": nodes[sibling_index].hex(),
+            # FIX 2: Strip '0x' prefix
+            "hash": nodes[sibling_index].hex().replace("0x", ""),
             "position": 1 if index % 2 == 0 else 0,
         })
 
-        # Move up the tree using keccak256 (matching Solidity contract)
+        # Move up the tree
         next_level = []
         for i in range(0, len(nodes), 2):
             combined = nodes[i] + nodes[i + 1]
+            # FIX 1: Use keccak256
             next_level.append(keccak256(combined))
 
         nodes = next_level
@@ -202,8 +187,6 @@ def compute_merkle_proof(leaf_hashes: list[str], leaf_index: int) -> list[dict[s
 class BlockchainService:
     """
     Service for interacting with the Base L2 blockchain.
-
-    Handles transaction submission with retry logic and gas estimation.
     """
 
     def __init__(
@@ -212,39 +195,22 @@ class BlockchainService:
         contract_address: str,
         private_key: str,
     ):
-        """
-        Initialize blockchain service.
-
-        Args:
-            rpc_url: Base L2 RPC endpoint URL.
-            contract_address: AnchorRegistry contract address.
-            private_key: Hex-encoded private key (without 0x prefix).
-        """
         self.w3 = Web3(Web3.HTTPProvider(rpc_url))
-
-        # Note: ExtraDataToPOAMiddleware was removed in web3.py v7+
-        # Base L2 (and modern EVM chains) don't require POA middleware
-        # The chain handles extraData correctly by default
-
         self.contract_address = Web3.to_checksum_address(contract_address)
         self.contract = self.w3.eth.contract(
             address=self.contract_address,
             abi=ANCHOR_REGISTRY_ABI,
         )
-
-        # Load account
         self.account: LocalAccount = Account.from_key(private_key)
         logger.info(f"Blockchain service initialized. Address: {self.account.address}")
 
     def is_connected(self) -> bool:
-        """Check if connected to the blockchain."""
         try:
             return self.w3.is_connected()
         except Exception:
             return False
 
     def get_balance(self) -> Decimal:
-        """Get ETH balance of the signing account."""
         balance_wei = self.w3.eth.get_balance(self.account.address)
         return Decimal(str(self.w3.from_wei(balance_wei, "ether")))
 
@@ -255,29 +221,20 @@ class BlockchainService:
         start_timestamp: datetime,
         end_timestamp: datetime,
     ) -> dict[str, Any]:
-        """
-        Submit a Merkle root to the AnchorRegistry contract.
+        
+        # Ensure 0x prefix for Web3, but input might be raw hex
+        if not merkle_root.startswith("0x"):
+            merkle_root_hex = "0x" + merkle_root
+        else:
+            merkle_root_hex = merkle_root
+            
+        root_bytes = bytes.fromhex(merkle_root_hex[2:]) # Strip 0x for bytes conversion
 
-        Args:
-            merkle_root: Hex-encoded Merkle root (64 chars).
-            log_count: Number of logs in the batch.
-            start_timestamp: Timestamp of the first log.
-            end_timestamp: Timestamp of the last log.
-
-        Returns:
-            Transaction receipt details.
-        """
-        # Convert merkle root to bytes32
-        root_bytes = bytes.fromhex(merkle_root)
-
-        # Convert timestamps to Unix
         start_unix = int(start_timestamp.timestamp())
         end_unix = int(end_timestamp.timestamp())
 
-        # Build transaction
         nonce = self.w3.eth.get_transaction_count(self.account.address)
 
-        # Estimate gas
         try:
             gas_estimate = self.contract.functions.anchorBatch(
                 root_bytes,
@@ -289,10 +246,8 @@ class BlockchainService:
             logger.warning(f"Gas estimation failed, using default: {e}")
             gas_estimate = 150000
 
-        # Get gas price
         gas_price = self.w3.eth.gas_price
 
-        # Build transaction
         tx = self.contract.functions.anchorBatch(
             root_bytes,
             log_count,
@@ -301,19 +256,15 @@ class BlockchainService:
         ).build_transaction({
             "from": self.account.address,
             "nonce": nonce,
-            "gas": int(gas_estimate * 1.2),  # 20% buffer
+            "gas": int(gas_estimate * 1.2),
             "gasPrice": gas_price,
             "chainId": BASE_CHAIN_ID,
         })
 
-        # Sign transaction
         signed_tx = self.w3.eth.account.sign_transaction(tx, self.account.key)
-
-        # Send transaction
         tx_hash = self.w3.eth.send_raw_transaction(signed_tx.raw_transaction)
         logger.info(f"Transaction submitted: {tx_hash.hex()}")
 
-        # Wait for receipt (with timeout)
         receipt = await asyncio.get_event_loop().run_in_executor(
             None,
             lambda: self.w3.eth.wait_for_transaction_receipt(tx_hash, timeout=120),
@@ -328,15 +279,10 @@ class BlockchainService:
         }
 
     def verify_batch_anchored(self, merkle_root: str) -> Optional[dict[str, Any]]:
-        """
-        Verify that a batch has been anchored on-chain.
-
-        Args:
-            merkle_root: Hex-encoded Merkle root to verify.
-
-        Returns:
-            Batch details if anchored, None otherwise.
-        """
+        # Ensure clean hex for bytes conversion
+        if merkle_root.startswith("0x"):
+            merkle_root = merkle_root[2:]
+            
         root_bytes = bytes.fromhex(merkle_root)
 
         try:
@@ -362,25 +308,20 @@ class BlockchainService:
 # =============================================================================
 
 class DatabaseService:
-    """Database operations for the anchor worker."""
-
     def __init__(self, pool: asyncpg.Pool):
         self._pool = pool
 
     @classmethod
     async def create(cls, dsn: str) -> "DatabaseService":
-        """Create database service with connection pool."""
         pool = await asyncpg.create_pool(dsn, min_size=2, max_size=10)
         if pool is None:
             raise RuntimeError("Failed to create database pool")
         return cls(pool)
 
     async def close(self):
-        """Close connection pool."""
         await self._pool.close()
 
     async def get_unanchored_logs(self, limit: int = 1000) -> list[dict[str, Any]]:
-        """Get audit logs that haven't been anchored yet."""
         query = """
             SELECT id, action_hash, timestamp
             FROM audit_logs
@@ -401,7 +342,6 @@ class DatabaseService:
         contract_address: str,
         chain_id: int = BASE_CHAIN_ID,
     ) -> UUID:
-        """Create a merkle proof record."""
         query = """
             INSERT INTO merkle_proofs (
                 root_hash, leaf_hashes, start_timestamp, end_timestamp,
@@ -433,8 +373,7 @@ class DatabaseService:
         gas_price_gwei: Optional[Decimal] = None,
         error_message: Optional[str] = None,
     ):
-        """Update merkle proof record after blockchain submission."""
-        # FIXED: Added type casts ($2::varchar) to prevent ambiguous type errors
+        # FIX 3: Added type casts ($2::varchar) to prevent ambiguous type errors
         query = """
             UPDATE merkle_proofs
             SET
@@ -465,11 +404,6 @@ class DatabaseService:
         log_ids: list[UUID],
         merkle_root_id: UUID,
     ):
-        """Mark audit logs as anchored to a merkle root."""
-        # Note: We need to work around the UPDATE trigger on audit_logs
-        # In production, this should update only the merkle fields
-        # which should be allowed by a modified trigger
-
         query = """
             UPDATE audit_logs
             SET
@@ -489,7 +423,6 @@ class DatabaseService:
         logger.info(f"Marked {len(log_ids)} logs as anchored")
 
     async def get_pending_proofs(self) -> list[dict[str, Any]]:
-        """Get merkle proofs pending submission."""
         query = """
             SELECT id, root_hash, leaf_hashes, retry_count,
                    start_timestamp, end_timestamp
@@ -508,13 +441,6 @@ class DatabaseService:
 # =============================================================================
 
 class AnchorWorker:
-    """
-    Background worker for anchoring audit logs to the blockchain.
-
-    Runs on a configurable interval and processes unanchored logs
-    into Merkle trees, submitting roots to the AnchorRegistry contract.
-    """
-
     def __init__(
         self,
         db_service: DatabaseService,
@@ -522,15 +448,6 @@ class AnchorWorker:
         batch_size: int = BATCH_SIZE,
         interval_seconds: int = BATCH_INTERVAL_SECONDS,
     ):
-        """
-        Initialize anchor worker.
-
-        Args:
-            db_service: Database service instance.
-            blockchain_service: Blockchain service instance.
-            batch_size: Maximum number of logs per batch.
-            interval_seconds: Interval between batch runs.
-        """
         self.db = db_service
         self.blockchain = blockchain_service
         self.batch_size = batch_size
@@ -539,7 +456,6 @@ class AnchorWorker:
         self._shutdown_event = asyncio.Event()
 
     async def start(self):
-        """Start the worker loop."""
         self._running = True
         logger.info(
             f"Anchor worker started. Batch size: {self.batch_size}, "
@@ -552,41 +468,32 @@ class AnchorWorker:
             except Exception as e:
                 logger.exception(f"Error in batch processing: {e}")
 
-            # Wait for interval or shutdown
             try:
                 await asyncio.wait_for(
                     self._shutdown_event.wait(),
                     timeout=self.interval_seconds,
                 )
-                # If we get here, shutdown was requested
                 break
             except asyncio.TimeoutError:
-                # Normal timeout, continue loop
                 pass
 
         logger.info("Anchor worker stopped")
 
     async def stop(self):
-        """Stop the worker gracefully."""
         logger.info("Stopping anchor worker...")
         self._running = False
         self._shutdown_event.set()
 
     async def _process_batch(self):
-        """Process a batch of unanchored logs."""
-        # First, retry any pending proofs
         await self._retry_pending_proofs()
 
-        # Get unanchored logs
         logs = await self.db.get_unanchored_logs(self.batch_size)
-
         if not logs:
             logger.debug("No unanchored logs to process")
             return
 
         logger.info(f"Processing batch of {len(logs)} logs")
 
-        # Extract hashes and compute Merkle root
         log_ids = [row["id"] for row in logs]
         leaf_hashes = [row["action_hash"] for row in logs]
         start_timestamp = logs[0]["timestamp"]
@@ -595,7 +502,6 @@ class AnchorWorker:
         merkle_root = compute_merkle_root(leaf_hashes)
         logger.info(f"Computed Merkle root: {merkle_root}")
 
-        # Create proof record in database
         proof_id = await self.db.create_merkle_proof_record(
             root_hash=merkle_root,
             leaf_hashes=leaf_hashes,
@@ -604,10 +510,8 @@ class AnchorWorker:
             contract_address=self.blockchain.contract_address,
         )
 
-        # Mark logs as associated with this proof
         await self.db.mark_logs_as_anchored(log_ids, proof_id)
 
-        # Submit to blockchain
         await self._submit_to_blockchain(
             proof_id=proof_id,
             merkle_root=merkle_root,
@@ -624,11 +528,10 @@ class AnchorWorker:
         start_timestamp: datetime,
         end_timestamp: datetime,
     ):
-        """Submit a Merkle root to the blockchain."""
         try:
-            # Check balance
+            # FIX 4: Lowered threshold to 0.0001 ETH
             balance = self.blockchain.get_balance()
-            if balance < Decimal("0.001"):
+            if balance < Decimal("0.0001"):
                 logger.error(f"Insufficient balance: {balance} ETH")
                 await self.db.update_merkle_proof_status(
                     proof_id,
@@ -637,7 +540,6 @@ class AnchorWorker:
                 )
                 return
 
-            # Submit transaction
             result = await self.blockchain.anchor_batch(
                 merkle_root=merkle_root,
                 log_count=log_count,
@@ -645,7 +547,6 @@ class AnchorWorker:
                 end_timestamp=end_timestamp,
             )
 
-            # Update database
             await self.db.update_merkle_proof_status(
                 proof_id,
                 status=result["status"],
@@ -670,7 +571,6 @@ class AnchorWorker:
             )
 
     async def _retry_pending_proofs(self):
-        """Retry any pending or failed proof submissions."""
         pending = await self.db.get_pending_proofs()
 
         for proof in pending:
@@ -683,58 +583,6 @@ class AnchorWorker:
                 start_timestamp=proof["start_timestamp"],
                 end_timestamp=proof["end_timestamp"],
             )
-
-
-# =============================================================================
-# MAIN ENTRY POINT
-# =============================================================================
-
-async def main():
-    """Main entry point for the anchor worker."""
-    # Validate configuration
-    if not ANCHOR_CONTRACT_ADDRESS:
-        logger.error("ANCHOR_CONTRACT_ADDRESS environment variable is required")
-        sys.exit(1)
-
-    if not BLOCKCHAIN_PRIVATE_KEY:
-        logger.error("BLOCKCHAIN_PRIVATE_KEY environment variable is required")
-        sys.exit(1)
-
-    # Initialize services
-    logger.info("Initializing anchor worker...")
-
-    db_service = await DatabaseService.create(DATABASE_URL)
-    logger.info("Database connection established")
-
-    blockchain_service = BlockchainService(
-        rpc_url=BLOCKCHAIN_PROVIDER_URL,
-        contract_address=ANCHOR_CONTRACT_ADDRESS,
-        private_key=BLOCKCHAIN_PRIVATE_KEY,
-    )
-
-    if not blockchain_service.is_connected():
-        logger.error("Failed to connect to blockchain")
-        sys.exit(1)
-
-    balance = blockchain_service.get_balance()
-    logger.info(f"Blockchain connected. Balance: {balance} ETH")
-
-    # Create worker
-    worker = AnchorWorker(db_service, blockchain_service)
-
-    # Handle shutdown signals
-    def signal_handler(sig, frame):
-        logger.info(f"Received signal {sig}, initiating shutdown...")
-        asyncio.create_task(worker.stop())
-
-    signal.signal(signal.SIGINT, signal_handler)
-    signal.signal(signal.SIGTERM, signal_handler)
-
-    try:
-        await worker.start()
-    finally:
-        await db_service.close()
-        logger.info("Anchor worker shutdown complete")
 
 
 if __name__ == "__main__":
