@@ -1,338 +1,281 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import Link from "next/link";
+import { useParams } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { copyToClipboard } from "@/lib/utils";
+import { Separator } from "@/components/ui/separator";
 import {
-  Shield,
-  Search,
-  CheckCircle,
-  XCircle,
+  ArrowLeft,
+  CheckCircle2,
+  ShieldCheck,
   ExternalLink,
-  Copy,
-  Check,
+  Clock,
+  Fingerprint,
+  FileJson,
+  Blocks,
   Loader2,
-  AlertTriangle,
+  AlertTriangle
 } from "lucide-react";
+import { createAuthenticatedApi, type AuditLog, type MerkleProof } from "@/lib/api";
+import { formatDateTime } from "@/lib/utils";
 
-export default function VerifyPage() {
-  const [auditId, setAuditId] = useState("");
-  const [isVerifying, setIsVerifying] = useState(false);
-  const [verificationResult, setVerificationResult] = useState<{
-    verified: boolean;
-    log?: {
-      id: string;
-      agent_name: string;
-      action_type: string;
-      timestamp: string;
-      verdict: string;
-    };
-    merkle?: {
-      leaf: string;
-      root: string;
-      tx_hash: string;
-      block_number: number;
-      proof_path: string[];
-    };
-    error?: string;
-  } | null>(null);
-  const [copied, setCopied] = useState<string | null>(null);
+// ----------------------------------------------------------------------------
+// CONFIGURATION
+// ----------------------------------------------------------------------------
+const DEMO_API_KEY = process.env.NEXT_PUBLIC_DEMO_API_KEY || "test-api-key-do-not-use-in-production";
+const BLOCK_EXPLORER_URL = "https://basescan.org"; 
 
-  const handleVerify = async () => {
-    if (!auditId) return;
+export default function VerificationPage() {
+  const params = useParams();
+  const logId = params.logId as string;
 
-    setIsVerifying(true);
-    setVerificationResult(null);
+  const [log, setLog] = useState<AuditLog | null>(null);
+  const [proof, setProof] = useState<MerkleProof | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-    // Simulate verification
-    await new Promise((resolve) => setTimeout(resolve, 2000));
+  useEffect(() => {
+    async function fetchData() {
+      if (!logId) return;
+      
+      const api = createAuthenticatedApi(DEMO_API_KEY);
+      setLoading(true);
+      
+      try {
+        // 1. Fetch the Audit Log details
+        const logData = await api.getAuditLog(logId);
+        setLog(logData);
 
-    // Mock result
-    if (auditId.toLowerCase().includes("invalid")) {
-      setVerificationResult({
-        verified: false,
-        error: "Audit log not found or Merkle proof verification failed",
-      });
-    } else {
-      setVerificationResult({
-        verified: true,
-        log: {
-          id: auditId,
-          agent_name: "PaymentBot",
-          action_type: "financial_transaction",
-          timestamp: new Date().toISOString(),
-          verdict: "approved",
-        },
-        merkle: {
-          leaf: "sha256:a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2w3x4y5z6",
-          root: "sha256:root1234567890abcdef1234567890abcdef1234567890abcdef",
-          tx_hash: "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
-          block_number: 12345678,
-          proof_path: [
-            "sha256:sibling1...",
-            "sha256:sibling2...",
-            "sha256:sibling3...",
-          ],
-        },
-      });
+        // 2. If it's anchored, fetch the Proof
+        if (logData.merkle_root_id) {
+          try {
+            const proofData = await api.getMerkleProof(logId);
+            setProof(proofData);
+          } catch (proofErr) {
+            console.warn("Could not fetch proof details:", proofErr);
+          }
+        }
+      } catch (err) {
+        console.error("Error fetching verification data:", err);
+        setError("Failed to load audit record. It may not exist or access is denied.");
+      } finally {
+        setLoading(false);
+      }
     }
 
-    setIsVerifying(false);
-  };
+    fetchData();
+  }, [logId]);
 
-  const handleCopy = async (text: string, id: string) => {
-    await copyToClipboard(text);
-    setCopied(id);
-    setTimeout(() => setCopied(null), 2000);
-  };
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-4">
+        <Loader2 className="h-10 w-10 animate-spin text-primary" />
+        <p className="text-muted-foreground">Verifying cryptographic proofs...</p>
+      </div>
+    );
+  }
+
+  if (error || !log) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-4 text-center">
+        <div className="bg-red-100 p-4 rounded-full">
+          <AlertTriangle className="h-8 w-8 text-red-600" />
+        </div>
+        <h2 className="text-2xl font-bold">Verification Failed</h2>
+        <p className="text-muted-foreground max-w-md">{error}</p>
+        <Link href="/audit">
+          <Button variant="outline" className="mt-4">
+            <ArrowLeft className="mr-2 h-4 w-4" /> Back to Explorer
+          </Button>
+        </Link>
+      </div>
+    );
+  }
+
+  const isAnchored = !!proof;
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold">Verify Audit Log</h1>
-        <p className="text-muted-foreground">
-          Cryptographically verify an audit log against the blockchain anchor
-        </p>
+    <div className="max-w-5xl mx-auto space-y-8 pb-10">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Link href="/audit">
+            <Button variant="ghost" size="icon">
+              <ArrowLeft className="h-4 w-4" />
+            </Button>
+          </Link>
+          <div>
+            <h1 className="text-2xl font-bold flex items-center gap-2">
+              Forensic Verification
+              {isAnchored && (
+                <Badge variant="outline" className="bg-green-500/10 text-green-600 border-green-500/20">
+                  <ShieldCheck className="w-3 h-3 mr-1" />
+                  Cryptographically Secured
+                </Badge>
+              )}
+            </h1>
+            <p className="text-muted-foreground text-sm">
+              Log ID: <span className="font-mono">{log.id}</span>
+            </p>
+          </div>
+        </div>
+        <div className="flex gap-2">
+          {isAnchored && (
+            <Button variant="outline" asChild>
+              <a 
+                href={`${BLOCK_EXPLORER_URL}/tx/${proof.tx_hash}`} 
+                target="_blank" 
+                rel="noopener noreferrer"
+              >
+                <Blocks className="mr-2 h-4 w-4" />
+                View on BaseScan
+              </a>
+            </Button>
+          )}
+        </div>
       </div>
 
-      {/* Verification Input */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Enter Audit ID</CardTitle>
-          <CardDescription>
-            Paste an audit log ID or action hash to verify its authenticity
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="flex gap-4">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Enter audit ID or action hash..."
-                value={auditId}
-                onChange={(e) => setAuditId(e.target.value)}
-                className="pl-10 font-mono"
-              />
-            </div>
-            <Button onClick={handleVerify} disabled={!auditId || isVerifying}>
-              {isVerifying ? (
-                <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Verifying...
-                </>
-              ) : (
-                <>
-                  <Shield className="h-4 w-4 mr-2" />
-                  Verify
-                </>
-              )}
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* How It Works */}
-      {!verificationResult && !isVerifying && (
-        <Card>
-          <CardHeader>
-            <CardTitle>How Verification Works</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid gap-6 md:grid-cols-3">
-              <div className="text-center p-4">
-                <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-3">
-                  <span className="text-lg font-bold text-primary">1</span>
-                </div>
-                <h4 className="font-medium mb-1">Retrieve Log</h4>
-                <p className="text-sm text-muted-foreground">
-                  Fetch the audit log entry from our database using the unique ID
-                </p>
-              </div>
-              <div className="text-center p-4">
-                <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-3">
-                  <span className="text-lg font-bold text-primary">2</span>
-                </div>
-                <h4 className="font-medium mb-1">Compute Proof</h4>
-                <p className="text-sm text-muted-foreground">
-                  Generate the Merkle proof from the log's position in the tree
-                </p>
-              </div>
-              <div className="text-center p-4">
-                <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-3">
-                  <span className="text-lg font-bold text-primary">3</span>
-                </div>
-                <h4 className="font-medium mb-1">Verify On-Chain</h4>
-                <p className="text-sm text-muted-foreground">
-                  Call the AnchorRegistry smart contract to verify the proof
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Verification Result */}
-      {verificationResult && (
-        <Card>
-          <CardHeader>
-            <div className="flex items-center gap-4">
-              {verificationResult.verified ? (
-                <div className="p-3 rounded-full bg-green-500/10">
-                  <CheckCircle className="h-8 w-8 text-green-500" />
-                </div>
-              ) : (
-                <div className="p-3 rounded-full bg-red-500/10">
-                  <XCircle className="h-8 w-8 text-red-500" />
-                </div>
-              )}
-              <div>
-                <CardTitle>
-                  {verificationResult.verified ? "Verification Successful" : "Verification Failed"}
-                </CardTitle>
-                <CardDescription>
-                  {verificationResult.verified
-                    ? "This audit log has been cryptographically verified on-chain"
-                    : verificationResult.error}
-                </CardDescription>
-              </div>
-            </div>
-          </CardHeader>
-          {verificationResult.verified && verificationResult.log && verificationResult.merkle && (
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        
+        {/* LEFT COLUMN: The Blockchain Proof */}
+        <div className="md:col-span-1 space-y-6">
+          <Card className={`border-t-4 ${isAnchored ? "border-t-green-500" : "border-t-yellow-500"}`}>
+            <CardHeader>
+              <CardTitle className="text-lg flex items-center gap-2">
+                <ShieldCheck className="h-5 w-5" />
+                Chain of Custody
+              </CardTitle>
+            </CardHeader>
             <CardContent className="space-y-6">
-              {/* Log Details */}
-              <div>
-                <h4 className="font-medium mb-3">Audit Log Details</h4>
-                <div className="grid gap-4 md:grid-cols-2 p-4 bg-muted rounded-lg">
-                  <div>
-                    <p className="text-sm text-muted-foreground">Log ID</p>
-                    <code className="text-sm">{verificationResult.log.id}</code>
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">Agent</p>
-                    <p className="text-sm font-medium">{verificationResult.log.agent_name}</p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">Action Type</p>
-                    <code className="text-sm">{verificationResult.log.action_type}</code>
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">Verdict</p>
-                    <Badge variant="outline" className="bg-green-500/10 text-green-500">
-                      {verificationResult.log.verdict}
-                    </Badge>
-                  </div>
-                </div>
-              </div>
-
-              {/* Merkle Proof */}
-              <div>
-                <h4 className="font-medium mb-3">Merkle Proof</h4>
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between p-3 bg-muted rounded-lg">
-                    <div>
-                      <p className="text-sm text-muted-foreground">Leaf Hash</p>
-                      <code className="text-xs break-all">{verificationResult.merkle.leaf}</code>
+              
+              <div className="flex flex-col items-center justify-center p-6 bg-muted/30 rounded-lg border border-dashed">
+                {isAnchored ? (
+                  <>
+                    <div className="bg-green-100 p-3 rounded-full mb-3">
+                      <CheckCircle2 className="h-8 w-8 text-green-600" />
                     </div>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => handleCopy(verificationResult.merkle!.leaf, "leaf")}
-                    >
-                      {copied === "leaf" ? (
-                        <Check className="h-4 w-4 text-green-500" />
-                      ) : (
-                        <Copy className="h-4 w-4" />
-                      )}
-                    </Button>
-                  </div>
-                  <div className="flex items-center justify-between p-3 bg-muted rounded-lg">
-                    <div>
-                      <p className="text-sm text-muted-foreground">Merkle Root</p>
-                      <code className="text-xs break-all">{verificationResult.merkle.root}</code>
-                    </div>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => handleCopy(verificationResult.merkle!.root, "root")}
-                    >
-                      {copied === "root" ? (
-                        <Check className="h-4 w-4 text-green-500" />
-                      ) : (
-                        <Copy className="h-4 w-4" />
-                      )}
-                    </Button>
-                  </div>
-                </div>
-              </div>
-
-              {/* Proof Path */}
-              <div>
-                <h4 className="font-medium mb-3">
-                  Proof Path ({verificationResult.merkle.proof_path.length} nodes)
-                </h4>
-                <div className="space-y-2">
-                  {verificationResult.merkle.proof_path.map((node, index) => (
-                    <div key={index} className="flex items-center gap-2 p-2 bg-muted rounded">
-                      <Badge variant="outline" className="w-8 justify-center">
-                        {index + 1}
-                      </Badge>
-                      <code className="text-xs text-muted-foreground flex-1">{node}</code>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Blockchain Reference */}
-              <div>
-                <h4 className="font-medium mb-3">Blockchain Reference</h4>
-                <div className="p-4 bg-muted rounded-lg space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm text-muted-foreground">Transaction Hash</p>
-                      <code className="text-xs">{verificationResult.merkle.tx_hash}</code>
-                    </div>
-                    <a
-                      href={`https://basescan.org/tx/${verificationResult.merkle.tx_hash}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      <Button variant="ghost" size="icon">
-                        <ExternalLink className="h-4 w-4" />
-                      </Button>
-                    </a>
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">Block Number</p>
-                    <p className="text-sm font-mono">
-                      {verificationResult.merkle.block_number.toLocaleString()}
+                    <h3 className="font-bold text-green-700">Anchored on Base L2</h3>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {formatDateTime(proof.anchored_at)}
                     </p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">Network</p>
-                    <Badge variant="secondary">Base L2 (Chain ID: 8453)</Badge>
-                  </div>
-                </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="bg-yellow-100 p-3 rounded-full mb-3">
+                      <Clock className="h-8 w-8 text-yellow-600" />
+                    </div>
+                    <h3 className="font-bold text-yellow-700">Pending Anchor</h3>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Scheduled for next batch
+                    </p>
+                  </>
+                )}
               </div>
 
-              {/* View on Explorer */}
-              <a
-                href={`https://basescan.org/tx/${verificationResult.merkle.tx_hash}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="w-full"
-              >
-                <Button variant="outline" className="w-full">
-                  <ExternalLink className="h-4 w-4 mr-2" />
-                  View on Explorer
-                </Button>
-              </a>
+              {isAnchored && (
+                <div className="space-y-4 text-sm">
+                  <div>
+                    <span className="text-muted-foreground text-xs uppercase tracking-wider">Transaction Hash</span>
+                    <div className="flex items-center gap-2 mt-1">
+                      <code className="bg-muted p-1 rounded text-xs truncate w-full block">
+                        {proof.tx_hash}
+                      </code>
+                      <a href={`${BLOCK_EXPLORER_URL}/tx/${proof.tx_hash}`} target="_blank" rel="noopener noreferrer">
+                        <ExternalLink className="h-3 w-3 text-primary cursor-pointer hover:underline" />
+                      </a>
+                    </div>
+                  </div>
+
+                  <div>
+                    <span className="text-muted-foreground text-xs uppercase tracking-wider">Merkle Root</span>
+                    <div className="mt-1">
+                      <code className="bg-muted p-1 rounded text-xs break-all">
+                        {proof.merkle_root}
+                      </code>
+                    </div>
+                  </div>
+                </div>
+              )}
             </CardContent>
-          )}
-        </Card>
-      )}
+          </Card>
+
+          <Card>
+            <CardHeader>
+               <CardTitle className="text-lg">Trust Context</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-muted-foreground">Score</span>
+                  <Badge variant={log.trust_score_at_time > 70 ? "default" : "destructive"}>
+                    {log.trust_score_at_time}/100
+                  </Badge>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-muted-foreground">Verdict</span>
+                  <Badge variant="outline">{log.verdict}</Badge>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* RIGHT COLUMN: The Log Details */}
+        <div className="md:col-span-2 space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg flex items-center gap-2">
+                <FileJson className="h-5 w-5" />
+                Event Payload
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <pre className="bg-slate-950 text-slate-50 p-4 rounded-lg overflow-x-auto text-sm font-mono leading-relaxed">
+                {JSON.stringify(log.payload, null, 2)}
+              </pre>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg flex items-center gap-2">
+                <Fingerprint className="h-5 w-5" />
+                Technical Metadata
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-6 text-sm">
+                <div>
+                  <dt className="text-muted-foreground text-xs uppercase tracking-wider">Action Hash</dt>
+                  <dd className="font-mono mt-1 break-all bg-muted p-2 rounded">
+                    {log.action_hash}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-muted-foreground text-xs uppercase tracking-wider">Timestamp</dt>
+                  <dd className="mt-1 font-medium">{formatDateTime(log.timestamp)}</dd>
+                </div>
+                <div>
+                  <dt className="text-muted-foreground text-xs uppercase tracking-wider">Signature</dt>
+                  <dd className="mt-1">
+                    {log.signature_valid ? (
+                      <span className="text-green-600 font-medium flex items-center gap-1">
+                        <CheckCircle2 className="h-3 w-3" /> Valid Ed25519
+                      </span>
+                    ) : (
+                      <span className="text-red-600 font-medium">Invalid</span>
+                    )}
+                  </dd>
+                </div>
+              </dl>
+            </CardContent>
+          </Card>
+        </div>
+
+      </div>
     </div>
   );
 }
