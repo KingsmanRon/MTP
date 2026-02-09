@@ -76,6 +76,7 @@ CREATE TABLE agents (
     last_action_at TIMESTAMPTZ,
     total_actions_count BIGINT NOT NULL DEFAULT 0,
     total_blocked_count BIGINT NOT NULL DEFAULT 0,
+    consecutive_success_count INTEGER NOT NULL DEFAULT 0,  -- For trust score adjustment
     metadata JSONB DEFAULT '{}',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -320,15 +321,15 @@ BEGIN
         -- Check if ONLY merkle fields are being updated
         IF (OLD.merkle_root_id IS NULL AND NEW.merkle_root_id IS NOT NULL) OR
            (OLD.merkle_leaf_index IS NULL AND NEW.merkle_leaf_index IS NOT NULL) THEN
-            -- Verify that NO OTHER fields are being changed
+            -- Verify that NO OTHER fields are being changed (nonce removed - not a column)
             IF (OLD.id, OLD.agent_id, OLD.action_type, OLD.action_hash, OLD.payload,
                 OLD.verdict, OLD.verdict_reason, OLD.signature, OLD.signature_valid,
-                OLD.nonce, OLD.request_ip, OLD.request_user_agent, OLD.response_time_ms,
+                OLD.request_ip, OLD.request_user_agent, OLD.response_time_ms,
                 OLD.trust_score_at_time, OLD.chain_previous_hash, OLD.metadata, OLD.timestamp)
             IS DISTINCT FROM
                (NEW.id, NEW.agent_id, NEW.action_type, NEW.action_hash, NEW.payload,
                 NEW.verdict, NEW.verdict_reason, NEW.signature, NEW.signature_valid,
-                NEW.nonce, NEW.request_ip, NEW.request_user_agent, NEW.response_time_ms,
+                NEW.request_ip, NEW.request_user_agent, NEW.response_time_ms,
                 NEW.trust_score_at_time, NEW.chain_previous_hash, NEW.metadata, NEW.timestamp) THEN
                 RAISE EXCEPTION 'SECURITY VIOLATION: Only merkle_root_id and merkle_leaf_index can be updated, and only when NULL.';
                 RETURN NULL;
@@ -356,13 +357,18 @@ CREATE TRIGGER protect_audit_logs_update
     FOR EACH ROW
     EXECUTE FUNCTION prevent_audit_log_modification();
 
--- Function to increment agent action counters
+-- Function to increment agent action counters and track consecutive successes
 CREATE OR REPLACE FUNCTION update_agent_action_stats()
 RETURNS TRIGGER AS $$
 BEGIN
     UPDATE agents SET
         total_actions_count = total_actions_count + 1,
         total_blocked_count = total_blocked_count + CASE WHEN NEW.verdict != 'approved' THEN 1 ELSE 0 END,
+        -- Track consecutive successes for trust score adjustment
+        consecutive_success_count = CASE
+            WHEN NEW.verdict = 'approved' THEN consecutive_success_count + 1
+            ELSE 0  -- Reset on any failure
+        END,
         last_action_at = NEW.timestamp
     WHERE id = NEW.agent_id;
     RETURN NEW;

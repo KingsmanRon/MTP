@@ -104,15 +104,24 @@ ANCHOR_REGISTRY_ABI = [
 # MERKLE TREE UTILITIES
 # =============================================================================
 
+def keccak256(data: bytes) -> bytes:
+    """
+    Compute keccak256 hash (Ethereum standard).
+
+    CRITICAL: Must match the Solidity contract's keccak256 function.
+    """
+    return Web3.keccak(data)
+
+
 def compute_merkle_root(leaf_hashes: list[str]) -> str:
     """
     Compute Merkle root from a list of leaf hashes.
 
-    Uses SHA-256 for internal nodes. If the number of leaves is odd,
-    the last leaf is duplicated.
+    IMPORTANT: Uses keccak256 to match the AnchorRegistry Solidity contract.
+    If the number of leaves is odd, the last leaf is duplicated.
 
     Args:
-        leaf_hashes: List of hex-encoded SHA-256 hashes.
+        leaf_hashes: List of hex-encoded hashes (action hashes).
 
     Returns:
         Hex-encoded Merkle root hash.
@@ -128,11 +137,11 @@ def compute_merkle_root(leaf_hashes: list[str]) -> str:
         if len(nodes) % 2 == 1:
             nodes.append(nodes[-1])
 
-        # Combine pairs
+        # Combine pairs using keccak256 (matching Solidity contract)
         next_level = []
         for i in range(0, len(nodes), 2):
             combined = nodes[i] + nodes[i + 1]
-            next_level.append(hashlib.sha256(combined).digest())
+            next_level.append(keccak256(combined))
 
         nodes = next_level
 
@@ -143,12 +152,14 @@ def compute_merkle_proof(leaf_hashes: list[str], leaf_index: int) -> list[dict[s
     """
     Compute Merkle proof for a specific leaf.
 
+    IMPORTANT: Uses keccak256 to match the AnchorRegistry Solidity contract.
+
     Args:
         leaf_hashes: List of all leaf hashes.
         leaf_index: Index of the leaf to prove.
 
     Returns:
-        List of proof elements with hash and position.
+        List of proof elements with hash and position (0=left, 1=right for Solidity).
     """
     if not leaf_hashes:
         raise ValueError("Cannot compute proof for empty list")
@@ -166,16 +177,17 @@ def compute_merkle_proof(leaf_hashes: list[str], leaf_index: int) -> list[dict[s
 
         # Add sibling to proof
         sibling_index = index + 1 if index % 2 == 0 else index - 1
+        # Position: 0 = sibling on left, 1 = sibling on right (for Solidity compatibility)
         proof.append({
             "hash": nodes[sibling_index].hex(),
-            "position": "right" if index % 2 == 0 else "left",
+            "position": 1 if index % 2 == 0 else 0,
         })
 
-        # Move up the tree
+        # Move up the tree using keccak256 (matching Solidity contract)
         next_level = []
         for i in range(0, len(nodes), 2):
             combined = nodes[i] + nodes[i + 1]
-            next_level.append(hashlib.sha256(combined).digest())
+            next_level.append(keccak256(combined))
 
         nodes = next_level
         index = index // 2

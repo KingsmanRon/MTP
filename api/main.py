@@ -1,4 +1,5 @@
 import logging
+import os
 import time
 import json
 import base64
@@ -40,10 +41,23 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Constants
-REDIS_URL = "redis://redis:6379"  # Adjust based on Railway Redis variables if needed
-DATABASE_URL = "postgresql://postgres:password@db:5432/inntris" # Adjust based on Railway
-SERVER_SECRET = b"REPLACE_THIS_WITH_A_REAL_SECRET_IN_PROD"  # In prod, use os.getenv()
+# =============================================================================
+# CONFIGURATION (Environment Variables with Validation)
+# =============================================================================
+
+ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:password@db:5432/inntris")
+REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379")
+SERVER_SECRET_RAW = os.getenv("SERVER_SECRET")
+
+# SECURITY: Validate secrets in production
+if ENVIRONMENT != "development":
+    if not SERVER_SECRET_RAW:
+        raise SystemExit("FATAL: SERVER_SECRET environment variable is required in production")
+    if len(SERVER_SECRET_RAW) < 32:
+        raise SystemExit("FATAL: SERVER_SECRET must be at least 32 characters")
+
+SERVER_SECRET = (SERVER_SECRET_RAW or "dev-secret-do-not-use-in-production").encode("utf-8")
 
 app = FastAPI(
     title="Inntris Core API",
@@ -52,11 +66,17 @@ app = FastAPI(
 )
 
 # CORS Configuration
+origins = ["*"] if ENVIRONMENT == "development" else [
+    origin.strip() for origin in os.getenv("ALLOWED_ORIGINS", "").split(",") if origin.strip()
+]
+if ENVIRONMENT != "development" and os.getenv("ALLOWED_ORIGINS", "").strip() == "*":
+    origins = ["*"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, list specific domains
-    allow_credentials=True,
-    allow_methods=["*"],
+    allow_origins=origins,
+    allow_credentials=False if origins == ["*"] else True,  # Can't use credentials with wildcard
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 
