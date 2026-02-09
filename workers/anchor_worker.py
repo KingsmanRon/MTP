@@ -262,7 +262,9 @@ class BlockchainService:
         })
 
         signed_tx = self.w3.eth.account.sign_transaction(tx, self.account.key)
-        tx_hash = self.w3.eth.send_raw_transaction(signed_tx.raw_transaction)
+        # Compatibility: web3.py v6+ uses raw_transaction, older uses rawTransaction
+        raw_tx = getattr(signed_tx, 'raw_transaction', None) or signed_tx.rawTransaction
+        tx_hash = self.w3.eth.send_raw_transaction(raw_tx)
         logger.info(f"Transaction submitted: {tx_hash.hex()}")
 
         receipt = await asyncio.get_event_loop().run_in_executor(
@@ -348,12 +350,14 @@ class DatabaseService:
         contract_address: str,
         chain_id: int = BASE_CHAIN_ID,
     ) -> UUID:
+        # ON CONFLICT: if root already exists, return existing ID
         query = """
             INSERT INTO merkle_proofs (
                 root_hash, leaf_hashes, start_timestamp, end_timestamp,
                 contract_address, chain_id, log_count, status
             )
             VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending')
+            ON CONFLICT (root_hash) DO UPDATE SET root_hash = EXCLUDED.root_hash
             RETURNING id
         """
         async with self._pool.acquire() as conn:
