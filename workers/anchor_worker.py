@@ -434,17 +434,18 @@ class DatabaseService:
         error_message: Optional[str] = None,
     ):
         """Update merkle proof record after blockchain submission."""
+        # FIXED: Added type casts ($2::varchar) to prevent ambiguous type errors
         query = """
             UPDATE merkle_proofs
             SET
-                status = $2,
+                status = $2::varchar,
                 transaction_hash = COALESCE($3, transaction_hash),
                 block_number = COALESCE($4, block_number),
                 gas_used = COALESCE($5, gas_used),
                 gas_price_gwei = COALESCE($6, gas_price_gwei),
                 error_message = COALESCE($7, error_message),
-                confirmed_at = CASE WHEN $2 = 'confirmed' THEN NOW() ELSE confirmed_at END,
-                retry_count = CASE WHEN $2 = 'failed' THEN retry_count + 1 ELSE retry_count END
+                confirmed_at = CASE WHEN $2::varchar = 'confirmed' THEN NOW() ELSE confirmed_at END,
+                retry_count = CASE WHEN $2::varchar = 'failed' THEN retry_count + 1 ELSE retry_count END
             WHERE id = $1
         """
         async with self._pool.acquire() as conn:
