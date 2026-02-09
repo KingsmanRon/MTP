@@ -313,7 +313,13 @@ class DatabaseService:
 
     @classmethod
     async def create(cls, dsn: str) -> "DatabaseService":
-        pool = await asyncpg.create_pool(dsn, min_size=2, max_size=10)
+        # statement_cache_size=0 required for pgbouncer compatibility
+        pool = await asyncpg.create_pool(
+            dsn,
+            min_size=2,
+            max_size=10,
+            statement_cache_size=0,
+        )
         if pool is None:
             raise RuntimeError("Failed to create database pool")
         return cls(pool)
