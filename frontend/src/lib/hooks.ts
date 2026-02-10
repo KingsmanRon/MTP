@@ -78,11 +78,11 @@ export function useAuditLog(logId: string) {
   });
 }
 
-export function useMerkleProof(logId: string) {
+export function useMerkleProof(logId: string, enabled: boolean = true) {
   return useQuery({
     queryKey: ["merkle-proof", logId],
     queryFn: () => getApi().getMerkleProof(logId),
-    enabled: !!logId,
+    enabled: !!logId && enabled,
   });
 }
 

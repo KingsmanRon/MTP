@@ -1,6 +1,5 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -18,55 +17,20 @@ import {
   Loader2,
   AlertTriangle
 } from "lucide-react";
-import { createAuthenticatedApi, type AuditLog, type MerkleProof } from "@/lib/api";
+import { useAuditLog, useMerkleProof } from "@/lib/hooks";
 import { formatDateTime } from "@/lib/utils";
 
-// ----------------------------------------------------------------------------
-// CONFIGURATION
-// ----------------------------------------------------------------------------
-const DEMO_API_KEY = process.env.NEXT_PUBLIC_DEMO_API_KEY || "test-api-key-do-not-use-in-production";
-const BLOCK_EXPLORER_URL = "https://basescan.org"; 
+const BLOCK_EXPLORER_URL = "https://basescan.org";
 
 export default function VerificationPage() {
   const params = useParams();
   const logId = params.logId as string;
 
-  const [log, setLog] = useState<AuditLog | null>(null);
-  const [proof, setProof] = useState<MerkleProof | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { data: log, isLoading: logLoading, error: logError } = useAuditLog(logId);
+  const { data: proof, isLoading: proofLoading } = useMerkleProof(logId, !!log?.merkle_root_id);
 
-  useEffect(() => {
-    async function fetchData() {
-      if (!logId) return;
-      
-      const api = createAuthenticatedApi(DEMO_API_KEY);
-      setLoading(true);
-      
-      try {
-        // 1. Fetch the Audit Log details
-        const logData = await api.getAuditLog(logId);
-        setLog(logData);
-
-        // 2. If it's anchored, fetch the Proof
-        if (logData.merkle_root_id) {
-          try {
-            const proofData = await api.getMerkleProof(logId);
-            setProof(proofData);
-          } catch (proofErr) {
-            console.warn("Could not fetch proof details:", proofErr);
-          }
-        }
-      } catch (err) {
-        console.error("Error fetching verification data:", err);
-        setError("Failed to load audit record. It may not exist or access is denied.");
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    fetchData();
-  }, [logId]);
+  const loading = logLoading || (log?.merkle_root_id && proofLoading);
+  const error = logError ? "Failed to load audit record. It may not exist or access is denied." : null;
 
   if (loading) {
     return (
