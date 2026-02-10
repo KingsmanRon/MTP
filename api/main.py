@@ -217,15 +217,28 @@ async def shutdown_event():
 # =============================================================================
 
 @app.get("/health", response_model=HealthResponse, tags=["System"])
-async def health_check(database: Database = Depends(get_db)):
+async def health_check(
+    database: Database = Depends(get_db),
+    redis_conn: Optional[redis.Redis] = Depends(get_redis),
+):
     """System health check."""
     db_healthy = await database.health_check()
+
+    # Check Redis connection
+    redis_status = "not_configured"
+    if redis_conn:
+        try:
+            await redis_conn.ping()
+            redis_status = "connected"
+        except Exception as e:
+            logger.warning(f"Redis health check failed: {e}")
+            redis_status = "disconnected"
 
     return HealthResponse(
         status="healthy" if db_healthy else "degraded",
         version="1.0.0",
         database="connected" if db_healthy else "disconnected",
-        redis="unknown",
+        redis=redis_status,
         timestamp=datetime.now(timezone.utc),
     )
 
