@@ -1,24 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { LoadingState } from "@/components/loading-state";
 import { formatCurrency } from "@/lib/utils";
-import { Building2, CreditCard, Bell, Shield, Globe } from "lucide-react";
-
-// Mock data
-const mockOrganization = {
-  id: "org_123456",
-  name: "Acme Corporation",
-  billing_tier: "professional",
-  contact_email: "admin@acme.corp",
-  webhook_url: "https://api.acme.corp/webhooks/mtp",
-  daily_limit_usd: 50000,
-  monthly_limit_usd: 500000,
-};
+import { useOrganization } from "@/lib/hooks";
+import { Building2, CreditCard, Bell, Shield, Globe, AlertCircle } from "lucide-react";
 
 const tierFeatures = {
   free: { agents: 2, verifications: "1K/month", support: "Community" },
@@ -28,11 +19,36 @@ const tierFeatures = {
 };
 
 export default function SettingsPage() {
-  const [orgName, setOrgName] = useState(mockOrganization.name);
-  const [contactEmail, setContactEmail] = useState(mockOrganization.contact_email);
-  const [webhookUrl, setWebhookUrl] = useState(mockOrganization.webhook_url);
+  const { data: organization, isLoading, error } = useOrganization();
 
-  const currentTier = mockOrganization.billing_tier as keyof typeof tierFeatures;
+  const [orgName, setOrgName] = useState("");
+  const [contactEmail, setContactEmail] = useState("");
+  const [webhookUrl, setWebhookUrl] = useState("");
+
+  // Update form state when organization data loads
+  useEffect(() => {
+    if (organization) {
+      setOrgName(organization.name);
+      setContactEmail(organization.contact_email);
+      setWebhookUrl(organization.webhook_url || "");
+    }
+  }, [organization]);
+
+  if (isLoading) {
+    return <LoadingState message="Loading settings..." />;
+  }
+
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center py-12">
+        <AlertCircle className="h-12 w-12 text-destructive mb-4" />
+        <h2 className="text-xl font-semibold mb-2">Failed to load settings</h2>
+        <p className="text-muted-foreground">Please check your API connection and try again.</p>
+      </div>
+    );
+  }
+
+  const currentTier = (organization?.billing_tier || "free") as keyof typeof tierFeatures;
 
   return (
     <div className="space-y-6">
@@ -81,7 +97,7 @@ export default function SettingsPage() {
                 </div>
                 <div className="space-y-2">
                   <label className="text-sm font-medium">Organization ID</label>
-                  <Input value={mockOrganization.id} disabled className="font-mono" />
+                  <Input value={organization?.id || ""} disabled className="font-mono" />
                 </div>
               </div>
               <div className="space-y-2">
@@ -127,11 +143,11 @@ export default function SettingsPage() {
                   </div>
                   <div className="p-4 border rounded-lg">
                     <p className="text-sm text-muted-foreground">Daily Limit</p>
-                    <p className="text-2xl font-bold">{formatCurrency(mockOrganization.daily_limit_usd)}</p>
+                    <p className="text-2xl font-bold">{formatCurrency(organization?.daily_limit_usd || 0)}</p>
                   </div>
                   <div className="p-4 border rounded-lg">
                     <p className="text-sm text-muted-foreground">Monthly Limit</p>
-                    <p className="text-2xl font-bold">{formatCurrency(mockOrganization.monthly_limit_usd)}</p>
+                    <p className="text-2xl font-bold">{formatCurrency(organization?.monthly_limit_usd || 0)}</p>
                   </div>
                 </div>
               </CardContent>

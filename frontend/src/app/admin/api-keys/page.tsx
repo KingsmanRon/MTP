@@ -22,7 +22,9 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/empty-state";
+import { LoadingState } from "@/components/loading-state";
 import { formatDateTime, formatRelative, copyToClipboard } from "@/lib/utils";
+import { useApiKeys, useCreateApiKey, useRevokeApiKey } from "@/lib/hooks";
 import {
   Key,
   Plus,
@@ -31,43 +33,10 @@ import {
   Trash2,
   RefreshCw,
   AlertTriangle,
+  AlertCircle,
   Eye,
   EyeOff,
 } from "lucide-react";
-
-// Mock data
-const mockApiKeys = [
-  {
-    id: "key1",
-    key_prefix: "inntris_live",
-    name: "Production API Key",
-    scopes: ["read", "write", "verify"],
-    is_active: true,
-    expires_at: null,
-    last_used_at: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
-    created_at: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
-  },
-  {
-    id: "key2",
-    key_prefix: "inntris_test",
-    name: "Development Key",
-    scopes: ["read", "verify"],
-    is_active: true,
-    expires_at: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString(),
-    last_used_at: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
-    created_at: new Date(Date.now() - 15 * 24 * 60 * 60 * 1000).toISOString(),
-  },
-  {
-    id: "key3",
-    key_prefix: "inntris_ci",
-    name: "CI/CD Key",
-    scopes: ["read"],
-    is_active: false,
-    expires_at: null,
-    last_used_at: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
-    created_at: new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString(),
-  },
-];
 
 export default function APIKeysPage() {
   const [showCreateDialog, setShowCreateDialog] = useState(false);
@@ -77,13 +46,48 @@ export default function APIKeysPage() {
   const [copied, setCopied] = useState(false);
   const [showRotateDialog, setShowRotateDialog] = useState(false);
 
-  const handleCreateKey = () => {
-    // Mock key generation
-    setGeneratedKey("inntris_live_sk_" + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15));
-    setShowCreateDialog(false);
-    setShowNewKeyDialog(true);
-    setNewKeyName("");
+  const { data: apiKeys, isLoading, error } = useApiKeys();
+  const createApiKey = useCreateApiKey();
+  const revokeApiKey = useRevokeApiKey();
+
+  const handleCreateKey = async () => {
+    try {
+      const result = await createApiKey.mutateAsync({
+        name: newKeyName,
+        scopes: ["read", "write", "verify"],
+      });
+      setGeneratedKey(result.api_key);
+      setShowCreateDialog(false);
+      setShowNewKeyDialog(true);
+      setNewKeyName("");
+    } catch (err) {
+      console.error("Failed to create API key:", err);
+    }
   };
+
+  const handleRevokeKey = async (keyPrefix: string) => {
+    try {
+      await revokeApiKey.mutateAsync(keyPrefix);
+    } catch (err) {
+      console.error("Failed to revoke API key:", err);
+    }
+  };
+
+  if (isLoading) {
+    return <LoadingState message="Loading API keys..." />;
+  }
+
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center py-12">
+        <AlertCircle className="h-12 w-12 text-destructive mb-4" />
+        <h2 className="text-xl font-semibold mb-2">Failed to load API keys</h2>
+        <p className="text-muted-foreground">Please check your API connection and try again.</p>
+      </div>
+    );
+  }
+
+  const keys = apiKeys || [];
 
   const handleCopyKey = async () => {
     await copyToClipboard(generatedKey);
@@ -130,11 +134,11 @@ export default function APIKeysPage() {
         <CardHeader>
           <CardTitle>Active Keys</CardTitle>
           <CardDescription>
-            {mockApiKeys.length} API key{mockApiKeys.length !== 1 ? "s" : ""} configured
+            {keys.length} API key{keys.length !== 1 ? "s" : ""} configured
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {mockApiKeys.length === 0 ? (
+          {keys.length === 0 ? (
             <EmptyState
               icon={Key}
               title="No API keys"
@@ -160,7 +164,7 @@ export default function APIKeysPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {mockApiKeys.map((key) => (
+                {keys.map((key) => (
                   <TableRow key={key.id}>
                     <TableCell className="font-medium">{key.name}</TableCell>
                     <TableCell>
@@ -196,7 +200,13 @@ export default function APIKeysPage() {
                     </TableCell>
                     <TableCell>
                       {key.is_active && (
-                        <Button variant="ghost" size="icon" className="text-destructive">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="text-destructive"
+                          onClick={() => handleRevokeKey(key.key_prefix)}
+                          disabled={revokeApiKey.isPending}
+                        >
                           <Trash2 className="h-4 w-4" />
                         </Button>
                       )}
@@ -243,8 +253,8 @@ export default function APIKeysPage() {
             <Button variant="outline" onClick={() => setShowCreateDialog(false)}>
               Cancel
             </Button>
-            <Button onClick={handleCreateKey} disabled={!newKeyName}>
-              Create Key
+            <Button onClick={handleCreateKey} disabled={!newKeyName || createApiKey.isPending}>
+              {createApiKey.isPending ? "Creating..." : "Create Key"}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -18,7 +18,9 @@ import {
 } from "@/components/ui/table";
 import { TrustScore } from "@/components/trust-score";
 import { VerdictBadge } from "@/components/verdict-badge";
+import { LoadingState } from "@/components/loading-state";
 import { formatDateTime, formatCurrency, copyToClipboard } from "@/lib/utils";
+import { useAgent, useAuditLogs, useUpdateAgentStatus } from "@/lib/hooks";
 import {
   ArrowLeft,
   Copy,
@@ -30,62 +32,9 @@ import {
   Pause,
   Play,
   Trash2,
+  AlertCircle,
 } from "lucide-react";
 import type { AgentStatus, ActionVerdict } from "@/lib/api";
-
-// Mock data for single agent
-const mockAgent = {
-  id: "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-  name: "PaymentBot",
-  status: "active" as AgentStatus,
-  trust_score: 85,
-  public_key_fingerprint: "sha256:a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6",
-  daily_limit_usd: 10000,
-  per_action_limit_usd: 500,
-  allowed_actions: ["financial_transaction", "api_call", "email_send"],
-  blocked_actions: ["admin_action"],
-  rate_limit_per_minute: 60,
-  total_actions_count: 5234,
-  total_blocked_count: 127,
-  last_action_at: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
-  created_at: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
-  updated_at: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
-  metadata: {
-    description: "Handles payment processing for e-commerce platform",
-    owner: "payments-team@company.com",
-  },
-};
-
-const mockRecentLogs = [
-  {
-    id: "log1",
-    action_type: "financial_transaction",
-    verdict: "approved" as ActionVerdict,
-    timestamp: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
-    payload: { amount: 150.0, currency: "USD" },
-  },
-  {
-    id: "log2",
-    action_type: "api_call",
-    verdict: "approved" as ActionVerdict,
-    timestamp: new Date(Date.now() - 15 * 60 * 1000).toISOString(),
-    payload: { endpoint: "/api/orders" },
-  },
-  {
-    id: "log3",
-    action_type: "financial_transaction",
-    verdict: "blocked" as ActionVerdict,
-    timestamp: new Date(Date.now() - 30 * 60 * 1000).toISOString(),
-    payload: { amount: 5000.0, currency: "USD" },
-  },
-  {
-    id: "log4",
-    action_type: "email_send",
-    verdict: "approved" as ActionVerdict,
-    timestamp: new Date(Date.now() - 45 * 60 * 1000).toISOString(),
-    payload: { to: "customer@example.com", subject: "Order Confirmation" },
-  },
-];
 
 const statusColors: Record<AgentStatus, string> = {
   active: "bg-green-500/10 text-green-500 border-green-500/20",
@@ -96,15 +45,64 @@ const statusColors: Record<AgentStatus, string> = {
 
 export default function AgentDetailPage() {
   const params = useParams();
+  const agentId = params.id as string;
+
   const [copied, setCopied] = useState(false);
-  const [dailyLimit, setDailyLimit] = useState(mockAgent.daily_limit_usd.toString());
-  const [perActionLimit, setPerActionLimit] = useState(mockAgent.per_action_limit_usd.toString());
+  const [dailyLimit, setDailyLimit] = useState("");
+  const [perActionLimit, setPerActionLimit] = useState("");
+
+  const { data: agent, isLoading: agentLoading, error: agentError } = useAgent(agentId);
+  const { data: auditData, isLoading: logsLoading } = useAuditLogs({
+    agent_id: agentId,
+    limit: 10,
+  });
+  const updateStatus = useUpdateAgentStatus();
+
+  // Update form state when agent data loads
+  useEffect(() => {
+    if (agent) {
+      setDailyLimit(agent.daily_limit_usd.toString());
+      setPerActionLimit(agent.per_action_limit_usd.toString());
+    }
+  }, [agent]);
 
   const handleCopyId = async () => {
-    await copyToClipboard(mockAgent.id);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    if (agent) {
+      await copyToClipboard(agent.id);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
   };
+
+  const handleStatusChange = async (newStatus: AgentStatus) => {
+    try {
+      await updateStatus.mutateAsync({ agentId, status: newStatus });
+    } catch (err) {
+      console.error("Failed to update agent status:", err);
+    }
+  };
+
+  if (agentLoading) {
+    return <LoadingState message="Loading agent..." />;
+  }
+
+  if (agentError || !agent) {
+    return (
+      <div className="flex flex-col items-center justify-center py-12">
+        <AlertCircle className="h-12 w-12 text-destructive mb-4" />
+        <h2 className="text-xl font-semibold mb-2">Failed to load agent</h2>
+        <p className="text-muted-foreground">Please check your API connection and try again.</p>
+        <Link href="/admin/agents" className="mt-4">
+          <Button variant="outline">
+            <ArrowLeft className="h-4 w-4 mr-2" />
+            Back to Agents
+          </Button>
+        </Link>
+      </div>
+    );
+  }
+
+  const recentLogs = auditData?.logs || [];
 
   return (
     <div className="space-y-6">
@@ -117,31 +115,43 @@ export default function AgentDetailPage() {
         </Link>
         <div className="flex-1">
           <div className="flex items-center gap-3">
-            <h1 className="text-3xl font-bold">{mockAgent.name}</h1>
-            <Badge variant="outline" className={statusColors[mockAgent.status]}>
-              {mockAgent.status}
+            <h1 className="text-3xl font-bold">{agent.name}</h1>
+            <Badge variant="outline" className={statusColors[agent.status]}>
+              {agent.status}
             </Badge>
           </div>
           <div className="flex items-center gap-2 mt-1">
-            <code className="text-sm text-muted-foreground">{mockAgent.id}</code>
+            <code className="text-sm text-muted-foreground">{agent.id}</code>
             <button onClick={handleCopyId} className="text-muted-foreground hover:text-foreground">
               {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
             </button>
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {mockAgent.status === "active" ? (
-            <Button variant="outline">
+          {agent.status === "active" ? (
+            <Button
+              variant="outline"
+              onClick={() => handleStatusChange("suspended")}
+              disabled={updateStatus.isPending}
+            >
               <Pause className="h-4 w-4 mr-2" />
               Suspend
             </Button>
-          ) : (
-            <Button variant="outline">
+          ) : agent.status === "suspended" ? (
+            <Button
+              variant="outline"
+              onClick={() => handleStatusChange("active")}
+              disabled={updateStatus.isPending}
+            >
               <Play className="h-4 w-4 mr-2" />
               Activate
             </Button>
-          )}
-          <Button variant="destructive">
+          ) : null}
+          <Button
+            variant="destructive"
+            onClick={() => handleStatusChange("revoked")}
+            disabled={updateStatus.isPending || agent.status === "revoked"}
+          >
             <Trash2 className="h-4 w-4 mr-2" />
             Revoke
           </Button>
@@ -155,34 +165,34 @@ export default function AgentDetailPage() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">Trust Score</p>
-                <p className="text-2xl font-bold">{mockAgent.trust_score}/100</p>
+                <p className="text-2xl font-bold">{agent.trust_score}/100</p>
               </div>
-              <TrustScore score={mockAgent.trust_score} size="sm" showLabel={false} />
+              <TrustScore score={agent.trust_score} size="sm" showLabel={false} />
             </div>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-6">
             <p className="text-sm text-muted-foreground">Total Actions</p>
-            <p className="text-2xl font-bold">{mockAgent.total_actions_count.toLocaleString()}</p>
+            <p className="text-2xl font-bold">{agent.total_actions_count.toLocaleString()}</p>
             <p className="text-xs text-muted-foreground mt-1">
-              {mockAgent.total_blocked_count} blocked
+              {agent.total_blocked_count} blocked
             </p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-6">
             <p className="text-sm text-muted-foreground">Daily Limit</p>
-            <p className="text-2xl font-bold">{formatCurrency(mockAgent.daily_limit_usd)}</p>
+            <p className="text-2xl font-bold">{formatCurrency(agent.daily_limit_usd)}</p>
             <p className="text-xs text-muted-foreground mt-1">
-              {formatCurrency(mockAgent.per_action_limit_usd)} per action
+              {formatCurrency(agent.per_action_limit_usd)} per action
             </p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-6">
             <p className="text-sm text-muted-foreground">Rate Limit</p>
-            <p className="text-2xl font-bold">{mockAgent.rate_limit_per_minute}/min</p>
+            <p className="text-2xl font-bold">{agent.rate_limit_per_minute}/min</p>
             <p className="text-xs text-muted-foreground mt-1">Requests per minute</p>
           </CardContent>
         </Card>
@@ -223,7 +233,7 @@ export default function AgentDetailPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {mockRecentLogs.map((log) => (
+                  {recentLogs.map((log) => (
                     <TableRow key={log.id}>
                       <TableCell className="text-muted-foreground">
                         {formatDateTime(log.timestamp)}
@@ -257,7 +267,7 @@ export default function AgentDetailPage() {
               </CardHeader>
               <CardContent>
                 <div className="flex flex-wrap gap-2">
-                  {mockAgent.allowed_actions.map((action) => (
+                  {agent.allowed_actions.map((action) => (
                     <Badge key={action} variant="secondary">
                       {action}
                     </Badge>
@@ -272,7 +282,7 @@ export default function AgentDetailPage() {
               </CardHeader>
               <CardContent>
                 <div className="flex flex-wrap gap-2">
-                  {mockAgent.blocked_actions.map((action) => (
+                  {agent.blocked_actions.map((action) => (
                     <Badge key={action} variant="destructive">
                       {action}
                     </Badge>
@@ -312,7 +322,7 @@ export default function AgentDetailPage() {
               <div className="space-y-2">
                 <label className="text-sm font-medium">Public Key Fingerprint</label>
                 <code className="block p-3 bg-muted rounded-md text-sm">
-                  {mockAgent.public_key_fingerprint}
+                  {agent.public_key_fingerprint}
                 </code>
               </div>
               <div className="flex justify-end">

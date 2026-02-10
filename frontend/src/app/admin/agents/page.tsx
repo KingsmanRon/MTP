@@ -24,49 +24,11 @@ import {
 } from "@/components/ui/dialog";
 import { TrustScoreBadge } from "@/components/trust-score";
 import { EmptyState } from "@/components/empty-state";
+import { LoadingState } from "@/components/loading-state";
 import { formatRelative, formatCurrency, truncateHash } from "@/lib/utils";
-import { Bot, Plus, Search, MoreVertical, Copy, ExternalLink } from "lucide-react";
+import { useAgents } from "@/lib/hooks";
+import { Bot, Plus, Search, ExternalLink, AlertCircle } from "lucide-react";
 import type { AgentStatus } from "@/lib/api";
-
-// Mock data
-const mockAgents = [
-  {
-    id: "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-    name: "PaymentBot",
-    status: "active" as AgentStatus,
-    trust_score: 85,
-    public_key_fingerprint: "sha256:a1b2c3d4e5f6...",
-    daily_limit_usd: 10000,
-    per_action_limit_usd: 500,
-    total_actions_count: 5234,
-    last_action_at: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
-    created_at: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
-  },
-  {
-    id: "b2c3d4e5-f6a7-8901-bcde-f12345678901",
-    name: "DataExporter",
-    status: "active" as AgentStatus,
-    trust_score: 42,
-    public_key_fingerprint: "sha256:b2c3d4e5f6a7...",
-    daily_limit_usd: 5000,
-    per_action_limit_usd: 200,
-    total_actions_count: 1892,
-    last_action_at: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
-    created_at: new Date(Date.now() - 15 * 24 * 60 * 60 * 1000).toISOString(),
-  },
-  {
-    id: "c3d4e5f6-a7b8-9012-cdef-123456789012",
-    name: "EmailAgent",
-    status: "suspended" as AgentStatus,
-    trust_score: 28,
-    public_key_fingerprint: "sha256:c3d4e5f6a7b8...",
-    daily_limit_usd: 1000,
-    per_action_limit_usd: 50,
-    total_actions_count: 456,
-    last_action_at: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
-    created_at: new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString(),
-  },
-];
 
 const statusColors: Record<AgentStatus, string> = {
   active: "bg-green-500/10 text-green-500 border-green-500/20",
@@ -81,7 +43,23 @@ export default function AgentsPage() {
   const [newAgentName, setNewAgentName] = useState("");
   const [newAgentPublicKey, setNewAgentPublicKey] = useState("");
 
-  const filteredAgents = mockAgents.filter((agent) =>
+  const { data: agents, isLoading, error } = useAgents();
+
+  if (isLoading) {
+    return <LoadingState message="Loading agents..." />;
+  }
+
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center py-12">
+        <AlertCircle className="h-12 w-12 text-destructive mb-4" />
+        <h2 className="text-xl font-semibold mb-2">Failed to load agents</h2>
+        <p className="text-muted-foreground">Please check your API connection and try again.</p>
+      </div>
+    );
+  }
+
+  const filteredAgents = (agents || []).filter((agent) =>
     agent.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
@@ -168,7 +146,7 @@ export default function AgentsPage() {
                       </div>
                     </TableCell>
                     <TableCell>
-                      <Badge variant="outline" className={statusColors[agent.status]}>
+                      <Badge variant="outline" className={statusColors[agent.status as AgentStatus]}>
                         {agent.status}
                       </Badge>
                     </TableCell>
@@ -178,7 +156,7 @@ export default function AgentsPage() {
                     <TableCell>{formatCurrency(agent.daily_limit_usd)}</TableCell>
                     <TableCell>{agent.total_actions_count.toLocaleString()}</TableCell>
                     <TableCell className="text-muted-foreground">
-                      {formatRelative(agent.last_action_at)}
+                      {agent.last_action_at ? formatRelative(agent.last_action_at) : "Never"}
                     </TableCell>
                     <TableCell>
                       <Link href={`/admin/agents/${agent.id}`}>

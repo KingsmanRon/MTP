@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -17,7 +17,9 @@ import {
 } from "@/components/ui/table";
 import { VerdictBadge } from "@/components/verdict-badge";
 import { TrustScoreBadge } from "@/components/trust-score";
+import { LoadingState } from "@/components/loading-state";
 import { formatDateTime, truncateHash } from "@/lib/utils";
+import { useAuditLogs } from "@/lib/hooks";
 import {
   Search,
   Download,
@@ -29,58 +31,26 @@ import {
   AlertCircle,
   CheckCircle2,
 } from "lucide-react";
-import { createAuthenticatedApi, type AuditLog, type ActionVerdict } from "@/lib/api";
-
-// ----------------------------------------------------------------------------
-// CONFIGURATION
-// ----------------------------------------------------------------------------
-// In a real app, this comes from AuthContext. For demo, we use the default seed key.
-const DEMO_API_KEY = process.env.NEXT_PUBLIC_DEMO_API_KEY || "test-api-key-do-not-use-in-production";
+import { type ActionVerdict } from "@/lib/api";
 
 export default function AuditSearchPage() {
-  // State
-  const [logs, setLogs] = useState<AuditLog[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  
   // Filters
   const [searchQuery, setSearchQuery] = useState("");
   const [verdictFilter, setVerdictFilter] = useState<string>("all");
   const [actionTypeFilter, setActionTypeFilter] = useState<string>("all");
   const [page, setPage] = useState(1);
-  const [totalLogs, setTotalLogs] = useState(0);
 
-  // Initialize API
-  const api = createAuthenticatedApi(DEMO_API_KEY);
+  // Fetch logs using React Query hook
+  const { data: auditData, isLoading: loading, error: queryError } = useAuditLogs({
+    limit: 20,
+    offset: (page - 1) * 20,
+    verdict: verdictFilter !== "all" ? verdictFilter : undefined,
+    action_type: actionTypeFilter !== "all" ? actionTypeFilter : undefined,
+  });
 
-  // Fetch Logs
-  useEffect(() => {
-    async function fetchLogs() {
-      setLoading(true);
-      setError(null);
-      try {
-        const response = await api.searchAuditLogs({
-          limit: 20,
-          offset: (page - 1) * 20,
-          verdict: verdictFilter !== "all" ? (verdictFilter as ActionVerdict) : undefined,
-          action_type: actionTypeFilter !== "all" ? actionTypeFilter : undefined,
-          // In a real app, we'd debounce the search query call
-        });
-        
-        setLogs(response.logs);
-        setTotalLogs(response.total);
-      } catch (err) {
-        console.error("Failed to fetch logs:", err);
-        // Fallback for demo if API isn't ready (prevents blank screen)
-        // setLogs(mockAuditLogs); 
-        setError("Could not connect to Audit API. Ensure backend is running.");
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    fetchLogs();
-  }, [page, verdictFilter, actionTypeFilter, searchQuery]); // Re-fetch when filters change
+  const logs = auditData?.logs || [];
+  const totalLogs = auditData?.total || 0;
+  const error = queryError ? "Could not connect to Audit API. Ensure backend is running." : null;
 
   // Computed Stats (from current view, ideally fetched from stats API)
   const approvedCount = logs.filter((l) => l.verdict === "approved").length;

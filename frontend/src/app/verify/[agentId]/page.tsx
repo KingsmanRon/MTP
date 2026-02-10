@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { TrustScore } from "@/components/trust-score";
 import { formatDateTime, formatRelative, copyToClipboard } from "@/lib/utils";
+import { usePublicAgent } from "@/lib/hooks";
 import {
   Shield,
   CheckCircle,
@@ -18,49 +19,16 @@ import {
   ExternalLink,
   AlertTriangle,
 } from "lucide-react";
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import type { AgentStatus } from "@/lib/api";
-
-// Mock data - would come from API
-const mockAgentData = {
-  agent_id: "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-  name: "PaymentBot",
-  organization_name: "Acme Corporation",
-  trust_score: 85,
-  status: "active" as AgentStatus,
-  is_verified: true,
-  verified_since: "2024-01-15T10:30:00Z",
-  total_actions: 15234,
-  approved_actions: 14567,
-  blocked_actions: 667,
-  last_action_at: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
-  public_key_fingerprint: "sha256:a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6",
-};
 
 export default function PublicVerifyPage() {
   const params = useParams();
   const agentId = params.agentId as string;
   const [copied, setCopied] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [agent, setAgent] = useState(mockAgentData);
-  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    // Simulate API call
-    const fetchAgent = async () => {
-      setLoading(true);
-      await new Promise((resolve) => setTimeout(resolve, 500));
-
-      // Check if agent exists (mock check)
-      if (agentId.includes("notfound")) {
-        setError("Agent not found");
-      } else {
-        setAgent({ ...mockAgentData, agent_id: agentId });
-      }
-      setLoading(false);
-    };
-    fetchAgent();
-  }, [agentId]);
+  const { data: agent, isLoading: loading, error: queryError } = usePublicAgent(agentId);
+  const error = queryError ? "Agent not found" : null;
 
   const handleCopy = async () => {
     await copyToClipboard(window.location.href);
@@ -79,7 +47,7 @@ export default function PublicVerifyPage() {
     );
   }
 
-  if (error) {
+  if (error || !agent) {
     return (
       <div className="min-h-screen bg-gradient-to-b from-background to-muted">
         <div className="container mx-auto px-4 py-20">
@@ -103,8 +71,6 @@ export default function PublicVerifyPage() {
       </div>
     );
   }
-
-  const approvalRate = ((agent.approved_actions / agent.total_actions) * 100).toFixed(1);
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-background to-muted">
@@ -198,10 +164,10 @@ export default function PublicVerifyPage() {
                 </div>
                 <div className="p-4 bg-muted rounded-lg">
                   <div className="flex items-center gap-2 mb-1">
-                    <CheckCircle className="h-4 w-4 text-muted-foreground" />
-                    <span className="text-sm text-muted-foreground">Approval Rate</span>
+                    <Shield className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-sm text-muted-foreground">Trust Score</span>
                   </div>
-                  <p className="text-2xl font-bold">{approvalRate}%</p>
+                  <p className="text-2xl font-bold">{agent.trust_score}/100</p>
                 </div>
               </div>
 
@@ -215,24 +181,20 @@ export default function PublicVerifyPage() {
                 </div>
                 <div className="flex items-center justify-between py-2 border-b">
                   <span className="text-muted-foreground">Last Activity</span>
-                  <span className="font-medium">{formatRelative(agent.last_action_at)}</span>
-                </div>
-                <div className="flex items-center justify-between py-2 border-b">
-                  <span className="text-muted-foreground">Approved Actions</span>
-                  <span className="font-medium text-green-500">
-                    {agent.approved_actions.toLocaleString()}
+                  <span className="font-medium">
+                    {agent.last_action_at ? formatRelative(agent.last_action_at) : "Never"}
                   </span>
                 </div>
                 <div className="flex items-center justify-between py-2 border-b">
-                  <span className="text-muted-foreground">Blocked Actions</span>
-                  <span className="font-medium text-red-500">
-                    {agent.blocked_actions.toLocaleString()}
+                  <span className="text-muted-foreground">Total Actions</span>
+                  <span className="font-medium">
+                    {agent.total_actions.toLocaleString()}
                   </span>
                 </div>
                 <div className="flex items-center justify-between py-2">
-                  <span className="text-muted-foreground">Public Key Fingerprint</span>
+                  <span className="text-muted-foreground">Agent ID</span>
                   <code className="text-xs text-muted-foreground">
-                    {agent.public_key_fingerprint}
+                    {agent.agent_id}
                   </code>
                 </div>
               </div>
