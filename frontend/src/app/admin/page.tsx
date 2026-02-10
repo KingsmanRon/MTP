@@ -1,12 +1,12 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { StatsCard } from "@/components/stats-card";
 import { LoadingState } from "@/components/loading-state";
 import { TrustScoreBadge } from "@/components/trust-score";
 import { VerdictBadge } from "@/components/verdict-badge";
 import { formatRelative, formatCurrency } from "@/lib/utils";
+import { useAgents, useAuditLogs, useAlerts, useUsageMetrics } from "@/lib/hooks";
 import {
   Shield,
   Bot,
@@ -26,74 +26,45 @@ import {
   ResponsiveContainer,
 } from "recharts";
 
-// Mock data - in production, this would come from the API
-const mockStats = {
-  totalAgents: 12,
-  activeAgents: 10,
-  totalVerifications: 15234,
-  approvedCount: 14567,
-  blockedCount: 667,
-  openAlerts: 3,
-  dailySpend: 4523.45,
-};
-
-const mockRecentLogs = [
-  {
-    id: "1",
-    agent_name: "PaymentBot",
-    action_type: "financial_transaction",
-    verdict: "approved" as const,
-    trust_score: 85,
-    timestamp: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
-  },
-  {
-    id: "2",
-    agent_name: "DataExporter",
-    action_type: "data_export",
-    verdict: "blocked" as const,
-    trust_score: 42,
-    timestamp: new Date(Date.now() - 15 * 60 * 1000).toISOString(),
-  },
-  {
-    id: "3",
-    agent_name: "EmailAgent",
-    action_type: "email_send",
-    verdict: "approved" as const,
-    trust_score: 78,
-    timestamp: new Date(Date.now() - 30 * 60 * 1000).toISOString(),
-  },
-  {
-    id: "4",
-    agent_name: "APIWorker",
-    action_type: "api_call",
-    verdict: "rate_limited" as const,
-    trust_score: 65,
-    timestamp: new Date(Date.now() - 45 * 60 * 1000).toISOString(),
-  },
-];
-
-const mockChartData = [
-  { date: "Mon", approved: 2400, blocked: 120 },
-  { date: "Tue", approved: 2210, blocked: 98 },
-  { date: "Wed", approved: 2890, blocked: 145 },
-  { date: "Thu", approved: 2000, blocked: 87 },
-  { date: "Fri", approved: 2780, blocked: 110 },
-  { date: "Sat", approved: 1890, blocked: 65 },
-  { date: "Sun", approved: 2390, blocked: 102 },
-];
-
 export default function AdminDashboard() {
-  // In production, use actual API calls
-  const isLoading = false;
+  // Get date range for past 7 days
+  const endDate = new Date().toISOString();
+  const startDate = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+
+  // Fetch real data from API
+  const { data: agents, isLoading: agentsLoading } = useAgents();
+  const { data: auditData, isLoading: auditLoading } = useAuditLogs({ limit: 10 });
+  const { data: alertsData, isLoading: alertsLoading } = useAlerts({ status: "open", limit: 10 });
+  const { data: usageData, isLoading: usageLoading } = useUsageMetrics(startDate, endDate);
+
+  const isLoading = agentsLoading || auditLoading || alertsLoading || usageLoading;
 
   if (isLoading) {
     return <LoadingState message="Loading dashboard..." />;
   }
 
-  const approvalRate = (
-    (mockStats.approvedCount / mockStats.totalVerifications) *
-    100
-  ).toFixed(1);
+  // Calculate stats from real data
+  const totalAgents = agents?.length || 0;
+  const activeAgents = agents?.filter((a) => a.status === "active").length || 0;
+  const totalVerifications = usageData?.total_verifications || 0;
+  const approvedCount = usageData?.approved_count || 0;
+  const blockedCount = usageData?.blocked_count || 0;
+  const openAlerts = alertsData?.total || 0;
+  const dailySpend = usageData?.total_spend_usd || 0;
+
+  const approvalRate = totalVerifications > 0
+    ? ((approvedCount / totalVerifications) * 100).toFixed(1)
+    : "0.0";
+
+  // Transform daily breakdown for chart
+  const chartData = usageData?.daily_breakdown?.map((day) => ({
+    date: new Date(day.date).toLocaleDateString("en-US", { weekday: "short" }),
+    approved: day.approved,
+    blocked: day.blocked,
+  })) || [];
+
+  // Recent logs
+  const recentLogs = auditData?.logs || [];
 
   return (
     <div className="space-y-6">
@@ -108,38 +79,38 @@ export default function AdminDashboard() {
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <StatsCard
           title="Active Agents"
-          value={`${mockStats.activeAgents}/${mockStats.totalAgents}`}
+          value={`${activeAgents}/${totalAgents}`}
           icon={Bot}
           description="Agents currently active"
         />
         <StatsCard
           title="Total Verifications"
-          value={mockStats.totalVerifications.toLocaleString()}
+          value={totalVerifications.toLocaleString()}
           icon={Shield}
-          trend={{ value: 12.5, label: "from last week" }}
+          description="Past 7 days"
         />
         <StatsCard
           title="Approval Rate"
           value={`${approvalRate}%`}
           icon={CheckCircle}
-          description={`${mockStats.blockedCount} blocked`}
+          description={`${blockedCount} blocked`}
         />
         <StatsCard
           title="Daily Spend"
-          value={formatCurrency(mockStats.dailySpend)}
+          value={formatCurrency(dailySpend)}
           icon={DollarSign}
-          trend={{ value: -3.2, label: "from yesterday" }}
+          description="Today"
         />
       </div>
 
       {/* Alerts Banner */}
-      {mockStats.openAlerts > 0 && (
+      {openAlerts > 0 && (
         <Card className="border-yellow-500/50 bg-yellow-500/5">
           <CardContent className="flex items-center gap-4 py-4">
             <AlertTriangle className="h-5 w-5 text-yellow-500" />
             <div className="flex-1">
               <p className="font-medium">
-                {mockStats.openAlerts} open security alert{mockStats.openAlerts > 1 ? "s" : ""}
+                {openAlerts} open security alert{openAlerts > 1 ? "s" : ""}
               </p>
               <p className="text-sm text-muted-foreground">
                 Review and acknowledge alerts to maintain security posture
@@ -165,34 +136,40 @@ export default function AdminDashboard() {
           </CardHeader>
           <CardContent>
             <div className="h-[300px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={mockChartData}>
-                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                  <XAxis dataKey="date" className="text-xs" />
-                  <YAxis className="text-xs" />
-                  <Tooltip
-                    contentStyle={{
-                      backgroundColor: "hsl(var(--card))",
-                      border: "1px solid hsl(var(--border))",
-                      borderRadius: "8px",
-                    }}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="approved"
-                    stroke="hsl(var(--success))"
-                    strokeWidth={2}
-                    dot={false}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="blocked"
-                    stroke="hsl(var(--destructive))"
-                    strokeWidth={2}
-                    dot={false}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
+              {chartData.length > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={chartData}>
+                    <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                    <XAxis dataKey="date" className="text-xs" />
+                    <YAxis className="text-xs" />
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: "hsl(var(--card))",
+                        border: "1px solid hsl(var(--border))",
+                        borderRadius: "8px",
+                      }}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="approved"
+                      stroke="hsl(142, 76%, 36%)"
+                      strokeWidth={2}
+                      dot={false}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="blocked"
+                      stroke="hsl(0, 84%, 60%)"
+                      strokeWidth={2}
+                      dot={false}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="flex items-center justify-center h-full text-muted-foreground">
+                  No verification data available
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -205,31 +182,37 @@ export default function AdminDashboard() {
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              {mockRecentLogs.map((log) => (
-                <div
-                  key={log.id}
-                  className="flex items-center justify-between py-2 border-b last:border-0"
-                >
-                  <div className="flex items-center gap-3">
-                    <div
-                      className={`w-2 h-2 rounded-full ${
-                        log.verdict === "approved" ? "bg-green-500" : "bg-red-500"
-                      }`}
-                    />
-                    <div>
-                      <p className="font-medium text-sm">{log.agent_name}</p>
-                      <p className="text-xs text-muted-foreground">{log.action_type}</p>
+              {recentLogs.length > 0 ? (
+                recentLogs.map((log) => (
+                  <div
+                    key={log.id}
+                    className="flex items-center justify-between py-2 border-b last:border-0"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div
+                        className={`w-2 h-2 rounded-full ${
+                          log.verdict === "approved" ? "bg-green-500" : "bg-red-500"
+                        }`}
+                      />
+                      <div>
+                        <p className="font-medium text-sm">{log.agent_name || "Unknown Agent"}</p>
+                        <p className="text-xs text-muted-foreground">{log.action_type}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <TrustScoreBadge score={log.trust_score_at_time} />
+                      <VerdictBadge verdict={log.verdict} showIcon={false} />
+                      <span className="text-xs text-muted-foreground w-16 text-right">
+                        {formatRelative(log.timestamp)}
+                      </span>
                     </div>
                   </div>
-                  <div className="flex items-center gap-4">
-                    <TrustScoreBadge score={log.trust_score} />
-                    <VerdictBadge verdict={log.verdict} showIcon={false} />
-                    <span className="text-xs text-muted-foreground w-16 text-right">
-                      {formatRelative(log.timestamp)}
-                    </span>
-                  </div>
+                ))
+              ) : (
+                <div className="text-center text-muted-foreground py-8">
+                  No recent activity
                 </div>
-              ))}
+              )}
             </div>
           </CardContent>
         </Card>
@@ -244,7 +227,7 @@ export default function AdminDashboard() {
                 <CheckCircle className="h-6 w-6 text-green-500" />
               </div>
               <div>
-                <p className="text-2xl font-bold">{mockStats.approvedCount.toLocaleString()}</p>
+                <p className="text-2xl font-bold">{approvedCount.toLocaleString()}</p>
                 <p className="text-sm text-muted-foreground">Approved Actions</p>
               </div>
             </div>
@@ -257,7 +240,7 @@ export default function AdminDashboard() {
                 <XCircle className="h-6 w-6 text-red-500" />
               </div>
               <div>
-                <p className="text-2xl font-bold">{mockStats.blockedCount.toLocaleString()}</p>
+                <p className="text-2xl font-bold">{blockedCount.toLocaleString()}</p>
                 <p className="text-sm text-muted-foreground">Blocked Actions</p>
               </div>
             </div>
@@ -270,8 +253,8 @@ export default function AdminDashboard() {
                 <Activity className="h-6 w-6 text-primary" />
               </div>
               <div>
-                <p className="text-2xl font-bold">99.8%</p>
-                <p className="text-sm text-muted-foreground">Uptime (30 days)</p>
+                <p className="text-2xl font-bold">{activeAgents}</p>
+                <p className="text-sm text-muted-foreground">Active Agents</p>
               </div>
             </div>
           </CardContent>
