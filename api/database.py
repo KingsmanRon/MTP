@@ -21,6 +21,7 @@ from api.models import (
     AgentStatus,
     AuditLogEntry,
     ActionVerdict,
+    BillingTier,
     OrganizationRecord,
 )
 
@@ -289,10 +290,15 @@ class Database:
         if row is None:
             raise OrganizationNotFoundError(f"Organization {org_id} not found")
 
+        # Handle billing_tier - convert string to enum if needed
+        billing_tier = row["billing_tier"]
+        if isinstance(billing_tier, str):
+            billing_tier = BillingTier(billing_tier)
+
         return OrganizationRecord(
             id=row["id"],
             name=row["name"],
-            billing_tier=row["billing_tier"],
+            billing_tier=billing_tier,
             contact_email=row["contact_email"],
             webhook_url=row["webhook_url"],
             daily_limit_usd=row["daily_limit_usd"],

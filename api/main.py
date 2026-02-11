@@ -1300,14 +1300,17 @@ async def get_organization(
         return {
             "id": str(org.id),
             "name": org.name,
-            "billing_tier": org.billing_tier.value if hasattr(org.billing_tier, 'value') else org.billing_tier,
+            "billing_tier": org.billing_tier.value if hasattr(org.billing_tier, 'value') else str(org.billing_tier),
             "contact_email": org.contact_email,
             "webhook_url": org.webhook_url,
             "daily_limit_usd": float(org.daily_limit_usd),
             "monthly_limit_usd": float(org.monthly_limit_usd),
-            "metadata": org.metadata,
+            "metadata": org.metadata if isinstance(org.metadata, dict) else {},
             "created_at": org.created_at.isoformat(),
             "updated_at": org.updated_at.isoformat(),
         }
     except OrganizationNotFoundError:
         raise HTTPException(status_code=404, detail="Organization not found")
+    except Exception as e:
+        logger.error(f"Error fetching organization {org_id}: {type(e).__name__}: {e}")
+        raise HTTPException(status_code=500, detail=f"Error fetching organization: {type(e).__name__}")
