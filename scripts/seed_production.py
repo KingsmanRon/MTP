@@ -20,6 +20,7 @@ Usage:
 
 import asyncio
 import argparse
+import json
 import secrets
 import hashlib
 import os
@@ -173,7 +174,7 @@ async def seed_database(
                     60,  # Rate limit per minute
                     ["financial_transaction", "api_call", "email_send", "data_export"],
                     ["admin_action"],
-                    {"description": "Demo agent for testing", "environment": "production"},
+                    json.dumps({"description": "Demo agent for testing", "environment": "production"}),
                     0,
                     0,
                     datetime.now(timezone.utc),
