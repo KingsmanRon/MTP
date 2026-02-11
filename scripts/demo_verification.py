@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-MTP Demo Script - Full Verification Flow
+Inntris Demo Script - Full Verification Flow
 
-This script demonstrates the complete Machine Trust Protocol flow:
+This script demonstrates the complete Inntris agent verification flow:
 1. Generate Ed25519 keypair for an agent
 2. Register the agent with the API
 3. Create and sign a verification request
@@ -67,7 +67,7 @@ def sign_action(private_key: Ed25519PrivateKey, action_hash: str) -> str:
     return base64.b64encode(signature).decode()
 
 
-def register_agent(api_url: str, api_key: str, org_id: str, name: str, public_key_hex: str) -> dict:
+def register_agent(api_url: str, api_key: str, org_id: str, name: str, public_key_b64: str) -> dict:
     """Register a new agent with the API."""
     headers = {
         "X-API-Key": api_key,
@@ -77,11 +77,11 @@ def register_agent(api_url: str, api_key: str, org_id: str, name: str, public_ke
     data = {
         "org_id": org_id,
         "name": name,
-        "public_key": public_key_hex,
+        "public_key": public_key_b64,  # Base64 encoded
         "daily_limit_usd": 1000,
         "per_action_limit_usd": 100,
         "allowed_actions": ["financial_transaction", "api_call", "data_export"],
-        "metadata": {"demo": True, "created_by": "demo_script"}
+        "metadata": {"demo": True, "created_by": "inntris_demo"}
     }
 
     response = requests.post(f"{api_url}/admin/agents", headers=headers, json=data)
@@ -128,7 +128,7 @@ def get_organization(api_url: str, api_key: str) -> dict:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="MTP Demo - Full Verification Flow")
+    parser = argparse.ArgumentParser(description="Inntris Demo - Full Verification Flow")
     parser.add_argument("--api-url", default="https://inntris-api.up.railway.app", help="API URL")
     parser.add_argument("--api-key", required=True, help="API key")
     args = parser.parse_args()
@@ -137,7 +137,7 @@ def main():
     api_key = args.api_key
 
     print("\n" + "="*70)
-    print("  MACHINE TRUST PROTOCOL (MTP) - DEMO")
+    print("  INNTRIS - AI AGENT VERIFICATION DEMO")
     print("="*70)
 
     # Step 1: Get organization info
@@ -151,15 +151,15 @@ def main():
     # Step 2: Generate Ed25519 keypair
     print("\n[Step 2] Generating Ed25519 keypair...")
     private_key, private_bytes, public_bytes = generate_keypair()
-    public_key_hex = public_bytes.hex()
-    print(f"  Public Key (hex): {public_key_hex[:32]}...")
+    public_key_b64 = base64.b64encode(public_bytes).decode()  # API expects base64
+    print(f"  Public Key (b64): {public_key_b64[:32]}...")
     print(f"  Key Length: {len(public_bytes)} bytes (Ed25519)")
 
     # Step 3: Register the agent
     print("\n[Step 3] Registering demo agent...")
     agent_name = f"Demo Agent {datetime.now().strftime('%H:%M:%S')}"
     try:
-        result = register_agent(api_url, api_key, org_id, agent_name, public_key_hex)
+        result = register_agent(api_url, api_key, org_id, agent_name, public_key_b64)
         agent_id = result["agent_id"]
         print(f"  Agent Name: {agent_name}")
         print(f"  Agent ID: {agent_id}")
@@ -232,16 +232,18 @@ def main():
 What happened:
   1. Generated Ed25519 keypair for cryptographic signing
   2. Registered agent with public key (private key stays with agent)
-  3. Created a financial transaction action
+  3. Created a financial transaction action ($49.99 USD)
   4. Computed SHA-256 hash of: agent_id|action_type|payload|nonce|timestamp
   5. Signed the hash with Ed25519 private key
   6. Submitted to /verify - signature verified against stored public key
   7. Action logged to immutable audit trail
 
-Next steps:
-  - View in Dashboard: {api_url.replace('api', 'frontend').replace('-api', '-frontend')}
-  - The audit log can be batched and anchored to Base Sepolia blockchain
-  - Merkle root provides tamper-proof verification
+Dashboard: https://inntris-frontend.vercel.app/admin
+
+Blockchain Anchoring:
+  - Audit logs can be batched into Merkle trees
+  - Root hash anchored to Base Sepolia: 0x0600ea15802c8d2ea429371b2eb0aaccfe321480
+  - Provides tamper-proof, cryptographic verification
 """)
 
 
