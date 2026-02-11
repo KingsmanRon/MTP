@@ -1,5 +1,6 @@
 "use client";
 
+import { useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { StatsCard } from "@/components/stats-card";
 import { LoadingState } from "@/components/loading-state";
@@ -27,9 +28,15 @@ import {
 } from "recharts";
 
 export default function AdminDashboard() {
-  // Get date range for past 7 days
-  const endDate = new Date().toISOString();
-  const startDate = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  // Get date range for past 7 days - memoize to prevent infinite re-renders
+  const { startDate, endDate } = useMemo(() => {
+    const end = new Date();
+    const start = new Date(end.getTime() - 7 * 24 * 60 * 60 * 1000);
+    return {
+      startDate: start.toISOString(),
+      endDate: end.toISOString(),
+    };
+  }, []);
 
   // Fetch real data from API
   const { data: agents, isLoading: agentsLoading } = useAgents();
