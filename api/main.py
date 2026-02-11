@@ -968,7 +968,7 @@ async def list_alerts(
     """List security alerts."""
     org_id = auth["org_id"]
 
-    where_clauses = ["org_id = $1"]
+    where_clauses = ["sa.org_id = $1"]
     params: list = [org_id]
     param_idx = 2
 
@@ -986,7 +986,7 @@ async def list_alerts(
 
     where_sql = " AND ".join(where_clauses)
 
-    count_query = f"SELECT COUNT(*) FROM security_alerts WHERE {where_sql}"
+    count_query = f"SELECT COUNT(*) FROM security_alerts sa WHERE {where_sql}"
 
     query = f"""
         SELECT sa.*, a.name as agent_name
