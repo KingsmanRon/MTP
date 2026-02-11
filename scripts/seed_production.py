@@ -79,28 +79,29 @@ async def seed_database(
             org_name
         )
 
+        # Generate API key first (needed for org creation)
+        api_key, key_hash, key_prefix = generate_api_key()
+
         if existing_org:
             print(f"Organization '{org_name}' already exists (ID: {existing_org['id']})")
             org_id = existing_org['id']
         else:
-            # Create organization
+            # Create organization with api_key_hash
             org_id = uuid4()
             await conn.execute(
                 """
-                INSERT INTO organizations (id, name, billing_tier, contact_email, created_at, updated_at)
-                VALUES ($1, $2, $3, $4, $5, $5)
+                INSERT INTO organizations (id, name, billing_tier, contact_email, api_key_hash, created_at, updated_at)
+                VALUES ($1, $2, $3, $4, $5, $6, $6)
                 """,
                 org_id,
                 org_name,
                 "enterprise",
                 "admin@inntris.io",
+                key_hash,
                 datetime.now(timezone.utc),
             )
             print(f"Created organization: {org_name}")
             print(f"  ID: {org_id}")
-
-        # Generate API key
-        api_key, key_hash, key_prefix = generate_api_key()
 
         # Check if API key with this prefix exists
         existing_key = await conn.fetchrow(
@@ -143,24 +144,28 @@ async def seed_database(
                 print(f"\nDemo agent already exists (ID: {existing_agent['id']})")
             else:
                 agent_id = uuid4()
-                # Generate a demo Ed25519 public key (32 bytes, hex encoded)
-                demo_public_key = secrets.token_hex(32)
+                # Generate a demo Ed25519 public key (32 bytes as BYTEA)
+                demo_public_key = secrets.token_bytes(32)
+                # SHA-256 fingerprint for quick lookup (64 char hex string)
+                public_key_fingerprint = hashlib.sha256(demo_public_key).hexdigest()
 
                 await conn.execute(
                     """
                     INSERT INTO agents (
-                        id, org_id, name, public_key, status, trust_score,
+                        id, org_id, name, public_key, public_key_fingerprint,
+                        status, trust_score,
                         daily_limit_usd, per_action_limit_usd, rate_limit_per_minute,
                         allowed_actions, blocked_actions, metadata,
                         total_actions_count, total_blocked_count,
                         created_at, updated_at
                     )
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $15)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $16)
                     """,
                     agent_id,
                     org_id,
                     "Demo Agent",
                     demo_public_key,
+                    public_key_fingerprint,
                     "active",
                     85,  # Starting trust score
                     10000,  # Daily limit USD
