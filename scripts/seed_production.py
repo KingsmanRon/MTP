@@ -46,8 +46,8 @@ def generate_api_key() -> tuple[str, bytes, str]:
     # Hash for storage (SHA-256) - as bytes for BYTEA column
     key_hash = hashlib.sha256(api_key.encode()).digest()
 
-    # Prefix for identification (first 12 chars after prefix)
-    key_prefix = f"inntris_live_sk_{random_part[:8]}"
+    # Prefix for identification (first 8 chars only - schema limit)
+    key_prefix = random_part[:8]
 
     return api_key, key_hash, key_prefix
 
