@@ -51,13 +51,33 @@ def generate_keypair():
     return private_key, private_bytes, public_bytes
 
 
-def compute_action_hash(agent_id: str, action_type: str, payload: dict, nonce: str, timestamp: str) -> str:
-    """Compute SHA-256 hash of the action for signing."""
-    # Canonical JSON encoding (sorted keys, no spaces)
-    canonical_payload = json.dumps(payload, sort_keys=True, separators=(',', ':'))
+def compute_payload_hash(payload: dict) -> str:
+    """Compute SHA-256 hash of a JSON payload (matches API exactly)."""
+    canonical = json.dumps(
+        payload,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    )
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
-    message = f"{agent_id}|{action_type}|{canonical_payload}|{nonce}|{timestamp}"
-    return hashlib.sha256(message.encode()).hexdigest()
+
+def compute_action_hash(agent_id: str, action_type: str, payload: dict, nonce: str, timestamp: str) -> str:
+    """Compute SHA-256 hash of the action for signing (matches API exactly)."""
+    # First compute the payload hash
+    payload_hash = compute_payload_hash(payload)
+
+    # Create signing data structure (must match API's CryptoService.compute_action_hash)
+    signing_data = {
+        "agent_id": str(agent_id),
+        "action_type": action_type,
+        "payload_hash": payload_hash,
+        "nonce": nonce,
+        "timestamp": timestamp,
+    }
+
+    # Hash the signing data
+    return compute_payload_hash(signing_data)
 
 
 def sign_action(private_key: Ed25519PrivateKey, action_hash: str) -> str:
