@@ -46,7 +46,7 @@ Your Inntris Core (Inntris) implementation has been **thoroughly reviewed, harde
 
 2. **Set Up Supabase** (10 min)
    - Create project: https://supabase.com/dashboard
-   - Name: `mtp-production`
+   - Name: `inntris-production`
    - Region: Choose closest to users
    - Plan: **Pro** (required)
    - Copy connection string: `postgresql://postgres.xxx:password@db.xxx.supabase.co:6543/postgres`
@@ -112,13 +112,13 @@ Your Inntris Core (Inntris) implementation has been **thoroughly reviewed, harde
 7. **Deploy API Service** (5 min)
    - Railway will auto-deploy from GitHub
    - Wait for "Success" status
-   - Copy public URL: `https://mtp-xxx.up.railway.app`
+   - Copy public URL: `https://inntris-api.up.railway.app`
    - Enable health check: `/health`
 
 8. **Deploy Worker Service** (5 min)
    - In Railway, click "+ New" → "Service"
    - Same repo, same branch
-   - Service name: `mtp-worker`
+   - Service name: `inntris-worker`
    - Start command: `python -m workers.anchor_worker`
    - Copy all environment variables from API service
 

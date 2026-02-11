@@ -210,7 +210,7 @@ ALLOWED_ORIGINS=https://your-frontend-domain.vercel.app
 1. Railway auto-deploys on push
 2. Or click **Deploy** manually
 3. Wait for build to complete
-4. Copy the public URL (e.g., `https://mtp-api-production.up.railway.app`)
+4. Copy the public URL (e.g., `https://inntris-api.up.railway.app`)
 
 ### 4.7 Verify Deployment
 
@@ -286,13 +286,13 @@ NEXT_PUBLIC_ANCHOR_CONTRACT=0xYourContractAddress
 
 1. Click **Deploy**
 2. Wait for build
-3. Copy the URL (e.g., `https://mtp-dashboard.vercel.app`)
+3. Copy the URL (e.g., `https://inntris-frontend.vercel.app`)
 
 ### 6.5 Update CORS
 
 Go back to Railway API service and update:
 ```env
-ALLOWED_ORIGINS=https://mtp-dashboard.vercel.app
+ALLOWED_ORIGINS=https://inntris-frontend.vercel.app
 ```
 
 ---

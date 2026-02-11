@@ -225,7 +225,7 @@ npm install tweetnacl buffer
 ### **Go**
 
 ```go
-package mtp
+package inntris
 
 import (
     "crypto/ed25519"

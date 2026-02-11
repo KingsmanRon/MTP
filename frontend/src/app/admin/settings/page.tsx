@@ -198,7 +198,7 @@ export default function SettingsPage() {
                 <label className="text-sm font-medium">Webhook URL</label>
                 <Input
                   type="url"
-                  placeholder="https://your-server.com/webhooks/mtp"
+                  placeholder="https://your-server.com/webhooks/inntris"
                   value={webhookUrl}
                   onChange={(e) => setWebhookUrl(e.target.value)}
                 />

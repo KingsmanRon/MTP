@@ -65,7 +65,7 @@ openssl rand -base64 32
 1. Go to https://supabase.com/dashboard
 2. Click **"New Project"**
 3. Fill in:
-   - **Name**: `mtp-production` (or your preferred name)
+   - **Name**: `inntris-production` (or your preferred name)
    - **Database Password**: Use a strong password (save it!)
    - **Region**: Choose closest to your users (e.g., `us-east-1`)
    - **Pricing Plan**: **Pro** (Required for production workloads)
@@ -308,7 +308,7 @@ Railway will automatically deploy your API service. Now add the worker:
 1. In Railway project, click **"+ New"** → **"Service"**
 2. Select **"GitHub Repo"** (same repo)
 3. Branch: `claude/review-trust-layer-HGvgx`
-4. **Service name**: `mtp-worker`
+4. **Service name**: `inntris-worker`
 5. Go to **"Settings"** → **"Deploy"**
 6. **Build Command**: Leave empty (uses Dockerfile)
 7. **Start Command**:
@@ -322,7 +322,7 @@ Railway will automatically deploy your API service. Now add the worker:
 2. **Health Check Path**: `/health`
 3. **Health Check Timeout**: 30 seconds
 4. Enable **"Public Networking"**
-5. **SAVE YOUR PUBLIC URL**: `https://mtp-production.up.railway.app`
+5. **SAVE YOUR PUBLIC URL**: `https://inntris-api.up.railway.app`
 
 ### 4.7 Monitor Deployment
 1. Check **"Deployments"** tab - should show "Success"

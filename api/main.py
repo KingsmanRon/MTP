@@ -1126,7 +1126,7 @@ async def create_api_key(
     expires_at = body.get("expires_at")
 
     # Generate secure API key
-    raw_key = f"mtp_{secrets.token_urlsafe(32)}"
+    raw_key = f"inntris_{secrets.token_urlsafe(32)}"
     key_hash = hashlib.sha256(raw_key.encode()).digest()
     key_prefix = raw_key[:12]
 
@@ -1179,7 +1179,7 @@ async def rotate_api_key(
     org_id = auth["org_id"]
 
     # Generate new key
-    raw_key = f"mtp_{secrets.token_urlsafe(32)}"
+    raw_key = f"inntris_{secrets.token_urlsafe(32)}"
     key_hash = hashlib.sha256(raw_key.encode()).digest()
     key_prefix = raw_key[:12]
 
