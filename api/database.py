@@ -295,6 +295,13 @@ class Database:
         if isinstance(billing_tier, str):
             billing_tier = BillingTier(billing_tier)
 
+        # Handle metadata - parse JSON string if needed (asyncpg may return JSONB as string)
+        metadata = row["metadata"]
+        if metadata is None:
+            metadata = {}
+        elif isinstance(metadata, str):
+            metadata = json.loads(metadata) if metadata else {}
+
         return OrganizationRecord(
             id=row["id"],
             name=row["name"],
@@ -303,7 +310,7 @@ class Database:
             webhook_url=row["webhook_url"],
             daily_limit_usd=row["daily_limit_usd"],
             monthly_limit_usd=row["monthly_limit_usd"],
-            metadata=row["metadata"] if row["metadata"] else {},
+            metadata=metadata,
             created_at=row["created_at"],
             updated_at=row["updated_at"],
         )
