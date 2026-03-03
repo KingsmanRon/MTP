@@ -95,6 +95,36 @@ class VerifyActionRequest(BaseModel):
         return v.lower()
 
 
+class TestVerifyRequest(BaseModel):
+    """
+    Request payload for test verification (playground).
+
+    Does not require cryptographic signature - uses API key auth instead.
+    For testing policy evaluation without full integration.
+    """
+    model_config = ConfigDict(strict=False)
+
+    agent_id: UUID = Field(..., description="Agent ID to test verification for")
+    action_type: str = Field(
+        ...,
+        min_length=1,
+        max_length=100,
+        description="Type of action being performed"
+    )
+    payload: dict[str, Any] = Field(
+        ...,
+        description="Action-specific payload containing all details"
+    )
+
+    @field_validator("action_type")
+    @classmethod
+    def validate_action_type(cls, v: str) -> str:
+        """Ensure action type is alphanumeric with underscores only."""
+        if not v.replace("_", "").isalnum():
+            raise ValueError("action_type must be alphanumeric with underscores only")
+        return v.lower()
+
+
 class RegisterAgentRequest(BaseModel):
     """Request to register a new agent with the platform."""
     # UPDATED: strict=False allows JSON strings to be parsed into Types (UUID, Decimal)

@@ -1,31 +1,18 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select } from "@/components/ui/select";
-import { Badge } from "@/components/ui/badge";
 import { VerdictBadge } from "@/components/verdict-badge";
 import { TrustScoreBadge } from "@/components/trust-score";
+import { LoadingState } from "@/components/loading-state";
+import { EmptyState } from "@/components/empty-state";
 import { formatDateTime, copyToClipboard } from "@/lib/utils";
-import { Play, Copy, Check, AlertCircle, CheckCircle, Loader2 } from "lucide-react";
-import type { ActionVerdict } from "@/lib/api";
-
-interface VerificationResult {
-  verdict: ActionVerdict;
-  verdict_reason: string;
-  approval_token?: string;
-  trust_score: number;
-  audit_id: string;
-  timestamp: string;
-  limits_remaining?: {
-    daily_usd: number;
-    per_action_usd: number;
-    rate_limit: number;
-  };
-}
+import { useAgents } from "@/lib/hooks";
+import { createAuthenticatedApi, VerificationResult, ActionVerdict } from "@/lib/api";
+import { Play, Copy, Check, AlertCircle, CheckCircle, Loader2, Bot, Zap } from "lucide-react";
 
 const ACTION_TYPES = [
   { value: "financial_transaction", label: "Financial Transaction" },
@@ -64,13 +51,33 @@ const SAMPLE_PAYLOADS: Record<string, object> = {
   },
 };
 
+// Get API key from localStorage
+function getApiKey(): string {
+  if (typeof window !== "undefined") {
+    const stored = localStorage.getItem("inntris_api_key");
+    if (stored) return stored;
+  }
+  return process.env.NEXT_PUBLIC_API_KEY || "dev_test_key";
+}
+
 export default function PlaygroundPage() {
+  const [selectedAgentId, setSelectedAgentId] = useState<string>("");
   const [actionType, setActionType] = useState("financial_transaction");
   const [payload, setPayload] = useState(JSON.stringify(SAMPLE_PAYLOADS.financial_transaction, null, 2));
   const [isLoading, setIsLoading] = useState(false);
   const [result, setResult] = useState<VerificationResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
+
+  // Fetch agents
+  const { data: agents, isLoading: agentsLoading } = useAgents();
+
+  // Auto-select first agent
+  useEffect(() => {
+    if (agents && agents.length > 0 && !selectedAgentId) {
+      setSelectedAgentId(agents[0].id);
+    }
+  }, [agents, selectedAgentId]);
 
   const handleActionTypeChange = (newType: string) => {
     setActionType(newType);
@@ -80,71 +87,39 @@ export default function PlaygroundPage() {
   };
 
   const handleTest = async () => {
+    if (!selectedAgentId) {
+      setError("Please select an agent");
+      return;
+    }
+
     setIsLoading(true);
     setError(null);
     setResult(null);
 
     // Validate JSON
+    let parsedPayload;
     try {
-      JSON.parse(payload);
+      parsedPayload = JSON.parse(payload);
     } catch {
       setError("Invalid JSON payload");
       setIsLoading(false);
       return;
     }
 
-    // Simulate API call
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-
-    // Mock response based on action type and payload
-    const parsedPayload = JSON.parse(payload);
-    let mockResult: VerificationResult;
-
-    // Simulate different scenarios
-    if (actionType === "admin_action") {
-      mockResult = {
-        verdict: "blocked",
-        verdict_reason: "Trust score 85 below required 70 for admin_action",
-        trust_score: 85,
-        audit_id: crypto.randomUUID(),
-        timestamp: new Date().toISOString(),
-        limits_remaining: {
-          daily_usd: 7654.33,
-          per_action_usd: 500,
-          rate_limit: 58,
-        },
-      };
-    } else if (actionType === "financial_transaction" && parsedPayload.amount > 500) {
-      mockResult = {
-        verdict: "blocked",
-        verdict_reason: `Amount $${parsedPayload.amount} exceeds per-action limit of $500`,
-        trust_score: 85,
-        audit_id: crypto.randomUUID(),
-        timestamp: new Date().toISOString(),
-        limits_remaining: {
-          daily_usd: 7654.33,
-          per_action_usd: 500,
-          rate_limit: 58,
-        },
-      };
-    } else {
-      mockResult = {
-        verdict: "approved",
-        verdict_reason: "All verification checks passed",
-        approval_token: "inntris_" + crypto.randomUUID().replace(/-/g, ""),
-        trust_score: 85,
-        audit_id: crypto.randomUUID(),
-        timestamp: new Date().toISOString(),
-        limits_remaining: {
-          daily_usd: actionType === "financial_transaction" ? 7654.33 - parsedPayload.amount : 7654.33,
-          per_action_usd: 500,
-          rate_limit: 57,
-        },
-      };
+    try {
+      const api = createAuthenticatedApi(getApiKey());
+      const response = await api.testVerify({
+        agent_id: selectedAgentId,
+        action_type: actionType,
+        payload: parsedPayload,
+      });
+      setResult(response);
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : "Verification request failed";
+      setError(errorMessage);
+    } finally {
+      setIsLoading(false);
     }
-
-    setResult(mockResult);
-    setIsLoading(false);
   };
 
   const handleCopy = async (text: string, id: string) => {
@@ -153,13 +128,39 @@ export default function PlaygroundPage() {
     setTimeout(() => setCopied(null), 2000);
   };
 
+  if (agentsLoading) {
+    return <LoadingState message="Loading agents..." />;
+  }
+
+  if (!agents || agents.length === 0) {
+    return (
+      <EmptyState
+        icon={Bot}
+        title="No Agents Found"
+        description="Register an agent first to test verifications."
+        action={{
+          label: "Go to Agents",
+          href: "/admin/agents",
+        }}
+      />
+    );
+  }
+
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold">Verification Playground</h1>
         <p className="text-muted-foreground">
-          Test verification requests and see how Inntris evaluates your actions
+          Test verification requests against the live policy engine
         </p>
+      </div>
+
+      {/* Live API Badge */}
+      <div className="flex items-center gap-2 p-3 bg-green-500/10 border border-green-500/20 rounded-lg">
+        <Zap className="h-4 w-4 text-green-500" />
+        <span className="text-sm text-green-700 dark:text-green-400">
+          Connected to live API - Results reflect actual policy evaluation
+        </span>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
@@ -170,6 +171,23 @@ export default function PlaygroundPage() {
             <CardDescription>Configure and test a verification request</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Agent</label>
+              <Select
+                value={selectedAgentId}
+                onChange={(e) => {
+                  setSelectedAgentId(e.target.value);
+                  setResult(null);
+                }}
+              >
+                {agents.map((agent) => (
+                  <option key={agent.id} value={agent.id}>
+                    {agent.name} (Score: {agent.trust_score})
+                  </option>
+                ))}
+              </Select>
+            </div>
+
             <div className="space-y-2">
               <label className="text-sm font-medium">Action Type</label>
               <Select
@@ -214,11 +232,6 @@ export default function PlaygroundPage() {
                 </>
               )}
             </Button>
-
-            <p className="text-xs text-muted-foreground">
-              Note: This is a simulated test. In production, requests would be cryptographically
-              signed with your private key.
-            </p>
           </CardContent>
         </Card>
 
@@ -226,7 +239,7 @@ export default function PlaygroundPage() {
         <Card>
           <CardHeader>
             <CardTitle>Response</CardTitle>
-            <CardDescription>Verification result and details</CardDescription>
+            <CardDescription>Verification result from the policy engine</CardDescription>
           </CardHeader>
           <CardContent>
             {!result ? (
@@ -338,8 +351,8 @@ export default function PlaygroundPage() {
       {/* Test Scenarios */}
       <Card>
         <CardHeader>
-          <CardTitle>Test Scenarios</CardTitle>
-          <CardDescription>Quick test different verification scenarios</CardDescription>
+          <CardTitle>Quick Test Scenarios</CardTitle>
+          <CardDescription>Pre-configured tests to validate policy behavior</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="grid gap-4 md:grid-cols-3">
@@ -353,10 +366,10 @@ export default function PlaygroundPage() {
             >
               <div className="flex items-center gap-2 mb-2">
                 <CheckCircle className="h-4 w-4 text-green-500" />
-                <span className="font-medium">Approved Transaction</span>
+                <span className="font-medium">Small Transaction</span>
               </div>
               <p className="text-xs text-muted-foreground">
-                A $100 transaction within limits
+                A $100 transaction within typical limits
               </p>
             </button>
 
@@ -369,11 +382,11 @@ export default function PlaygroundPage() {
               }}
             >
               <div className="flex items-center gap-2 mb-2">
-                <AlertCircle className="h-4 w-4 text-red-500" />
-                <span className="font-medium">Exceeds Limit</span>
+                <AlertCircle className="h-4 w-4 text-yellow-500" />
+                <span className="font-medium">Large Transaction</span>
               </div>
               <p className="text-xs text-muted-foreground">
-                A $1000 transaction exceeding per-action limit
+                A $1000 transaction that may exceed limits
               </p>
             </button>
 
@@ -387,10 +400,10 @@ export default function PlaygroundPage() {
             >
               <div className="flex items-center gap-2 mb-2">
                 <AlertCircle className="h-4 w-4 text-red-500" />
-                <span className="font-medium">Insufficient Trust</span>
+                <span className="font-medium">Admin Action</span>
               </div>
               <p className="text-xs text-muted-foreground">
-                An admin action requiring higher trust score
+                May require higher trust score
               </p>
             </button>
           </div>

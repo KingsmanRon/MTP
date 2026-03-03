@@ -174,6 +174,20 @@ export interface AgentDashboard {
   }[];
 }
 
+export interface VerificationResult {
+  verdict: ActionVerdict;
+  verdict_reason: string;
+  approval_token: string | null;
+  trust_score: number;
+  audit_id: string;
+  timestamp: string;
+  limits_remaining?: {
+    daily_usd: number;
+    per_action_usd: number;
+    rate_limit: number;
+  };
+}
+
 // =============================================================================
 // API CLIENT
 // =============================================================================
@@ -508,6 +522,26 @@ export function createAuthenticatedApi(apiKey: string) {
     async getOrganization(): Promise<OrganizationRecord> {
       return apiRequest<OrganizationRecord>("/admin/organization", {
         headers: authHeaders,
+      });
+    },
+
+    // =========================================================================
+    // TESTING
+    // =========================================================================
+
+    /**
+     * Test verification (playground)
+     * Runs policy evaluation without cryptographic signature
+     */
+    async testVerify(data: {
+      agent_id: string;
+      action_type: string;
+      payload: Record<string, unknown>;
+    }): Promise<VerificationResult> {
+      return apiRequest<VerificationResult>("/admin/test-verify", {
+        method: "POST",
+        headers: authHeaders,
+        body: JSON.stringify(data),
       });
     },
   };

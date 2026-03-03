@@ -38,6 +38,7 @@ from api.database import (
 from api.models import (
     VerifyActionRequest,
     VerifyActionResponse,
+    TestVerifyRequest,
     RegisterAgentRequest,
     CreateOrganizationRequest,
     AgentPublicInfo,
@@ -524,6 +525,126 @@ async def verify_action(
     except Exception as e:
         logger.exception(f"Unexpected error: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@app.post(
+    "/admin/test-verify",
+    response_model=VerifyActionResponse,
+    tags=["Admin - Testing"],
+)
+async def test_verify_action(
+    request_data: TestVerifyRequest,
+    request: Request,
+    auth: dict = Depends(verify_api_key),
+    database: Database = Depends(get_db),
+):
+    """
+    Test verification endpoint for playground.
+
+    Runs full policy evaluation without requiring cryptographic signature.
+    Use this to test how the policy engine will evaluate different actions.
+
+    Note: Creates audit log entries marked as test requests.
+    """
+    start_time = time.time()
+
+    try:
+        # Fetch agent and verify org ownership
+        try:
+            agent = await database.get_agent_by_id(request_data.agent_id)
+        except AgentNotFoundError:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Agent {request_data.agent_id} not found",
+            )
+
+        if agent.org_id != auth["org_id"]:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Agent does not belong to your organization",
+            )
+
+        # Get current limits from database
+        now = datetime.now(timezone.utc)
+        minute_start = now.replace(second=0, microsecond=0)
+        minute_count, _ = await database.get_rate_limit_count(
+            agent.id, "minute", minute_start
+        )
+        daily_spend = await database.get_daily_spend(agent.id)
+
+        # Initialize PolicyEngine with current state
+        policy_engine = PolicyEngine(
+            daily_spend=daily_spend,
+            minute_request_count=minute_count,
+        )
+
+        # Evaluate all policies
+        policy_result = policy_engine.evaluate(
+            agent=agent,
+            action_type=request_data.action_type,
+            payload=request_data.payload,
+            timestamp=now,
+        )
+
+        verdict = policy_result.verdict
+        verdict_reason = policy_result.reason or "All verification checks passed"
+        limits_remaining = policy_result.limits_remaining or {}
+
+        # Generate a test action hash (no real signature)
+        test_nonce = f"test_{uuid.uuid4()}"
+        action_hash = CryptoService.compute_action_hash(
+            agent_id=str(request_data.agent_id),
+            action_type=request_data.action_type,
+            payload=request_data.payload,
+            nonce=test_nonce,
+            timestamp=now.isoformat(),
+        )
+
+        # Log to audit (marked as test)
+        audit_entry = AuditLogEntry(
+            agent_id=agent.id,
+            action_type=request_data.action_type,
+            action_hash=action_hash,
+            payload=request_data.payload,
+            verdict=verdict,
+            verdict_reason=verdict_reason,
+            signature=b"TEST_REQUEST",  # Marker for test requests
+            signature_valid=True,  # N/A for test
+            request_ip=request.client.host if request.client else None,
+            request_user_agent=request.headers.get("User-Agent"),
+            response_time_ms=int((time.time() - start_time) * 1000),
+            trust_score_at_time=agent.trust_score,
+            chain_previous_hash=await database.get_last_audit_hash(agent.id),
+            metadata={"test_request": True, "tested_by": auth.get("org_name", "API")},
+        )
+        audit_id = await database.insert_audit_log(audit_entry)
+
+        # Generate approval token for approved requests
+        approval_token = None
+        if policy_result.allowed:
+            approval_token = CryptoService.generate_approval_token(
+                agent_id=str(agent.id),
+                action_hash=action_hash,
+                verdict=verdict.value,
+                server_secret=SERVER_SECRET
+            )
+
+        return VerifyActionResponse(
+            verdict=verdict,
+            verdict_reason=verdict_reason,
+            approval_token=approval_token,
+            trust_score=agent.trust_score,
+            audit_id=audit_id,
+            timestamp=now,
+            limits_remaining=limits_remaining,
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Test verify error: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
 
 # =============================================================================
 # ADMIN ENDPOINTS - AGENTS
