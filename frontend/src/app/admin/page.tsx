@@ -1,13 +1,14 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { StatsCard } from "@/components/stats-card";
 import { LoadingState } from "@/components/loading-state";
 import { TrustScoreBadge } from "@/components/trust-score";
 import { VerdictBadge } from "@/components/verdict-badge";
+import { OnboardingChecklist } from "@/components/onboarding-checklist";
 import { formatRelative, formatCurrency } from "@/lib/utils";
-import { useAgents, useAuditLogs, useAlerts, useUsageMetrics } from "@/lib/hooks";
+import { useAgents, useAuditLogs, useAlerts, useUsageMetrics, useApiKeys } from "@/lib/hooks";
 import {
   Shield,
   Bot,
@@ -38,13 +39,34 @@ export default function AdminDashboard() {
     };
   }, []);
 
+  // Onboarding dismissal state
+  const [onboardingDismissed, setOnboardingDismissed] = useState(false);
+
+  // Load dismissal state from localStorage
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const dismissed = localStorage.getItem("onboarding_dismissed");
+      if (dismissed === "true") {
+        setOnboardingDismissed(true);
+      }
+    }
+  }, []);
+
+  const handleDismissOnboarding = () => {
+    setOnboardingDismissed(true);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("onboarding_dismissed", "true");
+    }
+  };
+
   // Fetch real data from API
   const { data: agents, isLoading: agentsLoading } = useAgents();
   const { data: auditData, isLoading: auditLoading } = useAuditLogs({ limit: 10 });
   const { data: alertsData, isLoading: alertsLoading } = useAlerts({ status: "open", limit: 10 });
   const { data: usageData, isLoading: usageLoading } = useUsageMetrics(startDate, endDate);
+  const { data: apiKeys, isLoading: apiKeysLoading } = useApiKeys();
 
-  const isLoading = agentsLoading || auditLoading || alertsLoading || usageLoading;
+  const isLoading = agentsLoading || auditLoading || alertsLoading || usageLoading || apiKeysLoading;
 
   if (isLoading) {
     return <LoadingState message="Loading dashboard..." />;
@@ -73,6 +95,12 @@ export default function AdminDashboard() {
   // Recent logs
   const recentLogs = auditData?.logs || [];
 
+  // Check if onboarding should be shown
+  const hasAgents = totalAgents > 0;
+  const hasApiKeys = (apiKeys?.length || 0) > 0;
+  const hasVerifications = totalVerifications > 0;
+  const showOnboarding = !onboardingDismissed && (!hasAgents || !hasApiKeys || !hasVerifications);
+
   return (
     <div className="space-y-6">
       <div>
@@ -81,6 +109,16 @@ export default function AdminDashboard() {
           Overview of your Inntris deployment and agent activity
         </p>
       </div>
+
+      {/* Onboarding Checklist */}
+      {showOnboarding && (
+        <OnboardingChecklist
+          hasAgents={hasAgents}
+          hasApiKeys={hasApiKeys}
+          hasVerifications={hasVerifications}
+          onDismiss={handleDismissOnboarding}
+        />
+      )}
 
       {/* Stats Grid */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
