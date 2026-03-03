@@ -11,8 +11,8 @@
 ### 1. Clone and Setup
 
 ```bash
-git clone https://github.com/your-org/inntris.git
-cd inntris
+git clone <your-repo-url>
+cd inntris-core
 
 # Create Python virtual environment
 python -m venv venv
