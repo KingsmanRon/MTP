@@ -450,12 +450,12 @@ async def verify_action(
             )
             audit_id = await database.insert_audit_log(audit_entry)
 
-            # Update trust score for blocked action
+            # Update trust score and counters for blocked action
             new_trust_score = TrustScorer.calculate_adjustment(
                 current_score=agent.trust_score,
                 event_type="action_blocked_policy" if verdict == ActionVerdict.BLOCKED else "action_blocked_rate_limit",
             )
-            await database.update_agent_trust_score(agent.id, new_trust_score)
+            await database.update_agent_after_verification(agent.id, new_trust_score, was_approved=False)
 
             # Determine appropriate HTTP status code
             if verdict == ActionVerdict.RATE_LIMITED:
@@ -494,13 +494,12 @@ async def verify_action(
         await database.increment_rate_limit(agent.id, "minute", minute_start, Decimal("0"))
         await database.increment_rate_limit(agent.id, "day", day_start, amount)
 
-        # STEP 8: Update trust score for approved action
+        # STEP 8: Update trust score and counters for approved action
         new_trust_score = TrustScorer.calculate_adjustment(
             current_score=agent.trust_score,
             event_type="action_approved",
         )
-        if new_trust_score != agent.trust_score:
-            await database.update_agent_trust_score(agent.id, new_trust_score)
+        await database.update_agent_after_verification(agent.id, new_trust_score, was_approved=True)
 
         # Generate Approval Token
         token = CryptoService.generate_approval_token(

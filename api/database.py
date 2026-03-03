@@ -270,6 +270,50 @@ class Database:
 
         logger.info(f"Updated agent {agent_id} trust score to {trust_score}")
 
+    async def update_agent_after_verification(
+        self,
+        agent_id: UUID,
+        trust_score: int,
+        was_approved: bool,
+    ) -> None:
+        """
+        Update agent after verification: trust score, counters, and last_action_at.
+
+        Args:
+            agent_id: The agent's UUID
+            trust_score: New trust score
+            was_approved: True if action was approved, False if blocked
+        """
+        if not 0 <= trust_score <= 100:
+            raise ValueError("Trust score must be between 0 and 100")
+
+        if was_approved:
+            query = """
+                UPDATE agents
+                SET trust_score = $2,
+                    total_actions_count = total_actions_count + 1,
+                    last_action_at = NOW()
+                WHERE id = $1
+            """
+        else:
+            query = """
+                UPDATE agents
+                SET trust_score = $2,
+                    total_actions_count = total_actions_count + 1,
+                    total_blocked_count = total_blocked_count + 1,
+                    last_action_at = NOW()
+                WHERE id = $1
+            """
+
+        async with self.acquire() as conn:
+            result = await conn.execute(query, agent_id, trust_score)
+
+        if result == "UPDATE 0":
+            raise AgentNotFoundError(f"Agent {agent_id} not found")
+
+        action_type = "approved" if was_approved else "blocked"
+        logger.info(f"Updated agent {agent_id} after {action_type} action (score: {trust_score})")
+
     # =========================================================================
     # ORGANIZATION OPERATIONS
     # =========================================================================
