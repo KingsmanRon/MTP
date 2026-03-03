@@ -53,6 +53,7 @@ from api.crypto import (
     SignatureVerificationError,
     InvalidPublicKeyError,
 )
+from api.policy import PolicyEngine, PolicyResult, PolicyViolation, TrustScorer
 
 # Configure logging
 logging.basicConfig(
@@ -103,6 +104,9 @@ app.add_middleware(
 # Global Database Pool
 db_pool: Optional[Database] = None
 
+# Global Redis Pool
+redis_pool: Optional[redis.Redis] = None
+
 # =============================================================================
 # DEPENDENCIES
 # =============================================================================
@@ -113,12 +117,8 @@ async def get_db() -> Database:
     return db_pool
 
 async def get_redis() -> Optional[redis.Redis]:
-    try:
-        url = os.getenv("REDIS_URL", REDIS_URL)
-        return redis.from_url(url, decode_responses=True)
-    except Exception:
-        logger.warning("Redis connection failed or not configured")
-        return None
+    """Return the global Redis connection pool."""
+    return redis_pool
 
 async def verify_api_key(
     x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
@@ -195,9 +195,10 @@ async def verify_api_key(
 
 @app.on_event("startup")
 async def startup_event():
-    global db_pool
+    global db_pool, redis_pool
     logger.info("Starting Inntris Core API v1.0.0")
 
+    # Initialize database pool
     dsn = os.getenv("DATABASE_URL", DATABASE_URL)
     try:
         db_pool = await Database.create(dsn)
@@ -205,12 +206,25 @@ async def startup_event():
     except Exception as e:
         logger.critical(f"Failed to connect to database: {e}")
 
+    # Initialize Redis pool
+    try:
+        redis_url = os.getenv("REDIS_URL", REDIS_URL)
+        redis_pool = redis.from_url(redis_url, decode_responses=True)
+        await redis_pool.ping()
+        logger.info("Redis connection established")
+    except Exception as e:
+        logger.warning(f"Redis connection failed: {e}. Continuing without Redis.")
+        redis_pool = None
+
 @app.on_event("shutdown")
 async def shutdown_event():
-    global db_pool
+    global db_pool, redis_pool
     if db_pool:
         await db_pool.close()
         logger.info("Database connection closed")
+    if redis_pool:
+        await redis_pool.close()
+        logger.info("Redis connection closed")
 
 # =============================================================================
 # HEALTH CHECK
@@ -378,11 +392,83 @@ async def verify_action(
             if not await redis_conn.set(nonce_key, "1", ex=600, nx=True):
                 raise HTTPException(status_code=401, detail="Nonce already used")
 
-        # STEP 4: Policy Check (Simplified for success path)
-        verdict = ActionVerdict.APPROVED
-        verdict_reason = "Verification passed"
+        # STEP 4: Policy Check - Full PolicyEngine evaluation
+        # Get current limits from database
+        now = datetime.now(timezone.utc)
+        minute_start = now.replace(second=0, microsecond=0)
+        minute_count, _ = await database.get_rate_limit_count(
+            agent.id, "minute", minute_start
+        )
+        daily_spend = await database.get_daily_spend(agent.id)
 
-        # STEP 5: Audit Log & Return
+        # Initialize PolicyEngine with current state
+        policy_engine = PolicyEngine(
+            daily_spend=daily_spend,
+            minute_request_count=minute_count,
+        )
+
+        # Parse timestamp from request
+        request_timestamp = request_data.timestamp
+        if isinstance(request_timestamp, str):
+            request_timestamp = datetime.fromisoformat(request_timestamp.replace("Z", "+00:00"))
+
+        # Evaluate all policies
+        policy_result = policy_engine.evaluate(
+            agent=agent,
+            action_type=request_data.action_type,
+            payload=request_data.payload,
+            timestamp=request_timestamp,
+        )
+
+        verdict = policy_result.verdict
+        verdict_reason = policy_result.reason or "All verification checks passed"
+        limits_remaining = policy_result.limits_remaining or {}
+
+        # STEP 5: Handle policy violations
+        if not policy_result.allowed:
+            logger.warning(
+                f"Policy violation for agent {agent.id}: {policy_result.violation} - {verdict_reason}"
+            )
+
+            # Log the blocked action
+            audit_entry = AuditLogEntry(
+                agent_id=agent.id,
+                action_type=request_data.action_type,
+                action_hash=action_hash,
+                payload=request_data.payload,
+                verdict=verdict,
+                verdict_reason=verdict_reason,
+                signature=base64.b64decode(request_data.signature),
+                signature_valid=True,
+                request_ip=request.client.host if request.client else None,
+                request_user_agent=request.headers.get("User-Agent"),
+                response_time_ms=int((time.time() - start_time) * 1000),
+                trust_score_at_time=agent.trust_score,
+                chain_previous_hash=await database.get_last_audit_hash(agent.id),
+                metadata={"violation": policy_result.violation.value if policy_result.violation else None},
+            )
+            audit_id = await database.insert_audit_log(audit_entry)
+
+            # Update trust score for blocked action
+            new_trust_score = TrustScorer.calculate_adjustment(
+                current_score=agent.trust_score,
+                event_type="action_blocked_policy" if verdict == ActionVerdict.BLOCKED else "action_blocked_rate_limit",
+            )
+            await database.update_agent_trust_score(agent.id, new_trust_score)
+
+            # Determine appropriate HTTP status code
+            if verdict == ActionVerdict.RATE_LIMITED:
+                raise HTTPException(
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                    detail=verdict_reason,
+                )
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=verdict_reason,
+                )
+
+        # STEP 6: Audit Log for approved action
         audit_entry = AuditLogEntry(
             agent_id=agent.id,
             action_type=request_data.action_type,
@@ -401,6 +487,20 @@ async def verify_action(
         )
         audit_id = await database.insert_audit_log(audit_entry)
 
+        # STEP 7: Update rate limit counters
+        amount = policy_engine._extract_amount(request_data.payload) or Decimal("0")
+        day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        await database.increment_rate_limit(agent.id, "minute", minute_start, Decimal("0"))
+        await database.increment_rate_limit(agent.id, "day", day_start, amount)
+
+        # STEP 8: Update trust score for approved action
+        new_trust_score = TrustScorer.calculate_adjustment(
+            current_score=agent.trust_score,
+            event_type="action_approved",
+        )
+        if new_trust_score != agent.trust_score:
+            await database.update_agent_trust_score(agent.id, new_trust_score)
+
         # Generate Approval Token
         token = CryptoService.generate_approval_token(
             agent_id=str(agent.id),
@@ -413,10 +513,10 @@ async def verify_action(
             verdict=verdict,
             verdict_reason=verdict_reason,
             approval_token=token,
-            trust_score=agent.trust_score,
+            trust_score=new_trust_score,
             audit_id=audit_id,
             timestamp=datetime.now(timezone.utc),
-            limits_remaining={}
+            limits_remaining=limits_remaining
         )
 
     except HTTPException:

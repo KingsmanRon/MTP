@@ -2,7 +2,7 @@
 # INNTRIS CORE - PROJECT CONFIGURATION
 # =============================================================================
 # Protecting Intellect. The Universal Liability Shield for Autonomous Agents.
-# © 2024 Inntris INC. All rights reserved.
+# © 2026 Inntris INC. All rights reserved.
 
 [build-system]
 requires = ["setuptools>=69.0", "wheel"]

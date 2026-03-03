@@ -120,7 +120,7 @@ The **"Management Console"** for organizations and developers.
 ### 1. Clone & Configure
 
 ```bash
-git clone https://github.com/inntris/inntris-core.git
+git clone <your-repo-url>
 cd inntris-core
 
 # Copy environment template
@@ -471,12 +471,12 @@ We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guid
 
 ## Support
 
-- **Documentation**: [docs.inntris.io](https://docs.inntris.io)
-- **Issues**: [GitHub Issues](https://github.com/inntris/inntris-core/issues)
-- **Discord**: [Inntris Community](https://discord.gg/inntris)
+- **Documentation**: See the `/docs` page in the frontend dashboard
+- **Issues**: Open an issue in this repository
+- **Contact**: support@inntris.io
 
 ---
 
 *Protecting Intellect. The Universal Liability Shield for Autonomous Agents.*
 
-**© 2024 Inntris INC. All rights reserved.**
+**© 2026 Inntris INC. All rights reserved.**

@@ -15,7 +15,7 @@ Usage:
 Integration:
     Compatible with: Lovable, Replit, LangChain, Claude, and any MCP-compatible agent.
 
-© 2024 Inntris INC. All rights reserved.
+© 2026 Inntris INC. All rights reserved.
 """
 
 import asyncio
