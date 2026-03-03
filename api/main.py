@@ -387,11 +387,26 @@ async def verify_action(
                 detail=verdict_reason,
             )
 
-        # STEP 3: Replay Check (Nonce)
-        if redis_conn:
-            nonce_key = f"inntris:nonce:{agent.id}:{request_data.nonce}"
-            if not await redis_conn.set(nonce_key, "1", ex=600, nx=True):
-                raise HTTPException(status_code=401, detail="Nonce already used")
+        # STEP 3: Replay Check (Nonce) - FAIL-CLOSED
+        # If Redis is unavailable, we MUST block the request to prevent replay attacks
+        if not redis_conn:
+            logger.error("SECURITY: Redis unavailable, cannot verify nonce - blocking request")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Verification service temporarily unavailable. Please retry.",
+            )
+
+        nonce_key = f"inntris:nonce:{agent.id}:{request_data.nonce}"
+        try:
+            nonce_set = await redis_conn.set(nonce_key, "1", ex=600, nx=True)
+            if not nonce_set:
+                raise HTTPException(status_code=401, detail="Nonce already used - possible replay attack")
+        except Exception as e:
+            logger.error(f"SECURITY: Redis error during nonce check: {e} - blocking request")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Verification service temporarily unavailable. Please retry.",
+            )
 
         # STEP 4: Policy Check - Full PolicyEngine evaluation
         # Get current limits from database
