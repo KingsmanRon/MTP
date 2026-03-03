@@ -140,6 +140,40 @@ export interface HealthResponse {
   timestamp: string;
 }
 
+export interface AgentDashboard {
+  agent: {
+    id: string;
+    name: string;
+    status: AgentStatus;
+    trust_score: number;
+    organization: string;
+    daily_limit_usd: number;
+    per_action_limit_usd: number;
+    rate_limit_per_minute: number;
+    total_actions_count: number;
+    public_key_fingerprint: string;
+  };
+  daily_stats: {
+    daily_spend: number;
+    daily_remaining: number;
+    approved_today: number;
+    blocked_today: number;
+  };
+  trust_history: {
+    date: string;
+    score: number;
+  }[];
+  recent_activity: {
+    id: string;
+    action_type: string;
+    verdict: ActionVerdict;
+    verdict_reason: string | null;
+    timestamp: string;
+    payload: Record<string, unknown>;
+    trust_score_at_time: number;
+  }[];
+}
+
 // =============================================================================
 // API CLIENT
 // =============================================================================
@@ -225,6 +259,15 @@ export function createAuthenticatedApi(apiKey: string) {
      */
     async getAgent(agentId: string): Promise<AgentRecord> {
       return apiRequest<AgentRecord>(`/admin/agents/${agentId}`, {
+        headers: authHeaders,
+      });
+    },
+
+    /**
+     * Get agent dashboard data (for portal view)
+     */
+    async getAgentDashboard(agentId: string): Promise<AgentDashboard> {
+      return apiRequest<AgentDashboard>(`/admin/agents/${agentId}/dashboard`, {
         headers: authHeaders,
       });
     },

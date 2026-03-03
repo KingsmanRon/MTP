@@ -1,11 +1,15 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { TrustScore } from "@/components/trust-score";
 import { StatsCard } from "@/components/stats-card";
 import { VerdictBadge } from "@/components/verdict-badge";
+import { LoadingState } from "@/components/loading-state";
+import { EmptyState } from "@/components/empty-state";
 import { formatRelative, formatCurrency, truncateHash } from "@/lib/utils";
+import { useAgentDashboard, useAgents } from "@/lib/hooks";
 import {
   Shield,
   Activity,
@@ -13,10 +17,9 @@ import {
   XCircle,
   Clock,
   TrendingUp,
+  Bot,
 } from "lucide-react";
 import {
-  LineChart,
-  Line,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -25,82 +28,115 @@ import {
   AreaChart,
   Area,
 } from "recharts";
-import type { ActionVerdict } from "@/lib/api";
 
-// Mock data for the agent portal
-const mockAgentInfo = {
-  id: "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-  name: "PaymentBot",
-  status: "active",
-  trust_score: 85,
-  organization: "Acme Corporation",
-  daily_limit_usd: 10000,
-  per_action_limit_usd: 500,
-  daily_spend: 2345.67,
-  total_actions: 5234,
-  approved_today: 142,
-  blocked_today: 3,
-};
+// Helper to get/set selected agent from localStorage
+function getStoredAgentId(): string | null {
+  if (typeof window === "undefined") return null;
+  return localStorage.getItem("portal_agent_id");
+}
 
-const mockTrustHistory = [
-  { date: "Mon", score: 78 },
-  { date: "Tue", score: 80 },
-  { date: "Wed", score: 82 },
-  { date: "Thu", score: 79 },
-  { date: "Fri", score: 83 },
-  { date: "Sat", score: 85 },
-  { date: "Sun", score: 85 },
-];
-
-const mockRecentActivity = [
-  {
-    id: "1",
-    action_type: "financial_transaction",
-    verdict: "approved" as ActionVerdict,
-    timestamp: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
-    payload: { amount: 150.0, currency: "USD" },
-  },
-  {
-    id: "2",
-    action_type: "api_call",
-    verdict: "approved" as ActionVerdict,
-    timestamp: new Date(Date.now() - 15 * 60 * 1000).toISOString(),
-    payload: { endpoint: "/api/orders" },
-  },
-  {
-    id: "3",
-    action_type: "financial_transaction",
-    verdict: "blocked" as ActionVerdict,
-    timestamp: new Date(Date.now() - 30 * 60 * 1000).toISOString(),
-    payload: { amount: 5000.0, currency: "USD", reason: "Exceeds per-action limit" },
-  },
-  {
-    id: "4",
-    action_type: "email_send",
-    verdict: "approved" as ActionVerdict,
-    timestamp: new Date(Date.now() - 45 * 60 * 1000).toISOString(),
-    payload: { to: "customer@example.com" },
-  },
-  {
-    id: "5",
-    action_type: "api_call",
-    verdict: "rate_limited" as ActionVerdict,
-    timestamp: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
-    payload: { endpoint: "/api/batch" },
-  },
-];
+function setStoredAgentId(agentId: string) {
+  if (typeof window !== "undefined") {
+    localStorage.setItem("portal_agent_id", agentId);
+  }
+}
 
 export default function PortalDashboard() {
-  const remainingDailyLimit = mockAgentInfo.daily_limit_usd - mockAgentInfo.daily_spend;
-  const dailyUsagePercent = (mockAgentInfo.daily_spend / mockAgentInfo.daily_limit_usd) * 100;
+  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
+
+  // Load stored agent ID on mount
+  useEffect(() => {
+    const stored = getStoredAgentId();
+    if (stored) setSelectedAgentId(stored);
+  }, []);
+
+  // Fetch list of agents for selection
+  const { data: agents, isLoading: agentsLoading } = useAgents();
+
+  // Fetch dashboard data for selected agent
+  const { data: dashboard, isLoading: dashboardLoading, error } = useAgentDashboard(
+    selectedAgentId || ""
+  );
+
+  // Auto-select first agent if none selected
+  useEffect(() => {
+    if (!selectedAgentId && agents && agents.length > 0) {
+      const firstAgent = agents[0];
+      setSelectedAgentId(firstAgent.id);
+      setStoredAgentId(firstAgent.id);
+    }
+  }, [agents, selectedAgentId]);
+
+  // Handle agent selection change
+  const handleAgentChange = (agentId: string) => {
+    setSelectedAgentId(agentId);
+    setStoredAgentId(agentId);
+  };
+
+  if (agentsLoading) {
+    return <LoadingState message="Loading agents..." />;
+  }
+
+  if (!agents || agents.length === 0) {
+    return (
+      <EmptyState
+        icon={Bot}
+        title="No Agents Found"
+        description="Register an agent in the Admin Console to use the Portal."
+        action={{
+          label: "Go to Admin Console",
+          href: "/admin/agents",
+        }}
+      />
+    );
+  }
+
+  if (!selectedAgentId) {
+    return <LoadingState message="Selecting agent..." />;
+  }
+
+  if (dashboardLoading) {
+    return <LoadingState message="Loading dashboard..." />;
+  }
+
+  if (error || !dashboard) {
+    return (
+      <EmptyState
+        icon={Shield}
+        title="Error Loading Dashboard"
+        description="Failed to load agent dashboard data. Please try again."
+      />
+    );
+  }
+
+  const { agent, daily_stats, trust_history, recent_activity } = dashboard;
+  const dailyUsagePercent = agent.daily_limit_usd > 0
+    ? (daily_stats.daily_spend / agent.daily_limit_usd) * 100
+    : 0;
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold">Agent Dashboard</h1>
-        <p className="text-muted-foreground">
-          Monitor your agent's verification status and activity
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold">Agent Dashboard</h1>
+          <p className="text-muted-foreground">
+            Real-time overview of your agent&apos;s activity and limits
+          </p>
+        </div>
+        {/* Agent Selector */}
+        {agents.length > 1 && (
+          <select
+            value={selectedAgentId}
+            onChange={(e) => handleAgentChange(e.target.value)}
+            className="px-3 py-2 rounded-md border bg-background text-sm"
+          >
+            {agents.map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.name}
+              </option>
+            ))}
+          </select>
+        )}
       </div>
 
       {/* Agent Identity Card */}
@@ -108,25 +144,25 @@ export default function PortalDashboard() {
         <CardContent className="pt-6">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-6">
-              <TrustScore score={mockAgentInfo.trust_score} size="lg" />
+              <TrustScore score={agent.trust_score} size="lg" />
               <div>
                 <div className="flex items-center gap-2">
-                  <h2 className="text-2xl font-bold">{mockAgentInfo.name}</h2>
-                  <Badge variant="outline" className="bg-green-500/10 text-green-500">
-                    {mockAgentInfo.status}
+                  <h2 className="text-2xl font-bold">{agent.name}</h2>
+                  <Badge variant={agent.status === "active" ? "success" : "secondary"}>
+                    {agent.status}
                   </Badge>
                 </div>
-                <p className="text-muted-foreground">{mockAgentInfo.organization}</p>
+                <p className="text-muted-foreground">{agent.organization}</p>
                 <code className="text-xs text-muted-foreground">
-                  {truncateHash(mockAgentInfo.id, 12, 8)}
+                  {truncateHash(agent.id, 12, 8)}
                 </code>
               </div>
             </div>
             <div className="text-right">
               <p className="text-sm text-muted-foreground">Daily Limit</p>
-              <p className="text-2xl font-bold">{formatCurrency(mockAgentInfo.daily_limit_usd)}</p>
+              <p className="text-2xl font-bold">{formatCurrency(agent.daily_limit_usd)}</p>
               <p className="text-sm text-muted-foreground">
-                {formatCurrency(remainingDailyLimit)} remaining
+                {formatCurrency(daily_stats.daily_remaining)} remaining
               </p>
             </div>
           </div>
@@ -141,7 +177,7 @@ export default function PortalDashboard() {
                 className={`h-full transition-all ${
                   dailyUsagePercent > 80 ? "bg-red-500" : dailyUsagePercent > 50 ? "bg-yellow-500" : "bg-green-500"
                 }`}
-                style={{ width: `${dailyUsagePercent}%` }}
+                style={{ width: `${Math.min(dailyUsagePercent, 100)}%` }}
               />
             </div>
           </div>
@@ -152,25 +188,25 @@ export default function PortalDashboard() {
       <div className="grid gap-4 md:grid-cols-4">
         <StatsCard
           title="Total Actions"
-          value={mockAgentInfo.total_actions.toLocaleString()}
+          value={agent.total_actions_count.toLocaleString()}
           icon={Activity}
           description="All time"
         />
         <StatsCard
           title="Approved Today"
-          value={mockAgentInfo.approved_today}
+          value={daily_stats.approved_today.toString()}
           icon={CheckCircle}
-          trend={{ value: 8.2, label: "vs yesterday" }}
+          description="Since midnight UTC"
         />
         <StatsCard
           title="Blocked Today"
-          value={mockAgentInfo.blocked_today}
+          value={daily_stats.blocked_today.toString()}
           icon={XCircle}
           description="Policy violations"
         />
         <StatsCard
           title="Per-Action Limit"
-          value={formatCurrency(mockAgentInfo.per_action_limit_usd)}
+          value={formatCurrency(agent.per_action_limit_usd)}
           icon={Shield}
           description="Max per request"
         />
@@ -181,13 +217,16 @@ export default function PortalDashboard() {
         {/* Trust Score History */}
         <Card>
           <CardHeader>
-            <CardTitle>Trust Score History</CardTitle>
+            <CardTitle className="flex items-center gap-2">
+              <TrendingUp className="h-5 w-5" />
+              Trust Score History
+            </CardTitle>
             <CardDescription>Your trust score over the past 7 days</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="h-[250px]">
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={mockTrustHistory}>
+                <AreaChart data={trust_history}>
                   <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                   <XAxis dataKey="date" className="text-xs" />
                   <YAxis domain={[0, 100]} className="text-xs" />
@@ -215,36 +254,45 @@ export default function PortalDashboard() {
         {/* Recent Activity */}
         <Card>
           <CardHeader>
-            <CardTitle>Recent Activity</CardTitle>
+            <CardTitle className="flex items-center gap-2">
+              <Clock className="h-5 w-5" />
+              Recent Activity
+            </CardTitle>
             <CardDescription>Your latest verification requests</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="space-y-3">
-              {mockRecentActivity.map((activity) => (
-                <div
-                  key={activity.id}
-                  className="flex items-center justify-between py-2 border-b last:border-0"
-                >
-                  <div className="flex items-center gap-3">
-                    <div
-                      className={`w-2 h-2 rounded-full ${
-                        activity.verdict === "approved"
-                          ? "bg-green-500"
-                          : activity.verdict === "blocked"
-                          ? "bg-red-500"
-                          : "bg-yellow-500"
-                      }`}
-                    />
-                    <div>
-                      <code className="text-sm">{activity.action_type}</code>
-                      <p className="text-xs text-muted-foreground">
-                        {formatRelative(activity.timestamp)}
-                      </p>
+            <div className="space-y-3 max-h-[250px] overflow-y-auto">
+              {recent_activity.length > 0 ? (
+                recent_activity.map((activity) => (
+                  <div
+                    key={activity.id}
+                    className="flex items-center justify-between py-2 border-b last:border-0"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div
+                        className={`w-2 h-2 rounded-full ${
+                          activity.verdict === "approved"
+                            ? "bg-green-500"
+                            : activity.verdict === "blocked"
+                            ? "bg-red-500"
+                            : "bg-yellow-500"
+                        }`}
+                      />
+                      <div>
+                        <code className="text-sm">{activity.action_type}</code>
+                        <p className="text-xs text-muted-foreground">
+                          {formatRelative(activity.timestamp)}
+                        </p>
+                      </div>
                     </div>
+                    <VerdictBadge verdict={activity.verdict} showIcon={false} />
                   </div>
-                  <VerdictBadge verdict={activity.verdict} showIcon={false} />
-                </div>
-              ))}
+                ))
+              ) : (
+                <p className="text-sm text-muted-foreground text-center py-4">
+                  No recent activity
+                </p>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -263,23 +311,23 @@ export default function PortalDashboard() {
                 <span className="text-sm text-muted-foreground">Daily Limit</span>
                 <Badge variant="secondary">{dailyUsagePercent.toFixed(0)}% used</Badge>
               </div>
-              <p className="text-xl font-bold">{formatCurrency(mockAgentInfo.daily_limit_usd)}</p>
+              <p className="text-xl font-bold">{formatCurrency(agent.daily_limit_usd)}</p>
               <p className="text-sm text-muted-foreground">
-                {formatCurrency(mockAgentInfo.daily_spend)} spent today
+                {formatCurrency(daily_stats.daily_spend)} spent today
               </p>
             </div>
             <div className="p-4 border rounded-lg">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-sm text-muted-foreground">Per-Action Limit</span>
               </div>
-              <p className="text-xl font-bold">{formatCurrency(mockAgentInfo.per_action_limit_usd)}</p>
+              <p className="text-xl font-bold">{formatCurrency(agent.per_action_limit_usd)}</p>
               <p className="text-sm text-muted-foreground">Maximum per request</p>
             </div>
             <div className="p-4 border rounded-lg">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-sm text-muted-foreground">Rate Limit</span>
               </div>
-              <p className="text-xl font-bold">60/min</p>
+              <p className="text-xl font-bold">{agent.rate_limit_per_minute}/min</p>
               <p className="text-sm text-muted-foreground">Requests per minute</p>
             </div>
           </div>

@@ -613,6 +613,113 @@ async def get_agent(
     except AgentNotFoundError:
         raise HTTPException(status_code=404, detail="Agent not found")
 
+@app.get("/admin/agents/{agent_id}/dashboard", tags=["Admin - Agents"])
+async def get_agent_dashboard(
+    agent_id: UUID,
+    auth: dict = Depends(verify_api_key),
+    database: Database = Depends(get_db),
+):
+    """Get dashboard data for an agent (for portal view)."""
+    try:
+        agent = await database.get_agent_by_id(agent_id)
+
+        # Verify ownership
+        if agent.org_id != auth["org_id"]:
+            raise HTTPException(status_code=403, detail="Access denied")
+
+        # Get organization name
+        async with database.acquire() as conn:
+            org_row = await conn.fetchrow(
+                "SELECT name FROM organizations WHERE id = $1",
+                agent.org_id,
+            )
+        org_name = org_row["name"] if org_row else "Unknown Organization"
+
+        # Get daily spend
+        daily_spend = await database.get_daily_spend(agent_id)
+
+        # Get today's stats from audit logs
+        now = datetime.now(timezone.utc)
+        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+
+        async with database.acquire() as conn:
+            today_stats = await conn.fetchrow(
+                """
+                SELECT
+                    COUNT(*) FILTER (WHERE verdict = 'approved') as approved_today,
+                    COUNT(*) FILTER (WHERE verdict IN ('blocked', 'rate_limited', 'signature_invalid')) as blocked_today
+                FROM audit_logs
+                WHERE agent_id = $1 AND timestamp >= $2
+                """,
+                agent_id,
+                today_start,
+            )
+
+        approved_today = today_stats["approved_today"] if today_stats else 0
+        blocked_today = today_stats["blocked_today"] if today_stats else 0
+
+        # Get recent activity
+        async with database.acquire() as conn:
+            recent_logs = await conn.fetch(
+                """
+                SELECT id, action_type, verdict, verdict_reason, timestamp,
+                       payload, trust_score_at_time
+                FROM audit_logs
+                WHERE agent_id = $1
+                ORDER BY timestamp DESC
+                LIMIT 10
+                """,
+                agent_id,
+            )
+
+        recent_activity = [
+            {
+                "id": str(row["id"]),
+                "action_type": row["action_type"],
+                "verdict": row["verdict"],
+                "verdict_reason": row["verdict_reason"],
+                "timestamp": row["timestamp"].isoformat(),
+                "payload": row["payload"] if row["payload"] else {},
+                "trust_score_at_time": row["trust_score_at_time"],
+            }
+            for row in recent_logs
+        ]
+
+        # Get trust score history (last 7 days) - simplified: just return current score
+        # In production, you'd track this in a separate table
+        trust_history = []
+        for i in range(6, -1, -1):
+            day = now - timedelta(days=i)
+            trust_history.append({
+                "date": day.strftime("%a"),
+                "score": agent.trust_score,  # Would track historical values in production
+            })
+
+        return {
+            "agent": {
+                "id": str(agent.id),
+                "name": agent.name,
+                "status": agent.status.value,
+                "trust_score": agent.trust_score,
+                "organization": org_name,
+                "daily_limit_usd": float(agent.daily_limit_usd),
+                "per_action_limit_usd": float(agent.per_action_limit_usd),
+                "rate_limit_per_minute": agent.rate_limit_per_minute,
+                "total_actions_count": agent.total_actions_count,
+                "public_key_fingerprint": agent.public_key_fingerprint,
+            },
+            "daily_stats": {
+                "daily_spend": float(daily_spend),
+                "daily_remaining": float(agent.daily_limit_usd - daily_spend),
+                "approved_today": approved_today,
+                "blocked_today": blocked_today,
+            },
+            "trust_history": trust_history,
+            "recent_activity": recent_activity,
+        }
+    except AgentNotFoundError:
+        raise HTTPException(status_code=404, detail="Agent not found")
+
 @app.post("/admin/agents", tags=["Admin - Agents"])
 async def register_agent(
     request_data: RegisterAgentRequest,

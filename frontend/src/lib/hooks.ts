@@ -40,6 +40,14 @@ export function useAgent(agentId: string) {
   });
 }
 
+export function useAgentDashboard(agentId: string) {
+  return useQuery({
+    queryKey: ["agent-dashboard", agentId],
+    queryFn: () => getApi().getAgentDashboard(agentId),
+    enabled: !!agentId,
+  });
+}
+
 export function useUpdateAgentStatus() {
   const queryClient = useQueryClient();
   return useMutation({
