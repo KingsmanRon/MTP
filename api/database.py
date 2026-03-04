@@ -248,28 +248,6 @@ class Database:
 
         logger.info(f"Updated agent {agent_id} status to {status.value}")
 
-    async def update_agent_trust_score(
-        self,
-        agent_id: UUID,
-        trust_score: int,
-    ) -> None:
-        """Update an agent's trust score."""
-        if not 0 <= trust_score <= 100:
-            raise ValueError("Trust score must be between 0 and 100")
-
-        query = """
-            UPDATE agents
-            SET trust_score = $2
-            WHERE id = $1
-        """
-        async with self.acquire() as conn:
-            result = await conn.execute(query, agent_id, trust_score)
-
-        if result == "UPDATE 0":
-            raise AgentNotFoundError(f"Agent {agent_id} not found")
-
-        logger.info(f"Updated agent {agent_id} trust score to {trust_score}")
-
     async def update_agent_after_verification(
         self,
         agent_id: UUID,

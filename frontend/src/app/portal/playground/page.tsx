@@ -319,20 +319,22 @@ export default function PlaygroundPage() {
                     <label className="text-sm font-medium">Limits Remaining</label>
                     <div className="grid grid-cols-3 gap-2">
                       <div className="p-2 bg-muted rounded-lg text-center">
-                        <p className="text-xs text-muted-foreground">Daily</p>
+                        <p className="text-xs text-muted-foreground">Daily Remaining</p>
                         <p className="text-sm font-medium">
-                          ${result.limits_remaining.daily_usd.toFixed(2)}
+                          ${parseFloat(result.limits_remaining.daily_remaining_usd).toFixed(2)}
                         </p>
                       </div>
                       <div className="p-2 bg-muted rounded-lg text-center">
-                        <p className="text-xs text-muted-foreground">Per Action</p>
+                        <p className="text-xs text-muted-foreground">Per Action Limit</p>
                         <p className="text-sm font-medium">
-                          ${result.limits_remaining.per_action_usd}
+                          ${parseFloat(result.limits_remaining.per_action_limit_usd).toFixed(2)}
                         </p>
                       </div>
                       <div className="p-2 bg-muted rounded-lg text-center">
                         <p className="text-xs text-muted-foreground">Rate Limit</p>
-                        <p className="text-sm font-medium">{result.limits_remaining.rate_limit}/min</p>
+                        <p className="text-sm font-medium">
+                          {result.limits_remaining.rate_limit_used_this_minute}/{result.limits_remaining.rate_limit_per_minute}/min
+                        </p>
                       </div>
                     </div>
                   </div>

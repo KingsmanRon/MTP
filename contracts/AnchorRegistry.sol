@@ -142,7 +142,7 @@ contract AnchorRegistry is AccessControl, Pausable, ReentrancyGuard {
     /**
      * @notice Anchor a batch of audit logs
      * @dev Only callable by addresses with SUBMITTER_ROLE
-     * @param merkleRoot The SHA-256 Merkle root of all log hashes
+     * @param merkleRoot The keccak256 Merkle root of all log hashes
      * @param logCount Number of logs in the batch
      * @param startTimestamp Unix timestamp of the first log
      * @param endTimestamp Unix timestamp of the last log

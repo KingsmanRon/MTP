@@ -182,9 +182,12 @@ export interface VerificationResult {
   audit_id: string;
   timestamp: string;
   limits_remaining?: {
-    daily_usd: number;
-    per_action_usd: number;
-    rate_limit: number;
+    daily_limit_usd: string;
+    daily_spent_usd: string;
+    daily_remaining_usd: string;
+    per_action_limit_usd: string;
+    rate_limit_per_minute: number;
+    rate_limit_used_this_minute: number;
   };
 }
 

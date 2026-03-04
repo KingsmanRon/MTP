@@ -137,7 +137,7 @@ export default function AgentDetailPage() {
               <Pause className="h-4 w-4 mr-2" />
               Suspend
             </Button>
-          ) : agent.status === "suspended" ? (
+          ) : agent.status === "suspended" || agent.status === "pending_verification" ? (
             <Button
               variant="outline"
               onClick={() => handleStatusChange("active")}

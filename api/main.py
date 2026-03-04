@@ -1404,10 +1404,10 @@ async def resolve_alert(
         result = await conn.execute(
             """
             UPDATE security_alerts
-            SET resolved = true, resolved_at = NOW(), resolution_notes = $3
+            SET resolved = true, resolved_at = NOW(), resolution_notes = $3, resolved_by = $4
             WHERE id = $1 AND org_id = $2
             """,
-            alert_id, org_id, resolution,
+            alert_id, org_id, resolution, auth.get("org_name", "API User"),
         )
 
     if result == "UPDATE 0":
@@ -1590,7 +1590,20 @@ async def get_usage_metrics(
             org_id, start_dt, end_dt,
         )
 
-        # Daily breakdown
+        # Total spend from rate_limit_windows
+        total_spend = await conn.fetchval(
+            """
+            SELECT COALESCE(SUM(rlw.amount_usd), 0)
+            FROM rate_limit_windows rlw
+            JOIN agents a ON rlw.agent_id = a.id
+            WHERE a.org_id = $1
+              AND rlw.window_type = 'day'
+              AND rlw.window_start BETWEEN $2 AND $3
+            """,
+            org_id, start_dt, end_dt,
+        )
+
+        # Daily breakdown with spend
         daily = await conn.fetch(
             """
             SELECT
@@ -1607,6 +1620,25 @@ async def get_usage_metrics(
             org_id, start_dt, end_dt,
         )
 
+        # Get daily spend breakdown
+        daily_spend = await conn.fetch(
+            """
+            SELECT
+                DATE(rlw.window_start) as date,
+                COALESCE(SUM(rlw.amount_usd), 0) as spend_usd
+            FROM rate_limit_windows rlw
+            JOIN agents a ON rlw.agent_id = a.id
+            WHERE a.org_id = $1
+              AND rlw.window_type = 'day'
+              AND rlw.window_start BETWEEN $2 AND $3
+            GROUP BY DATE(rlw.window_start)
+            """,
+            org_id, start_dt, end_dt,
+        )
+
+    # Convert daily spend to a lookup dict
+    spend_by_date = {row["date"]: float(row["spend_usd"]) for row in daily_spend}
+
     daily_breakdown = []
     for row in daily:
         daily_breakdown.append({
@@ -1614,14 +1646,14 @@ async def get_usage_metrics(
             "verifications": row["verifications"],
             "approved": row["approved"],
             "blocked": row["blocked"],
-            "spend_usd": 0.0,  # Would come from rate_limit_windows
+            "spend_usd": spend_by_date.get(row["date"], 0.0),
         })
 
     return {
         "total_verifications": totals["total"] or 0,
         "approved_count": totals["approved"] or 0,
         "blocked_count": totals["blocked"] or 0,
-        "total_spend_usd": 0.0,
+        "total_spend_usd": float(total_spend) if total_spend else 0.0,
         "active_agents": active_agents or 0,
         "period_start": start,
         "period_end": end,
