@@ -8,7 +8,7 @@ import hashlib
 import json
 import logging
 from contextlib import asynccontextmanager
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any, AsyncGenerator, Optional
 from uuid import UUID
@@ -20,7 +20,6 @@ from api.models import (
     AgentRecord,
     AgentStatus,
     AuditLogEntry,
-    ActionVerdict,
     BillingTier,
     OrganizationRecord,
 )

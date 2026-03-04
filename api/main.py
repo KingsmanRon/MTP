@@ -11,7 +11,6 @@ Complete API with all endpoints for:
 """
 
 import hashlib
-import hmac
 import logging
 import os
 import secrets
@@ -20,7 +19,7 @@ import json
 import base64
 from datetime import datetime, timezone, timedelta
 from decimal import Decimal
-from typing import Optional, List
+from typing import Optional
 from uuid import UUID
 
 import redis.asyncio as redis
@@ -40,21 +39,17 @@ from api.models import (
     VerifyActionResponse,
     TestVerifyRequest,
     RegisterAgentRequest,
-    CreateOrganizationRequest,
-    AgentPublicInfo,
     HealthResponse,
     ErrorResponse,
     ActionVerdict,
     AuditLogEntry,
     AgentStatus,
-    AlertSeverity,
 )
 from api.crypto import (
     CryptoService,
     SignatureVerificationError,
-    InvalidPublicKeyError,
 )
-from api.policy import PolicyEngine, PolicyResult, PolicyViolation, TrustScorer
+from api.policy import PolicyEngine, TrustScorer
 
 # Configure logging
 logging.basicConfig(

@@ -27,7 +27,6 @@ import os
 import secrets
 from datetime import datetime, timezone
 from typing import Any, Optional
-from uuid import UUID
 
 import httpx
 from mcp.server import Server

@@ -13,8 +13,6 @@ Philosophy: "Immutable Truth" - Once anchored, audit logs cannot be disputed.
 """
 
 import asyncio
-import hashlib
-import json
 import logging
 import os
 import signal
