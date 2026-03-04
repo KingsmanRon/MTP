@@ -180,7 +180,7 @@ CREATE INDEX idx_audit_logs_signature_valid ON audit_logs(signature_valid) WHERE
 
 CREATE TABLE merkle_proofs (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    root_hash VARCHAR(64) NOT NULL UNIQUE,  -- SHA-256 merkle root
+    root_hash VARCHAR(64) NOT NULL UNIQUE,  -- keccak256 merkle root
     transaction_hash VARCHAR(66),  -- Ethereum tx hash (0x + 64 chars)
     block_number BIGINT,
     chain_id INTEGER NOT NULL DEFAULT 8453,  -- Base L2 chain ID
