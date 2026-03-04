@@ -58,7 +58,7 @@ dev = [
 
 [project.urls]
 Homepage = "https://github.com/inntris/inntris-core"
-Documentation = "https://docs.inntris.io"
+Documentation = "https://docs.inntris.com"
 Repository = "https://github.com/inntris/inntris-core"
 
 [project.scripts]

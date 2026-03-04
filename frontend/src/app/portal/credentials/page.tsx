@@ -141,7 +141,7 @@ signature_b64 = base64.b64encode(signature.signature).decode()
 # Send to Inntris API
 import requests
 response = requests.post(
-    "https://api.inntris.io/verify",
+    "https://api.inntris.com/verify",
     json={
         "agent_id": "${agent.id}",
         "action_type": "financial_transaction",

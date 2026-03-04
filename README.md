@@ -465,7 +465,7 @@ MIT License - See [LICENSE](LICENSE) for details.
 
 ## Contributing
 
-We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+We welcome contributions! Please open an issue to discuss proposed changes before submitting a PR.
 
 ---
 
@@ -473,7 +473,7 @@ We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guid
 
 - **Documentation**: See the `/docs` page in the frontend dashboard
 - **Issues**: Open an issue in this repository
-- **Contact**: support@inntris.io
+- **Contact**: support@inntris.com
 
 ---
 

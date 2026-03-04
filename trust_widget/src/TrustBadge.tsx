@@ -5,7 +5,7 @@
  * of an AI agent. Shows a "Verified Shield" with trust score to end-users.
  *
  * Usage:
- *   <TrustBadge agentId="uuid-here" apiUrl="https://api.inntris.io" />
+ *   <TrustBadge agentId="uuid-here" apiUrl="https://api.inntris.com" />
  */
 
 import React, { useEffect, useState, useCallback } from 'react';
@@ -165,7 +165,7 @@ const LoadingSpinner: React.FC = () => (
 
 export const TrustBadge: React.FC<TrustBadgeProps> = ({
   agentId,
-  apiUrl = 'https://api.inntris.io',
+  apiUrl = 'https://api.inntris.com',
   size = 'medium',
   showDetails = true,
   className = '',

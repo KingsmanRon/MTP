@@ -332,7 +332,7 @@ POST /admin/agents
       "command": "python",
       "args": ["-m", "mcp_server.server"],
       "env": {
-        "INNTRIS_API_URL": "https://api.inntris.io",
+        "INNTRIS_API_URL": "https://api.inntris.com",
         "INNTRIS_AGENT_ID": "your-agent-uuid",
         "INNTRIS_PRIVATE_KEY_B64": "your-private-key"
       }

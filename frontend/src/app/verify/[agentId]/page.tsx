@@ -212,7 +212,7 @@ export default function PublicVerifyPage() {
             <CardContent>
               <div className="p-3 bg-muted rounded-lg">
                 <code className="text-xs break-all">
-                  {`<script src="https://inntris.io/badge.js" data-agent="${agent.agent_id}"></script>`}
+                  {`<script src="https://inntris.com/badge.js" data-agent="${agent.agent_id}"></script>`}
                 </code>
               </div>
             </CardContent>

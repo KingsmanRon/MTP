@@ -97,7 +97,7 @@ async def seed_database(
                 org_id,
                 org_name,
                 "enterprise",
-                "admin@inntris.io",
+                "admin@inntris.com",
                 key_hash,
                 datetime.now(timezone.utc),
             )
