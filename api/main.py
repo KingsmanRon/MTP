@@ -600,7 +600,7 @@ async def test_verify_action(
         limits_remaining = policy_result.limits_remaining or {}
 
         # Generate a test action hash (no real signature)
-        test_nonce = f"test_{uuid.uuid4()}"
+        test_nonce = f"test_{uuid4()}"
         action_hash = CryptoService.compute_action_hash(
             agent_id=str(request_data.agent_id),
             action_type=request_data.action_type,
