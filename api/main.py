@@ -20,7 +20,7 @@ import base64
 from datetime import datetime, timezone, timedelta
 from decimal import Decimal
 from typing import Optional
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import redis.asyncio as redis
 from fastapi import FastAPI, Depends, HTTPException, Request, status, Header, Query
@@ -1195,7 +1195,7 @@ async def get_merkle_proof(
 
 @app.get("/admin/audit/export", tags=["Admin - Audit"])
 async def export_audit_logs(
-    format: str = Query(..., regex="^(csv|json)$"),
+    format: str = Query(..., pattern="^(csv|json)$"),
     start: Optional[str] = None,
     end: Optional[str] = None,
     agent_id: Optional[UUID] = None,
@@ -1295,7 +1295,7 @@ async def export_audit_logs(
 
 @app.get("/admin/alerts", tags=["Admin - Alerts"])
 async def list_alerts(
-    status: Optional[str] = Query(None, regex="^(open|acknowledged|resolved)$"),
+    status: Optional[str] = Query(None, pattern="^(open|acknowledged|resolved)$"),
     severity: Optional[str] = None,
     limit: int = Query(default=50, le=1000),
     offset: int = Query(default=0, ge=0),
