@@ -30,7 +30,7 @@ export function TrustScore({ score, size = "md", showLabel = true }: TrustScoreP
             fill="none"
             stroke="currentColor"
             strokeWidth="8"
-            className="text-muted"
+            className="text-gray-700 dark:text-gray-700"
           />
           {/* Progress circle */}
           <circle

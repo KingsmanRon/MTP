@@ -239,7 +239,7 @@ export default function AgentDetailPage() {
                         {formatDateTime(log.timestamp)}
                       </TableCell>
                       <TableCell>
-                        <code className="text-sm">{log.action_type}</code>
+                        <span className="inline-block text-sm font-mono bg-muted px-1.5 py-0.5 rounded">{log.action_type}</span>
                       </TableCell>
                       <TableCell>
                         <code className="text-xs text-muted-foreground">
