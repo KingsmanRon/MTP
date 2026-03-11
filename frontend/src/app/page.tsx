@@ -9,7 +9,7 @@ const modules = [
     title: "Admin Console",
     role: "For platform admins",
     body: "Manage organisations, agents, policies, API keys, and security alerts.",
-    cta: "Open console",
+    cta: "Open Console",
     href: "/admin",
   },
   {
@@ -17,7 +17,7 @@ const modules = [
     title: "Agent Portal",
     role: "For developers and operators",
     body: "Issue credentials, test verification, and monitor agent trust state.",
-    cta: "Manage agents",
+    cta: "Open Portal",
     href: "/portal",
   },
   {
@@ -25,7 +25,7 @@ const modules = [
     title: "Audit Explorer",
     role: "For investigations and compliance",
     body: "Search verification decisions and inspect tamper-evident audit history.",
-    cta: "View audits",
+    cta: "Open Explorer",
     href: "/audit",
   },
   {
@@ -33,7 +33,7 @@ const modules = [
     title: "Public Verify",
     role: "For customers, partners, and auditors",
     body: "Verify an agent's trust status and verification history externally.",
-    cta: "Open verifier",
+    cta: "Open Verifier",
     href: "/verify",
   },
 ];
@@ -87,7 +87,7 @@ export default function InntrisCoreDarkPreview() {
               <div className="text-xs text-[#7F8CA3]">Core control plane</div>
             </div>
           </div>
-          <nav className="hidden items-center gap-8 text-sm text-[#AAB7CC] md:flex">
+          <nav className="hidden items-center gap-8 text-[15px] text-[#C4CFDE] md:flex">
             <a className="transition hover:text-white" href="#overview">Overview</a>
             <a className="transition hover:text-white" href="#use-cases">Use Cases</a>
             <a className="transition hover:text-white" href="#modules">Modules</a>
@@ -108,7 +108,7 @@ export default function InntrisCoreDarkPreview() {
         </div>
       </header>
       <main className="relative">
-        <section id="overview" className="mx-auto grid max-w-7xl gap-12 px-6 pb-12 pt-16 lg:grid-cols-[1.15fr_0.85fr] lg:px-8 lg:pb-16 lg:pt-20">
+        <section id="overview" className="mx-auto grid max-w-7xl gap-12 px-6 pb-20 pt-16 lg:grid-cols-[1.15fr_0.85fr] lg:px-8 lg:pb-28 lg:pt-20">
           <div className="max-w-3xl">
             <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-[#22314D] bg-[#0D1728]/90 px-3 py-1.5 text-sm text-[#AAB7CC]">
               <CheckCircle2 className="h-4 w-4 text-[#28C281]" />
@@ -119,13 +119,13 @@ export default function InntrisCoreDarkPreview() {
               <br />
               <span className="text-[#4C8DFF]">Prove what they actually did.</span>
             </h1>
-            <p className="mt-5 max-w-2xl text-lg leading-8 text-[#AAB7CC] md:text-xl">
+            <p className="mt-5 max-w-2xl text-lg leading-8 text-[#C4CFDE] md:text-xl">
               Cryptographic identity, policy enforcement, and tamper-evident audit for AI agents in production.
             </p>
-            <p className="mt-4 max-w-2xl text-base leading-7 text-[#7F8CA3]">
+            <p className="mt-4 max-w-2xl text-[15px] leading-7 text-[#AAB7CC]">
               Built for teams running agent workflows against code, data, APIs, and high-trust operations.
             </p>
-            <div className="mt-8 flex flex-wrap gap-3">
+            <div className="mt-8 mb-4 flex flex-wrap gap-3">
               <Link href="/docs">
                 <Button size="lg" className="bg-[#4C8DFF] px-6 text-white hover:bg-[#6AA2FF]">
                   View Documentation
@@ -159,17 +159,17 @@ export default function InntrisCoreDarkPreview() {
               <div className="space-y-4 p-5">
                 {[
                   ["01", "Action requested", "Agent requests a code, data, API, or finance operation."],
-                  ["02", "Policy evaluated", "Inntris checks permissions, risk, and execution context before run."],
+                  ["02", "Policy evaluated", "Inntris checks permissions, risk, and execution context."],
                   ["03", "Decision signed", "Approved or blocked outcome is bound to the agent identity."],
-                  ["04", "Proof recorded", "Evidence is written to the audit trail and anchored for later verification."],
+                  ["04", "Proof recorded", "Evidence is written to the audit trail for later verification."],
                 ].map(([step, title, body]) => (
-                  <div key={step} className="flex gap-4 rounded-2xl border border-white/6 bg-[#101C31]/80 p-4">
+                  <div key={step} className="flex gap-4 rounded-2xl border border-white/6 bg-[#101C31]/80 p-5">
                     <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#4C8DFF]/15 text-sm font-semibold text-[#8FB8FF]">
                       {step}
                     </div>
                     <div>
                       <div className="text-sm font-medium text-[#F5F7FB]">{title}</div>
-                      <div className="mt-1 text-sm leading-6 text-[#AAB7CC]">{body}</div>
+                      <div className="mt-1 text-[14px] leading-7 text-[#C4CFDE]">{body}</div>
                     </div>
                   </div>
                 ))}
@@ -178,14 +178,13 @@ export default function InntrisCoreDarkPreview() {
           </div>
         </section>
         <section id="modules" className="mx-auto max-w-7xl px-6 py-4 lg:px-8">
-          <div className="mb-8 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-            <div>
-              <div className="text-sm font-medium uppercase tracking-[0.18em] text-[#8FB8FF]">Product surface</div>
-              <h2 className="mt-3 text-2xl font-semibold tracking-tight md:text-3xl">One control plane. Four modules.</h2>
+          <div className="mb-8">
+            <div className="text-sm font-medium uppercase tracking-[0.18em] text-[#8FB8FF]">
+              Product surface
             </div>
-            <p className="max-w-2xl text-sm leading-7 text-[#AAB7CC] md:text-base">
-              Operator surfaces for policy, identity, audit, and verification.
-            </p>
+            <h2 className="mt-3 text-2xl font-semibold tracking-tight md:text-3xl">
+              One control plane. Four modules.
+            </h2>
           </div>
           <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
             {modules.map((item) => {
@@ -200,8 +199,8 @@ export default function InntrisCoreDarkPreview() {
                       <Icon className="h-6 w-6" />
                     </div>
                     <h3 className="text-xl font-semibold tracking-tight text-[#F5F7FB]">{item.title}</h3>
-                    <p className="mt-1 text-xs font-medium uppercase tracking-[0.14em] text-[#4C8DFF]">{item.role}</p>
-                    <p className="mt-3 min-h-[72px] text-sm leading-7 text-[#AAB7CC]">{item.body}</p>
+                    <p className="mt-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-[#6AA2FF]">{item.role}</p>
+                    <p className="mt-3 min-h-[72px] text-[14px] leading-7 text-[#C4CFDE]">{item.body}</p>
                     <Link href={item.href} className="mt-5 inline-flex items-center gap-2 text-sm font-medium text-[#8FB8FF] transition group-hover:text-white">
                       {item.cta}
                       <ChevronRight className="h-4 w-4" />
