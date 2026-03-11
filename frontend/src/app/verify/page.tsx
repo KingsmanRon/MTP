@@ -91,7 +91,7 @@ export default function VerifyLandingPage() {
           </h1>
 
           <p className="mx-auto mt-5 max-w-xl text-lg leading-8 text-[#C4CFDE]">
-            Check the trust status, policy decision, and on-chain audit trail of
+            Check the policy decision, verification details, and on-chain audit trail of
             any Inntris verification record.
           </p>
         </section>
