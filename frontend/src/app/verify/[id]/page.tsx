@@ -88,11 +88,11 @@ export default function VerifyRecordPage() {
             </div>
             <h1 className="text-2xl font-bold mb-2">Record not found</h1>
             <p className="text-[#AAB7CC] mb-8">
-              No verification record matches this ID or transaction hash.
+              No verification record matches this ID or transaction hash. Check the value and try again.
             </p>
             <Link href="/verify">
               <Button className="bg-[#4C8DFF] text-white hover:bg-[#6AA2FF]">
-                Search verifications
+                Back to verifier
               </Button>
             </Link>
           </div>
