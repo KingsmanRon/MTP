@@ -96,18 +96,18 @@ export function truncateHash(hash: string, startLen = 6, endLen = 4): string {
  * Get trust score color
  */
 export function getTrustScoreColor(score: number): string {
-  if (score >= 70) return "text-green-500";
-  if (score >= 40) return "text-yellow-500";
-  return "text-red-500";
+  if (score >= 70) return "text-[#22c55e]";
+  if (score >= 40) return "text-[#f59e0b]";
+  return "text-[#ef4444]";
 }
 
 /**
  * Get trust score background color
  */
 export function getTrustScoreBgColor(score: number): string {
-  if (score >= 70) return "bg-green-500/10";
-  if (score >= 40) return "bg-yellow-500/10";
-  return "bg-red-500/10";
+  if (score >= 70) return "bg-[#22c55e]/10";
+  if (score >= 40) return "bg-[#f59e0b]/10";
+  return "bg-[#ef4444]/10";
 }
 
 /**
@@ -134,13 +134,13 @@ export function getVerdictColor(verdict: string): string {
 export function getVerdictBadgeStyles(verdict: string): string {
   switch (verdict.toLowerCase()) {
     case "approved":
-      return "bg-green-500/10 text-green-500 border-green-500/20";
+      return "bg-green-500/20 text-green-400 border-green-500/30";
     case "blocked":
-      return "bg-red-500/10 text-red-500 border-red-500/20";
+      return "bg-red-500/20 text-red-400 border-red-500/30";
     case "rate_limited":
-      return "bg-yellow-500/10 text-yellow-500 border-yellow-500/20";
+      return "bg-yellow-500/20 text-yellow-400 border-yellow-500/30";
     case "signature_invalid":
-      return "bg-red-600/10 text-red-600 border-red-600/20";
+      return "bg-red-600/20 text-red-400 border-red-600/30";
     default:
       return "bg-muted text-muted-foreground border-border";
   }

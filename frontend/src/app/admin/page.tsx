@@ -241,7 +241,7 @@ export default function AdminDashboard() {
                       />
                       <div>
                         <p className="font-medium text-sm">{log.agent_name || "Unknown Agent"}</p>
-                        <p className="text-xs text-muted-foreground">{log.action_type}</p>
+                        <span className="inline-block text-xs font-mono bg-muted px-1.5 py-0.5 rounded">{log.action_type}</span>
                       </div>
                     </div>
                     <div className="flex items-center gap-4">

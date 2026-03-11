@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Shield, Users, FileSearch, Globe } from "lucide-react";
+import { Shield, Lock, ShieldCheck, FileSearch } from "lucide-react";
 
 export default function HomePage() {
   return (
@@ -35,54 +35,72 @@ export default function HomePage() {
       <main className="container mx-auto px-4 py-20">
         <div className="max-w-4xl mx-auto text-center">
           <h1 className="text-5xl font-bold tracking-tight mb-6">
-            Inntris Core
+            Your AI agents are writing production code.
+            <br />
+            <span className="text-primary">Prove what they actually did.</span>
           </h1>
-          <p className="text-xl text-muted-foreground mb-8">
-            The Security Assurance Layer for AI Agents. Cryptographic verification,
-            forensic-grade audit logs, and blockchain-anchored proof — all in one protocol.
+          <p className="text-xl text-muted-foreground mb-8 max-w-3xl mx-auto">
+            Cryptographic identity, policy enforcement, and tamper-proof audit —
+            anchored on Base L2. Built for teams running AI agents in production.
           </p>
           <div className="flex gap-4 justify-center">
             <Link
-              href="/admin"
+              href="/verify"
               className="bg-primary text-primary-foreground px-6 py-3 rounded-lg font-medium hover:bg-primary/90 transition"
             >
-              Open Admin Console
+              See a Live Verification
             </Link>
             <Link
-              href="/docs"
+              href="/admin"
               className="border border-border px-6 py-3 rounded-lg font-medium hover:bg-muted transition"
             >
-              Documentation
+              Open Admin Console
             </Link>
           </div>
         </div>
 
-        {/* Feature Cards */}
-        <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6 mt-20">
-          <FeatureCard
-            href="/admin"
-            icon={<Users className="h-8 w-8" />}
-            title="Admin Console"
-            description="Manage organizations, agents, policies, and API keys. Monitor security alerts in real-time."
-          />
-          <FeatureCard
-            href="/portal"
-            icon={<Shield className="h-8 w-8" />}
-            title="Agent Portal"
-            description="Developer dashboard for managing agent credentials, testing verification, and monitoring usage."
-          />
-          <FeatureCard
-            href="/audit"
-            icon={<FileSearch className="h-8 w-8" />}
-            title="Audit Explorer"
-            description="Forensic-grade audit log search with Merkle proof verification and compliance exports."
-          />
-          <FeatureCard
-            href="/verify"
-            icon={<Globe className="h-8 w-8" />}
-            title="Public Verify"
-            description="Publicly verify any agent's trust status and verification history."
-          />
+        {/* Problem Statement */}
+        <div className="max-w-3xl mx-auto mt-20 text-center">
+          <p className="text-2xl font-semibold text-foreground">
+            AI agent frameworks can tell you what your agents claimed to do.
+          </p>
+          <p className="text-2xl font-semibold text-primary mt-2">
+            None of them can prove it. Inntris can.
+          </p>
+        </div>
+
+        {/* Three-Column Feature Section */}
+        <div className="grid md:grid-cols-3 gap-8 mt-20">
+          <div className="p-6 rounded-xl border bg-card">
+            <div className="text-primary mb-4">
+              <Lock className="h-8 w-8" />
+            </div>
+            <h3 className="font-semibold text-lg mb-2">Cryptographic Identity</h3>
+            <p className="text-sm text-muted-foreground">
+              Every agent signs every action with Ed25519.
+              No key, no action. Identity is not optional.
+            </p>
+          </div>
+          <div className="p-6 rounded-xl border bg-card">
+            <div className="text-primary mb-4">
+              <ShieldCheck className="h-8 w-8" />
+            </div>
+            <h3 className="font-semibold text-lg mb-2">Policy Before Execution</h3>
+            <p className="text-sm text-muted-foreground">
+              Block admin actions, financial operations,
+              and data exports before they run — not after.
+            </p>
+          </div>
+          <div className="p-6 rounded-xl border bg-card">
+            <div className="text-primary mb-4">
+              <FileSearch className="h-8 w-8" />
+            </div>
+            <h3 className="font-semibold text-lg mb-2">Tamper-Proof Audit</h3>
+            <p className="text-sm text-muted-foreground">
+              Merkle trees. Base L2. Hourly anchoring.
+              Every decision independently verifiable.
+            </p>
+          </div>
         </div>
 
         {/* Stats Section */}
@@ -109,31 +127,6 @@ export default function HomePage() {
         </div>
       </footer>
     </div>
-  );
-}
-
-function FeatureCard({
-  href,
-  icon,
-  title,
-  description,
-}: {
-  href: string;
-  icon: React.ReactNode;
-  title: string;
-  description: string;
-}) {
-  return (
-    <Link
-      href={href}
-      className="p-6 rounded-xl border bg-card hover:shadow-lg transition group"
-    >
-      <div className="text-primary mb-4 group-hover:scale-110 transition">
-        {icon}
-      </div>
-      <h3 className="font-semibold text-lg mb-2">{title}</h3>
-      <p className="text-sm text-muted-foreground">{description}</p>
-    </Link>
   );
 }
 

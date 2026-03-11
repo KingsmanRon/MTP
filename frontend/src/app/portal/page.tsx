@@ -279,7 +279,7 @@ export default function PortalDashboard() {
                         }`}
                       />
                       <div>
-                        <code className="text-sm">{activity.action_type}</code>
+                        <span className="inline-block text-sm font-mono bg-muted px-1.5 py-0.5 rounded">{activity.action_type}</span>
                         <p className="text-xs text-muted-foreground">
                           {formatRelative(activity.timestamp)}
                         </p>
