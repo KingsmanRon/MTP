@@ -211,6 +211,39 @@ class AgentPublicInfo(BaseModel):
     last_action_at: Optional[datetime] = Field(None, description="Timestamp of last action")
 
 
+class PublicVerificationRecord(BaseModel):
+    """Public, read-only verification receipt for the shareable audit page."""
+    model_config = ConfigDict(strict=True)
+
+    # Core identity
+    audit_id: UUID = Field(..., description="Audit log entry ID")
+    timestamp: datetime = Field(..., description="Verification timestamp")
+
+    # Verdict
+    verdict: ActionVerdict = Field(..., description="APPROVED or BLOCKED")
+    verdict_reason: Optional[str] = Field(None, description="Human-readable reason")
+    action_type: str = Field(..., description="Action type verified")
+
+    # Agent info
+    agent_id: UUID = Field(..., description="Agent unique identifier")
+    agent_name: str = Field(..., description="Agent display name")
+    organization_name: str = Field(..., description="Parent organization name")
+    trust_score: int = Field(..., ge=0, le=100, description="Trust score at time of verification")
+
+    # Policy decision
+    risk_level: Optional[str] = Field(None, description="Risk level from payload")
+    violations: list[str] = Field(default_factory=list, description="Policy violations if any")
+
+    # On-chain proof
+    action_hash: str = Field(..., description="SHA-256 hash of the action")
+    signature_valid: bool = Field(..., description="Whether Ed25519 signature was valid")
+    merkle_root: Optional[str] = Field(None, description="Merkle root hash")
+    tx_hash: Optional[str] = Field(None, description="Base L2 transaction hash")
+    block_number: Optional[int] = Field(None, description="Block number on Base L2")
+    chain_id: int = Field(default=8453, description="Chain ID (Base L2)")
+    anchored_at: Optional[datetime] = Field(None, description="When the proof was anchored on-chain")
+
+
 class HealthResponse(BaseModel):
     """API health check response."""
     status: str = Field(..., description="Service status")

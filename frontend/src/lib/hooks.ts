@@ -186,6 +186,14 @@ export function useUsageMetrics(start: string, end: string) {
 // PUBLIC HOOKS
 // =============================================================================
 
+export function usePublicVerification(recordId: string) {
+  return useQuery({
+    queryKey: ["public-verification", recordId],
+    queryFn: () => publicApi.getVerificationRecord(recordId),
+    enabled: !!recordId,
+  });
+}
+
 export function usePublicAgent(agentId: string) {
   return useQuery({
     queryKey: ["public-agent", agentId],

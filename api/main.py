@@ -44,6 +44,7 @@ from api.models import (
     ActionVerdict,
     AuditLogEntry,
     AgentStatus,
+    PublicVerificationRecord,
 )
 from api.crypto import (
     CryptoService,
@@ -283,6 +284,113 @@ async def get_public_agent_info(
         raise HTTPException(status_code=404, detail="Agent not found")
     except OrganizationNotFoundError:
         raise HTTPException(status_code=404, detail="Organization not found")
+
+
+@app.get(
+    "/public/verify/{record_id}",
+    response_model=PublicVerificationRecord,
+    responses={404: {"model": ErrorResponse, "description": "Verification record not found"}},
+    tags=["Public"],
+)
+async def get_public_verification_record(
+    record_id: str,
+    database: Database = Depends(get_db),
+):
+    """
+    Get a public, read-only verification receipt.
+
+    Accepts either an audit log UUID or a transaction hash (0x-prefixed).
+    Returns the shareable verification record for the audit page.
+    """
+    async with database.acquire() as conn:
+        # Determine lookup strategy: tx hash (0x...) or audit UUID
+        if record_id.startswith("0x") and len(record_id) == 66:
+            # Lookup by transaction hash via merkle_proofs
+            row = await conn.fetchrow(
+                """
+                SELECT al.*, a.name AS agent_name, a.org_id,
+                       mp.root_hash AS merkle_root,
+                       mp.transaction_hash AS tx_hash,
+                       mp.block_number,
+                       mp.chain_id,
+                       mp.confirmed_at AS anchored_at
+                FROM merkle_proofs mp
+                JOIN audit_logs al ON al.merkle_root_id = mp.id
+                JOIN agents a ON al.agent_id = a.id
+                WHERE mp.transaction_hash = $1
+                ORDER BY al.timestamp DESC
+                LIMIT 1
+                """,
+                record_id,
+            )
+        else:
+            # Lookup by audit log UUID
+            try:
+                log_uuid = UUID(record_id)
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid record ID format")
+
+            row = await conn.fetchrow(
+                """
+                SELECT al.*, a.name AS agent_name, a.org_id,
+                       mp.root_hash AS merkle_root,
+                       mp.transaction_hash AS tx_hash,
+                       mp.block_number,
+                       mp.chain_id,
+                       mp.confirmed_at AS anchored_at
+                FROM audit_logs al
+                JOIN agents a ON al.agent_id = a.id
+                LEFT JOIN merkle_proofs mp ON al.merkle_root_id = mp.id
+                WHERE al.id = $1
+                """,
+                log_uuid,
+            )
+
+    if not row:
+        raise HTTPException(status_code=404, detail="Verification record not found")
+
+    # Get organization name
+    try:
+        org = await database.get_organization_by_id(row["org_id"])
+        org_name = org.name
+    except OrganizationNotFoundError:
+        org_name = "Unknown"
+
+    # Extract risk_level and violations from payload
+    payload = row["payload"] if isinstance(row["payload"], dict) else json.loads(row["payload"]) if row["payload"] else {}
+    risk_level = payload.get("risk_level")
+    violations: list[str] = []
+    if row["verdict_reason"]:
+        # Parse violations from verdict_reason (format: "Policy violations: x, y, z")
+        reason = row["verdict_reason"]
+        if "violations:" in reason.lower():
+            parts = reason.split(":", 1)
+            if len(parts) > 1:
+                violations = [v.strip() for v in parts[1].split(",") if v.strip()]
+        elif row["verdict"] != "approved":
+            violations = [reason]
+
+    return PublicVerificationRecord(
+        audit_id=row["id"],
+        timestamp=row["timestamp"],
+        verdict=ActionVerdict(row["verdict"]),
+        verdict_reason=row["verdict_reason"],
+        action_type=row["action_type"],
+        agent_id=row["agent_id"],
+        agent_name=row["agent_name"],
+        organization_name=org_name,
+        trust_score=row["trust_score_at_time"],
+        risk_level=risk_level,
+        violations=violations,
+        action_hash=row["action_hash"],
+        signature_valid=row["signature_valid"],
+        merkle_root=row.get("merkle_root"),
+        tx_hash=row.get("tx_hash"),
+        block_number=row.get("block_number"),
+        chain_id=row.get("chain_id") or 8453,
+        anchored_at=row.get("anchored_at"),
+    )
+
 
 # =============================================================================
 # VERIFICATION ENDPOINT
