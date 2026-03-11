@@ -174,6 +174,27 @@ export interface AgentDashboard {
   }[];
 }
 
+export interface PublicVerificationRecord {
+  audit_id: string;
+  timestamp: string;
+  verdict: "approved" | "blocked" | "rate_limited" | "signature_invalid";
+  verdict_reason: string | null;
+  action_type: string;
+  agent_id: string;
+  agent_name: string;
+  organization_name: string;
+  trust_score: number;
+  risk_level: string | null;
+  violations: string[];
+  action_hash: string;
+  signature_valid: boolean;
+  merkle_root: string | null;
+  tx_hash: string | null;
+  block_number: number | null;
+  chain_id: number;
+  anchored_at: string | null;
+}
+
 export interface VerificationResult {
   verdict: ActionVerdict;
   verdict_reason: string;
@@ -240,6 +261,13 @@ export const publicApi = {
    */
   async getAgentPublicInfo(agentId: string): Promise<AgentPublicInfo> {
     return apiRequest<AgentPublicInfo>(`/public/agent/${agentId}`);
+  },
+
+  /**
+   * Get a public verification record (for shareable audit page)
+   */
+  async getVerificationRecord(recordId: string): Promise<PublicVerificationRecord> {
+    return apiRequest<PublicVerificationRecord>(`/public/verify/${recordId}`);
   },
 
   /**
