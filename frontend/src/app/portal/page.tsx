@@ -83,10 +83,11 @@ export default function PortalDashboard() {
         icon={Bot}
         title="No Agents Found"
         description="Register an agent in the Admin Console to use the Portal."
-        action={{
-          label: "Go to Admin Console",
-          href: "/admin/agents",
-        }}
+        action={
+          <a href="/admin/agents" className="text-sm font-medium underline">
+            Go to Admin Console
+          </a>
+        }
       />
     );
   }

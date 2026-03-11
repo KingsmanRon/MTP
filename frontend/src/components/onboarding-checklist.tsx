@@ -178,12 +178,12 @@ export function OnboardingChecklist({
               </Link>
             </p>
             {!hasAgents && (
-              <Button asChild>
-                <Link href="/admin/agents">
+              <Link href="/admin/agents">
+                <Button>
                   Get Started
                   <ArrowRight className="h-4 w-4 ml-2" />
-                </Link>
-              </Button>
+                </Button>
+              </Link>
             )}
           </div>
         )}
