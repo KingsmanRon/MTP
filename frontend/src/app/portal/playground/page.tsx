@@ -138,10 +138,11 @@ export default function PlaygroundPage() {
         icon={Bot}
         title="No Agents Found"
         description="Register an agent first to test verifications."
-        action={{
-          label: "Go to Agents",
-          href: "/admin/agents",
-        }}
+        action={
+          <a href="/admin/agents" className="text-sm font-medium underline">
+            Go to Agents
+          </a>
+        }
       />
     );
   }
