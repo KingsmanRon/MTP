@@ -97,8 +97,8 @@ export default function VerifyLandingPage() {
             <span className="text-[#4C8DFF]">See the proof.</span>
           </h1>
           <p className="mx-auto mt-5 max-w-xl text-lg leading-8 text-[#C4CFDE]">
-            Check the trust status, policy compliance, and on-chain audit trail
-            of any Inntris-registered agent.
+            Inspect the policy decision, verification details, and on-chain audit trail
+            for any Inntris verification record.
           </p>
         </section>
 
