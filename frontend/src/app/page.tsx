@@ -1,4 +1,5 @@
 import React from "react";
+import Link from "next/link";
 import { Shield, LayoutDashboard, Bot, SearchCheck, Globe, KeyRound, CheckCircle2, Lock, FileCheck2, ChevronRight } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -8,24 +9,28 @@ const modules = [
     title: "Admin Console",
     body: "Manage organisations, agents, policies, API keys, and security alerts.",
     cta: "Open console",
+    href: "/admin",
   },
   {
     icon: Bot,
     title: "Agent Portal",
     body: "Issue credentials, test verification, and monitor agent trust state.",
     cta: "Manage agents",
+    href: "/portal",
   },
   {
     icon: SearchCheck,
     title: "Audit Explorer",
     body: "Search verification decisions and inspect tamper-evident audit history.",
     cta: "View audits",
+    href: "/audit",
   },
   {
     icon: Globe,
     title: "Public Verify",
     body: "Verify an agent's trust status and verification history externally.",
     cta: "Open verifier",
+    href: "/verify",
   },
 ];
 const trustSignals = [
@@ -79,18 +84,21 @@ export default function InntrisCoreDarkPreview() {
             </div>
           </div>
           <nav className="hidden items-center gap-8 text-sm text-[#AAB7CC] md:flex">
-            <a className="transition hover:text-white" href="#product">Product</a>
-            <a className="transition hover:text-white" href="#docs">Docs</a>
-            <a className="transition hover:text-white" href="#modules">Modules</a>
-            <a className="transition hover:text-white" href="#trust">Trust</a>
+            <Link className="transition hover:text-white" href="/admin">Product</Link>
+            <Link className="transition hover:text-white" href="/docs">Docs</Link>
+            <Link className="transition hover:text-white" href="/admin">Modules</Link>
           </nav>
           <div className="flex items-center gap-3">
-            <Button variant="outline" className="hidden border-[#22314D] bg-[#0D1728] text-[#F5F7FB] hover:bg-[#101C31] hover:text-white md:inline-flex">
-              View documentation
-            </Button>
-            <Button className="bg-[#4C8DFF] text-white hover:bg-[#6AA2FF]">
-              Open Admin Console
-            </Button>
+            <Link href="/docs">
+              <Button variant="outline" className="hidden border-[#22314D] bg-[#0D1728] text-[#F5F7FB] hover:bg-[#101C31] hover:text-white md:inline-flex">
+                View documentation
+              </Button>
+            </Link>
+            <Link href="/admin">
+              <Button className="bg-[#4C8DFF] text-white hover:bg-[#6AA2FF]">
+                Open Admin Console
+              </Button>
+            </Link>
           </div>
         </div>
       </header>
@@ -113,12 +121,12 @@ export default function InntrisCoreDarkPreview() {
               Built for teams running agent workflows against code, data, APIs, and high-trust operations.
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
-              <a href="/verify">
+              <Link href="/verify">
                 <Button size="lg" className="bg-[#4C8DFF] px-6 text-white hover:bg-[#6AA2FF]">
                   See a Live Verification
                 </Button>
-              </a>
-              <a href="/docs">
+              </Link>
+              <Link href="/docs">
                 <Button
                   size="lg"
                   variant="outline"
@@ -126,7 +134,7 @@ export default function InntrisCoreDarkPreview() {
                 >
                   View Documentation
                 </Button>
-              </a>
+              </Link>
             </div>
           </div>
           <div className="relative">
@@ -188,10 +196,10 @@ export default function InntrisCoreDarkPreview() {
                     </div>
                     <h3 className="text-xl font-semibold tracking-tight text-[#F5F7FB]">{item.title}</h3>
                     <p className="mt-3 min-h-[72px] text-sm leading-7 text-[#AAB7CC]">{item.body}</p>
-                    <button className="mt-5 inline-flex items-center gap-2 text-sm font-medium text-[#8FB8FF] transition group-hover:text-white">
+                    <Link href={item.href} className="mt-5 inline-flex items-center gap-2 text-sm font-medium text-[#8FB8FF] transition group-hover:text-white">
                       {item.cta}
                       <ChevronRight className="h-4 w-4" />
-                    </button>
+                    </Link>
                   </CardContent>
                 </Card>
               );
@@ -244,7 +252,7 @@ export default function InntrisCoreDarkPreview() {
                 Every agent PR gets a cryptographic receipt.
               </p>
               <a
-                href="https://github.com/marketplace/actions/inntris-verify"
+                href="https://github.com/KingsmanRon/Inntris"
                 target="_blank"
                 rel="noopener noreferrer"
               >
