@@ -3,6 +3,7 @@ import Link from "next/link";
 import { Shield, LayoutDashboard, Bot, SearchCheck, Globe, KeyRound, CheckCircle2, Lock, FileCheck2, ChevronRight } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import ContactSection from "@/components/contact-section";
 const modules = [
   {
     icon: LayoutDashboard,
@@ -91,6 +92,7 @@ export default function InntrisCoreDarkPreview() {
             <a className="transition hover:text-white" href="#overview">Overview</a>
             <a className="transition hover:text-white" href="#use-cases">Use Cases</a>
             <a className="transition hover:text-white" href="#modules">Modules</a>
+            <a className="transition hover:text-white" href="#contact">Contact</a>
             <Link className="transition hover:text-white" href="/docs">Docs</Link>
           </nav>
           <div className="flex items-center gap-3">
@@ -290,6 +292,7 @@ export default function InntrisCoreDarkPreview() {
             </div>
           </div>
         </section>
+        <ContactSection />
       </main>
     </div>
   );
