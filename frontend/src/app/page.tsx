@@ -7,6 +7,7 @@ const modules = [
   {
     icon: LayoutDashboard,
     title: "Admin Console",
+    role: "For platform admins",
     body: "Manage organisations, agents, policies, API keys, and security alerts.",
     cta: "Open console",
     href: "/admin",
@@ -14,6 +15,7 @@ const modules = [
   {
     icon: Bot,
     title: "Agent Portal",
+    role: "For developers and operators",
     body: "Issue credentials, test verification, and monitor agent trust state.",
     cta: "Manage agents",
     href: "/portal",
@@ -21,6 +23,7 @@ const modules = [
   {
     icon: SearchCheck,
     title: "Audit Explorer",
+    role: "For investigations and compliance",
     body: "Search verification decisions and inspect tamper-evident audit history.",
     cta: "View audits",
     href: "/audit",
@@ -28,6 +31,7 @@ const modules = [
   {
     icon: Globe,
     title: "Public Verify",
+    role: "For customers, partners, and auditors",
     body: "Verify an agent's trust status and verification history externally.",
     cta: "Open verifier",
     href: "/verify",
@@ -36,19 +40,19 @@ const modules = [
 const trustSignals = [
   {
     value: "Fail-closed",
-    label: "Blocks actions when trust checks fail",
+    label: "Fail-closed by default",
   },
   {
     value: "Ed25519",
-    label: "Every action is tied to a verifiable agent identity",
+    label: "Ed25519-signed actions",
   },
   {
     value: "Base L2",
-    label: "Anchored audit trail with independent verification",
+    label: "Base L2 anchored audit",
   },
   {
     value: "< 100 ms",
-    label: "Built for production verification latency",
+    label: "Sub-100 ms verification",
   },
 ];
 const capabilities = [
@@ -84,9 +88,10 @@ export default function InntrisCoreDarkPreview() {
             </div>
           </div>
           <nav className="hidden items-center gap-8 text-sm text-[#AAB7CC] md:flex">
-            <Link className="transition hover:text-white" href="/admin">Product</Link>
+            <a className="transition hover:text-white" href="#overview">Overview</a>
+            <a className="transition hover:text-white" href="#use-cases">Use Cases</a>
+            <a className="transition hover:text-white" href="#modules">Modules</a>
             <Link className="transition hover:text-white" href="/docs">Docs</Link>
-            <Link className="transition hover:text-white" href="/admin">Modules</Link>
           </nav>
           <div className="flex items-center gap-3">
             <Link href="/docs">
@@ -103,14 +108,14 @@ export default function InntrisCoreDarkPreview() {
         </div>
       </header>
       <main className="relative">
-        <section className="mx-auto grid max-w-7xl gap-12 px-6 pb-12 pt-16 lg:grid-cols-[1.15fr_0.85fr] lg:px-8 lg:pb-16 lg:pt-20">
+        <section id="overview" className="mx-auto grid max-w-7xl gap-12 px-6 pb-12 pt-16 lg:grid-cols-[1.15fr_0.85fr] lg:px-8 lg:pb-16 lg:pt-20">
           <div className="max-w-3xl">
             <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-[#22314D] bg-[#0D1728]/90 px-3 py-1.5 text-sm text-[#AAB7CC]">
               <CheckCircle2 className="h-4 w-4 text-[#28C281]" />
               Verification infrastructure for production AI agents
             </div>
             <h1 className="max-w-3xl text-4xl font-semibold leading-tight tracking-tight md:text-6xl">
-              Your AI agents are writing production code.
+              Your AI agents are taking real actions.
               <br />
               <span className="text-[#4C8DFF]">Prove what they actually did.</span>
             </h1>
@@ -121,18 +126,18 @@ export default function InntrisCoreDarkPreview() {
               Built for teams running agent workflows against code, data, APIs, and high-trust operations.
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
-              <Link href="/verify">
+              <Link href="/docs">
                 <Button size="lg" className="bg-[#4C8DFF] px-6 text-white hover:bg-[#6AA2FF]">
-                  See a Live Verification
+                  View Documentation
                 </Button>
               </Link>
-              <Link href="/docs">
+              <Link href="/verify">
                 <Button
                   size="lg"
                   variant="outline"
                   className="border-[#22314D] bg-[#0D1728] px-6 text-[#F5F7FB] hover:bg-[#101C31] hover:text-white"
                 >
-                  View Documentation
+                  See Live Verification
                 </Button>
               </Link>
             </div>
@@ -179,7 +184,7 @@ export default function InntrisCoreDarkPreview() {
               <h2 className="mt-3 text-2xl font-semibold tracking-tight md:text-3xl">One control plane. Four modules.</h2>
             </div>
             <p className="max-w-2xl text-sm leading-7 text-[#AAB7CC] md:text-base">
-              The homepage should orient operators quickly, then move them into the exact surface they need.
+              Operator surfaces for policy, identity, audit, and verification.
             </p>
           </div>
           <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
@@ -195,6 +200,7 @@ export default function InntrisCoreDarkPreview() {
                       <Icon className="h-6 w-6" />
                     </div>
                     <h3 className="text-xl font-semibold tracking-tight text-[#F5F7FB]">{item.title}</h3>
+                    <p className="mt-1 text-xs font-medium uppercase tracking-[0.14em] text-[#4C8DFF]">{item.role}</p>
                     <p className="mt-3 min-h-[72px] text-sm leading-7 text-[#AAB7CC]">{item.body}</p>
                     <Link href={item.href} className="mt-5 inline-flex items-center gap-2 text-sm font-medium text-[#8FB8FF] transition group-hover:text-white">
                       {item.cta}
@@ -216,6 +222,28 @@ export default function InntrisCoreDarkPreview() {
             ))}
           </div>
         </section>
+        <section id="use-cases" className="mx-auto max-w-7xl px-6 py-8 lg:px-8">
+          <div className="mb-5">
+            <div className="text-sm font-medium uppercase tracking-[0.18em] text-[#8FB8FF]">
+              Use cases
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-3">
+            {[
+              "Pull request verification",
+              "Sensitive data access",
+              "API and tool execution",
+              "Financial operations",
+            ].map((useCase) => (
+              <span
+                key={useCase}
+                className="rounded-full border border-[#22314D] bg-[#0D1728] px-4 py-2 text-sm text-[#AAB7CC]"
+              >
+                {useCase}
+              </span>
+            ))}
+          </div>
+        </section>
         <section id="product" className="mx-auto grid max-w-7xl gap-6 px-6 pb-16 lg:grid-cols-[0.95fr_1.05fr] lg:px-8 lg:pb-24">
           <div className="rounded-[28px] border border-[#22314D] bg-[#0D1728] p-7">
             <div className="text-sm font-medium uppercase tracking-[0.18em] text-[#8FB8FF]">Core capability</div>
@@ -223,7 +251,7 @@ export default function InntrisCoreDarkPreview() {
               Serious enough for a control plane, clear enough for daily use.
             </h2>
             <p className="mt-4 text-base leading-7 text-[#AAB7CC]">
-              Use the darker visual language from the original concept, but keep the sharper module-based structure from the lighter version.
+              Inntris combines cryptographic identity, policy checks before execution, and tamper-evident audit in one control plane.
             </p>
             <div className="mt-8 space-y-4">
               {capabilities.map((item) => {
@@ -245,10 +273,10 @@ export default function InntrisCoreDarkPreview() {
           <div className="flex items-center justify-center rounded-[28px] border border-[#22314D] bg-[#0D1728] p-7">
             <div className="max-w-md text-center">
               <h3 className="text-2xl font-semibold tracking-tight">
-                Want this for your AI agent PRs?
+                Start with pull request verification
               </h3>
               <p className="mt-4 text-base leading-7 text-[#AAB7CC]">
-                Add inntris-verify to any repo in 2 minutes.
+                Add inntris-verify to any repo in minutes.
                 Every agent PR gets a cryptographic receipt.
               </p>
               <a
