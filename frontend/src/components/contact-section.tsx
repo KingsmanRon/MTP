@@ -239,7 +239,7 @@ export default function ContactSection() {
           </div>
 
           <div
-            className="h-fit rounded-[12px] px-5 py-4"
+            className="h-fit rounded-[12px] px-5 py-4 md:mt-[22px]"
             style={{ background: "#0D1728", border: "1px solid #22314D" }}
           >
             <p className="font-sans text-sm leading-relaxed" style={{ color: "#AAB7CC" }}>
