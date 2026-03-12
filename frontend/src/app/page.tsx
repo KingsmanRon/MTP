@@ -245,16 +245,16 @@ export default function InntrisCoreDarkPreview() {
             ))}
           </div>
         </section>
-        <section id="product" className="mx-auto grid max-w-7xl gap-6 px-6 pb-16 lg:grid-cols-[0.95fr_1.05fr] lg:px-8 lg:pb-24">
-          <div className="rounded-[28px] border border-[#22314D] bg-[#0D1728] p-7">
+        <section id="product" className="mx-auto max-w-7xl px-6 pb-16 lg:px-8 lg:pb-24">
+          <div className="rounded-[28px] border border-[#22314D] bg-[#0D1728] p-7 lg:p-10">
             <div className="text-sm font-medium uppercase tracking-[0.18em] text-[#8FB8FF]">Core capability</div>
             <h2 className="mt-3 text-2xl font-semibold tracking-tight md:text-3xl">
               Serious enough for a control plane, clear enough for daily use.
             </h2>
-            <p className="mt-4 text-base leading-7 text-[#AAB7CC]">
+            <p className="mt-4 max-w-2xl text-base leading-7 text-[#AAB7CC]">
               Inntris combines cryptographic identity, policy checks before execution, and tamper-evident audit in one control plane.
             </p>
-            <div className="mt-8 space-y-4">
+            <div className="mt-8 grid gap-4 md:grid-cols-3">
               {capabilities.map((item) => {
                 const Icon = item.icon;
                 return (
@@ -269,22 +269,6 @@ export default function InntrisCoreDarkPreview() {
                   </div>
                 );
               })}
-            </div>
-          </div>
-          <div className="flex items-center justify-center rounded-[28px] border border-[#22314D] bg-[#0D1728] p-7">
-            <div className="max-w-md text-center">
-              <h3 className="text-2xl font-semibold tracking-tight">
-                Start with pull request verification
-              </h3>
-              <p className="mt-4 text-base leading-7 text-[#AAB7CC]">
-                Add inntris-verify to any repo in minutes.
-                Every agent PR gets a cryptographic receipt.
-              </p>
-              <a href="#contact">
-                <Button size="lg" className="mt-6 bg-[#4C8DFF] px-6 text-white hover:bg-[#6AA2FF]">
-                  Become a Design Partner
-                </Button>
-              </a>
             </div>
           </div>
         </section>
