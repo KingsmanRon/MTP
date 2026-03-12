@@ -280,13 +280,9 @@ export default function InntrisCoreDarkPreview() {
                 Add inntris-verify to any repo in minutes.
                 Every agent PR gets a cryptographic receipt.
               </p>
-              <a
-                href="https://github.com/KingsmanRon/Inntris"
-                target="_blank"
-                rel="noopener noreferrer"
-              >
+              <a href="#contact">
                 <Button size="lg" className="mt-6 bg-[#4C8DFF] px-6 text-white hover:bg-[#6AA2FF]">
-                  Install GitHub Action
+                  Become a Design Partner
                 </Button>
               </a>
             </div>
