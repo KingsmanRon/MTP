@@ -242,18 +242,13 @@ export default function ContactSection() {
             className="h-fit rounded-[24px] p-8"
             style={{ background: "#0D1728", border: "1px solid #22314D" }}
           >
-            <div>
-              <p className="mb-2 font-sans font-semibold" style={{ color: "#F5F7FB" }}>
-                Let&apos;s talk about your agents.
-              </p>
-              <p className="font-sans text-sm leading-relaxed" style={{ color: "#AAB7CC" }}>
-                Whether you&apos;re exploring design partner opportunities, have technical
-                questions, or want to know how Inntris fits your agent stack, we respond
-                within 24 hours.
-              </p>
-            </div>
+            <p className="font-sans text-sm leading-relaxed" style={{ color: "#AAB7CC" }}>
+              Whether you&apos;re exploring design partner opportunities, have technical
+              questions, or want to know how Inntris fits your agent stack, we respond
+              within 24 hours.
+            </p>
 
-            <div className="mt-6 flex flex-col gap-2">
+            <div className="mt-5 flex flex-col gap-2">
               <p
                 className="font-mono text-xs uppercase tracking-wide"
                 style={{ color: "#7F8CA3" }}
@@ -269,7 +264,7 @@ export default function ContactSection() {
               </a>
             </div>
 
-            <div className="mt-6 flex flex-col gap-2">
+            <div className="mt-5 flex flex-col gap-2">
               <p
                 className="font-mono text-xs uppercase tracking-wide"
                 style={{ color: "#7F8CA3" }}
@@ -280,14 +275,17 @@ export default function ContactSection() {
                 Within 24 hours
               </p>
             </div>
-
-            <div className="my-6" style={{ borderTop: "1px solid #22314D" }} />
-
-            <p className="font-sans text-xs leading-relaxed" style={{ color: "#7F8CA3" }}>
-              Good fit for teams running agents in production, shipping agent-generated PRs,
-              or exposing tools, APIs, or financial actions to agents.
-            </p>
           </div>
+        </div>
+
+        <div
+          className="mt-10 pt-6"
+          style={{ borderTop: "1px solid #22314D" }}
+        >
+          <p className="text-center font-sans text-sm leading-relaxed" style={{ color: "#7F8CA3" }}>
+            Good fit for teams running agents in production, shipping agent-generated PRs,
+            or exposing tools, APIs, or financial actions to agents.
+          </p>
         </div>
       </div>
     </section>
