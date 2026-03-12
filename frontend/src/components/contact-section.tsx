@@ -238,10 +238,18 @@ export default function ContactSection() {
             )}
           </div>
 
-          <div
-            className="h-fit rounded-[12px] px-5 py-4 md:mt-[22px]"
-            style={{ background: "#0D1728", border: "1px solid #22314D" }}
-          >
+          <div className="flex flex-col">
+            {/* Spacer to align tile with input boxes (matches label + gap height) */}
+            <div className="hidden md:block">
+              <p className="font-mono text-xs tracking-wide opacity-0" aria-hidden="true">
+                &nbsp;
+              </p>
+              <div className="h-1.5" />
+            </div>
+            <div
+              className="h-fit rounded-[12px] px-5 py-4"
+              style={{ background: "#0D1728", border: "1px solid #22314D" }}
+            >
             <p className="font-sans text-sm leading-relaxed" style={{ color: "#AAB7CC" }}>
               Whether you&apos;re exploring design partner opportunities, have technical
               questions, or want to know how Inntris fits your agent stack, we respond
@@ -277,6 +285,7 @@ export default function ContactSection() {
                 </p>
               </div>
             </div>
+          </div>
           </div>
         </div>
 
