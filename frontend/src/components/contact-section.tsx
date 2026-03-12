@@ -256,7 +256,7 @@ export default function ContactSection() {
               within 24 hours.
             </p>
 
-            <div className="mt-3 flex gap-6">
+            <div className="mt-3 flex flex-col gap-4">
               <div className="flex flex-col gap-1">
                 <p
                   className="font-mono text-xs uppercase tracking-wide"
