@@ -239,7 +239,7 @@ export default function ContactSection() {
           </div>
 
           <div
-            className="h-fit rounded-[24px] p-8"
+            className="h-fit rounded-[12px] px-5 py-4"
             style={{ background: "#0D1728", border: "1px solid #22314D" }}
           >
             <p className="font-sans text-sm leading-relaxed" style={{ color: "#AAB7CC" }}>
@@ -248,32 +248,34 @@ export default function ContactSection() {
               within 24 hours.
             </p>
 
-            <div className="mt-5 flex flex-col gap-2">
-              <p
-                className="font-mono text-xs uppercase tracking-wide"
-                style={{ color: "#7F8CA3" }}
-              >
-                Email
-              </p>
-              <a
-                href="mailto:applications@inntris.com"
-                className="w-fit font-mono text-sm underline-offset-4 transition-all duration-200 hover:underline focus:outline-none focus:ring-2 focus:ring-[#4C8DFF]/20"
-                style={{ color: "#4C8DFF" }}
-              >
-                applications@inntris.com
-              </a>
-            </div>
+            <div className="mt-3 flex gap-6">
+              <div className="flex flex-col gap-1">
+                <p
+                  className="font-mono text-xs uppercase tracking-wide"
+                  style={{ color: "#7F8CA3" }}
+                >
+                  Email
+                </p>
+                <a
+                  href="mailto:applications@inntris.com"
+                  className="w-fit font-mono text-sm underline-offset-4 transition-all duration-200 hover:underline focus:outline-none focus:ring-2 focus:ring-[#4C8DFF]/20"
+                  style={{ color: "#4C8DFF" }}
+                >
+                  applications@inntris.com
+                </a>
+              </div>
 
-            <div className="mt-5 flex flex-col gap-2">
-              <p
-                className="font-mono text-xs uppercase tracking-wide"
-                style={{ color: "#7F8CA3" }}
-              >
-                Response time
-              </p>
-              <p className="font-sans text-sm" style={{ color: "#C4CFDE" }}>
-                Within 24 hours
-              </p>
+              <div className="flex flex-col gap-1">
+                <p
+                  className="font-mono text-xs uppercase tracking-wide"
+                  style={{ color: "#7F8CA3" }}
+                >
+                  Response time
+                </p>
+                <p className="font-sans text-sm" style={{ color: "#C4CFDE" }}>
+                  Within 24 hours
+                </p>
+              </div>
             </div>
           </div>
         </div>
