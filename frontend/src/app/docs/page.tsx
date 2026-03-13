@@ -54,14 +54,14 @@ export default function DocsPage() {
             Documentation
           </Badge>
           <h1 className="text-4xl md:text-6xl font-bold tracking-tight mb-6">
-            Inntris Core
+            Inntris
           </h1>
           <p className="text-xl md:text-2xl text-muted-foreground mb-4">
-            Protecting Intellect. The Universal Liability Shield for Autonomous Agents.
+            Runtime verification and cryptographic proof for AI agent actions.
           </p>
           <p className="text-lg text-muted-foreground max-w-2xl mx-auto mb-8">
-            Inntris provides cryptographic verification, policy enforcement, and forensic audit trails
-            for AI agents — ensuring accountability for every autonomous action.
+            Inntris verifies agent actions before execution, signs decisions with agent identity,
+            and produces a tamper-evident receipt for every decision.
           </p>
           <div className="flex flex-wrap justify-center gap-4">
             <Link href="#getting-started">
@@ -79,30 +79,44 @@ export default function DocsPage() {
         </div>
       </section>
 
-      {/* Who We Are */}
+      {/* What Inntris Is */}
       <section className="container mx-auto px-4 py-16 border-t">
         <div className="max-w-4xl mx-auto">
           <div className="text-center mb-12">
-            <h2 className="text-3xl font-bold mb-4">Who We Are</h2>
+            <h2 className="text-3xl font-bold mb-4">What Inntris Is</h2>
             <p className="text-lg text-muted-foreground">
-              Inntris INC — Building Trust Infrastructure for the Agentic AI Era
+              A policy decision point and evidence system for AI agent actions
             </p>
           </div>
 
           <div className="prose prose-gray dark:prose-invert max-w-none">
             <Card className="mb-8">
               <CardContent className="pt-6">
-                <p className="text-lg leading-relaxed">
-                  <strong>Inntris</strong> is the trust and verification layer for autonomous AI agents.
-                  As AI systems increasingly operate independently — making financial transactions,
-                  sending communications, and accessing sensitive data — organizations face a critical
-                  challenge: <em>How do you trust an AI agent?</em>
+                <p className="text-lg leading-relaxed mb-4">
+                  Inntris is not observability, logging, or prompt guardrails. It is a policy decision
+                  point and evidence system for AI agent actions.
                 </p>
-                <p className="text-lg leading-relaxed mt-4">
-                  We answer that question with cryptographic certainty. Inntris provides the infrastructure
-                  that verifies agent identity, enforces spending limits and policies, and creates immutable
-                  audit trails anchored to the blockchain. When something goes wrong, you know exactly
-                  what happened, when, and whether it was authorized.
+                <ul className="space-y-3 text-lg">
+                  <li className="flex items-start gap-2">
+                    <CheckCircle className="h-5 w-5 text-green-500 mt-1 flex-shrink-0" />
+                    Verifies actions before execution — financial transactions, API calls, data access, and more
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <CheckCircle className="h-5 w-5 text-green-500 mt-1 flex-shrink-0" />
+                    Signs every decision with verifiable agent identity (Ed25519)
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <CheckCircle className="h-5 w-5 text-green-500 mt-1 flex-shrink-0" />
+                    Enforces spending limits, rate limits, and action type restrictions before an agent can act
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <CheckCircle className="h-5 w-5 text-green-500 mt-1 flex-shrink-0" />
+                    Records tamper-evident evidence for every approval, block, and exception
+                  </li>
+                </ul>
+                <p className="text-lg leading-relaxed mt-4 text-muted-foreground">
+                  Built for teams that need stronger control and clearer proof than logs, screenshots,
+                  or after-the-fact review.
                 </p>
               </CardContent>
             </Card>
@@ -182,9 +196,9 @@ export default function DocsPage() {
                 <div className="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center mb-4">
                   <FileSearch className="h-6 w-6 text-primary" />
                 </div>
-                <CardTitle>Forensic Audit Trail</CardTitle>
+                <CardTitle>Tamper-Evident Audit Trail</CardTitle>
                 <CardDescription>
-                  Court-admissible records of every action
+                  Verifiable records of every agent decision
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -199,7 +213,7 @@ export default function DocsPage() {
                   </li>
                   <li className="flex items-start gap-2">
                     <CheckCircle className="h-4 w-4 text-green-500 mt-0.5 flex-shrink-0" />
-                    7-year retention for compliance
+                    Designed for enterprise audit requirements
                   </li>
                 </ul>
               </CardContent>
@@ -332,9 +346,9 @@ POST /admin/agents
       "command": "python",
       "args": ["-m", "mcp_server.server"],
       "env": {
-        "INNTRIS_API_URL": "https://api.inntris.com",
-        "INNTRIS_AGENT_ID": "your-agent-uuid",
-        "INNTRIS_PRIVATE_KEY_B64": "your-private-key"
+        "INNTRIS_API_URL": "<your-inntris-api-url>",
+        "INNTRIS_API_KEY": "<your-api-key>",
+        "INNTRIS_AGENT_ID": "<your-agent-id>"
       }
     }
   }
@@ -387,6 +401,47 @@ POST /admin/agents
         </div>
       </section>
 
+      {/* Verification Receipt */}
+      <section className="container mx-auto px-4 py-16 border-t">
+        <div className="max-w-4xl mx-auto">
+          <div className="text-center mb-12">
+            <h2 className="text-3xl font-bold mb-4">Verification Receipt</h2>
+            <p className="text-lg text-muted-foreground">
+              Every decision produces a signed receipt you can inspect, share, or verify on-chain.
+            </p>
+          </div>
+
+          <Card className="mb-8">
+            <CardContent className="pt-6">
+              <pre className="text-sm overflow-x-auto">
+{`{
+  "verdict": "approved",
+  "agent_id": "uuid",
+  "action_type": "financial_transaction",
+  "approval_token": "base64_signed_token",
+  "trust_score": 85,
+  "audit_id": "uuid",
+  "timestamp": "2025-01-15T10:30:01Z",
+  "anchored": true,
+  "transaction_hash": "0x517853a7400bffc3446fc73711a0cee2f45c82fc1b89d37e76aa3797eb951a77",
+  "root_hash": "e56891f1de39aca50725f0e36ee4b1c4fe1c50966f69a1b368e1d691c2466149"
+}`}
+              </pre>
+            </CardContent>
+          </Card>
+
+          <p className="text-muted-foreground mb-6">
+            Receipts are stored in the tamper-evident audit trail and Merkle roots are anchored
+            to Base L2 hourly. Any record can be independently verified by audit ID or transaction hash.
+          </p>
+
+          <Link href="/verify" className="text-primary hover:underline flex items-center gap-1">
+            <ArrowRight className="h-4 w-4" />
+            See live verification
+          </Link>
+        </div>
+      </section>
+
       {/* Our Goal */}
       <section className="container mx-auto px-4 py-16 bg-muted/30">
         <div className="max-w-4xl mx-auto">
@@ -419,9 +474,9 @@ POST /admin/agents
               </CardHeader>
               <CardContent>
                 <p className="text-muted-foreground">
-                  From startups to the World Bank, Inntris scales with your needs.
-                  SOC 2 compliant architecture with optional on-premise deployment
-                  for regulated industries.
+                  From startups to regulated enterprises, Inntris scales with your needs.
+                  Built for auditability. Designed for enterprise control requirements.
+                  Optional on-premise deployment available for compliance-heavy industries.
                 </p>
               </CardContent>
             </Card>
@@ -429,13 +484,13 @@ POST /admin/agents
             <Card>
               <CardHeader>
                 <Lock className="h-8 w-8 text-primary mb-2" />
-                <CardTitle>Liability Protection</CardTitle>
+                <CardTitle>Liability Clarity</CardTitle>
               </CardHeader>
               <CardContent>
                 <p className="text-muted-foreground">
-                  When an AI agent takes action, you need proof of what happened.
-                  Inntris provides court-admissible audit trails that protect
-                  organizations from liability.
+                  When an AI agent takes action, you need proof of what happened and whether
+                  it was authorised. Inntris gives you a signed, verifiable record for every
+                  decision — before the action runs, not reconstructed after the fact.
                 </p>
               </CardContent>
             </Card>
@@ -454,6 +509,50 @@ POST /admin/agents
               </CardContent>
             </Card>
           </div>
+        </div>
+      </section>
+
+      {/* Start Here */}
+      <section className="container mx-auto px-4 py-16 border-t">
+        <div className="max-w-4xl mx-auto">
+          <div className="text-center mb-12">
+            <h2 className="text-3xl font-bold mb-4">Start Here</h2>
+            <p className="text-lg text-muted-foreground">
+              The fastest path to verification coverage is pull request verification.
+            </p>
+          </div>
+
+          <Card>
+            <CardContent className="pt-6">
+              <p className="text-lg leading-relaxed mb-4">
+                Add <code className="bg-muted px-1 rounded">inntris-verify</code> to any GitHub repo.
+                Every agent-generated PR gets a cryptographic receipt — signed by agent identity and
+                anchored to Base L2.
+              </p>
+              <div className="flex flex-wrap gap-4 mb-4">
+                <a
+                  href="https://github.com/KingsmanRon/MTP"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <Button>
+                    Install GitHub Action
+                    <ArrowRight className="ml-2 h-4 w-4" />
+                  </Button>
+                </a>
+                <Link href="/verify">
+                  <Button variant="outline">
+                    See live verification
+                    <ArrowRight className="ml-2 h-4 w-4" />
+                  </Button>
+                </Link>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Works with GitHub PR workflows, MCP-compatible agent systems, and custom agent stacks
+                via direct API integration.
+              </p>
+            </CardContent>
+          </Card>
         </div>
       </section>
 
@@ -522,11 +621,11 @@ POST /admin/agents
               <span className="text-sm text-muted-foreground">Inntris INC</span>
             </div>
             <p className="text-sm text-muted-foreground text-center">
-              Protecting Intellect. The Universal Liability Shield for Autonomous Agents.
+              Inntris — Cryptographic verification for AI agents.
             </p>
             <div className="flex items-center gap-4">
               <a
-                href="https://github.com/inntris/inntris-core"
+                href="https://github.com/KingsmanRon/MTP"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-muted-foreground hover:text-foreground"

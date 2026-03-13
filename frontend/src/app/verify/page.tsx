@@ -164,7 +164,7 @@ export default function VerifyLandingPage() {
 
             <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
               <a
-                href="https://github.com/KingsmanRon/Inntris"
+                href="https://github.com/KingsmanRon/MTP"
                 target="_blank"
                 rel="noopener noreferrer"
               >

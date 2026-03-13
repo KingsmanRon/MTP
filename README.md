@@ -1,6 +1,6 @@
 # Inntris Core
 
-> **Protecting Intellect. The Universal Liability Shield for Autonomous Agents.**
+> **Cryptographic verification and policy enforcement for AI agent actions.**
 
 Inntris INC provides advanced security infrastructure and defensive protocols for artificial intelligence systems and third-party platforms. We serve as a protective shell that safeguards high-level cognitive models and ensures their integrity across diverse digital ecosystems.
 
@@ -477,6 +477,6 @@ We welcome contributions! Please open an issue to discuss proposed changes befor
 
 ---
 
-*Protecting Intellect. The Universal Liability Shield for Autonomous Agents.*
+*Inntris — Cryptographic verification for AI agents.*
 
 **© 2026 Inntris INC. All rights reserved.**
