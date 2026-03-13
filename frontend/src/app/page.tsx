@@ -1,8 +1,7 @@
 import React from "react";
 import Link from "next/link";
-import { Shield, LayoutDashboard, Bot, SearchCheck, Globe, KeyRound, CheckCircle2, Lock, FileCheck2, ChevronRight } from "lucide-react";
+import { Shield, LayoutDashboard, Bot, SearchCheck, Globe, KeyRound, Lock, FileCheck2, ChevronRight } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import ContactSection from "@/components/contact-section";
 const modules = [
   {
@@ -36,24 +35,6 @@ const modules = [
     body: "Verify an agent's trust status and verification history externally.",
     cta: "Open Verifier",
     href: "/verify",
-  },
-];
-const trustSignals = [
-  {
-    value: "Fail-closed",
-    label: "Fail-closed by default",
-  },
-  {
-    value: "Ed25519",
-    label: "Ed25519-signed actions",
-  },
-  {
-    value: "Base L2",
-    label: "Base L2 anchored audit",
-  },
-  {
-    value: "< 100 ms",
-    label: "Sub-100 ms verification",
   },
 ];
 const capabilities = [
@@ -96,52 +77,73 @@ export default function InntrisCoreDarkPreview() {
             <Link className="transition hover:text-white" href="/docs">Docs</Link>
           </nav>
           <div className="flex items-center gap-3">
-            <Link href="/docs">
-              <Button variant="outline" className="hidden border-[#22314D] bg-[#0D1728] text-[#F5F7FB] hover:bg-[#101C31] hover:text-white md:inline-flex">
-                View documentation
-              </Button>
-            </Link>
-            <Link href="/admin">
-              <Button className="bg-[#4C8DFF] text-white hover:bg-[#6AA2FF]">
-                Open Admin Console
-              </Button>
-            </Link>
+            <a
+              href="#contact"
+              className="hidden rounded-md bg-[#28C281] px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90 md:inline-flex"
+            >
+              Request Access
+            </a>
           </div>
         </div>
       </header>
       <main className="relative">
         <section id="overview" className="mx-auto grid max-w-7xl gap-12 px-6 pb-20 pt-16 lg:grid-cols-[1.15fr_0.85fr] lg:px-8 lg:pb-28 lg:pt-20">
           <div className="max-w-3xl">
-            <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-[#22314D] bg-[#0D1728]/90 px-3 py-1.5 text-sm text-[#AAB7CC]">
-              <CheckCircle2 className="h-4 w-4 text-[#28C281]" />
-              Verification infrastructure for production AI agents
+            <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-[#28C281]/25 bg-[#28C281]/10 px-3 py-1.5 font-mono text-xs text-[#28C281]">
+              <span className="h-1.5 w-1.5 rounded-full bg-[#28C281] animate-pulse" />
+              Verification API live
             </div>
-            <h1 className="max-w-3xl text-4xl font-semibold leading-tight tracking-tight md:text-6xl">
-              Your AI agents are taking real actions.
-              <br />
-              <span className="text-[#4C8DFF]">Prove what they actually did.</span>
+            <h1 className="max-w-3xl text-4xl font-semibold leading-[1.12] tracking-tight md:text-6xl mb-5">
+              Your AI agents act.{" "}
+              <span className="text-[#28C281]">Prove every decision.</span>
             </h1>
-            <p className="mt-5 max-w-2xl text-lg leading-8 text-[#C4CFDE] md:text-xl">
-              Cryptographic identity, policy enforcement, and tamper-evident audit for AI agents in production.
+            <p className="text-base text-[#AAB7CC] mb-3 max-w-lg leading-relaxed">
+              One control plane for agents running in production.
             </p>
-            <p className="mt-4 max-w-2xl text-[15px] leading-7 text-[#AAB7CC]">
-              Built for teams running agent workflows against code, data, APIs, and high-trust operations.
-            </p>
-            <div className="mt-8 mb-4 flex flex-wrap gap-3">
-              <Link href="/docs">
-                <Button size="lg" className="bg-[#4C8DFF] px-6 text-white hover:bg-[#6AA2FF]">
-                  View Documentation
-                </Button>
-              </Link>
-              <Link href="/verify">
-                <Button
-                  size="lg"
-                  variant="outline"
-                  className="border-[#22314D] bg-[#0D1728] px-6 text-[#F5F7FB] hover:bg-[#101C31] hover:text-white"
+            <ul className="flex flex-col gap-2 mb-8 max-w-lg">
+              {[
+                "Cryptographic identity — every agent signs every action",
+                "Policy before execution — block risky operations before they run",
+                "Tamper-evident audit — verifiable trail for compliance and investigation",
+              ].map((item) => (
+                <li
+                  key={item}
+                  className="text-sm text-[#AAB7CC] pl-4 relative leading-relaxed before:content-[''] before:absolute before:left-0 before:top-[9px] before:w-1.5 before:h-px before:bg-[#28C281]"
                 >
-                  See Live Verification
-                </Button>
+                  {item}
+                </li>
+              ))}
+            </ul>
+            <div className="flex flex-wrap gap-3 mb-10">
+              <a
+                href="#contact"
+                className="rounded-md bg-[#28C281] px-5 py-3 text-sm font-medium text-white transition-opacity hover:opacity-90"
+              >
+                Request Access
+              </a>
+              <Link
+                href="/verify"
+                className="rounded-md border border-[#22314D] bg-[#0D1728] px-5 py-3 text-sm font-medium text-[#F5F7FB] transition-colors hover:bg-[#101C31]"
+              >
+                See live verification →
               </Link>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 divide-x divide-[#22314D] border-t border-[#22314D] pt-7">
+              {[
+                { value: "<100ms", label: "Verification latency" },
+                { value: "Ed25519", label: "Signing algorithm" },
+                { value: "Base L2", label: "Audit anchor" },
+                { value: "Fail-closed", label: "Default policy mode" },
+              ].map(({ value, label }) => (
+                <div key={label} className="px-5 first:pl-0">
+                  <p className="text-lg font-semibold font-mono text-[#F5F7FB] mb-1">
+                    {value}
+                  </p>
+                  <p className="text-[11px] uppercase tracking-widest text-[#AAB7CC]">
+                    {label}
+                  </p>
+                </div>
+              ))}
             </div>
           </div>
           <div className="relative">
@@ -211,16 +213,6 @@ export default function InntrisCoreDarkPreview() {
                 </Card>
               );
             })}
-          </div>
-        </section>
-        <section id="trust" className="mx-auto max-w-7xl px-6 py-12 lg:px-8">
-          <div className="grid gap-4 rounded-[28px] border border-[#22314D] bg-[#0D1728] p-6 md:grid-cols-2 xl:grid-cols-4 xl:p-8">
-            {trustSignals.map((item) => (
-              <div key={item.value} className="rounded-2xl border border-white/6 bg-[#101C31]/70 p-5">
-                <div className="text-3xl font-semibold tracking-tight text-[#F5F7FB]">{item.value}</div>
-                <div className="mt-2 text-sm leading-6 text-[#AAB7CC]">{item.label}</div>
-              </div>
-            ))}
           </div>
         </section>
         <section id="use-cases" className="mx-auto max-w-7xl px-6 py-8 lg:px-8">
