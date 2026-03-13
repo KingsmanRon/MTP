@@ -7,6 +7,8 @@ const FORMSPREE_ENDPOINT = "https://formspree.io/f/mpqjkbre";
 const initialForm = {
   name: "",
   email: "",
+  framework: "",
+  risk: "",
   subject: "",
   message: "",
 };
@@ -15,7 +17,7 @@ export default function ContactSection() {
   const [status, setStatus] = useState<"idle" | "submitting" | "success" | "error">("idle");
   const [form, setForm] = useState(initialForm);
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
     setForm((prev) => ({ ...prev, [name]: value }));
   };
@@ -174,6 +176,59 @@ export default function ContactSection() {
                   </div>
                 </div>
 
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div className="flex flex-col gap-1.5">
+                    <label
+                      htmlFor="contact-framework"
+                      className="font-mono text-xs tracking-wide"
+                      style={{ color: "#7F8CA3" }}
+                    >
+                      Agent framework
+                    </label>
+                    <select
+                      id="contact-framework"
+                      name="framework"
+                      value={form.framework}
+                      onChange={handleChange}
+                      className="rounded-[12px] px-4 py-3 font-sans text-sm outline-none transition-all duration-200 hover:border-[#35507A] focus:border-[#4C8DFF] focus:ring-2 focus:ring-[#4C8DFF]/20"
+                      style={inputStyles}
+                    >
+                      <option value="">Select one</option>
+                      <option value="langchain">LangChain / LangGraph</option>
+                      <option value="crewai">CrewAI</option>
+                      <option value="autogen">AutoGen</option>
+                      <option value="composio">Composio</option>
+                      <option value="custom">Custom / in-house</option>
+                      <option value="other">Other</option>
+                    </select>
+                  </div>
+
+                  <div className="flex flex-col gap-1.5">
+                    <label
+                      htmlFor="contact-risk"
+                      className="font-mono text-xs tracking-wide"
+                      style={{ color: "#7F8CA3" }}
+                    >
+                      What are your agents doing?
+                    </label>
+                    <select
+                      id="contact-risk"
+                      name="risk"
+                      value={form.risk}
+                      onChange={handleChange}
+                      className="rounded-[12px] px-4 py-3 font-sans text-sm outline-none transition-all duration-200 hover:border-[#35507A] focus:border-[#4C8DFF] focus:ring-2 focus:ring-[#4C8DFF]/20"
+                      style={inputStyles}
+                    >
+                      <option value="">Select one</option>
+                      <option value="code">Writing / executing code</option>
+                      <option value="data">Accessing sensitive data</option>
+                      <option value="api">Calling external APIs / tools</option>
+                      <option value="finance">Financial or payment operations</option>
+                      <option value="multiple">Multiple of the above</option>
+                    </select>
+                  </div>
+                </div>
+
                 <div className="flex flex-col gap-1.5">
                   <label
                     htmlFor="contact-subject"
@@ -189,7 +244,7 @@ export default function ContactSection() {
                     value={form.subject}
                     onChange={handleChange}
                     required
-                    placeholder="Design partner enquiry"
+                    placeholder="e.g. Design partner inquiry / Technical question"
                     className="rounded-[12px] px-4 py-3 font-sans text-sm outline-none transition-all duration-200 hover:border-[#35507A] focus:border-[#4C8DFF] focus:ring-2 focus:ring-[#4C8DFF]/20"
                     style={inputStyles}
                   />
@@ -294,8 +349,8 @@ export default function ContactSection() {
           style={{ borderTop: "1px solid #22314D" }}
         >
           <p className="text-center font-sans text-sm leading-relaxed" style={{ color: "#7F8CA3" }}>
-            Good fit for teams running agents in production, shipping agent-generated PRs,
-            or exposing tools, APIs, or financial actions to agents.
+            We respond within 24 hours. If you&apos;re running agents against code, data,
+            or financial operations — that&apos;s our sweet spot.
           </p>
         </div>
       </div>
