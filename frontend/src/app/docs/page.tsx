@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { InntrisLogo } from "@/components/inntris-logo";
 import {
   Shield,
   Lock,
@@ -30,7 +31,7 @@ export default function DocsPage() {
       <header className="border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 sticky top-0 z-50">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
           <Link href="/" className="flex items-center gap-2">
-            <Shield className="h-8 w-8 text-primary" />
+            <InntrisLogo className="h-8 w-8" />
             <span className="text-xl font-bold">Inntris</span>
           </Link>
           <nav className="hidden md:flex items-center gap-6">
@@ -615,7 +616,7 @@ POST /admin/agents
         <div className="container mx-auto px-4 py-10">
           <div className="flex flex-col items-center gap-5">
             <div className="flex items-center gap-2.5">
-              <Shield className="h-5 w-5 text-primary" />
+              <InntrisLogo className="h-5 w-5" />
               <span className="text-sm font-semibold tracking-tight">Inntris</span>
             </div>
             <p className="text-sm text-muted-foreground text-center">

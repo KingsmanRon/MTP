@@ -1,6 +1,6 @@
 # INNTRIS_CONTEXT.md
-## Last updated: 2026-03-11
-## Status: VERIFY PAGE LIVE — OUTREACH READY
+## Last updated: 2026-03-14
+## Status: VERIFY PAGE LIVE — LANDING PAGE PRODUCTION READY — OUTREACH READY
 
 ---
 
@@ -235,7 +235,7 @@ Border radius: rounded-[24px] cards, rounded-[28px] panels
 
 ---
 
-## Current Product State (2026-03-11)
+## Current Product State (2026-03-14)
 
 ### COMPLETED ✓
 - Dark navy homepage — correct copy, structure, fonts
@@ -243,13 +243,32 @@ Border radius: rounded-[24px] cards, rounded-[28px] panels
 - All nav and button links wired correctly
 - Verification decision flow panel in hero
 - Four module cards with role labels, destination-led CTAs
-- Trust strip, use cases row, conversion CTA
+- Use cases row, core capabilities section
 - Public `/verify` landing page with search input
 - `/verify/[id]` receipt page — full spec (VerdictHero, DetailsGrid, OnChainProof, CTA)
 - Backend public endpoint `GET /public/verify/{record_id}`
 - `PublicVerificationRecord` Pydantic model (safe whitelisted fields)
 - Two BLOCK records anchored on Base L2, status: confirmed, publicly verifiable
 - Railway correctly watching master branch
+- **Landing page production readiness** (2026-03-14):
+  - Nav: removed "View documentation" + "Open Admin Console", added green "Request Access" CTA
+  - Hero: status chip ("Verification API live"), rewritten H1 + bullet list, green primary CTA
+  - Trust stats bar moved into hero section (below CTAs)
+  - Contact form: two qualifying dropdowns (agent framework, risk surface)
+  - Footer added to landing page (was missing)
+- **Docs page production readiness** (2026-03-14):
+  - Hero rewritten (runtime verification language)
+  - "Who We Are" → "What Inntris Is" (product-accurate framing)
+  - Removed unverifiable claims (court-admissible, World Bank, SOC 2 compliant)
+  - Added Verification Receipt section with real field names
+  - Added "Start Here" section with GitHub Action CTA
+  - Fixed all GitHub links: KingsmanRon/Inntris → KingsmanRon/MTP
+  - Centered, polished footer
+- **Custom NN logo** (2026-03-14):
+  - SVG logo component (`InntrisLogo`) replacing Shield icon across all branding
+  - Integrated in: landing nav, landing footer, verify pages, docs header/footer, login, sidebar
+  - Static SVG at `/public/logo.svg`, SVG favicon reference in layout.tsx
+- **README.md** — taglines updated, false claims removed
 
 ### PENDING
 - Auth / login flow for external demos
@@ -258,6 +277,8 @@ Border radius: rounded-[24px] cards, rounded-[28px] panels
 - inntris.com domain pointed to Vercel production
 - Composio outreach — UNBLOCKED as of 2026-03-11
 - INNTRIS_CONTEXT.md update after each session
+- Mobile nav (hamburger menu) — landing page nav links hidden on mobile with no fallback
+- Social proof strip — intentionally removed, add when real partner logos approved
 
 ---
 

@@ -1,7 +1,8 @@
 import React from "react";
 import Link from "next/link";
-import { Shield, LayoutDashboard, Bot, SearchCheck, Globe, KeyRound, Lock, FileCheck2, ChevronRight } from "lucide-react";
+import { LayoutDashboard, Bot, SearchCheck, Globe, KeyRound, Lock, FileCheck2, ChevronRight } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
+import { InntrisLogo } from "@/components/inntris-logo";
 import ContactSection from "@/components/contact-section";
 const modules = [
   {
@@ -62,7 +63,7 @@ export default function InntrisCoreDarkPreview() {
         <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4 lg:px-8">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-[#22314D] bg-[#0D1728] shadow-[0_0_0_1px_rgba(255,255,255,0.02)]">
-              <Shield className="h-5 w-5 text-[#8FB8FF]" />
+              <InntrisLogo className="h-6 w-6" />
             </div>
             <div>
               <div className="text-lg font-semibold tracking-tight">Inntris</div>
@@ -270,7 +271,7 @@ export default function InntrisCoreDarkPreview() {
         <div className="mx-auto max-w-7xl px-6 py-10 lg:px-8">
           <div className="flex flex-col items-center gap-5">
             <div className="flex items-center gap-2.5">
-              <Shield className="h-5 w-5 text-[#8FB8FF]" />
+              <InntrisLogo className="h-5 w-5" />
               <span className="text-sm font-semibold tracking-tight text-[#F5F7FB]">Inntris</span>
             </div>
             <p className="text-sm text-[#7F8CA3] text-center">
