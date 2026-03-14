@@ -5,12 +5,12 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import {
-  Shield,
   Search,
   CheckCircle2,
   Lock,
   FileCheck2,
 } from "lucide-react";
+import { InntrisLogo } from "@/components/inntris-logo";
 
 const features = [
   {
@@ -49,7 +49,7 @@ export default function VerifyLandingPage() {
         <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4 lg:px-8">
           <Link href="/" className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-[#22314D] bg-[#0D1728] shadow-[0_0_0_1px_rgba(255,255,255,0.02)]">
-              <Shield className="h-5 w-5 text-[#8FB8FF]" />
+              <InntrisLogo className="h-6 w-6" />
             </div>
             <div>
               <div className="text-lg font-semibold tracking-tight">Inntris</div>
@@ -81,7 +81,7 @@ export default function VerifyLandingPage() {
       <main className="relative">
         <section className="mx-auto max-w-3xl px-6 pb-16 pt-20 text-center lg:px-8 lg:pt-28">
           <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-[#22314D] bg-[#0D1728]/90 px-3 py-1.5 text-sm text-[#AAB7CC]">
-            <Shield className="h-4 w-4 text-[#28C281]" />
+            <InntrisLogo className="h-4 w-4" />
             Public, read-only verification
           </div>
 
@@ -189,7 +189,7 @@ export default function VerifyLandingPage() {
       <footer className="border-t border-white/8">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-8 lg:px-8">
           <div className="flex items-center gap-2">
-            <Shield className="h-5 w-5 text-[#7F8CA3]" />
+            <InntrisLogo className="h-5 w-5" />
             <span className="text-[#7F8CA3]">Inntris Core</span>
           </div>
 

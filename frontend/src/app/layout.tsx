@@ -19,7 +19,10 @@ export const metadata: Metadata = {
   title: "Inntris — Cryptographic Verification for AI Agents",
   description: "Your AI agents are writing production code. Inntris is the cryptographic proof of what they actually did. Policy enforcement and tamper-proof audit anchored on Base L2.",
   icons: {
-    icon: "/favicon.ico",
+    icon: [
+      { url: "/favicon.ico" },
+      { url: "/logo.svg", type: "image/svg+xml" },
+    ],
   },
 };
 

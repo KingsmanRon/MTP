@@ -5,7 +5,8 @@ import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Shield, Key, Loader2, AlertCircle, ArrowRight } from "lucide-react";
+import { Key, Loader2, AlertCircle, ArrowRight } from "lucide-react";
+import { InntrisLogo } from "@/components/inntris-logo";
 import { createAuthenticatedApi } from "@/lib/api";
 
 export default function LoginPage() {
@@ -52,7 +53,7 @@ export default function LoginPage() {
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
           <div className="mx-auto mb-4 p-3 rounded-full bg-primary/10 w-fit">
-            <Shield className="h-8 w-8 text-primary" />
+            <InntrisLogo className="h-8 w-8" />
           </div>
           <CardTitle className="text-2xl">Welcome to Inntris</CardTitle>
           <CardDescription>

@@ -4,7 +4,6 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import {
-  Shield,
   LayoutDashboard,
   Bot,
   AlertTriangle,
@@ -13,7 +12,9 @@ import {
   Settings,
   ChevronLeft,
   Menu,
+  CheckCircle2,
 } from "lucide-react";
+import { InntrisLogo } from "@/components/inntris-logo";
 import { useState } from "react";
 
 interface SidebarProps {
@@ -36,7 +37,7 @@ const navItems = {
   ],
   audit: [
     { href: "/audit", icon: FileSearch, label: "Search" },
-    { href: "/audit/verify", icon: Shield, label: "Verify" },
+    { href: "/audit/verify", icon: CheckCircle2, label: "Verify" },
     { href: "/audit/exports", icon: Key, label: "Exports" },
   ],
 };
@@ -64,7 +65,7 @@ export function Sidebar({ variant }: SidebarProps) {
       <div className="flex items-center justify-between p-4 border-b">
         {!collapsed && (
           <Link href="/" className="flex items-center gap-2">
-            <Shield className="h-6 w-6 text-primary" />
+            <InntrisLogo className="h-6 w-6" />
             <span className="font-semibold">Inntris</span>
           </Link>
         )}

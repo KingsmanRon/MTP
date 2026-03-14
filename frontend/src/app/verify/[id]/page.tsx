@@ -6,7 +6,6 @@ import { Button } from "@/components/ui/button";
 import { usePublicVerification } from "@/lib/hooks";
 import { formatDateTime, copyToClipboard } from "@/lib/utils";
 import {
-  Shield,
   CheckCircle2,
   XOctagon,
   Copy,
@@ -19,6 +18,7 @@ import {
   FileCheck2,
   Link2,
 } from "lucide-react";
+import { InntrisLogo } from "@/components/inntris-logo";
 import { useState } from "react";
 
 /* ------------------------------------------------------------------ */
@@ -68,7 +68,7 @@ export default function VerifyRecordPage() {
     return (
       <div className="min-h-screen bg-[#07111F] flex items-center justify-center">
         <div className="text-center">
-          <Shield className="h-12 w-12 text-[#4C8DFF] animate-pulse mx-auto mb-4" />
+          <InntrisLogo className="h-12 w-12 animate-pulse mx-auto mb-4" />
           <p className="text-[#AAB7CC]">Loading verification record…</p>
         </div>
       </div>
@@ -412,7 +412,7 @@ export default function VerifyRecordPage() {
       <footer className="border-t border-white/8 mt-12">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-8 lg:px-8">
           <div className="flex items-center gap-2">
-            <Shield className="h-5 w-5 text-[#7F8CA3]" />
+            <InntrisLogo className="h-5 w-5" />
             <span className="text-[#7F8CA3]">Inntris Core</span>
           </div>
           <p className="text-sm text-[#7F8CA3]">
@@ -434,7 +434,7 @@ function Header({ onCopy, copied }: { onCopy: () => void; copied: boolean }) {
       <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4 lg:px-8">
         <Link href="/" className="flex items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-[#22314D] bg-[#0D1728] shadow-[0_0_0_1px_rgba(255,255,255,0.02)]">
-            <Shield className="h-5 w-5 text-[#8FB8FF]" />
+            <InntrisLogo className="h-6 w-6" />
           </div>
           <div>
             <div className="text-lg font-semibold tracking-tight text-[#F5F7FB]">Inntris</div>
