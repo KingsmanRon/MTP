@@ -2,17 +2,17 @@
 
 > **Cryptographic verification and policy enforcement for AI agent actions.**
 
-Inntris INC provides advanced security infrastructure and defensive protocols for artificial intelligence systems and third-party platforms. We serve as a protective shell that safeguards high-level cognitive models and ensures their integrity across diverse digital ecosystems.
+Inntris is a runtime verification and cryptographic audit layer for AI agents. It verifies agent actions before execution, signs decisions with agent identity, and produces a tamper-evident receipt for every decision.
 
-## The Universal Trust Layer for AI Agents
+## What Inntris Is
 
-Inntris Core is a production-ready **Verification & Liability Platform** for AI Agents. Think of it as the **"VISA Network" for AI** — providing Identity, Audit, and Control for any AI agent through a standardized Model Context Protocol (MCP) Server.
+A **policy decision point and evidence system** for AI agent actions — not observability, logging, or prompt guardrails.
 
 ### Core Philosophy
 
 - **"Fail Closed"** — If an agent cannot be verified, it cannot act
 - **"Zero Trust"** — Never trust the client; always verify the signature
-- **"Forensic Grade"** — Audit logs are not for debugging; they are for court
+- **"Tamper-Evident"** — Every decision produces a signed, verifiable record
 
 ---
 
@@ -43,7 +43,7 @@ Inntris Core is a production-ready **Verification & Liability Platform** for AI 
         ▼                              ▼                              ▼
 ┌───────────────┐           ┌───────────────────┐           ┌───────────────┐
 │   PostgreSQL  │           │   Anchor Worker   │           │  Trust Badge  │
-│  (Supabase)   │           │ "Forensic Recorder"│          │   (React)     │
+│  (Supabase)   │           │ "Tamper-Evident Recorder"│          │   (React)     │
 │  + TimescaleDB│           │  Merkle → Base L2 │           │ "Verified UI" │
 └───────────────┘           └───────────────────┘           └───────────────┘
                                                                     │
@@ -82,7 +82,7 @@ The **"Central Bank"** for agent verification.
 
 ### Component C: Audit Engine (`workers/`)
 
-The **"Forensic Recorder"** for immutable audit trails.
+The **"Tamper-Evident Recorder"** for immutable audit trails.
 
 - Ingests all verification events into PostgreSQL
 - Batches logs into Merkle trees every hour
@@ -189,9 +189,9 @@ Add to your AI agent's MCP configuration:
       "command": "python",
       "args": ["-m", "mcp_server.server"],
       "env": {
-        "INNTRIS_API_URL": "http://localhost:8000",
-        "INNTRIS_AGENT_ID": "YOUR_AGENT_UUID",
-        "INNTRIS_PRIVATE_KEY_B64": "YOUR_BASE64_PRIVATE_KEY"
+        "INNTRIS_API_URL": "<your-inntris-api-url>",
+        "INNTRIS_API_KEY": "<your-api-key>",
+        "INNTRIS_AGENT_ID": "<your-agent-id>"
       }
     }
   }

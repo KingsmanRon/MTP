@@ -1,5 +1,5 @@
 # INNTRIS_CONTEXT.md
-## Last updated: 2026-03-14
+## Last updated: 2026-03-17
 ## Status: VERIFY PAGE LIVE — LANDING PAGE PRODUCTION READY — OUTREACH READY
 
 ---
@@ -20,9 +20,9 @@ Inntris is a **Policy Decision Point (PDP) + evidence system**:
 **One-sentence pitch:**
 "AI agents are writing your production code. Inntris is the cryptographic proof of what they actually did."
 
-**Live at:** https://inntrisinc-ui.vercel.app
+**Live at:** https://inntris.com
 **Backend:** https://inntris-api.up.railway.app
-**Domain:** inntris.com (NOT .io)
+**Domain:** inntris.com (DNS pointed to Vercel — DONE)
 
 ---
 
@@ -158,7 +158,7 @@ status:            confirmed
 
 ### Shareable Links (ready for outreach)
 ```
-Verify page:  https://inntrisinc-ui.vercel.app/verify/2f41036e-cd54-4ec1-86e1-22f96cbc09aa
+Verify page:  https://inntris.com/verify/2f41036e-cd54-4ec1-86e1-22f96cbc09aa
 BaseScan:     https://basescan.org/tx/0x517853a7400bffc3446fc73711a0cee2f45c82fc1b89d37e76aa3797eb951a77
 ```
 
@@ -235,7 +235,7 @@ Border radius: rounded-[24px] cards, rounded-[28px] panels
 
 ---
 
-## Current Product State (2026-03-14)
+## Current Product State (2026-03-17)
 
 ### COMPLETED ✓
 - Dark navy homepage — correct copy, structure, fonts
@@ -264,17 +264,19 @@ Border radius: rounded-[24px] cards, rounded-[28px] panels
   - Added "Start Here" section with GitHub Action CTA
   - Fixed all GitHub links: KingsmanRon/Inntris → KingsmanRon/MTP
   - Centered, polished footer
-- **Custom NN logo** (2026-03-14):
-  - SVG logo component (`InntrisLogo`) replacing Shield icon across all branding
-  - Integrated in: landing nav, landing footer, verify pages, docs header/footer, login, sidebar
-  - Static SVG at `/public/logo.svg`, SVG favicon reference in layout.tsx
+- **Custom NN logo** (2026-03-17):
+  - `InntrisLogo` component renders `<img src="/logo.svg">` from public/
+  - Replacing Shield icon in all branding: landing nav + footer, verify pages,
+    docs header + footer, login, admin/portal/audit sidebar
+  - SVG favicon reference in layout.tsx metadata
+  - To update the logo everywhere: replace `frontend/public/logo.svg`
 - **README.md** — taglines updated, false claims removed
 
 ### PENDING
 - Auth / login flow for external demos
   (unauthenticated visitors hitting /admin have no clear path in)
 - PASS record on demo agent (only BLOCK records exist)
-- inntris.com domain pointed to Vercel production
+- ~~inntris.com domain pointed to Vercel production~~ — DONE (2026-03-17)
 - Composio outreach — UNBLOCKED as of 2026-03-11
 - INNTRIS_CONTEXT.md update after each session
 - Mobile nav (hamburger menu) — landing page nav links hidden on mobile with no fallback
