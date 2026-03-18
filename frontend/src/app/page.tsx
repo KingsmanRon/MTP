@@ -284,7 +284,7 @@ export default function InntrisCoreDarkPreview() {
               <a href="/docs" className="text-sm transition-colors hover:text-white">Docs</a>
               <a href="/verify" className="text-sm transition-colors hover:text-white">Verify</a>
               <a
-                href="https://github.com/KingsmanRon/MTP"
+                href="https://github.com/Inntris/agent-orchestrator-guardrails"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="transition-colors hover:text-white"

@@ -624,7 +624,7 @@ POST /admin/agents
             </p>
             <div className="flex items-center gap-5">
               <a
-                href="https://github.com/KingsmanRon/MTP"
+                href="https://github.com/Inntris/agent-orchestrator-guardrails"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-muted-foreground hover:text-foreground transition-colors"

@@ -34,8 +34,8 @@ Inntris is a **Policy Decision Point (PDP) + evidence system**:
 | Database | PostgreSQL + Redis | Railway |
 | Blockchain | Base L2 (chain_id: 84532) | PublicNode RPC — NEVER Base official RPC |
 | Frontend | Next.js | Vercel, dark navy, Outfit + IBM Plex Mono |
-| Repo | github.com/KingsmanRon/MTP | main branch: master |
-| GitHub Action | github.com/KingsmanRon/Inntris | inntris-verify |
+| Repo | github.com/Inntris/agent-orchestrator-guardrails | main branch: master |
+| GitHub Action | github.com/Inntris/agent-orchestrator-guardrails | inntris-verify |
 
 ---
 
@@ -262,7 +262,7 @@ Border radius: rounded-[24px] cards, rounded-[28px] panels
   - Removed unverifiable claims (court-admissible, World Bank, SOC 2 compliant)
   - Added Verification Receipt section with real field names
   - Added "Start Here" section with GitHub Action CTA
-  - Fixed all GitHub links: KingsmanRon/Inntris → KingsmanRon/MTP
+  - Fixed all GitHub links: Inntris/agent-orchestrator-guardrails → Inntris/agent-orchestrator-guardrails
   - Centered, polished footer
 - **Custom NN logo** (2026-03-17):
   - `InntrisLogo` component renders `<img src="/logo.svg">` from public/
@@ -286,13 +286,13 @@ Border radius: rounded-[24px] cards, rounded-[28px] panels
 
 ## GitHub Repos
 
-### KingsmanRon/MTP (main application)
+### Inntris/agent-orchestrator-guardrails (main application)
 - **master** — production, Railway auto-deploys backend from here
 - Vercel auto-deploys frontend from master
 - Feature branch workflow: branch → build → preview → merge to master
 - Never commit directly to master for significant changes
 
-### KingsmanRon/Inntris (GitHub Action)
+### Inntris/agent-orchestrator-guardrails (GitHub Action)
 - Contains `inntris-verify` GitHub Action
 - Demo branches: `block-demo-pr` (commit 4c2a776 — BLOCK), `pass-demo-pr` (commit dd96231 — PASS)
 - Claude Code does NOT have access to this repo

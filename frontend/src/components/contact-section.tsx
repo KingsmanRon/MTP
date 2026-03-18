@@ -190,7 +190,7 @@ export default function ContactSection() {
                       name="framework"
                       value={form.framework}
                       onChange={handleChange}
-                      className="rounded-[12px] px-4 py-3 font-sans text-sm outline-none transition-all duration-200 hover:border-[#35507A] focus:border-[#4C8DFF] focus:ring-2 focus:ring-[#4C8DFF]/20"
+                      className="appearance-none rounded-[12px] px-4 py-3 font-sans text-sm outline-none transition-all duration-200 hover:border-[#35507A] focus:border-[#4C8DFF] focus:ring-2 focus:ring-[#4C8DFF]/20"
                       style={inputStyles}
                     >
                       <option value="">Select one</option>
@@ -217,7 +217,7 @@ export default function ContactSection() {
                       name="risk"
                       value={form.risk}
                       onChange={handleChange}
-                      className="rounded-[12px] px-4 py-3 font-sans text-sm outline-none transition-all duration-200 hover:border-[#35507A] focus:border-[#4C8DFF] focus:ring-2 focus:ring-[#4C8DFF]/20"
+                      className="appearance-none rounded-[12px] px-4 py-3 font-sans text-sm outline-none transition-all duration-200 hover:border-[#35507A] focus:border-[#4C8DFF] focus:ring-2 focus:ring-[#4C8DFF]/20"
                       style={inputStyles}
                     >
                       <option value="">Select one</option>
