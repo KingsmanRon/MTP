@@ -115,6 +115,9 @@ export default function InntrisCoreDarkPreview() {
                 </li>
               ))}
             </ul>
+            <p className="text-sm text-[#AAB7CC] mb-8 max-w-lg leading-relaxed">
+              Enterprise agent deployments in regulated industries need a governance layer with cryptographic proof. Inntris is that layer.
+            </p>
             <div className="flex flex-wrap gap-3 mb-10">
               <a
                 href="#contact"
@@ -290,7 +293,7 @@ export default function InntrisCoreDarkPreview() {
               </a>
             </div>
             <p className="text-xs text-[#7F8CA3]/60">
-              &copy; 2025 Inntris INC
+              &copy; 2026 Inntris INC
             </p>
           </div>
         </div>

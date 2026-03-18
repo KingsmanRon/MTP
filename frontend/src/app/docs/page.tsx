@@ -532,7 +532,7 @@ POST /admin/agents
               </p>
               <div className="flex flex-wrap gap-4 mb-4">
                 <a
-                  href="https://github.com/KingsmanRon/MTP"
+                  href="https://github.com/Inntris/agent-orchestrator-guardrails"
                   target="_blank"
                   rel="noopener noreferrer"
                 >

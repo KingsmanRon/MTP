@@ -194,6 +194,7 @@ export default function ContactSection() {
                       style={inputStyles}
                     >
                       <option value="">Select one</option>
+                      <option value="claude">Claude / Anthropic</option>
                       <option value="langchain">LangChain / LangGraph</option>
                       <option value="crewai">CrewAI</option>
                       <option value="autogen">AutoGen</option>
