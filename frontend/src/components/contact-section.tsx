@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 
 const FORMSPREE_ENDPOINT = "https://formspree.io/f/mpqjkbre";
 
@@ -13,12 +13,170 @@ const initialForm = {
   message: "",
 };
 
+/* ── Custom dropdown ────────────────────────────────────────────── */
+
+interface DropdownOption {
+  value: string;
+  label: string;
+}
+
+function Dropdown({
+  id,
+  name,
+  value,
+  placeholder,
+  options,
+  onChange,
+}: {
+  id: string;
+  name: string;
+  value: string;
+  placeholder: string;
+  options: DropdownOption[];
+  onChange: (name: string, value: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  // close on outside click
+  useEffect(() => {
+    function handle(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", handle);
+    return () => document.removeEventListener("mousedown", handle);
+  }, []);
+
+  // close on Escape
+  useEffect(() => {
+    function handle(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false);
+    }
+    if (open) {
+      document.addEventListener("keydown", handle);
+      return () => document.removeEventListener("keydown", handle);
+    }
+  }, [open]);
+
+  const selected = options.find((o) => o.value === value);
+
+  return (
+    <div ref={ref} className="relative" id={id}>
+      {/* trigger */}
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="flex w-full items-center justify-between rounded-[12px] px-4 py-3 font-sans text-sm outline-none transition-all duration-200 hover:border-[#35507A] focus:border-[#4C8DFF] focus:ring-2 focus:ring-[#4C8DFF]/20"
+        style={{
+          background: "#0D1728",
+          border: open ? "1px solid #4C8DFF" : "1px solid #22314D",
+          color: selected ? "#F5F7FB" : "#7F8CA3",
+        }}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+      >
+        <span>{selected ? selected.label : placeholder}</span>
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 16 16"
+          fill="none"
+          className="shrink-0 transition-transform duration-200"
+          style={{ transform: open ? "rotate(180deg)" : "rotate(0deg)" }}
+        >
+          <path d="M4 6L8 10L12 6" stroke="#7F8CA3" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </button>
+
+      {/* dropdown list */}
+      {open && (
+        <ul
+          role="listbox"
+          aria-activedescendant={value ? `${id}-opt-${value}` : undefined}
+          className="absolute left-0 right-0 z-50 mt-1 overflow-hidden rounded-[12px] py-1"
+          style={{
+            background: "#0D1728",
+            border: "1px solid #22314D",
+            boxShadow: "0 12px 32px rgba(0,0,0,0.45)",
+          }}
+        >
+          {options.map((opt) => {
+            const isSelected = opt.value === value;
+            return (
+              <li
+                key={opt.value}
+                id={`${id}-opt-${opt.value}`}
+                role="option"
+                aria-selected={isSelected}
+                onClick={() => {
+                  onChange(name, opt.value);
+                  setOpen(false);
+                }}
+                className="flex cursor-pointer items-center justify-between px-4 py-2.5 font-sans text-sm transition-colors duration-100"
+                style={{
+                  color: isSelected ? "#F5F7FB" : "#AAB7CC",
+                  background: isSelected ? "rgba(76,141,255,0.10)" : "transparent",
+                }}
+                onMouseEnter={(e) => {
+                  if (!isSelected) {
+                    e.currentTarget.style.background = "rgba(76,141,255,0.06)";
+                    e.currentTarget.style.color = "#F5F7FB";
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!isSelected) {
+                    e.currentTarget.style.background = "transparent";
+                    e.currentTarget.style.color = "#AAB7CC";
+                  }
+                }}
+              >
+                <span>{opt.label}</span>
+                {isSelected && (
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                    <path d="M3.5 8.5L6.5 11.5L12.5 4.5" stroke="#4C8DFF" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+/* ── Options data ───────────────────────────────────────────────── */
+
+const frameworkOptions: DropdownOption[] = [
+  { value: "claude", label: "Claude / Anthropic" },
+  { value: "langchain", label: "LangChain / LangGraph" },
+  { value: "crewai", label: "CrewAI" },
+  { value: "autogen", label: "AutoGen" },
+  { value: "composio", label: "Composio" },
+  { value: "custom", label: "Custom / in-house" },
+  { value: "other", label: "Other" },
+];
+
+const riskOptions: DropdownOption[] = [
+  { value: "code", label: "Writing / executing code" },
+  { value: "data", label: "Accessing sensitive data" },
+  { value: "api", label: "Calling external APIs / tools" },
+  { value: "finance", label: "Financial or payment operations" },
+  { value: "multiple", label: "Multiple of the above" },
+];
+
+/* ── Contact section ────────────────────────────────────────────── */
+
 export default function ContactSection() {
   const [status, setStatus] = useState<"idle" | "submitting" | "success" | "error">("idle");
   const [form, setForm] = useState(initialForm);
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
+    setForm((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const handleDropdown = (name: string, value: string) => {
     setForm((prev) => ({ ...prev, [name]: value }));
   };
 
@@ -50,11 +208,6 @@ export default function ContactSection() {
   const inputStyles = {
     background: "#0D1728",
     border: "1px solid #22314D",
-    color: "#F5F7FB",
-  };
-
-  const optionStyles = {
-    background: "#0D1728",
     color: "#F5F7FB",
   };
 
@@ -190,23 +343,14 @@ export default function ContactSection() {
                     >
                       Agent framework
                     </label>
-                    <select
+                    <Dropdown
                       id="contact-framework"
                       name="framework"
                       value={form.framework}
-                      onChange={handleChange}
-                      className="appearance-none rounded-[12px] px-4 py-3 font-sans text-sm outline-none transition-all duration-200 hover:border-[#35507A] focus:border-[#4C8DFF] focus:ring-2 focus:ring-[#4C8DFF]/20"
-                      style={inputStyles}
-                    >
-                      <option value="" style={optionStyles}>Select one</option>
-                      <option value="claude" style={optionStyles}>Claude / Anthropic</option>
-                      <option value="langchain" style={optionStyles}>LangChain / LangGraph</option>
-                      <option value="crewai" style={optionStyles}>CrewAI</option>
-                      <option value="autogen" style={optionStyles}>AutoGen</option>
-                      <option value="composio" style={optionStyles}>Composio</option>
-                      <option value="custom" style={optionStyles}>Custom / in-house</option>
-                      <option value="other" style={optionStyles}>Other</option>
-                    </select>
+                      placeholder="Select one"
+                      options={frameworkOptions}
+                      onChange={handleDropdown}
+                    />
                   </div>
 
                   <div className="flex flex-col gap-1.5">
@@ -217,21 +361,14 @@ export default function ContactSection() {
                     >
                       What are your agents doing?
                     </label>
-                    <select
+                    <Dropdown
                       id="contact-risk"
                       name="risk"
                       value={form.risk}
-                      onChange={handleChange}
-                      className="appearance-none rounded-[12px] px-4 py-3 font-sans text-sm outline-none transition-all duration-200 hover:border-[#35507A] focus:border-[#4C8DFF] focus:ring-2 focus:ring-[#4C8DFF]/20"
-                      style={inputStyles}
-                    >
-                      <option value="" style={optionStyles}>Select one</option>
-                      <option value="code" style={optionStyles}>Writing / executing code</option>
-                      <option value="data" style={optionStyles}>Accessing sensitive data</option>
-                      <option value="api" style={optionStyles}>Calling external APIs / tools</option>
-                      <option value="finance" style={optionStyles}>Financial or payment operations</option>
-                      <option value="multiple" style={optionStyles}>Multiple of the above</option>
-                    </select>
+                      placeholder="Select one"
+                      options={riskOptions}
+                      onChange={handleDropdown}
+                    />
                   </div>
                 </div>
 
