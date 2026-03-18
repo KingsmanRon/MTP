@@ -164,7 +164,7 @@ export default function VerifyLandingPage() {
 
             <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
               <a
-                href="https://github.com/KingsmanRon/MTP"
+                href="https://github.com/Inntris/agent-orchestrator-guardrails"
                 target="_blank"
                 rel="noopener noreferrer"
               >
