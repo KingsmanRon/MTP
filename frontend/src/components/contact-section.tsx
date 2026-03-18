@@ -53,6 +53,11 @@ export default function ContactSection() {
     color: "#F5F7FB",
   };
 
+  const optionStyles = {
+    background: "#0D1728",
+    color: "#F5F7FB",
+  };
+
   return (
     <section id="contact" className="px-6 py-24" style={{ background: "#07111F" }}>
       <div className="mx-auto max-w-5xl">
@@ -193,14 +198,14 @@ export default function ContactSection() {
                       className="appearance-none rounded-[12px] px-4 py-3 font-sans text-sm outline-none transition-all duration-200 hover:border-[#35507A] focus:border-[#4C8DFF] focus:ring-2 focus:ring-[#4C8DFF]/20"
                       style={inputStyles}
                     >
-                      <option value="">Select one</option>
-                      <option value="claude">Claude / Anthropic</option>
-                      <option value="langchain">LangChain / LangGraph</option>
-                      <option value="crewai">CrewAI</option>
-                      <option value="autogen">AutoGen</option>
-                      <option value="composio">Composio</option>
-                      <option value="custom">Custom / in-house</option>
-                      <option value="other">Other</option>
+                      <option value="" style={optionStyles}>Select one</option>
+                      <option value="claude" style={optionStyles}>Claude / Anthropic</option>
+                      <option value="langchain" style={optionStyles}>LangChain / LangGraph</option>
+                      <option value="crewai" style={optionStyles}>CrewAI</option>
+                      <option value="autogen" style={optionStyles}>AutoGen</option>
+                      <option value="composio" style={optionStyles}>Composio</option>
+                      <option value="custom" style={optionStyles}>Custom / in-house</option>
+                      <option value="other" style={optionStyles}>Other</option>
                     </select>
                   </div>
 
@@ -220,12 +225,12 @@ export default function ContactSection() {
                       className="appearance-none rounded-[12px] px-4 py-3 font-sans text-sm outline-none transition-all duration-200 hover:border-[#35507A] focus:border-[#4C8DFF] focus:ring-2 focus:ring-[#4C8DFF]/20"
                       style={inputStyles}
                     >
-                      <option value="">Select one</option>
-                      <option value="code">Writing / executing code</option>
-                      <option value="data">Accessing sensitive data</option>
-                      <option value="api">Calling external APIs / tools</option>
-                      <option value="finance">Financial or payment operations</option>
-                      <option value="multiple">Multiple of the above</option>
+                      <option value="" style={optionStyles}>Select one</option>
+                      <option value="code" style={optionStyles}>Writing / executing code</option>
+                      <option value="data" style={optionStyles}>Accessing sensitive data</option>
+                      <option value="api" style={optionStyles}>Calling external APIs / tools</option>
+                      <option value="finance" style={optionStyles}>Financial or payment operations</option>
+                      <option value="multiple" style={optionStyles}>Multiple of the above</option>
                     </select>
                   </div>
                 </div>
