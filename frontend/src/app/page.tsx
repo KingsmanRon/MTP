@@ -10,7 +10,7 @@ const modules = [
     title: "Admin Console",
     role: "For platform admins",
     body: "Manage organisations, agents, policies, API keys, and security alerts.",
-    cta: "Open Console",
+    cta: "View demo console",
     href: "/admin",
   },
   {
@@ -18,7 +18,7 @@ const modules = [
     title: "Agent Portal",
     role: "For developers and operators",
     body: "Issue credentials, test verification, and monitor agent trust state.",
-    cta: "Open Portal",
+    cta: "View demo portal",
     href: "/portal",
   },
   {
@@ -26,7 +26,7 @@ const modules = [
     title: "Audit Explorer",
     role: "For investigations and compliance",
     body: "Search verification decisions and inspect tamper-evident audit history.",
-    cta: "Open Explorer",
+    cta: "View demo explorer",
     href: "/audit",
   },
   {
@@ -34,8 +34,8 @@ const modules = [
     title: "Public Verify",
     role: "For customers, partners, and auditors",
     body: "Verify an agent's trust status and verification history externally.",
-    cta: "Open Verifier",
-    href: "/verify",
+    cta: "Verify a live receipt",
+    href: "/verify/2f41036e-cd54-4ec1-86e1-22f96cbc09aa",
   },
 ];
 const capabilities = [
