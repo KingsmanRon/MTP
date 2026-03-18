@@ -2,7 +2,7 @@
 
 The **Management Console** for Inntris Core - a Next.js 14 application providing comprehensive interfaces for organizations, developers, and compliance teams.
 
-*Protecting Intellect. The Universal Liability Shield for Autonomous Agents.*
+*Cryptographic verification for AI agents.*
 
 ## Overview
 
@@ -12,7 +12,7 @@ The frontend consists of four distinct interfaces:
 |-----------|-----|---------|-------|
 | **Admin Console** | `/admin` | Organization management | Org Admins |
 | **Agent Portal** | `/portal` | Developer tools & testing | Developers |
-| **Audit Explorer** | `/audit` | Forensic log search & verification | Compliance |
+| **Audit Explorer** | `/audit` | Tamper-evident log search & verification | Compliance |
 | **Public Verify** | `/verify` | Public trust verification | Anyone |
 
 ## Tech Stack
