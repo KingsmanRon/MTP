@@ -18,6 +18,8 @@ A **policy decision point and evidence system** for AI agent actions — not obs
 
 ## Architecture Overview
 
+<!-- VERIFY: Check Supabase Database → Extensions to confirm
+     TimescaleDB is enabled. If not, remove "+ TimescaleDB" from diagram. -->
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                           AI AGENT (Lovable/Replit/LangChain)               │
@@ -120,7 +122,7 @@ The **"Management Console"** for organizations and developers.
 ### 1. Clone & Configure
 
 ```bash
-git clone <your-repo-url>
+git clone https://github.com/KingsmanRon/MTP
 cd inntris-core
 
 # Copy environment template
@@ -189,7 +191,7 @@ Add to your AI agent's MCP configuration:
       "command": "python",
       "args": ["-m", "mcp_server.server"],
       "env": {
-        "INNTRIS_API_URL": "<your-inntris-api-url>",
+        "INNTRIS_API_URL": "https://api.inntris.com",
         "INNTRIS_API_KEY": "<your-api-key>",
         "INNTRIS_AGENT_ID": "<your-agent-id>"
       }
@@ -459,7 +461,11 @@ pytest tests/blockchain/ -m blockchain
 
 ## License
 
-MIT License - See [LICENSE](LICENSE) for details.
+Business Source Licence 1.1 — See [LICENSE](LICENSE) for details.
+
+You may use this code for internal purposes. You may not use it to offer a competing hosted verification or audit service without a commercial licence from Inntris INC. Converts to Apache 2.0 on 2030-03-18.
+
+Commercial licensing: applications@inntris.com
 
 ---
 
@@ -473,7 +479,7 @@ We welcome contributions! Please open an issue to discuss proposed changes befor
 
 - **Documentation**: See the `/docs` page in the frontend dashboard
 - **Issues**: Open an issue in this repository
-- **Contact**: support@inntris.com
+- **Contact**: applications@inntris.com
 
 ---
 

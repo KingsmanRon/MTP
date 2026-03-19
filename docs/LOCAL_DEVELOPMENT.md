@@ -11,7 +11,7 @@
 ### 1. Clone and Setup
 
 ```bash
-git clone <your-repo-url>
+git clone https://github.com/KingsmanRon/MTP
 cd inntris-core
 
 # Create Python virtual environment
@@ -60,6 +60,9 @@ cp .env.example .env
 Default `.env` for local development:
 
 ```env
+# Generate real values using the commands in Step 3 of DEPLOYMENT_GUIDE.md
+# NEVER commit real secrets to version control
+
 # Database
 DATABASE_URL=postgresql://postgres:postgres@localhost:5432/inntris
 
@@ -67,11 +70,11 @@ DATABASE_URL=postgresql://postgres:postgres@localhost:5432/inntris
 REDIS_URL=redis://localhost:6379
 
 # Secrets (use these for local dev only!)
-SERVER_SECRET=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
-MASTER_ADMIN_KEY=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+SERVER_SECRET=<generate-using-command-in-step-3-of-DEPLOYMENT_GUIDE.md>
+MASTER_ADMIN_KEY=<generate-using-command-in-step-3-of-DEPLOYMENT_GUIDE.md>
 
 # Blockchain (optional for local dev)
-BLOCKCHAIN_PROVIDER_URL=https://mainnet.base.org
+BLOCKCHAIN_PROVIDER_URL=https://base.publicnode.com
 ANCHOR_CONTRACT_ADDRESS=0x0000000000000000000000000000000000000000
 BLOCKCHAIN_PRIVATE_KEY=0000000000000000000000000000000000000000000000000000000000000000
 BASE_CHAIN_ID=8453
@@ -108,7 +111,7 @@ Frontend will be available at: `http://localhost:3000`
 # Create organization
 curl -X POST http://localhost:8000/admin/organizations \
   -H "Content-Type: application/json" \
-  -H "X-Admin-Key: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef" \
+  -H "X-Admin-Key: YOUR_MASTER_ADMIN_KEY" \
   -d '{
     "name": "Test Organization",
     "contact_email": "admin@test.com",
@@ -203,9 +206,9 @@ Add to `~/.config/claude/claude_desktop_config.json`:
       "command": "python",
       "args": ["-m", "mcp_server.server"],
       "env": {
-        "Inntris_API_URL": "http://localhost:8000",
-        "Inntris_AGENT_ID": "YOUR_AGENT_UUID",
-        "Inntris_PRIVATE_KEY_B64": "YOUR_BASE64_PRIVATE_KEY"
+        "INNTRIS_API_URL": "http://localhost:8000",
+        "INNTRIS_AGENT_ID": "YOUR_AGENT_UUID",
+        "INNTRIS_PRIVATE_KEY_B64": "YOUR_BASE64_PRIVATE_KEY"
       }
     }
   }

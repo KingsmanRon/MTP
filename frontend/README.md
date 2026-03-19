@@ -192,7 +192,7 @@ frontend/
 - Custom date range selection
 - Agent filtering
 - Pre-built compliance templates:
-  - SOC 2 Audit
+  - Enterprise audit export
   - GDPR Data Access
   - Financial Audit
 
@@ -330,4 +330,5 @@ CMD ["node", "server.js"]
 
 ## License
 
-MIT License - See [LICENSE](../LICENSE) for details.
+Business Source Licence 1.1 — See [LICENSE](../LICENSE) for details.
+    See root LICENSE file for full terms and commercial licensing.
