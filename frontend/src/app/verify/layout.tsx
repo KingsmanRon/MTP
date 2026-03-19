@@ -17,6 +17,7 @@ export const metadata: Metadata = {
     description:
       "Check the policy decision, verification details, and on-chain audit trail of any Inntris verification record.",
   },
+  robots: { index: true, follow: true },
 };
 
 export default function VerifyLayout({ children }: { children: React.ReactNode }) {

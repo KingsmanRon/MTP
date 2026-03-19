@@ -17,6 +17,7 @@ export const metadata: Metadata = {
     description:
       "View registered agents, signed activity, trust status, and decision records tied to each agent.",
   },
+  robots: { index: true, follow: true },
 };
 
 export default function PortalLayout({ children }: { children: React.ReactNode }) {

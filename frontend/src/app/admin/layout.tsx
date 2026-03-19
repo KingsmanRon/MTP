@@ -17,6 +17,7 @@ export const metadata: Metadata = {
     description:
       "Define enforcement rules, manage trust thresholds, and control how agent actions are evaluated before they run.",
   },
+  robots: { index: true, follow: true },
 };
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {

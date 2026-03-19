@@ -80,11 +80,12 @@ export default async function InntrisCoreDarkPreview() {
               <div className="text-xs text-[#7F8CA3]">Core control plane</div>
             </div>
           </div>
-          <nav className="hidden items-center gap-8 text-[15px] text-[#C4CFDE] md:flex">
+          <nav className="hidden items-center gap-5 text-[15px] text-[#C4CFDE] md:flex lg:gap-7">
             <a className="transition hover:text-white" href="#overview">Overview</a>
-            <a className="transition hover:text-white" href="#use-cases">Use Cases</a>
             <a className="transition hover:text-white" href="#modules">Modules</a>
             <a className="transition hover:text-white" href="#contact">Contact</a>
+            <Link className="transition hover:text-white" href="/verify">Verify</Link>
+            <Link className="transition hover:text-white" href="/admin">Console</Link>
             <Link className="transition hover:text-white" href="/docs">Docs</Link>
           </nav>
           <div className="flex items-center gap-3">
