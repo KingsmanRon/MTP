@@ -1,310 +1,257 @@
-"use client";
-
-import { useMemo, useState, useEffect } from "react";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { StatsCard } from "@/components/stats-card";
-import { LoadingState } from "@/components/loading-state";
-import { TrustScoreBadge } from "@/components/trust-score";
-import { VerdictBadge } from "@/components/verdict-badge";
-import { OnboardingChecklist } from "@/components/onboarding-checklist";
-import { formatRelative, formatCurrency } from "@/lib/utils";
-import { useAgents, useAuditLogs, useAlerts, useUsageMetrics, useApiKeys } from "@/lib/hooks";
+import Link from "next/link";
 import {
   Shield,
-  Bot,
+  Lock,
+  Fingerprint,
+  Settings,
   AlertTriangle,
-  DollarSign,
-  Activity,
-  CheckCircle,
-  XCircle,
+  CheckCircle2,
+  ChevronRight,
+  Bot,
 } from "lucide-react";
-import {
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-} from "recharts";
+import { InntrisLogo } from "@/components/inntris-logo";
 
-export default function AdminDashboard() {
-  // Get date range for past 7 days - memoize to prevent infinite re-renders
-  const { startDate, endDate } = useMemo(() => {
-    const end = new Date();
-    const start = new Date(end.getTime() - 7 * 24 * 60 * 60 * 1000);
-    return {
-      startDate: start.toISOString(),
-      endDate: end.toISOString(),
-    };
-  }, []);
+/* ------------------------------------------------------------------ */
+/*  Page (Server Component — SSR public preview shell)                 */
+/* ------------------------------------------------------------------ */
 
-  // Onboarding dismissal state
-  const [onboardingDismissed, setOnboardingDismissed] = useState(false);
-
-  // Load dismissal state from localStorage
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      const dismissed = localStorage.getItem("onboarding_dismissed");
-      if (dismissed === "true") {
-        setOnboardingDismissed(true);
-      }
-    }
-  }, []);
-
-  const handleDismissOnboarding = () => {
-    setOnboardingDismissed(true);
-    if (typeof window !== "undefined") {
-      localStorage.setItem("onboarding_dismissed", "true");
-    }
-  };
-
-  // Fetch real data from API
-  const { data: agents, isLoading: agentsLoading } = useAgents();
-  const { data: auditData, isLoading: auditLoading } = useAuditLogs({ limit: 10 });
-  const { data: alertsData, isLoading: alertsLoading } = useAlerts({ status: "open", limit: 10 });
-  const { data: usageData, isLoading: usageLoading } = useUsageMetrics(startDate, endDate);
-  const { data: apiKeys, isLoading: apiKeysLoading } = useApiKeys();
-
-  const isLoading = agentsLoading || auditLoading || alertsLoading || usageLoading || apiKeysLoading;
-
-  if (isLoading) {
-    return <LoadingState message="Loading dashboard..." />;
-  }
-
-  // Calculate stats from real data
-  const totalAgents = agents?.length || 0;
-  const activeAgents = agents?.filter((a) => a.status === "active").length || 0;
-  const totalVerifications = usageData?.total_verifications || 0;
-  const approvedCount = usageData?.approved_count || 0;
-  const blockedCount = usageData?.blocked_count || 0;
-  const openAlerts = alertsData?.total || 0;
-  const dailySpend = usageData?.total_spend_usd || 0;
-
-  const approvalRate = totalVerifications > 0
-    ? ((approvedCount / totalVerifications) * 100).toFixed(1)
-    : "0.0";
-
-  // Transform daily breakdown for chart
-  const chartData = usageData?.daily_breakdown?.map((day) => ({
-    date: new Date(day.date).toLocaleDateString("en-US", { weekday: "short" }),
-    approved: day.approved,
-    blocked: day.blocked,
-  })) || [];
-
-  // Recent logs
-  const recentLogs = auditData?.logs || [];
-
-  // Check if onboarding should be shown
-  const hasAgents = totalAgents > 0;
-  const hasApiKeys = (apiKeys?.length || 0) > 0;
-  const hasVerifications = totalVerifications > 0;
-  const showOnboarding = !onboardingDismissed && (!hasAgents || !hasApiKeys || !hasVerifications);
-
+export default function AdminPreviewPage() {
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold">Dashboard</h1>
-        <p className="text-muted-foreground">
-          Overview of your Inntris deployment and agent activity
-        </p>
-      </div>
+    <div className="min-h-screen bg-[#07111F] text-[#F5F7FB]">
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(76,141,255,0.14),transparent_32%),radial-gradient(circle_at_80%_30%,rgba(143,184,255,0.08),transparent_24%)]" />
 
-      {/* Onboarding Checklist */}
-      {showOnboarding && (
-        <OnboardingChecklist
-          hasAgents={hasAgents}
-          hasApiKeys={hasApiKeys}
-          hasVerifications={hasVerifications}
-          onDismiss={handleDismissOnboarding}
-        />
-      )}
-
-      {/* Stats Grid */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <StatsCard
-          title="Active Agents"
-          value={`${activeAgents}/${totalAgents}`}
-          icon={Bot}
-          description="Agents currently active"
-        />
-        <StatsCard
-          title="Total Verifications"
-          value={totalVerifications.toLocaleString()}
-          icon={Shield}
-          description="Past 7 days"
-        />
-        <StatsCard
-          title="Approval Rate"
-          value={`${approvalRate}%`}
-          icon={CheckCircle}
-          description={`${blockedCount} blocked`}
-        />
-        <StatsCard
-          title="Daily Spend"
-          value={formatCurrency(dailySpend)}
-          icon={DollarSign}
-          description="Today"
-        />
-      </div>
-
-      {/* Alerts Banner */}
-      {openAlerts > 0 && (
-        <Card className="border-yellow-500/50 bg-yellow-500/5">
-          <CardContent className="flex items-center gap-4 py-4">
-            <AlertTriangle className="h-5 w-5 text-yellow-500" />
-            <div className="flex-1">
-              <p className="font-medium">
-                {openAlerts} open security alert{openAlerts > 1 ? "s" : ""}
-              </p>
-              <p className="text-sm text-muted-foreground">
-                Review and acknowledge alerts to maintain security posture
-              </p>
+      {/* Header */}
+      <header className="sticky top-0 z-20 border-b border-white/8 bg-[#07111F]/85 backdrop-blur">
+        <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4 lg:px-8">
+          <Link href="/" className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-[#22314D] bg-[#0D1728] shadow-[0_0_0_1px_rgba(255,255,255,0.02)]">
+              <InntrisLogo className="h-6 w-6" />
             </div>
-            <a
-              href="/admin/alerts"
-              className="text-sm font-medium text-primary hover:underline"
+            <div>
+              <div className="text-lg font-semibold tracking-tight">Inntris</div>
+              <div className="text-xs text-[#7F8CA3]">Console</div>
+            </div>
+          </Link>
+          <nav className="flex items-center gap-3">
+            <Link
+              href="/verify"
+              className="hidden rounded-lg border border-[#22314D] bg-[#0D1728] px-4 py-2 text-sm font-medium text-[#F5F7FB] transition hover:bg-[#101C31] hover:text-white md:inline-flex"
             >
-              View Alerts
+              Verify a Receipt
+            </Link>
+            <Link
+              href="/docs"
+              className="hidden rounded-lg border border-[#22314D] bg-[#0D1728] px-4 py-2 text-sm font-medium text-[#F5F7FB] transition hover:bg-[#101C31] hover:text-white md:inline-flex"
+            >
+              Docs
+            </Link>
+          </nav>
+        </div>
+      </header>
+
+      <main className="relative">
+        {/* Hero */}
+        <section className="mx-auto max-w-4xl px-6 pb-12 pt-16 text-center lg:px-8 lg:pt-24">
+          <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-[#22314D] bg-[#0D1728]/90 px-3 py-1.5 text-sm text-[#AAB7CC]">
+            <Settings className="h-4 w-4 text-[#8FB8FF]" />
+            Inntris Console
+          </div>
+
+          <h1 className="text-3xl font-semibold leading-tight tracking-tight md:text-5xl">
+            Control agent policy{" "}
+            <span className="text-[#4C8DFF]">before execution</span>
+          </h1>
+
+          <p className="mx-auto mt-5 max-w-2xl text-lg leading-8 text-[#C4CFDE]">
+            Define enforcement rules, manage trust thresholds, register identity, and
+            control how agent actions are evaluated before they run.
+          </p>
+
+          <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
+            <a
+              href="/#contact"
+              className="rounded-lg bg-[#28C281] px-6 py-3 text-sm font-medium text-white transition-opacity hover:opacity-90"
+            >
+              Request Access
             </a>
-          </CardContent>
-        </Card>
-      )}
+            <Link
+              href="/docs"
+              className="rounded-lg border border-[#22314D] bg-[#0D1728] px-6 py-3 text-sm font-medium text-[#F5F7FB] transition hover:bg-[#101C31]"
+            >
+              Read the Docs
+            </Link>
+          </div>
+        </section>
 
-      {/* Charts and Activity */}
-      <div className="grid gap-6 lg:grid-cols-2">
-        {/* Verification Chart */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Verification Activity</CardTitle>
-            <CardDescription>Daily verification volume over the past week</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="h-[300px]">
-              {chartData.length > 0 ? (
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={chartData}>
-                    <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                    <XAxis dataKey="date" className="text-xs" />
-                    <YAxis className="text-xs" />
-                    <Tooltip
-                      contentStyle={{
-                        backgroundColor: "hsl(var(--card))",
-                        border: "1px solid hsl(var(--border))",
-                        borderRadius: "8px",
-                      }}
-                    />
-                    <Line
-                      type="monotone"
-                      dataKey="approved"
-                      stroke="hsl(142, 76%, 36%)"
-                      strokeWidth={2}
-                      dot={false}
-                    />
-                    <Line
-                      type="monotone"
-                      dataKey="blocked"
-                      stroke="hsl(0, 84%, 60%)"
-                      strokeWidth={2}
-                      dot={false}
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
-              ) : (
-                <div className="flex items-center justify-center h-full text-muted-foreground">
-                  No verification data available
+        {/* Preview Panels */}
+        <section className="mx-auto max-w-7xl px-6 pb-16 lg:px-8">
+          <div className="grid gap-5 md:grid-cols-2">
+            {/* Panel 1: Policy Enforcement */}
+            <div className="rounded-[24px] border border-[#22314D] bg-[#0D1728] p-6">
+              <div className="mb-5 flex items-center gap-2">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-[#22314D] bg-[#101C31] text-[#8FB8FF]">
+                  <Shield className="h-4 w-4" />
                 </div>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Recent Activity */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Recent Activity</CardTitle>
-            <CardDescription>Latest verification requests</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              {recentLogs.length > 0 ? (
-                recentLogs.map((log) => (
+                <h3 className="text-sm font-semibold text-[#F5F7FB]">Policy Enforcement</h3>
+              </div>
+              <div className="space-y-3">
+                {[
+                  { label: "Fail-closed mode", value: "Enabled", color: "text-[#22c55e]" },
+                  { label: "Active rule sets", value: "3 policies" },
+                  { label: "Trust threshold", value: "70 / 100" },
+                ].map((row) => (
                   <div
-                    key={log.id}
-                    className="flex items-center justify-between py-2 border-b last:border-0"
+                    key={row.label}
+                    className="flex items-center justify-between rounded-xl border border-white/6 bg-[#101C31]/70 px-4 py-3"
                   >
-                    <div className="flex items-center gap-3">
-                      <div
-                        className={`w-2 h-2 rounded-full ${
-                          log.verdict === "approved" ? "bg-green-500" : "bg-red-500"
-                        }`}
-                      />
-                      <div>
-                        <p className="font-medium text-sm">{log.agent_name || "Unknown Agent"}</p>
-                        <span className="inline-block text-xs font-mono bg-muted px-1.5 py-0.5 rounded">{log.action_type}</span>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-4">
-                      <TrustScoreBadge score={log.trust_score_at_time} />
-                      <VerdictBadge verdict={log.verdict} showIcon={false} />
-                      <span className="text-xs text-muted-foreground w-16 text-right">
-                        {formatRelative(log.timestamp)}
-                      </span>
-                    </div>
+                    <span className="text-xs text-[#7F8CA3]">{row.label}</span>
+                    <span className={`text-sm font-mono ${row.color ?? "text-[#AAB7CC]"}`}>
+                      {row.value}
+                    </span>
                   </div>
-                ))
-              ) : (
-                <div className="text-center text-muted-foreground py-8">
-                  No recent activity
-                </div>
-              )}
+                ))}
+              </div>
             </div>
-          </CardContent>
-        </Card>
-      </div>
 
-      {/* Quick Stats */}
-      <div className="grid gap-4 md:grid-cols-3">
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-4">
-              <div className="p-3 rounded-full bg-green-500/10">
-                <CheckCircle className="h-6 w-6 text-green-500" />
+            {/* Panel 2: Agent Identity */}
+            <div className="rounded-[24px] border border-[#22314D] bg-[#0D1728] p-6">
+              <div className="mb-5 flex items-center gap-2">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-[#22314D] bg-[#101C31] text-[#8FB8FF]">
+                  <Fingerprint className="h-4 w-4" />
+                </div>
+                <h3 className="text-sm font-semibold text-[#F5F7FB]">Agent Identity</h3>
               </div>
-              <div>
-                <p className="text-2xl font-bold">{approvedCount.toLocaleString()}</p>
-                <p className="text-sm text-muted-foreground">Approved Actions</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-4">
-              <div className="p-3 rounded-full bg-red-500/10">
-                <XCircle className="h-6 w-6 text-red-500" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold">{blockedCount.toLocaleString()}</p>
-                <p className="text-sm text-muted-foreground">Blocked Actions</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-4">
-              <div className="p-3 rounded-full bg-primary/10">
-                <Activity className="h-6 w-6 text-primary" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold">{activeAgents}</p>
-                <p className="text-sm text-muted-foreground">Active Agents</p>
+              <div className="space-y-3">
+                {[
+                  { label: "Registered agents", value: "4 agents" },
+                  { label: "Key status", value: "All valid", color: "text-[#22c55e]" },
+                  { label: "Signature enforcement", value: "Required" },
+                ].map((row) => (
+                  <div
+                    key={row.label}
+                    className="flex items-center justify-between rounded-xl border border-white/6 bg-[#101C31]/70 px-4 py-3"
+                  >
+                    <span className="text-xs text-[#7F8CA3]">{row.label}</span>
+                    <span className={`text-sm font-mono ${row.color ?? "text-[#AAB7CC]"}`}>
+                      {row.value}
+                    </span>
+                  </div>
+                ))}
               </div>
             </div>
-          </CardContent>
-        </Card>
-      </div>
+
+            {/* Panel 3: Execution Controls */}
+            <div className="rounded-[24px] border border-[#22314D] bg-[#0D1728] p-6">
+              <div className="mb-5 flex items-center gap-2">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-[#22314D] bg-[#101C31] text-[#8FB8FF]">
+                  <Lock className="h-4 w-4" />
+                </div>
+                <h3 className="text-sm font-semibold text-[#F5F7FB]">Execution Controls</h3>
+              </div>
+              <div className="space-y-3">
+                {[
+                  { label: "Allowed tools", value: "12 registered" },
+                  { label: "Blocked actions", value: "admin_action, data_export" },
+                  { label: "Escalation triggers", value: "2 active" },
+                ].map((row) => (
+                  <div
+                    key={row.label}
+                    className="flex items-center justify-between rounded-xl border border-white/6 bg-[#101C31]/70 px-4 py-3"
+                  >
+                    <span className="text-xs text-[#7F8CA3]">{row.label}</span>
+                    <span className="text-sm font-mono text-[#AAB7CC]">{row.value}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Panel 4: Governance Summary */}
+            <div className="rounded-[24px] border border-[#22314D] bg-[#0D1728] p-6">
+              <div className="mb-5 flex items-center gap-2">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-[#22314D] bg-[#101C31] text-[#8FB8FF]">
+                  <CheckCircle2 className="h-4 w-4" />
+                </div>
+                <h3 className="text-sm font-semibold text-[#F5F7FB]">Governance Summary</h3>
+              </div>
+              <div className="space-y-3">
+                {[
+                  { label: "Environments", value: "production, staging" },
+                  { label: "Last policy update", value: "2026-03-17" },
+                  { label: "Enforcement status", value: "Active", color: "text-[#22c55e]" },
+                ].map((row) => (
+                  <div
+                    key={row.label}
+                    className="flex items-center justify-between rounded-xl border border-white/6 bg-[#101C31]/70 px-4 py-3"
+                  >
+                    <span className="text-xs text-[#7F8CA3]">{row.label}</span>
+                    <span className={`text-sm font-mono ${row.color ?? "text-[#AAB7CC]"}`}>
+                      {row.value}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* What teams use this for */}
+        <section className="mx-auto max-w-4xl px-6 pb-16 lg:px-8">
+          <div className="rounded-[28px] border border-[#22314D] bg-[#0D1728] p-8">
+            <h2 className="mb-5 text-lg font-semibold tracking-tight text-[#F5F7FB]">
+              What teams use this for
+            </h2>
+            <div className="grid gap-4 md:grid-cols-3">
+              {[
+                {
+                  icon: Shield,
+                  text: "Define policy before agents act",
+                },
+                {
+                  icon: Fingerprint,
+                  text: "Manage cryptographic identity and trust thresholds",
+                },
+                {
+                  icon: Lock,
+                  text: "Enforce fail-closed decisions in production",
+                },
+              ].map((item) => {
+                const Icon = item.icon;
+                return (
+                  <div
+                    key={item.text}
+                    className="flex gap-3 rounded-2xl border border-white/6 bg-[#101C31]/70 p-4"
+                  >
+                    <Icon className="mt-0.5 h-5 w-5 flex-shrink-0 text-[#8FB8FF]" />
+                    <p className="text-sm leading-6 text-[#C4CFDE]">{item.text}</p>
+                  </div>
+                );
+              })}
+            </div>
+            <p className="mt-6 text-sm text-[#7F8CA3]">
+              This is a controlled Inntris product surface. Access is available to approved
+              teams and partners.
+            </p>
+          </div>
+        </section>
+      </main>
+
+      {/* Footer */}
+      <footer className="border-t border-white/8">
+        <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-8 lg:px-8">
+          <div className="flex items-center gap-2">
+            <InntrisLogo className="h-5 w-5" />
+            <span className="text-[#7F8CA3]">Inntris Core</span>
+          </div>
+          <div className="flex items-center gap-6 text-[#7F8CA3]">
+            <Link href="/docs" className="text-sm transition-colors hover:text-white">
+              Docs
+            </Link>
+            <Link href="/verify" className="text-sm transition-colors hover:text-white">
+              Verify
+            </Link>
+          </div>
+        </div>
+      </footer>
     </div>
   );
 }

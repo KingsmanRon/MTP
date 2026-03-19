@@ -9,6 +9,10 @@ import {
   CheckCircle2,
   Lock,
   FileCheck2,
+  Link2,
+  Shield,
+  Fingerprint,
+  ChevronRight,
 } from "lucide-react";
 import { InntrisLogo } from "@/components/inntris-logo";
 
@@ -21,13 +25,20 @@ const features = [
   {
     icon: Lock,
     title: "Cryptographic proof",
-    body: "Every verification decision is signed and can be anchored to Base L2.",
+    body: "Every verification decision is signed with Ed25519 and can be anchored to Base L2.",
   },
   {
     icon: FileCheck2,
     title: "Tamper-evident audit",
     body: "Merkle proofs let anyone independently verify the integrity of the record.",
   },
+];
+
+const verificationFields = [
+  { icon: Shield, label: "Verdict", value: "PASS or BLOCK with policy reason" },
+  { icon: Fingerprint, label: "Agent identity", value: "Name, ID, trust score, signature" },
+  { icon: FileCheck2, label: "Policy decision", value: "Risk level, violations, enforcement result" },
+  { icon: Link2, label: "On-chain proof", value: "Transaction hash, Merkle root, Base L2 anchor" },
 ];
 
 export default function VerifyLandingPage() {
@@ -53,26 +64,22 @@ export default function VerifyLandingPage() {
             </div>
             <div>
               <div className="text-lg font-semibold tracking-tight">Inntris</div>
-              <div className="text-xs text-[#7F8CA3]">Public verifier</div>
+              <div className="text-xs text-[#7F8CA3]">Public Verifier</div>
             </div>
           </Link>
 
           <nav className="flex items-center gap-3">
-            <Link href="/admin">
-              <Button
-                variant="outline"
-                className="hidden border-[#22314D] bg-[#0D1728] text-[#F5F7FB] hover:bg-[#101C31] hover:text-white md:inline-flex"
-              >
-                Admin Console
-              </Button>
+            <Link
+              href="/audit"
+              className="hidden rounded-lg border border-[#22314D] bg-[#0D1728] px-4 py-2 text-sm font-medium text-[#F5F7FB] transition hover:bg-[#101C31] hover:text-white md:inline-flex"
+            >
+              Explore Audit Explorer
             </Link>
-            <Link href="/audit">
-              <Button
-                variant="outline"
-                className="hidden border-[#22314D] bg-[#0D1728] text-[#F5F7FB] hover:bg-[#101C31] hover:text-white md:inline-flex"
-              >
-                Audit Explorer
-              </Button>
+            <Link
+              href="/docs"
+              className="hidden rounded-lg border border-[#22314D] bg-[#0D1728] px-4 py-2 text-sm font-medium text-[#F5F7FB] transition hover:bg-[#101C31] hover:text-white md:inline-flex"
+            >
+              Docs
             </Link>
           </nav>
         </div>
@@ -119,6 +126,32 @@ export default function VerifyLandingPage() {
                 Verify
               </Button>
             </div>
+          </div>
+        </section>
+
+        {/* What each receipt contains */}
+        <section className="mx-auto max-w-4xl px-6 pb-16 lg:px-8">
+          <h2 className="mb-6 text-center text-lg font-semibold tracking-tight text-[#F5F7FB]">
+            What a verification receipt contains
+          </h2>
+          <div className="grid gap-4 md:grid-cols-2">
+            {verificationFields.map((field) => {
+              const Icon = field.icon;
+              return (
+                <div
+                  key={field.label}
+                  className="flex gap-4 rounded-[20px] border border-[#22314D] bg-[#0D1728] p-5"
+                >
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-[#22314D] bg-[#101C31] text-[#8FB8FF]">
+                    <Icon className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-semibold text-[#F5F7FB]">{field.label}</h3>
+                    <p className="mt-1 text-sm leading-6 text-[#AAB7CC]">{field.value}</p>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </section>
 
@@ -192,10 +225,14 @@ export default function VerifyLandingPage() {
             <InntrisLogo className="h-5 w-5" />
             <span className="text-[#7F8CA3]">Inntris Core</span>
           </div>
-
-          <p className="text-sm text-[#7F8CA3]">
-            Cryptographic verification for AI agents
-          </p>
+          <div className="flex items-center gap-6 text-[#7F8CA3]">
+            <Link href="/docs" className="text-sm transition-colors hover:text-white">
+              Docs
+            </Link>
+            <Link href="/" className="text-sm transition-colors hover:text-white">
+              Home
+            </Link>
+          </div>
         </div>
       </footer>
     </div>

@@ -11,7 +11,7 @@ const modules = [
     title: "Admin Console",
     role: "For platform admins",
     body: "Manage organisations, agents, policies, API keys, and security alerts.",
-    cta: "View demo console",
+    cta: "Explore Console",
     href: "/admin",
   },
   {
@@ -19,7 +19,7 @@ const modules = [
     title: "Agent Portal",
     role: "For developers and operators",
     body: "Issue credentials, test verification, and monitor agent trust state.",
-    cta: "View demo portal",
+    cta: "Explore Portal",
     href: "/portal",
   },
   {
@@ -27,7 +27,7 @@ const modules = [
     title: "Audit Explorer",
     role: "For investigations and compliance",
     body: "Search verification decisions and inspect tamper-evident audit history.",
-    cta: "View demo explorer",
+    cta: "Explore Audit Explorer",
     href: "/audit",
   },
   {

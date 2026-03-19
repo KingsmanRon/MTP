@@ -33,7 +33,7 @@ export default function LoginPage() {
 
       // Success - store the key and redirect
       localStorage.setItem("inntris_api_key", apiKey.trim());
-      router.push("/admin");
+      router.push("/admin/dashboard");
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Invalid API key";
       if (message.includes("401") || message.includes("403") || message.includes("Unauthorized")) {
