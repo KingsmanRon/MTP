@@ -140,8 +140,12 @@ export function VerifyRecordView({ record }: { record: PublicVerificationRecord 
   };
 
   const isPass = record.verdict === "approved";
+  const baseScanDomain =
+    record.chain_id === 84532
+      ? "https://sepolia.basescan.org"
+      : "https://basescan.org";
   const baseScanUrl = record.tx_hash
-    ? `https://basescan.org/tx/${record.tx_hash}`
+    ? `${baseScanDomain}/tx/${record.tx_hash}`
     : null;
 
   return (
@@ -397,7 +401,7 @@ export function VerifyRecordView({ record }: { record: PublicVerificationRecord 
               <div className="rounded-2xl border border-white/6 bg-[#101C31]/70 p-4">
                 <p className="text-xs text-[#7F8CA3] mb-1">Chain</p>
                 <p className="text-sm font-mono text-[#F5F7FB]">
-                  Base L2 ({record.chain_id})
+                  {record.chain_id === 84532 ? "Base Sepolia" : "Base L2"} ({record.chain_id})
                 </p>
               </div>
               <div className="rounded-2xl border border-white/6 bg-[#101C31]/70 p-4">
