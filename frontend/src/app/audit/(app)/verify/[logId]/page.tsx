@@ -20,7 +20,11 @@ import {
 import { useAuditLog, useMerkleProof } from "@/lib/hooks";
 import { formatDateTime } from "@/lib/utils";
 
-const BLOCK_EXPLORER_URL = "https://basescan.org";
+function getBlockExplorerUrl(chainId?: number) {
+  return chainId === 84532
+    ? "https://sepolia.basescan.org"
+    : "https://basescan.org";
+}
 
 export default function VerificationPage() {
   const params = useParams();
@@ -89,7 +93,7 @@ export default function VerificationPage() {
           {isAnchored && (
             /* FIXED: Wrap Button in anchor tag instead of using asChild */
             <a 
-              href={`${BLOCK_EXPLORER_URL}/tx/${proof.tx_hash}`} 
+              href={`${getBlockExplorerUrl(log?.chain_id ?? undefined)}/tx/${proof.tx_hash}`} 
               target="_blank" 
               rel="noopener noreferrer"
             >
@@ -147,7 +151,7 @@ export default function VerificationPage() {
                       <code className="bg-muted p-1 rounded text-xs truncate w-full block">
                         {proof.tx_hash}
                       </code>
-                      <a href={`${BLOCK_EXPLORER_URL}/tx/${proof.tx_hash}`} target="_blank" rel="noopener noreferrer">
+                      <a href={`${getBlockExplorerUrl(log?.chain_id ?? undefined)}/tx/${proof.tx_hash}`} target="_blank" rel="noopener noreferrer">
                         <ExternalLink className="h-3 w-3 text-primary cursor-pointer hover:underline" />
                       </a>
                     </div>
