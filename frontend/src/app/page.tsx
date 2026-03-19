@@ -200,8 +200,8 @@ export default function InntrisCoreDarkPreview() {
               { label: "Prove", items: modules.slice(2, 4) },
             ].map((group) => (
               <div key={group.label}>
-                <div className="mb-3">
-                  <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#4A6FA5]">
+                <div className="mb-2">
+                  <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#4A6FA5]">
                     {group.label}
                   </span>
                 </div>
