@@ -1,0 +1,6 @@
+Licensor: Inntris INC
+Licensed Work: Inntris Core
+Change Date: March 18, 2030 (4 years from today)
+Change License: Apache 2.0
+Additional Use Grant: > "You may use the Licensed Work for your own internal agent verification workflows. You may NOT use the Licensed Work to provide a hosted verification service,
+cryptographic audit service, or policy decision service to third parties without a commercial license from Inntris INC."
