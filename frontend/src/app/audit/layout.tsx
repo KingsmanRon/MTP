@@ -17,6 +17,7 @@ export const metadata: Metadata = {
     description:
       "Trace policy outcomes, inspect signed receipts, and review tamper-evident records across agent activity.",
   },
+  robots: { index: true, follow: true },
 };
 
 export default function AuditLayout({ children }: { children: React.ReactNode }) {

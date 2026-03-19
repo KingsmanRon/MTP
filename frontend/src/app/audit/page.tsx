@@ -12,6 +12,7 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import { InntrisLogo } from "@/components/inntris-logo";
+import { AuthRedirectBanner } from "@/components/auth-redirect-banner";
 
 /* ------------------------------------------------------------------ */
 /*  Curated preview data                                               */
@@ -72,22 +73,16 @@ export default function AuditPreviewPage() {
               <div className="text-xs text-[#7F8CA3]">Audit Explorer</div>
             </div>
           </Link>
-          <nav className="flex items-center gap-3">
-            <Link
-              href="/verify"
-              className="hidden rounded-lg border border-[#22314D] bg-[#0D1728] px-4 py-2 text-sm font-medium text-[#F5F7FB] transition hover:bg-[#101C31] hover:text-white md:inline-flex"
-            >
-              Verify a Receipt
-            </Link>
-            <Link
-              href="/docs"
-              className="hidden rounded-lg border border-[#22314D] bg-[#0D1728] px-4 py-2 text-sm font-medium text-[#F5F7FB] transition hover:bg-[#101C31] hover:text-white md:inline-flex"
-            >
-              Docs
-            </Link>
+          <nav className="hidden items-center gap-6 text-sm md:flex">
+            <Link href="/admin" className="text-[#C4CFDE] transition hover:text-white">Console</Link>
+            <Link href="/portal" className="text-[#C4CFDE] transition hover:text-white">Portal</Link>
+            <Link href="/verify" className="text-[#C4CFDE] transition hover:text-white">Verify</Link>
+            <Link href="/docs" className="text-[#C4CFDE] transition hover:text-white">Docs</Link>
           </nav>
         </div>
       </header>
+
+      <AuthRedirectBanner dashboardPath="/audit/search" label="Audit Explorer" />
 
       <main className="relative">
         {/* Hero */}
@@ -293,12 +288,9 @@ export default function AuditPreviewPage() {
             <span className="text-[#7F8CA3]">Inntris Core</span>
           </div>
           <div className="flex items-center gap-6 text-[#7F8CA3]">
-            <Link href="/docs" className="text-sm transition-colors hover:text-white">
-              Docs
-            </Link>
-            <Link href="/verify" className="text-sm transition-colors hover:text-white">
-              Verify
-            </Link>
+            <Link href="/" className="text-sm transition-colors hover:text-white">Home</Link>
+            <Link href="/docs" className="text-sm transition-colors hover:text-white">Docs</Link>
+            <Link href="/verify" className="text-sm transition-colors hover:text-white">Verify</Link>
           </div>
         </div>
       </footer>
