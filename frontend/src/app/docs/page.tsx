@@ -42,7 +42,7 @@ export default function DocsPage() {
               Verify Agent
             </Link>
             <Link href="/admin" className="text-sm font-medium text-muted-foreground hover:text-foreground">
-              Dashboard
+              Demo Console
             </Link>
           </nav>
         </div>
@@ -71,9 +71,9 @@ export default function DocsPage() {
                 <ArrowRight className="ml-2 h-4 w-4" />
               </Button>
             </Link>
-            <Link href="/admin">
+            <Link href="/verify">
               <Button size="lg" variant="outline">
-                View Dashboard
+                See live verification
               </Button>
             </Link>
           </div>
@@ -568,12 +568,22 @@ POST /admin/agents
           </div>
 
           <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <Link href="/verify">
+              <Card className="hover:border-primary transition-colors cursor-pointer h-full">
+                <CardContent className="p-6 text-center">
+                  <Shield className="h-8 w-8 mx-auto mb-3 text-primary" />
+                  <h3 className="font-semibold mb-1">Public Verify</h3>
+                  <p className="text-sm text-muted-foreground">Inspect a live receipt</p>
+                </CardContent>
+              </Card>
+            </Link>
+
             <Link href="/admin">
               <Card className="hover:border-primary transition-colors cursor-pointer h-full">
                 <CardContent className="p-6 text-center">
                   <Layers className="h-8 w-8 mx-auto mb-3 text-primary" />
                   <h3 className="font-semibold mb-1">Admin Console</h3>
-                  <p className="text-sm text-muted-foreground">Manage agents & policies</p>
+                  <p className="text-sm text-muted-foreground">Demo &middot; Manage agents & policies</p>
                 </CardContent>
               </Card>
             </Link>
@@ -583,7 +593,7 @@ POST /admin/agents
                 <CardContent className="p-6 text-center">
                   <Code className="h-8 w-8 mx-auto mb-3 text-primary" />
                   <h3 className="font-semibold mb-1">Agent Portal</h3>
-                  <p className="text-sm text-muted-foreground">Developer tools & testing</p>
+                  <p className="text-sm text-muted-foreground">Demo &middot; Developer tools & testing</p>
                 </CardContent>
               </Card>
             </Link>
@@ -593,17 +603,7 @@ POST /admin/agents
                 <CardContent className="p-6 text-center">
                   <FileSearch className="h-8 w-8 mx-auto mb-3 text-primary" />
                   <h3 className="font-semibold mb-1">Audit Explorer</h3>
-                  <p className="text-sm text-muted-foreground">Search & verify logs</p>
-                </CardContent>
-              </Card>
-            </Link>
-
-            <Link href="/verify">
-              <Card className="hover:border-primary transition-colors cursor-pointer h-full">
-                <CardContent className="p-6 text-center">
-                  <Shield className="h-8 w-8 mx-auto mb-3 text-primary" />
-                  <h3 className="font-semibold mb-1">Public Verify</h3>
-                  <p className="text-sm text-muted-foreground">Check agent trust status</p>
+                  <p className="text-sm text-muted-foreground">Demo &middot; Search & verify logs</p>
                 </CardContent>
               </Card>
             </Link>

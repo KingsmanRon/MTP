@@ -1,9 +1,10 @@
 import React from "react";
 import Link from "next/link";
-import { LayoutDashboard, Bot, SearchCheck, Globe, KeyRound, Lock, FileCheck2, ChevronRight } from "lucide-react";
+import { LayoutDashboard, Bot, SearchCheck, Globe, KeyRound, Lock, FileCheck2, ChevronRight, CheckCircle2, XOctagon } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { InntrisLogo } from "@/components/inntris-logo";
 import ContactSection from "@/components/contact-section";
+import { publicApi } from "@/lib/api";
 const modules = [
   {
     icon: LayoutDashboard,
@@ -55,7 +56,16 @@ const capabilities = [
     body: "Record approvals, blocks, and evidence in a verifiable audit trail.",
   },
 ];
-export default function InntrisCoreDarkPreview() {
+const CANONICAL_RECEIPT_ID = "2f41036e-cd54-4ec1-86e1-22f96cbc09aa";
+
+export default async function InntrisCoreDarkPreview() {
+  let receipt = null;
+  try {
+    receipt = await publicApi.getVerificationRecord(CANONICAL_RECEIPT_ID);
+  } catch {
+    // API unavailable — skip the proof preview
+  }
+
   return (
     <div className="min-h-screen bg-[#07111F] text-[#F5F7FB]">
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(76,141,255,0.14),transparent_32%),radial-gradient(circle_at_80%_30%,rgba(143,184,255,0.08),transparent_24%)] pointer-events-none" />
@@ -255,6 +265,86 @@ export default function InntrisCoreDarkPreview() {
             ))}
           </div>
         </section>
+        {receipt && (
+          <section className="mx-auto max-w-7xl px-6 py-8 lg:px-8">
+            <div className="mb-6">
+              <div className="text-sm font-medium uppercase tracking-[0.18em] text-[#8FB8FF]">
+                Live proof
+              </div>
+              <h2 className="mt-3 text-2xl font-semibold tracking-tight md:text-3xl">
+                A real verification receipt.
+              </h2>
+              <p className="mt-2 max-w-xl text-sm leading-6 text-[#AAB7CC]">
+                This is a live receipt from the Inntris network — not a mockup.
+              </p>
+            </div>
+            <Link
+              href={`/verify/${CANONICAL_RECEIPT_ID}`}
+              className="group block rounded-[24px] border border-[#22314D] bg-[#0D1728] p-6 transition hover:border-[#35507A] hover:bg-[#101C31] md:p-8"
+            >
+              {/* Top row: verdict + meta */}
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex items-center gap-3">
+                  {receipt.verdict === "approved" ? (
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#22c55e]/15">
+                      <CheckCircle2 className="h-5 w-5 text-[#22c55e]" />
+                    </div>
+                  ) : (
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#ef4444]/15">
+                      <XOctagon className="h-5 w-5 text-[#ef4444]" />
+                    </div>
+                  )}
+                  <div>
+                    <span
+                      className={`text-lg font-bold tracking-tight ${
+                        receipt.verdict === "approved" ? "text-[#22c55e]" : "text-[#ef4444]"
+                      }`}
+                    >
+                      {receipt.verdict === "approved" ? "PASS" : "BLOCK"}
+                    </span>
+                    <p className="text-xs text-[#7F8CA3]">
+                      {receipt.verdict_reason ?? "All policy checks passed"}
+                    </p>
+                  </div>
+                </div>
+                <span className="inline-flex items-center gap-2 text-sm font-medium text-[#8FB8FF] transition group-hover:text-white">
+                  View full receipt
+                  <ChevronRight className="h-4 w-4" />
+                </span>
+              </div>
+
+              {/* Detail grid */}
+              <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                <div>
+                  <p className="text-[10px] font-medium uppercase tracking-widest text-[#7F8CA3]">Agent</p>
+                  <p className="mt-1 text-sm font-medium text-[#F5F7FB]">{receipt.agent_name}</p>
+                  <p className="text-xs text-[#7F8CA3]">{receipt.organization_name}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-medium uppercase tracking-widest text-[#7F8CA3]">Action</p>
+                  <p className="mt-1 text-sm font-mono text-[#F5F7FB]">{receipt.action_type}</p>
+                  <p className="text-xs text-[#7F8CA3]">
+                    Trust {receipt.trust_score}/100
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-medium uppercase tracking-widest text-[#7F8CA3]">Signature</p>
+                  <p className={`mt-1 text-sm font-medium ${receipt.signature_valid ? "text-[#22c55e]" : "text-[#ef4444]"}`}>
+                    {receipt.signature_valid ? "Valid Ed25519" : "Invalid"}
+                  </p>
+                  <p className="text-xs text-[#7F8CA3]">
+                    {receipt.tx_hash ? "Anchored on Base L2" : "Pending anchor"}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-medium uppercase tracking-widest text-[#7F8CA3]">Receipt ID</p>
+                  <p className="mt-1 text-xs font-mono text-[#8FB8FF] break-all">{receipt.audit_id}</p>
+                </div>
+              </div>
+            </Link>
+          </section>
+        )}
+
         <section id="product" className="mx-auto max-w-7xl px-6 pb-16 lg:px-8 lg:pb-24">
           <div className="rounded-[28px] border border-[#22314D] bg-[#0D1728] p-7 lg:p-10">
             <div className="text-sm font-medium uppercase tracking-[0.18em] text-[#8FB8FF]">Core capability</div>
