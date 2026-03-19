@@ -104,7 +104,7 @@ services:
     environment:
       - ENVIRONMENT=${ENVIRONMENT:-production}
       - DATABASE_URL=postgresql://${POSTGRES_USER:-inntris}:${POSTGRES_PASSWORD:-inntris_secure_password}@postgres:5432/${POSTGRES_DB:-inntris}
-      - BLOCKCHAIN_PROVIDER_URL=${BLOCKCHAIN_PROVIDER_URL:-https://mainnet.base.org}
+      - BLOCKCHAIN_PROVIDER_URL=${BLOCKCHAIN_PROVIDER_URL:-https://base.publicnode.com}
       - ANCHOR_CONTRACT_ADDRESS=${ANCHOR_CONTRACT_ADDRESS}
       - BLOCKCHAIN_PRIVATE_KEY=${BLOCKCHAIN_PRIVATE_KEY}
       - ANCHOR_BATCH_SIZE=${ANCHOR_BATCH_SIZE:-1000}

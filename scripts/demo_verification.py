@@ -258,7 +258,7 @@ What happened:
   6. Submitted to /verify - signature verified against stored public key
   7. Action logged to immutable audit trail
 
-Dashboard: https://inntris-frontend.vercel.app/admin
+Dashboard: https://inntris.com/admin
 
 Blockchain Anchoring:
   - Audit logs can be batched into Merkle trees

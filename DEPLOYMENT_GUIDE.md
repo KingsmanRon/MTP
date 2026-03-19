@@ -40,7 +40,7 @@ python3 --version
 
 ```bash
 # Navigate to your Inntris directory
-cd /home/user/Inntris
+cd .
 
 # Generate SERVER_SECRET (64-byte hex string for HMAC signing)
 openssl rand -hex 64
@@ -81,7 +81,7 @@ openssl rand -base64 32
 ### 2.3 Apply Database Schema
 1. In Supabase dashboard, go to **SQL Editor**
 2. Click **"New query"**
-3. Copy the ENTIRE contents of `/home/user/Inntris/database/schemas.sql`
+3. Copy the ENTIRE contents of `./database/schemas.sql`
 4. Paste into the SQL editor
 5. Click **"Run"** (bottom right)
 6. **Verify**: You should see "Success. No rows returned" and no errors
@@ -118,13 +118,14 @@ openssl rand -base64 32
 
 ## ⛓️ STEP 3: Deploy Smart Contract to Base L2
 
-### 3.1 Get Base L2 RPC URL from Coinbase
-1. Go to https://www.coinbase.com/
-2. Navigate to **Developer Platform** → **Base**
-3. Create an API key for Base (if not already done)
-4. Get your RPC endpoint:
-   - **Mainnet**: `https://mainnet.base.org`
-   - **Testnet (Sepolia)**: `https://sepolia.base.org` (recommended for initial testing)
+### 3.1 RPC URL
+
+Inntris uses PublicNode as the Base L2 RPC provider. PublicNode is required — Base's official RPC (`mainnet.base.org`) blocks cloud provider IPs including Railway. Do not switch providers.
+
+- **Mainnet**: `https://base.publicnode.com`
+- **Testnet (Sepolia)**: `https://sepolia.publicnode.com`
+
+No API key or account required for PublicNode.
 
 ### 3.2 Create Deployment Wallet
 ```bash
@@ -159,20 +160,20 @@ cast wallet new
 **METHOD A: Using Foundry (Recommended)**
 ```bash
 # Navigate to contracts directory
-cd /home/user/Inntris
+cd .
 
 # Install dependencies (if not already done)
 forge install OpenZeppelin/openzeppelin-contracts
 
 # Deploy to Base Sepolia (Testnet) first for testing
 forge create contracts/AnchorRegistry.sol:AnchorRegistry \
-  --rpc-url https://sepolia.base.org \
+  --rpc-url https://sepolia.publicnode.com \
   --private-key YOUR_PRIVATE_KEY_HERE \
   --constructor-args YOUR_DEPLOYMENT_WALLET_ADDRESS
 
 # If successful, deploy to Base Mainnet
 forge create contracts/AnchorRegistry.sol:AnchorRegistry \
-  --rpc-url https://mainnet.base.org \
+  --rpc-url https://base.publicnode.com \
   --private-key YOUR_PRIVATE_KEY_HERE \
   --constructor-args YOUR_DEPLOYMENT_WALLET_ADDRESS \
   --verify
@@ -183,7 +184,7 @@ forge create contracts/AnchorRegistry.sol:AnchorRegistry \
 **METHOD B: Using Remix IDE (Alternative)**
 1. Go to https://remix.ethereum.org
 2. Create new file: `AnchorRegistry.sol`
-3. Paste contents from `/home/user/Inntris/contracts/AnchorRegistry.sol`
+3. Paste contents from `./contracts/AnchorRegistry.sol`
 4. Compile with Solidity 0.8.20
 5. Deploy:
    - Environment: **Injected Provider - MetaMask**
@@ -196,7 +197,7 @@ forge create contracts/AnchorRegistry.sol:AnchorRegistry \
 ```bash
 # Your API will need SUBMITTER_ROLE to anchor batches
 # Get the role hash
-SUBMITTER_ROLE=$(cast call YOUR_CONTRACT_ADDRESS "SUBMITTER_ROLE()(bytes32)" --rpc-url https://sepolia.base.org)
+SUBMITTER_ROLE=$(cast call YOUR_CONTRACT_ADDRESS "SUBMITTER_ROLE()(bytes32)" --rpc-url https://sepolia.publicnode.com)
 
 # Grant role to your deployment wallet (it will submit batches)
 cast send YOUR_CONTRACT_ADDRESS \
@@ -204,36 +205,25 @@ cast send YOUR_CONTRACT_ADDRESS \
   $SUBMITTER_ROLE \
   YOUR_DEPLOYMENT_WALLET_ADDRESS \
   --private-key YOUR_PRIVATE_KEY \
-  --rpc-url https://sepolia.base.org
+  --rpc-url https://sepolia.publicnode.com
 ```
 
 ---
 
 ## 🚂 STEP 4: Deploy to Railway
 
-### 4.1 Prepare GitHub Repository
-```bash
-# Ensure you're on the correct branch
-cd /home/user/Inntris
-git status  # Should show claude/review-trust-layer-HGvgx
+### 4.1 Repository Access
 
-# Commit any pending changes
-git add .
-git commit -m "Production deployment preparation"
+The Inntris Core repository is access-controlled.
 
-# Push to GitHub
-git push -u origin claude/review-trust-layer-HGvgx
-
-# IMPORTANT: Note your GitHub repository URL
-# Format: https://github.com/YOUR_USERNAME/Inntris
-```
+Contact **applications@inntris.com** to request repository access. You will receive onboarding instructions within 24 hours.
 
 ### 4.2 Create Railway Project
 1. Go to https://railway.app/dashboard
 2. Click **"New Project"**
 3. Select **"Deploy from GitHub repo"**
 4. Authenticate GitHub and select your Inntris repository
-5. Select branch: `claude/review-trust-layer-HGvgx`
+5. Select branch: `master`
 
 ### 4.3 Add Redis Service
 1. In your Railway project, click **"+ New"**
@@ -266,7 +256,7 @@ REDIS_URL=${{Redis.REDIS_URL}}  # Railway auto-fills this
 # ============================================================================
 # BLOCKCHAIN CONFIGURATION (from Step 3)
 # ============================================================================
-BLOCKCHAIN_PROVIDER_URL=https://sepolia.base.org  # or mainnet.base.org
+BLOCKCHAIN_PROVIDER_URL=https://sepolia.publicnode.com  # or base.publicnode.com
 BLOCKCHAIN_PRIVATE_KEY=[from Step 3.2]
 ANCHOR_CONTRACT_ADDRESS=[from Step 3.4]
 ANCHOR_BATCH_SIZE=1000
@@ -283,8 +273,7 @@ JWT_EXPIRY_HOURS=24
 # ============================================================================
 # CORS CONFIGURATION
 # ============================================================================
-ALLOWED_ORIGINS=https://yourdomain.com,https://www.yourdomain.com
-# Add your actual production domains here!
+ALLOWED_ORIGINS=https://inntris.com
 
 # ============================================================================
 # RATE LIMITING
@@ -307,7 +296,7 @@ Railway will automatically deploy your API service. Now add the worker:
 
 1. In Railway project, click **"+ New"** → **"Service"**
 2. Select **"GitHub Repo"** (same repo)
-3. Branch: `claude/review-trust-layer-HGvgx`
+3. Branch: `master`
 4. **Service name**: `inntris-worker`
 5. Go to **"Settings"** → **"Deploy"**
 6. **Build Command**: Leave empty (uses Dockerfile)
@@ -363,7 +352,7 @@ curl https://YOUR_RAILWAY_URL.up.railway.app/health
 ### 5.2 Create First Organization
 ```bash
 # Use the test script (see Step 6)
-cd /home/user/Inntris/tests
+cd ./tests
 ./production_test.sh
 ```
 
@@ -436,7 +425,7 @@ curl -X POST https://YOUR_RAILWAY_URL.up.railway.app/admin/agents \
 
 ### 6.1 Run Automated Tests
 ```bash
-cd /home/user/Inntris
+cd .
 chmod +x tests/production_test.sh
 ./tests/production_test.sh https://YOUR_RAILWAY_URL.up.railway.app YOUR_MASTER_ADMIN_KEY
 ```
@@ -603,6 +592,6 @@ After completing all steps above:
 
 ---
 
-**Last Updated**: 2026-01-15
+**Last Updated**: 2026-03-18
 **Version**: 1.0.0
 **Status**: Production Ready
