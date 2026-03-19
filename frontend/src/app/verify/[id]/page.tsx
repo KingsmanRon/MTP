@@ -53,7 +53,8 @@ export async function generateMetadata({
 
   const verdict = verdictLabel(record.verdict);
   const sigStatus = record.signature_valid ? "Signature valid" : "Signature invalid";
-  const chainStatus = record.tx_hash ? "Anchored on Base L2" : "Pending anchor";
+  const chainLabel = record.chain_id === 84532 ? "Base Sepolia" : "Base L2";
+  const chainStatus = record.tx_hash ? `Anchored on ${chainLabel}` : "Pending anchor";
   const title = `${verdict} — ${record.agent_name} · ${record.action_type} — Inntris Verification`;
   const description = `Verdict: ${verdict}. Agent: ${record.agent_name} (${record.organization_name}). Action: ${record.action_type}. Trust score: ${record.trust_score}/100. ${sigStatus}. ${chainStatus}. Receipt: ${id.slice(0, 8)}…`;
 
