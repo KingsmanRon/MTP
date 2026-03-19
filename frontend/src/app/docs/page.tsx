@@ -42,7 +42,7 @@ export default function DocsPage() {
               Verify Agent
             </Link>
             <Link href="/admin" className="text-sm font-medium text-muted-foreground hover:text-foreground">
-              Demo Console
+              Explore Console
             </Link>
           </nav>
         </div>
@@ -583,7 +583,7 @@ POST /admin/agents
                 <CardContent className="p-6 text-center">
                   <Layers className="h-8 w-8 mx-auto mb-3 text-primary" />
                   <h3 className="font-semibold mb-1">Admin Console</h3>
-                  <p className="text-sm text-muted-foreground">Demo &middot; Manage agents & policies</p>
+                  <p className="text-sm text-muted-foreground">Explore &middot; Manage agents & policies</p>
                 </CardContent>
               </Card>
             </Link>
@@ -593,7 +593,7 @@ POST /admin/agents
                 <CardContent className="p-6 text-center">
                   <Code className="h-8 w-8 mx-auto mb-3 text-primary" />
                   <h3 className="font-semibold mb-1">Agent Portal</h3>
-                  <p className="text-sm text-muted-foreground">Demo &middot; Developer tools & testing</p>
+                  <p className="text-sm text-muted-foreground">Explore &middot; Developer tools & testing</p>
                 </CardContent>
               </Card>
             </Link>
@@ -603,7 +603,7 @@ POST /admin/agents
                 <CardContent className="p-6 text-center">
                   <FileSearch className="h-8 w-8 mx-auto mb-3 text-primary" />
                   <h3 className="font-semibold mb-1">Audit Explorer</h3>
-                  <p className="text-sm text-muted-foreground">Demo &middot; Search & verify logs</p>
+                  <p className="text-sm text-muted-foreground">Explore &middot; Search & verify logs</p>
                 </CardContent>
               </Card>
             </Link>

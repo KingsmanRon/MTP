@@ -32,14 +32,30 @@ export async function generateMetadata({
 
   if (!record) {
     return {
-      title: "Record not found — Inntris",
-      description: "No verification record matches this ID or transaction hash.",
+      title: "Record not found — Inntris Public Verifier",
+      description:
+        "No verification record matches this ID or transaction hash. The record may have been removed or the link may be incorrect.",
+      openGraph: {
+        title: "Record not found — Inntris Public Verifier",
+        description:
+          "No verification record matches this ID or transaction hash.",
+        type: "website",
+        siteName: "Inntris",
+      },
+      twitter: {
+        card: "summary",
+        title: "Record not found — Inntris Public Verifier",
+        description:
+          "No verification record matches this ID or transaction hash.",
+      },
     };
   }
 
   const verdict = verdictLabel(record.verdict);
-  const title = `${verdict} — ${record.agent_name} · ${record.action_type} — Inntris`;
-  const description = `Verdict: ${verdict}. Agent: ${record.agent_name} (${record.organization_name}). Action: ${record.action_type}. Trust score: ${record.trust_score}/100. ${record.tx_hash ? "Anchored on Base L2." : "Pending anchor."}`;
+  const sigStatus = record.signature_valid ? "Signature valid" : "Signature invalid";
+  const chainStatus = record.tx_hash ? "Anchored on Base L2" : "Pending anchor";
+  const title = `${verdict} — ${record.agent_name} · ${record.action_type} — Inntris Verification`;
+  const description = `Verdict: ${verdict}. Agent: ${record.agent_name} (${record.organization_name}). Action: ${record.action_type}. Trust score: ${record.trust_score}/100. ${sigStatus}. ${chainStatus}. Receipt: ${id.slice(0, 8)}…`;
 
   return {
     title,
@@ -51,7 +67,7 @@ export async function generateMetadata({
       siteName: "Inntris",
     },
     twitter: {
-      card: "summary",
+      card: "summary_large_image",
       title,
       description,
     },

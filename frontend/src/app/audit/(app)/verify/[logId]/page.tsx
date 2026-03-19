@@ -49,7 +49,7 @@ export default function VerificationPage() {
         </div>
         <h2 className="text-2xl font-bold">Verification Failed</h2>
         <p className="text-muted-foreground max-w-md">{error}</p>
-        <Link href="/audit">
+        <Link href="/audit/search">
           <Button variant="outline" className="mt-4">
             <ArrowLeft className="mr-2 h-4 w-4" /> Back to Explorer
           </Button>
@@ -65,7 +65,7 @@ export default function VerificationPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <Link href="/audit">
+          <Link href="/audit/search">
             <Button variant="ghost" size="icon">
               <ArrowLeft className="h-4 w-4" />
             </Button>

@@ -23,20 +23,20 @@ interface SidebarProps {
 
 const navItems = {
   admin: [
-    { href: "/admin", icon: LayoutDashboard, label: "Dashboard" },
+    { href: "/admin/dashboard", icon: LayoutDashboard, label: "Dashboard" },
     { href: "/admin/agents", icon: Bot, label: "Agents" },
     { href: "/admin/alerts", icon: AlertTriangle, label: "Alerts" },
     { href: "/admin/api-keys", icon: Key, label: "API Keys" },
     { href: "/admin/settings", icon: Settings, label: "Settings" },
   ],
   portal: [
-    { href: "/portal", icon: LayoutDashboard, label: "Dashboard" },
+    { href: "/portal/dashboard", icon: LayoutDashboard, label: "Dashboard" },
     { href: "/portal/credentials", icon: Key, label: "Credentials" },
     { href: "/portal/playground", icon: Bot, label: "Playground" },
     { href: "/portal/logs", icon: FileSearch, label: "Activity Logs" },
   ],
   audit: [
-    { href: "/audit", icon: FileSearch, label: "Search" },
+    { href: "/audit/search", icon: FileSearch, label: "Search" },
     { href: "/audit/verify", icon: CheckCircle2, label: "Verify" },
     { href: "/audit/exports", icon: Key, label: "Exports" },
   ],

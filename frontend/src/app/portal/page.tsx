@@ -1,339 +1,285 @@
-"use client";
-
-import { useEffect, useState } from "react";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { TrustScore } from "@/components/trust-score";
-import { StatsCard } from "@/components/stats-card";
-import { VerdictBadge } from "@/components/verdict-badge";
-import { LoadingState } from "@/components/loading-state";
-import { EmptyState } from "@/components/empty-state";
-import { formatRelative, formatCurrency, truncateHash } from "@/lib/utils";
-import { useAgentDashboard, useAgents } from "@/lib/hooks";
+import Link from "next/link";
 import {
-  Shield,
-  Activity,
-  CheckCircle,
-  XCircle,
-  Clock,
-  TrendingUp,
   Bot,
+  Shield,
+  Fingerprint,
+  Activity,
+  CheckCircle2,
+  XOctagon,
+  Clock,
+  Link2,
+  ChevronRight,
 } from "lucide-react";
-import {
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  AreaChart,
-  Area,
-} from "recharts";
+import { InntrisLogo } from "@/components/inntris-logo";
 
-// Helper to get/set selected agent from localStorage
-function getStoredAgentId(): string | null {
-  if (typeof window === "undefined") return null;
-  return localStorage.getItem("portal_agent_id");
-}
+/* ------------------------------------------------------------------ */
+/*  Page (Server Component — SSR public preview shell)                 */
+/* ------------------------------------------------------------------ */
 
-function setStoredAgentId(agentId: string) {
-  if (typeof window !== "undefined") {
-    localStorage.setItem("portal_agent_id", agentId);
-  }
-}
-
-export default function PortalDashboard() {
-  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
-
-  // Load stored agent ID on mount
-  useEffect(() => {
-    const stored = getStoredAgentId();
-    if (stored) setSelectedAgentId(stored);
-  }, []);
-
-  // Fetch list of agents for selection
-  const { data: agents, isLoading: agentsLoading } = useAgents();
-
-  // Fetch dashboard data for selected agent
-  const { data: dashboard, isLoading: dashboardLoading, error } = useAgentDashboard(
-    selectedAgentId || ""
-  );
-
-  // Auto-select first agent if none selected
-  useEffect(() => {
-    if (!selectedAgentId && agents && agents.length > 0) {
-      const firstAgent = agents[0];
-      setSelectedAgentId(firstAgent.id);
-      setStoredAgentId(firstAgent.id);
-    }
-  }, [agents, selectedAgentId]);
-
-  // Handle agent selection change
-  const handleAgentChange = (agentId: string) => {
-    setSelectedAgentId(agentId);
-    setStoredAgentId(agentId);
-  };
-
-  if (agentsLoading) {
-    return <LoadingState message="Loading agents..." />;
-  }
-
-  if (!agents || agents.length === 0) {
-    return (
-      <EmptyState
-        icon={Bot}
-        title="No Agents Found"
-        description="Register an agent in the Admin Console to use the Portal."
-        action={
-          <a href="/admin/agents" className="text-sm font-medium underline">
-            Go to Admin Console
-          </a>
-        }
-      />
-    );
-  }
-
-  if (!selectedAgentId) {
-    return <LoadingState message="Selecting agent..." />;
-  }
-
-  if (dashboardLoading) {
-    return <LoadingState message="Loading dashboard..." />;
-  }
-
-  if (error || !dashboard) {
-    return (
-      <EmptyState
-        icon={Shield}
-        title="Error Loading Dashboard"
-        description="Failed to load agent dashboard data. Please try again."
-      />
-    );
-  }
-
-  const { agent, daily_stats, trust_history, recent_activity } = dashboard;
-  const dailyUsagePercent = agent.daily_limit_usd > 0
-    ? (daily_stats.daily_spend / agent.daily_limit_usd) * 100
-    : 0;
-
+export default function PortalPreviewPage() {
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold">Agent Dashboard</h1>
-          <p className="text-muted-foreground">
-            Real-time overview of your agent&apos;s activity and limits
-          </p>
-        </div>
-        {/* Agent Selector */}
-        {agents.length > 1 && (
-          <select
-            value={selectedAgentId}
-            onChange={(e) => handleAgentChange(e.target.value)}
-            className="px-3 py-2 rounded-md border bg-background text-sm"
-          >
-            {agents.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.name}
-              </option>
-            ))}
-          </select>
-        )}
-      </div>
+    <div className="min-h-screen bg-[#07111F] text-[#F5F7FB]">
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(76,141,255,0.14),transparent_32%),radial-gradient(circle_at_80%_30%,rgba(143,184,255,0.08),transparent_24%)]" />
 
-      {/* Agent Identity Card */}
-      <Card>
-        <CardContent className="pt-6">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-6">
-              <TrustScore score={agent.trust_score} size="lg" />
-              <div>
-                <div className="flex items-center gap-2">
-                  <h2 className="text-2xl font-bold">{agent.name}</h2>
-                  <Badge variant={agent.status === "active" ? "success" : "secondary"}>
-                    {agent.status}
-                  </Badge>
+      {/* Header */}
+      <header className="sticky top-0 z-20 border-b border-white/8 bg-[#07111F]/85 backdrop-blur">
+        <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4 lg:px-8">
+          <Link href="/" className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-[#22314D] bg-[#0D1728] shadow-[0_0_0_1px_rgba(255,255,255,0.02)]">
+              <InntrisLogo className="h-6 w-6" />
+            </div>
+            <div>
+              <div className="text-lg font-semibold tracking-tight">Inntris</div>
+              <div className="text-xs text-[#7F8CA3]">Portal</div>
+            </div>
+          </Link>
+          <nav className="flex items-center gap-3">
+            <Link
+              href="/verify"
+              className="hidden rounded-lg border border-[#22314D] bg-[#0D1728] px-4 py-2 text-sm font-medium text-[#F5F7FB] transition hover:bg-[#101C31] hover:text-white md:inline-flex"
+            >
+              Verify a Receipt
+            </Link>
+            <Link
+              href="/docs"
+              className="hidden rounded-lg border border-[#22314D] bg-[#0D1728] px-4 py-2 text-sm font-medium text-[#F5F7FB] transition hover:bg-[#101C31] hover:text-white md:inline-flex"
+            >
+              Docs
+            </Link>
+          </nav>
+        </div>
+      </header>
+
+      <main className="relative">
+        {/* Hero */}
+        <section className="mx-auto max-w-4xl px-6 pb-12 pt-16 text-center lg:px-8 lg:pt-24">
+          <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-[#22314D] bg-[#0D1728]/90 px-3 py-1.5 text-sm text-[#AAB7CC]">
+            <Bot className="h-4 w-4 text-[#8FB8FF]" />
+            Inntris Portal
+          </div>
+
+          <h1 className="text-3xl font-semibold leading-tight tracking-tight md:text-5xl">
+            Inspect agent identity, decisions, and{" "}
+            <span className="text-[#4C8DFF]">trust status</span>
+          </h1>
+
+          <p className="mx-auto mt-5 max-w-2xl text-lg leading-8 text-[#C4CFDE]">
+            View registered agents, signed activity, trust scores, and decision records
+            tied to each agent.
+          </p>
+
+          <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
+            <a
+              href="/#contact"
+              className="rounded-lg bg-[#28C281] px-6 py-3 text-sm font-medium text-white transition-opacity hover:opacity-90"
+            >
+              Request Access
+            </a>
+            <Link
+              href="/verify"
+              className="rounded-lg border border-[#22314D] bg-[#0D1728] px-6 py-3 text-sm font-medium text-[#F5F7FB] transition hover:bg-[#101C31]"
+            >
+              See Live Verification
+            </Link>
+          </div>
+        </section>
+
+        {/* Preview Panels */}
+        <section className="mx-auto max-w-7xl px-6 pb-16 lg:px-8">
+          <div className="grid gap-5 md:grid-cols-2">
+            {/* Panel 1: Agent Profile */}
+            <div className="rounded-[24px] border border-[#22314D] bg-[#0D1728] p-6">
+              <div className="mb-5 flex items-center gap-2">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-[#22314D] bg-[#101C31] text-[#8FB8FF]">
+                  <Fingerprint className="h-4 w-4" />
                 </div>
-                <p className="text-muted-foreground">{agent.organization}</p>
-                <code className="text-xs text-muted-foreground">
-                  {truncateHash(agent.id, 12, 8)}
-                </code>
+                <h3 className="text-sm font-semibold text-[#F5F7FB]">Agent Profile</h3>
+              </div>
+              <div className="space-y-3">
+                {[
+                  { label: "Agent name", value: "pr-reviewer-01" },
+                  { label: "Agent ID", value: "agt_8f3a21c4...c91e" },
+                  { label: "Key status", value: "Valid", color: "text-[#22c55e]" },
+                  { label: "Signature status", value: "Ed25519 active", color: "text-[#22c55e]" },
+                ].map((row) => (
+                  <div
+                    key={row.label}
+                    className="flex items-center justify-between rounded-xl border border-white/6 bg-[#101C31]/70 px-4 py-3"
+                  >
+                    <span className="text-xs text-[#7F8CA3]">{row.label}</span>
+                    <span className={`text-sm font-mono ${row.color ?? "text-[#AAB7CC]"}`}>
+                      {row.value}
+                    </span>
+                  </div>
+                ))}
               </div>
             </div>
-            <div className="text-right">
-              <p className="text-sm text-muted-foreground">Daily Limit</p>
-              <p className="text-2xl font-bold">{formatCurrency(agent.daily_limit_usd)}</p>
-              <p className="text-sm text-muted-foreground">
-                {formatCurrency(daily_stats.daily_remaining)} remaining
-              </p>
-            </div>
-          </div>
-          {/* Daily Usage Bar */}
-          <div className="mt-6">
-            <div className="flex items-center justify-between text-sm mb-2">
-              <span className="text-muted-foreground">Daily Usage</span>
-              <span>{dailyUsagePercent.toFixed(1)}%</span>
-            </div>
-            <div className="h-2 bg-muted rounded-full overflow-hidden">
-              <div
-                className={`h-full transition-all ${
-                  dailyUsagePercent > 80 ? "bg-red-500" : dailyUsagePercent > 50 ? "bg-yellow-500" : "bg-green-500"
-                }`}
-                style={{ width: `${Math.min(dailyUsagePercent, 100)}%` }}
-              />
-            </div>
-          </div>
-        </CardContent>
-      </Card>
 
-      {/* Stats Grid */}
-      <div className="grid gap-4 md:grid-cols-4">
-        <StatsCard
-          title="Total Actions"
-          value={agent.total_actions_count.toLocaleString()}
-          icon={Activity}
-          description="All time"
-        />
-        <StatsCard
-          title="Approved Today"
-          value={daily_stats.approved_today.toString()}
-          icon={CheckCircle}
-          description="Since midnight UTC"
-        />
-        <StatsCard
-          title="Blocked Today"
-          value={daily_stats.blocked_today.toString()}
-          icon={XCircle}
-          description="Policy violations"
-        />
-        <StatsCard
-          title="Per-Action Limit"
-          value={formatCurrency(agent.per_action_limit_usd)}
-          icon={Shield}
-          description="Max per request"
-        />
-      </div>
-
-      {/* Charts */}
-      <div className="grid gap-6 lg:grid-cols-2">
-        {/* Trust Score History */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <TrendingUp className="h-5 w-5" />
-              Trust Score History
-            </CardTitle>
-            <CardDescription>Your trust score over the past 7 days</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="h-[250px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={trust_history}>
-                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                  <XAxis dataKey="date" className="text-xs" />
-                  <YAxis domain={[0, 100]} className="text-xs" />
-                  <Tooltip
-                    contentStyle={{
-                      backgroundColor: "hsl(var(--card))",
-                      border: "1px solid hsl(var(--border))",
-                      borderRadius: "8px",
-                    }}
-                  />
-                  <Area
-                    type="monotone"
-                    dataKey="score"
-                    stroke="hsl(var(--primary))"
-                    fill="hsl(var(--primary))"
-                    fillOpacity={0.2}
-                    strokeWidth={2}
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Recent Activity */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Clock className="h-5 w-5" />
-              Recent Activity
-            </CardTitle>
-            <CardDescription>Your latest verification requests</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3 max-h-[250px] overflow-y-auto">
-              {recent_activity.length > 0 ? (
-                recent_activity.map((activity) => (
+            {/* Panel 2: Trust State */}
+            <div className="rounded-[24px] border border-[#22314D] bg-[#0D1728] p-6">
+              <div className="mb-5 flex items-center gap-2">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-[#22314D] bg-[#101C31] text-[#8FB8FF]">
+                  <Shield className="h-4 w-4" />
+                </div>
+                <h3 className="text-sm font-semibold text-[#F5F7FB]">Trust State</h3>
+              </div>
+              <div className="space-y-3">
+                <div className="flex items-center justify-between rounded-xl border border-white/6 bg-[#101C31]/70 px-4 py-3">
+                  <span className="text-xs text-[#7F8CA3]">Trust score</span>
+                  <span className="text-lg font-bold text-[#22c55e]">
+                    87<span className="text-sm text-[#7F8CA3]">/100</span>
+                  </span>
+                </div>
+                {[
+                  { label: "Policy standing", value: "Good", color: "text-[#22c55e]" },
+                  { label: "Last verified action", value: "14 min ago" },
+                ].map((row) => (
                   <div
-                    key={activity.id}
-                    className="flex items-center justify-between py-2 border-b last:border-0"
+                    key={row.label}
+                    className="flex items-center justify-between rounded-xl border border-white/6 bg-[#101C31]/70 px-4 py-3"
+                  >
+                    <span className="text-xs text-[#7F8CA3]">{row.label}</span>
+                    <span className={`text-sm font-mono ${row.color ?? "text-[#AAB7CC]"}`}>
+                      {row.value}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Panel 3: Recent Decisions */}
+            <div className="rounded-[24px] border border-[#22314D] bg-[#0D1728] p-6">
+              <div className="mb-5 flex items-center gap-2">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-[#22314D] bg-[#101C31] text-[#8FB8FF]">
+                  <Activity className="h-4 w-4" />
+                </div>
+                <h3 className="text-sm font-semibold text-[#F5F7FB]">Recent Decisions</h3>
+              </div>
+              <div className="space-y-2">
+                {[
+                  { verdict: "Permit", rule: "api_call", time: "14:32 UTC" },
+                  { verdict: "Block", rule: "data_export", time: "14:28 UTC" },
+                  { verdict: "Permit", rule: "api_call", time: "14:21 UTC" },
+                  { verdict: "Escalate", rule: "financial_transaction", time: "14:15 UTC" },
+                ].map((dec, i) => (
+                  <div
+                    key={i}
+                    className="flex items-center justify-between rounded-xl border border-white/6 bg-[#101C31]/70 px-4 py-3"
                   >
                     <div className="flex items-center gap-3">
-                      <div
-                        className={`w-2 h-2 rounded-full ${
-                          activity.verdict === "approved"
-                            ? "bg-green-500"
-                            : activity.verdict === "blocked"
-                            ? "bg-red-500"
-                            : "bg-yellow-500"
+                      {dec.verdict === "Block" ? (
+                        <XOctagon className="h-4 w-4 text-[#ef4444]" />
+                      ) : dec.verdict === "Escalate" ? (
+                        <Clock className="h-4 w-4 text-[#f59e0b]" />
+                      ) : (
+                        <CheckCircle2 className="h-4 w-4 text-[#22c55e]" />
+                      )}
+                      <span
+                        className={`text-xs font-bold ${
+                          dec.verdict === "Block"
+                            ? "text-[#ef4444]"
+                            : dec.verdict === "Escalate"
+                            ? "text-[#f59e0b]"
+                            : "text-[#22c55e]"
                         }`}
-                      />
-                      <div>
-                        <span className="inline-block text-sm font-mono bg-muted px-1.5 py-0.5 rounded">{activity.action_type}</span>
-                        <p className="text-xs text-muted-foreground">
-                          {formatRelative(activity.timestamp)}
-                        </p>
-                      </div>
+                      >
+                        {dec.verdict}
+                      </span>
                     </div>
-                    <VerdictBadge verdict={activity.verdict} showIcon={false} />
+                    <div className="flex items-center gap-4">
+                      <span className="text-xs font-mono text-[#AAB7CC]">{dec.rule}</span>
+                      <span className="text-xs text-[#7F8CA3]">{dec.time}</span>
+                    </div>
                   </div>
-                ))
-              ) : (
-                <p className="text-sm text-muted-foreground text-center py-4">
-                  No recent activity
-                </p>
-              )}
+                ))}
+              </div>
             </div>
-          </CardContent>
-        </Card>
-      </div>
 
-      {/* Limits Overview */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Current Limits</CardTitle>
-          <CardDescription>Your configured verification limits</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid gap-4 md:grid-cols-3">
-            <div className="p-4 border rounded-lg">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-sm text-muted-foreground">Daily Limit</span>
-                <Badge variant="secondary">{dailyUsagePercent.toFixed(0)}% used</Badge>
+            {/* Panel 4: Linked Workflows */}
+            <div className="rounded-[24px] border border-[#22314D] bg-[#0D1728] p-6">
+              <div className="mb-5 flex items-center gap-2">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-[#22314D] bg-[#101C31] text-[#8FB8FF]">
+                  <Link2 className="h-4 w-4" />
+                </div>
+                <h3 className="text-sm font-semibold text-[#F5F7FB]">Linked Workflows</h3>
               </div>
-              <p className="text-xl font-bold">{formatCurrency(agent.daily_limit_usd)}</p>
-              <p className="text-sm text-muted-foreground">
-                {formatCurrency(daily_stats.daily_spend)} spent today
-              </p>
-            </div>
-            <div className="p-4 border rounded-lg">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-sm text-muted-foreground">Per-Action Limit</span>
+              <div className="space-y-3">
+                {[
+                  { label: "PR verification", value: "3 checks today" },
+                  { label: "Tool execution checks", value: "12 actions" },
+                  { label: "External API calls", value: "8 verified" },
+                ].map((row) => (
+                  <div
+                    key={row.label}
+                    className="flex items-center justify-between rounded-xl border border-white/6 bg-[#101C31]/70 px-4 py-3"
+                  >
+                    <span className="text-xs text-[#7F8CA3]">{row.label}</span>
+                    <span className="text-sm font-mono text-[#AAB7CC]">{row.value}</span>
+                  </div>
+                ))}
               </div>
-              <p className="text-xl font-bold">{formatCurrency(agent.per_action_limit_usd)}</p>
-              <p className="text-sm text-muted-foreground">Maximum per request</p>
-            </div>
-            <div className="p-4 border rounded-lg">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-sm text-muted-foreground">Rate Limit</span>
-              </div>
-              <p className="text-xl font-bold">{agent.rate_limit_per_minute}/min</p>
-              <p className="text-sm text-muted-foreground">Requests per minute</p>
             </div>
           </div>
-        </CardContent>
-      </Card>
+        </section>
+
+        {/* What teams use this for */}
+        <section className="mx-auto max-w-4xl px-6 pb-16 lg:px-8">
+          <div className="rounded-[28px] border border-[#22314D] bg-[#0D1728] p-8">
+            <h2 className="mb-5 text-lg font-semibold tracking-tight text-[#F5F7FB]">
+              What teams use this for
+            </h2>
+            <div className="grid gap-4 md:grid-cols-3">
+              {[
+                {
+                  icon: Fingerprint,
+                  text: "Prove which agent acted",
+                },
+                {
+                  icon: Activity,
+                  text: "Review decision history per agent",
+                },
+                {
+                  icon: Shield,
+                  text: "Inspect identity-backed execution trails",
+                },
+              ].map((item) => {
+                const Icon = item.icon;
+                return (
+                  <div
+                    key={item.text}
+                    className="flex gap-3 rounded-2xl border border-white/6 bg-[#101C31]/70 p-4"
+                  >
+                    <Icon className="mt-0.5 h-5 w-5 flex-shrink-0 text-[#8FB8FF]" />
+                    <p className="text-sm leading-6 text-[#C4CFDE]">{item.text}</p>
+                  </div>
+                );
+              })}
+            </div>
+            <p className="mt-6 text-sm text-[#7F8CA3]">
+              Portal access is available to approved teams managing registered Inntris
+              agents.
+            </p>
+          </div>
+        </section>
+      </main>
+
+      {/* Footer */}
+      <footer className="border-t border-white/8">
+        <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-8 lg:px-8">
+          <div className="flex items-center gap-2">
+            <InntrisLogo className="h-5 w-5" />
+            <span className="text-[#7F8CA3]">Inntris Core</span>
+          </div>
+          <div className="flex items-center gap-6 text-[#7F8CA3]">
+            <Link href="/docs" className="text-sm transition-colors hover:text-white">
+              Docs
+            </Link>
+            <Link href="/verify" className="text-sm transition-colors hover:text-white">
+              Verify
+            </Link>
+          </div>
+        </div>
+      </footer>
     </div>
   );
 }
