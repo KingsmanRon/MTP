@@ -165,18 +165,18 @@ cd .
 # Install dependencies (if not already done)
 forge install OpenZeppelin/openzeppelin-contracts
 
-# Deploy to Base Sepolia (Testnet) first for testing
-forge create contracts/AnchorRegistry.sol:AnchorRegistry \
-  --rpc-url https://sepolia.publicnode.com \
-  --private-key YOUR_PRIVATE_KEY_HERE \
-  --constructor-args YOUR_DEPLOYMENT_WALLET_ADDRESS
-
-# If successful, deploy to Base Mainnet
+# Deploy to Base Mainnet (Production)
 forge create contracts/AnchorRegistry.sol:AnchorRegistry \
   --rpc-url https://base.publicnode.com \
   --private-key YOUR_PRIVATE_KEY_HERE \
   --constructor-args YOUR_DEPLOYMENT_WALLET_ADDRESS \
   --verify
+
+# Optional: Deploy to Base Sepolia (Testnet) for testing
+# forge create contracts/AnchorRegistry.sol:AnchorRegistry \
+#   --rpc-url https://sepolia.publicnode.com \
+#   --private-key YOUR_PRIVATE_KEY_HERE \
+#   --constructor-args YOUR_DEPLOYMENT_WALLET_ADDRESS
 
 # SAVE THE CONTRACT ADDRESS! Format: 0x...
 ```
@@ -197,7 +197,7 @@ forge create contracts/AnchorRegistry.sol:AnchorRegistry \
 ```bash
 # Your API will need SUBMITTER_ROLE to anchor batches
 # Get the role hash
-SUBMITTER_ROLE=$(cast call YOUR_CONTRACT_ADDRESS "SUBMITTER_ROLE()(bytes32)" --rpc-url https://sepolia.publicnode.com)
+SUBMITTER_ROLE=$(cast call YOUR_CONTRACT_ADDRESS "SUBMITTER_ROLE()(bytes32)" --rpc-url https://base.publicnode.com)
 
 # Grant role to your deployment wallet (it will submit batches)
 cast send YOUR_CONTRACT_ADDRESS \
@@ -205,7 +205,7 @@ cast send YOUR_CONTRACT_ADDRESS \
   $SUBMITTER_ROLE \
   YOUR_DEPLOYMENT_WALLET_ADDRESS \
   --private-key YOUR_PRIVATE_KEY \
-  --rpc-url https://sepolia.publicnode.com
+  --rpc-url https://base.publicnode.com
 ```
 
 ---
@@ -256,12 +256,12 @@ REDIS_URL=${{Redis.REDIS_URL}}  # Railway auto-fills this
 # ============================================================================
 # BLOCKCHAIN CONFIGURATION (from Step 3)
 # ============================================================================
-BLOCKCHAIN_PROVIDER_URL=https://sepolia.publicnode.com  # or base.publicnode.com
+BLOCKCHAIN_PROVIDER_URL=https://base.publicnode.com  # Base Mainnet (use sepolia.publicnode.com for testnet)
 BLOCKCHAIN_PRIVATE_KEY=[from Step 3.2]
 ANCHOR_CONTRACT_ADDRESS=[from Step 3.4]
 ANCHOR_BATCH_SIZE=1000
 ANCHOR_INTERVAL_MINUTES=60
-BLOCKCHAIN_CHAIN_ID=84532  # Base Sepolia (use 8453 for mainnet)
+BLOCKCHAIN_CHAIN_ID=8453  # Base Mainnet (use 84532 for Sepolia testnet)
 
 # ============================================================================
 # API SECURITY (from Step 1)

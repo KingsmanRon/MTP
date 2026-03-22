@@ -141,9 +141,9 @@ export function VerifyRecordView({ record }: { record: PublicVerificationRecord 
 
   const isPass = record.verdict === "approved";
   const baseScanDomain =
-    record.chain_id === 84532
-      ? "https://sepolia.basescan.org"
-      : "https://basescan.org";
+    record.chain_id === 8453
+      ? "https://basescan.org"
+      : "https://sepolia.basescan.org";
   const baseScanUrl = record.tx_hash
     ? `${baseScanDomain}/tx/${record.tx_hash}`
     : null;

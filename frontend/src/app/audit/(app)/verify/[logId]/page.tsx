@@ -21,9 +21,9 @@ import { useAuditLog, useMerkleProof } from "@/lib/hooks";
 import { formatDateTime } from "@/lib/utils";
 
 function getBlockExplorerUrl(chainId?: number) {
-  return chainId === 84532
-    ? "https://sepolia.basescan.org"
-    : "https://basescan.org";
+  return chainId === 8453
+    ? "https://basescan.org"
+    : "https://sepolia.basescan.org";
 }
 
 export default function VerificationPage() {
