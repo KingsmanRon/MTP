@@ -1,7 +1,7 @@
 Licensor: Inntris INC
 Licensed Work: Inntris Core
 Change Date: March 18, 2030
-Change License: [confirm with counsel if Apache 2.0 is acceptable under BSL 1.1]
+Change License: Apache 2.0
 
 Additional Use Grant:
 
