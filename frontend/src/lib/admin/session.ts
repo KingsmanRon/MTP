@@ -8,20 +8,41 @@ import * as crypto from "crypto";
 // ---------------------------------------------------------------------------
 
 const COOKIE_NAME = "inntris_admin_session";
-const COOKIE_MAX_AGE = 60 * 60 * 8; // 8 hours
+const SESSION_TTL = 3600; // 1 hour sliding window
+const MAX_SESSION_AGE = 7200; // 2 hours absolute ceiling
 
-// The encryption secret must be at least 32 bytes. In production this should
-// come from an environment variable. We derive a stable 32-byte key from
-// whatever is provided (or a fallback for local dev).
+// ---------------------------------------------------------------------------
+// Startup validation — ensure the encryption secret is strong enough.
+// In production, ADMIN_SESSION_SECRET must be set to a base64-encoded value
+// of at least 32 bytes. In development, a fallback is used.
+// ---------------------------------------------------------------------------
+
 function getEncryptionKey(): Buffer {
-  const secret =
-    process.env.ADMIN_SESSION_SECRET || "inntris-dev-session-secret-change-me";
-  return crypto.createHash("sha256").update(secret).digest();
+  const secret = process.env.ADMIN_SESSION_SECRET;
+  if (process.env.NODE_ENV === "production") {
+    if (!secret || Buffer.from(secret, "base64").length < 32) {
+      throw new Error(
+        "ADMIN_SESSION_SECRET must be at least 32 bytes. Generate with: openssl rand -base64 32"
+      );
+    }
+  }
+  const raw = secret || "inntris-dev-session-secret-change-me";
+  return crypto.createHash("sha256").update(raw).digest();
 }
 
-function encrypt(plaintext: string): string {
+// ---------------------------------------------------------------------------
+// Session payload — includes createdAt for absolute ceiling enforcement.
+// ---------------------------------------------------------------------------
+
+interface SessionPayload {
+  apiKey: string;
+  createdAt: number; // ms since epoch
+}
+
+function encrypt(payload: SessionPayload): string {
   const key = getEncryptionKey();
   const iv = crypto.randomBytes(12);
+  const plaintext = JSON.stringify(payload);
   const cipher = crypto.createCipheriv("aes-256-gcm", key, iv);
   const encrypted = Buffer.concat([
     cipher.update(plaintext, "utf8"),
@@ -33,7 +54,7 @@ function encrypt(plaintext: string): string {
   return combined.toString("base64url");
 }
 
-function decrypt(token: string): string | null {
+function decrypt(token: string): SessionPayload | null {
   try {
     const key = getEncryptionKey();
     const combined = Buffer.from(token, "base64url");
@@ -46,10 +67,29 @@ function decrypt(token: string): string | null {
       decipher.update(ciphertext),
       decipher.final(),
     ]);
-    return decrypted.toString("utf8");
+    const parsed = JSON.parse(decrypted.toString("utf8"));
+    if (
+      typeof parsed === "object" &&
+      parsed !== null &&
+      typeof parsed.apiKey === "string" &&
+      typeof parsed.createdAt === "number"
+    ) {
+      return parsed as SessionPayload;
+    }
+    return null;
   } catch {
     return null;
   }
+}
+
+function cookieOptions(maxAge: number) {
+  return {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "strict" as const,
+    path: "/",
+    maxAge,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -58,35 +98,52 @@ function decrypt(token: string): string | null {
 
 /** Create a session cookie containing the encrypted admin API key. */
 export async function createSession(apiKey: string): Promise<void> {
-  const token = encrypt(apiKey);
+  const payload: SessionPayload = {
+    apiKey,
+    createdAt: Date.now(),
+  };
+  const token = encrypt(payload);
   const jar = await cookies();
-  jar.set(COOKIE_NAME, token, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    path: "/",
-    maxAge: COOKIE_MAX_AGE,
-  });
+  jar.set(COOKIE_NAME, token, cookieOptions(SESSION_TTL));
 }
 
-/** Read the admin API key from the session cookie. Returns null if absent or tampered. */
+/**
+ * Read the admin API key from the session cookie.
+ * Returns null if absent, tampered, or past the absolute ceiling.
+ * Performs sliding-window TTL extension capped by MAX_SESSION_AGE.
+ */
 export async function getSessionApiKey(): Promise<string | null> {
   const jar = await cookies();
   const cookie = jar.get(COOKIE_NAME);
   if (!cookie?.value) return null;
-  return decrypt(cookie.value);
+
+  const payload = decrypt(cookie.value);
+  if (!payload) return null;
+
+  // Enforce absolute ceiling
+  const ageSeconds = (Date.now() - payload.createdAt) / 1000;
+  if (ageSeconds > MAX_SESSION_AGE) {
+    // Session expired — clear the cookie
+    jar.set(COOKIE_NAME, "", cookieOptions(0));
+    return null;
+  }
+
+  // Sliding window extension — recalculate remaining headroom
+  const remainingCeiling = MAX_SESSION_AGE - ageSeconds;
+  const newTtl = Math.min(SESSION_TTL, Math.floor(remainingCeiling));
+  if (newTtl > 0) {
+    // Re-encrypt with same payload to extend sliding window
+    const token = encrypt(payload);
+    jar.set(COOKIE_NAME, token, cookieOptions(newTtl));
+  }
+
+  return payload.apiKey;
 }
 
 /** Destroy the session cookie. */
 export async function destroySession(): Promise<void> {
   const jar = await cookies();
-  jar.set(COOKIE_NAME, "", {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    path: "/",
-    maxAge: 0,
-  });
+  jar.set(COOKIE_NAME, "", cookieOptions(0));
 }
 
 /** Check if a valid session exists (without returning the key). */

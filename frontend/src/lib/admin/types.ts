@@ -133,3 +133,36 @@ export interface MappedOrganization {
   contact_email?: string;
   created_at?: string;
 }
+
+export interface MappedAuditDetail {
+  id: string;
+  agent_id?: string;
+  agent_name?: string;
+  timestamp?: string;
+  action_type?: string;
+  action_hash?: string;
+  payload?: Record<string, unknown> | null;
+  verdict?: ActionVerdict;
+  verdict_reason?: string | null;
+  signature_valid?: boolean;
+  trust_score_at_time?: number;
+  policy_rule_triggered?: string | null;
+  risk_level?: string | null;
+  violations?: string[];
+  merkle_root_id?: string | null;
+  merkle_leaf_index?: number | null;
+  response_time_ms?: number | null;
+}
+
+export interface MappedAuditProof {
+  leaf?: string | null;
+  proof?: string[];
+  positions?: boolean[];
+  merkle_root?: string | null;
+  tx_hash?: string | null;
+  block_number?: number | null;
+  anchored_at?: string | null;
+  chain_id?: number | null;
+  basescan_url?: string | null;
+  signature_valid?: boolean | null;
+}

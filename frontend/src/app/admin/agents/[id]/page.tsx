@@ -262,9 +262,9 @@ function AgentDetailContent({ id }: { id: string }) {
                   )}
                 </div>
               ) : (
-                <AdminEmptyState
-                  icon={FileText}
-                  message="Policy details are not exposed by the current admin API contract."
+                <AdminErrorState
+                  message="No policy configured for this agent"
+                  detail="Without a policy, verdicts cannot be attributed to a rule. Assign a policy before relying on audit records for compliance purposes."
                 />
               )}
             </CardContent>

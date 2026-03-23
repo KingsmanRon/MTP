@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   Table,
   TableHeader,
@@ -22,6 +23,8 @@ export function AuditTable({
   logs: MappedAuditLog[];
   showAgentName?: boolean;
 }) {
+  const router = useRouter();
+
   if (logs.length === 0) {
     return (
       <AdminEmptyState
@@ -35,6 +38,7 @@ export function AuditTable({
     <Table>
       <TableHeader>
         <TableRow className="border-[#22314D] hover:bg-transparent">
+          <TableHead className="text-[#7F8CA3]">Audit ID</TableHead>
           <TableHead className="text-[#7F8CA3]">Time</TableHead>
           {showAgentName && (
             <TableHead className="text-[#7F8CA3]">Agent</TableHead>
@@ -47,7 +51,27 @@ export function AuditTable({
       </TableHeader>
       <TableBody>
         {logs.map((log) => (
-          <TableRow key={log.id} className="border-[#22314D]">
+          <TableRow
+            key={log.id}
+            className="cursor-pointer border-[#22314D]"
+            tabIndex={0}
+            onClick={() => router.push(`/admin/audit/${log.id}`)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                router.push(`/admin/audit/${log.id}`);
+              }
+            }}
+          >
+            <TableCell>
+              <Link
+                href={`/admin/audit/${log.id}`}
+                className="font-mono text-xs text-[#8FB8FF] hover:underline"
+                onClick={(e) => e.stopPropagation()}
+              >
+                {log.id.slice(0, 8)}...
+              </Link>
+            </TableCell>
             <TableCell className="font-mono text-xs text-[#AAB7CC]">
               {log.timestamp ? formatDateTime(log.timestamp) : "—"}
             </TableCell>
@@ -57,6 +81,7 @@ export function AuditTable({
                   <Link
                     href={`/admin/agents/${log.agent_id}`}
                     className="text-sm text-[#8FB8FF] hover:underline"
+                    onClick={(e) => e.stopPropagation()}
                   >
                     {log.agent_name || log.agent_id.slice(0, 8)}
                   </Link>
@@ -93,6 +118,7 @@ export function AuditTable({
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex items-center gap-1 text-xs text-[#8FB8FF] hover:underline"
+                onClick={(e) => e.stopPropagation()}
               >
                 View
                 <ExternalLink className="h-3 w-3" />

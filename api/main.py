@@ -51,6 +51,14 @@ from api.crypto import (
     SignatureVerificationError,
 )
 from api.policy import PolicyEngine, TrustScorer
+from api.schemas.admin import (
+    OrganizationResponse,
+    AgentSummary,
+    AgentDetail,
+    AuditSearchResponse,
+    AuditLogDetail,
+    AuditProof,
+)
 
 # Configure logging
 logging.basicConfig(
@@ -767,7 +775,7 @@ async def test_verify_action(
 # ADMIN ENDPOINTS - AGENTS
 # =============================================================================
 
-@app.get("/admin/agents", tags=["Admin - Agents"])
+@app.get("/admin/agents", tags=["Admin - Agents"], response_model=list[AgentSummary])
 async def list_agents(
     auth: dict = Depends(verify_api_key),
     database: Database = Depends(get_db),
@@ -815,7 +823,7 @@ async def list_agents(
 
     return agents
 
-@app.get("/admin/agents/{agent_id}", tags=["Admin - Agents"])
+@app.get("/admin/agents/{agent_id}", tags=["Admin - Agents"], response_model=AgentDetail)
 async def get_agent(
     agent_id: UUID,
     auth: dict = Depends(verify_api_key),
@@ -1096,7 +1104,7 @@ async def update_agent_status(
 # ADMIN ENDPOINTS - AUDIT LOGS
 # =============================================================================
 
-@app.get("/admin/audit/search", tags=["Admin - Audit"])
+@app.get("/admin/audit/search", tags=["Admin - Audit"], response_model=AuditSearchResponse)
 async def search_audit_logs(
     agent_id: Optional[UUID] = None,
     action_type: Optional[str] = None,
@@ -1191,9 +1199,9 @@ async def search_audit_logs(
             "merkle_leaf_index": row["merkle_leaf_index"],
         })
 
-    return {"logs": logs, "total": total}
+    return {"logs": logs, "total": total, "limit": limit, "offset": offset}
 
-@app.get("/admin/audit/{log_id}", tags=["Admin - Audit"])
+@app.get("/admin/audit/{log_id}", tags=["Admin - Audit"], response_model=AuditLogDetail)
 async def get_audit_log(
     log_id: UUID,
     auth: dict = Depends(verify_api_key),
@@ -1238,7 +1246,7 @@ async def get_audit_log(
         "merkle_leaf_index": row["merkle_leaf_index"],
     }
 
-@app.get("/admin/audit/{log_id}/proof", tags=["Admin - Audit"])
+@app.get("/admin/audit/{log_id}/proof", tags=["Admin - Audit"], response_model=AuditProof)
 async def get_merkle_proof(
     log_id: UUID,
     auth: dict = Depends(verify_api_key),
@@ -1763,7 +1771,7 @@ async def get_usage_metrics(
         "daily_breakdown": daily_breakdown,
     }
 
-@app.get("/admin/organization", tags=["Admin - Organization"])
+@app.get("/admin/organization", tags=["Admin - Organization"], response_model=OrganizationResponse)
 async def get_organization(
     auth: dict = Depends(verify_api_key),
     database: Database = Depends(get_db),

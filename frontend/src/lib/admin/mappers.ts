@@ -8,6 +8,8 @@ import type {
   MappedAgent,
   MappedAuditLog,
   MappedAuditSearchResult,
+  MappedAuditDetail,
+  MappedAuditProof,
   MappedOrganization,
   AgentStatus,
   ActionVerdict,
@@ -145,6 +147,60 @@ export function mapAuditSearchResult(raw: unknown): MappedAuditSearchResult {
     : [];
   const total = typeof raw.total === "number" ? raw.total : logs.length;
   return { logs, total };
+}
+
+// ---------------------------------------------------------------------------
+// Organization mapper
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Audit detail mapper
+// ---------------------------------------------------------------------------
+
+export function mapAuditDetail(raw: unknown): MappedAuditDetail | null {
+  if (!isRecord(raw)) return null;
+  const id = str(raw.id);
+  if (!id) return null;
+  return {
+    id,
+    agent_id: str(raw.agent_id),
+    agent_name: str(raw.agent_name),
+    timestamp: str(raw.timestamp),
+    action_type: str(raw.action_type),
+    action_hash: str(raw.action_hash),
+    payload: isRecord(raw.payload) ? raw.payload : null,
+    verdict: verdict(raw.verdict),
+    verdict_reason: strOrNull(raw.verdict_reason),
+    signature_valid: bool(raw.signature_valid),
+    trust_score_at_time: num(raw.trust_score_at_time),
+    policy_rule_triggered: strOrNull(raw.policy_rule_triggered),
+    risk_level: strOrNull(raw.risk_level),
+    violations: strArr(raw.violations),
+    merkle_root_id: strOrNull(raw.merkle_root_id),
+    merkle_leaf_index: numOrNull(raw.merkle_leaf_index) as number | null | undefined,
+    response_time_ms: numOrNull(raw.response_time_ms),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Audit proof mapper
+// ---------------------------------------------------------------------------
+
+export function mapAuditProof(raw: unknown): MappedAuditProof {
+  if (!isRecord(raw)) return {};
+  return {
+    leaf: strOrNull(raw.leaf),
+    proof: strArr(raw.proof),
+    positions: Array.isArray(raw.positions) && raw.positions.every((x: unknown) => typeof x === "boolean")
+      ? raw.positions
+      : undefined,
+    merkle_root: strOrNull(raw.merkle_root),
+    tx_hash: strOrNull(raw.tx_hash),
+    block_number: numOrNull(raw.block_number) as number | null | undefined,
+    anchored_at: strOrNull(raw.anchored_at),
+    chain_id: numOrNull(raw.chain_id) as number | null | undefined,
+    basescan_url: strOrNull(raw.basescan_url),
+  };
 }
 
 // ---------------------------------------------------------------------------
