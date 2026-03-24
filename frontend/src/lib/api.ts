@@ -186,6 +186,7 @@ export interface PublicVerificationRecord {
   trust_score: number;
   risk_level: string | null;
   violations: string[];
+  policy_hash: string | null;
   action_hash: string;
   signature_valid: boolean;
   merkle_root: string | null;
@@ -193,6 +194,9 @@ export interface PublicVerificationRecord {
   block_number: number | null;
   chain_id: number;
   anchored_at: string | null;
+  schema_version: string;
+  receipt_fingerprint: string;
+  integrity_status: string;
 }
 
 export interface VerificationResult {

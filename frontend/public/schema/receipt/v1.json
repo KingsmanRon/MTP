@@ -1,0 +1,123 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "/schema/receipt/v1.json",
+  "title": "Inntris Verification Receipt v1",
+  "description": "Public, read-only verification receipt for an AI agent action. Schema version v1.",
+  "type": "object",
+  "required": [
+    "audit_id",
+    "timestamp",
+    "verdict",
+    "action_type",
+    "agent_id",
+    "action_hash",
+    "schema_version",
+    "receipt_fingerprint"
+  ],
+  "properties": {
+    "audit_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Unique identifier for the audit log entry"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 timestamp of the verification"
+    },
+    "verdict": {
+      "type": "string",
+      "enum": ["approved", "blocked", "rate_limited", "signature_invalid"],
+      "description": "Verification verdict"
+    },
+    "verdict_reason": {
+      "type": ["string", "null"],
+      "description": "Human-readable reason for the verdict"
+    },
+    "action_type": {
+      "type": "string",
+      "description": "Type of action that was verified"
+    },
+    "agent_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Unique identifier of the agent"
+    },
+    "agent_name": {
+      "type": "string",
+      "description": "Display name of the agent"
+    },
+    "organization_name": {
+      "type": "string",
+      "description": "Name of the parent organization"
+    },
+    "trust_score": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100,
+      "description": "Agent trust score at time of verification"
+    },
+    "risk_level": {
+      "type": ["string", "null"],
+      "description": "Risk level extracted from payload"
+    },
+    "violations": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Policy violations detected, if any"
+    },
+    "policy_hash": {
+      "type": ["string", "null"],
+      "pattern": "^[a-f0-9]{64}$",
+      "description": "SHA-256 hash of .inntris.yml policy file at verification time"
+    },
+    "action_hash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$",
+      "description": "SHA-256 hash of the action payload"
+    },
+    "signature_valid": {
+      "type": "boolean",
+      "description": "Whether the Ed25519 signature was valid"
+    },
+    "merkle_root": {
+      "type": ["string", "null"],
+      "description": "Merkle root hash for the anchoring batch"
+    },
+    "tx_hash": {
+      "type": ["string", "null"],
+      "pattern": "^0x[a-fA-F0-9]{64}$",
+      "description": "Base L2 transaction hash for on-chain anchoring"
+    },
+    "block_number": {
+      "type": ["integer", "null"],
+      "description": "Block number on Base L2"
+    },
+    "chain_id": {
+      "type": "integer",
+      "default": 8453,
+      "description": "Chain ID (8453 for Base L2, 84532 for Base Sepolia)"
+    },
+    "anchored_at": {
+      "type": ["string", "null"],
+      "format": "date-time",
+      "description": "Timestamp when the proof was anchored on-chain"
+    },
+    "schema_version": {
+      "type": "string",
+      "const": "v1",
+      "description": "Schema version identifier"
+    },
+    "receipt_fingerprint": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$",
+      "description": "SHA-256 of canonical JSON of core receipt fields for integrity verification"
+    },
+    "integrity_status": {
+      "type": "string",
+      "enum": ["verified", "failed"],
+      "description": "Server-side integrity verification status"
+    }
+  },
+  "additionalProperties": false
+}

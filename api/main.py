@@ -25,7 +25,7 @@ from uuid import UUID, uuid4
 import redis.asyncio as redis
 from fastapi import FastAPI, Depends, HTTPException, Request, status, Header, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, JSONResponse
 import io
 import csv
 
@@ -51,6 +51,14 @@ from api.crypto import (
     SignatureVerificationError,
 )
 from api.policy import PolicyEngine, TrustScorer
+from api.schemas.admin import (
+    OrganizationResponse,
+    AgentSummary,
+    AgentDetail,
+    AuditSearchResponse,
+    AuditLogDetail,
+    AuditProof,
+)
 
 # Configure logging
 logging.basicConfig(
@@ -254,6 +262,54 @@ async def health_check(
     )
 
 # =============================================================================
+# SCHEMA ENDPOINTS
+# =============================================================================
+
+RECEIPT_SCHEMA_V1 = {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "/schema/receipt/v1.json",
+    "title": "Inntris Verification Receipt v1",
+    "description": "Public, read-only verification receipt for an AI agent action. Schema version v1.",
+    "type": "object",
+    "required": [
+        "audit_id", "timestamp", "verdict", "action_type",
+        "agent_id", "action_hash", "schema_version", "receipt_fingerprint",
+    ],
+    "properties": {
+        "audit_id": {"type": "string", "format": "uuid"},
+        "timestamp": {"type": "string", "format": "date-time"},
+        "verdict": {"type": "string", "enum": ["approved", "blocked", "rate_limited", "signature_invalid"]},
+        "verdict_reason": {"type": ["string", "null"]},
+        "action_type": {"type": "string"},
+        "agent_id": {"type": "string", "format": "uuid"},
+        "agent_name": {"type": "string"},
+        "organization_name": {"type": "string"},
+        "trust_score": {"type": "integer", "minimum": 0, "maximum": 100},
+        "risk_level": {"type": ["string", "null"]},
+        "violations": {"type": "array", "items": {"type": "string"}},
+        "policy_hash": {"type": ["string", "null"], "pattern": "^[a-f0-9]{64}$"},
+        "action_hash": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "signature_valid": {"type": "boolean"},
+        "merkle_root": {"type": ["string", "null"]},
+        "tx_hash": {"type": ["string", "null"], "pattern": "^0x[a-fA-F0-9]{64}$"},
+        "block_number": {"type": ["integer", "null"]},
+        "chain_id": {"type": "integer", "default": 8453},
+        "anchored_at": {"type": ["string", "null"], "format": "date-time"},
+        "schema_version": {"type": "string", "const": "v1"},
+        "receipt_fingerprint": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "integrity_status": {"type": "string", "enum": ["verified", "failed"]},
+    },
+    "additionalProperties": False,
+}
+
+
+@app.get("/schema/receipt/v1.json", tags=["Schema"])
+async def get_receipt_schema_v1():
+    """Return the canonical JSON Schema for receipt v1."""
+    return JSONResponse(content=RECEIPT_SCHEMA_V1)
+
+
+# =============================================================================
 # PUBLIC ENDPOINTS (No Auth Required)
 # =============================================================================
 
@@ -370,6 +426,19 @@ async def get_public_verification_record(
         elif row["verdict"] != "approved":
             violations = [reason]
 
+    # ── DO NOT MODIFY FIELD SET OR ORDER — MUST MATCH FRONTEND EXACTLY ──
+    fingerprint_payload = {
+        "action_hash": row["action_hash"],
+        "action_type": row["action_type"],
+        "agent_id": str(row["agent_id"]),
+        "audit_id": str(row["id"]),
+        "policy_hash": row.get("policy_hash"),
+        "timestamp": row["timestamp"].isoformat(),
+        "verdict": row["verdict"],
+    }
+    canonical = json.dumps(fingerprint_payload, sort_keys=True, separators=(",", ":"))
+    receipt_fingerprint = hashlib.sha256(canonical.encode()).hexdigest()
+
     return PublicVerificationRecord(
         audit_id=row["id"],
         timestamp=row["timestamp"],
@@ -382,6 +451,7 @@ async def get_public_verification_record(
         trust_score=row["trust_score_at_time"],
         risk_level=risk_level,
         violations=violations,
+        policy_hash=row.get("policy_hash"),
         action_hash=row["action_hash"],
         signature_valid=row["signature_valid"],
         merkle_root=row.get("merkle_root"),
@@ -389,6 +459,9 @@ async def get_public_verification_record(
         block_number=row.get("block_number"),
         chain_id=row.get("chain_id") or 8453,
         anchored_at=row.get("anchored_at"),
+        schema_version="v1",
+        receipt_fingerprint=receipt_fingerprint,
+        integrity_status="verified",
     )
 
 
@@ -469,6 +542,7 @@ async def verify_action(
                 response_time_ms=int((time.time() - start_time) * 1000),
                 trust_score_at_time=agent.trust_score,
                 chain_previous_hash=await database.get_last_audit_hash(agent.id),
+                policy_hash=request_data.policy_hash,
                 metadata={},
             )
             audit_id = await database.insert_audit_log(audit_entry)
@@ -564,6 +638,7 @@ async def verify_action(
                 response_time_ms=int((time.time() - start_time) * 1000),
                 trust_score_at_time=agent.trust_score,
                 chain_previous_hash=await database.get_last_audit_hash(agent.id),
+                policy_hash=request_data.policy_hash,
                 metadata={"violation": policy_result.violation.value if policy_result.violation else None},
             )
             audit_id = await database.insert_audit_log(audit_entry)
@@ -602,6 +677,7 @@ async def verify_action(
             response_time_ms=int((time.time() - start_time) * 1000),
             trust_score_at_time=agent.trust_score,
             chain_previous_hash=await database.get_last_audit_hash(agent.id),
+            policy_hash=request_data.policy_hash,
             metadata={},
         )
         audit_id = await database.insert_audit_log(audit_entry)
@@ -767,7 +843,7 @@ async def test_verify_action(
 # ADMIN ENDPOINTS - AGENTS
 # =============================================================================
 
-@app.get("/admin/agents", tags=["Admin - Agents"])
+@app.get("/admin/agents", tags=["Admin - Agents"], response_model=list[AgentSummary])
 async def list_agents(
     auth: dict = Depends(verify_api_key),
     database: Database = Depends(get_db),
@@ -815,7 +891,7 @@ async def list_agents(
 
     return agents
 
-@app.get("/admin/agents/{agent_id}", tags=["Admin - Agents"])
+@app.get("/admin/agents/{agent_id}", tags=["Admin - Agents"], response_model=AgentDetail)
 async def get_agent(
     agent_id: UUID,
     auth: dict = Depends(verify_api_key),
@@ -1096,7 +1172,7 @@ async def update_agent_status(
 # ADMIN ENDPOINTS - AUDIT LOGS
 # =============================================================================
 
-@app.get("/admin/audit/search", tags=["Admin - Audit"])
+@app.get("/admin/audit/search", tags=["Admin - Audit"], response_model=AuditSearchResponse)
 async def search_audit_logs(
     agent_id: Optional[UUID] = None,
     action_type: Optional[str] = None,
@@ -1191,9 +1267,9 @@ async def search_audit_logs(
             "merkle_leaf_index": row["merkle_leaf_index"],
         })
 
-    return {"logs": logs, "total": total}
+    return {"logs": logs, "total": total, "limit": limit, "offset": offset}
 
-@app.get("/admin/audit/{log_id}", tags=["Admin - Audit"])
+@app.get("/admin/audit/{log_id}", tags=["Admin - Audit"], response_model=AuditLogDetail)
 async def get_audit_log(
     log_id: UUID,
     auth: dict = Depends(verify_api_key),
@@ -1238,7 +1314,7 @@ async def get_audit_log(
         "merkle_leaf_index": row["merkle_leaf_index"],
     }
 
-@app.get("/admin/audit/{log_id}/proof", tags=["Admin - Audit"])
+@app.get("/admin/audit/{log_id}/proof", tags=["Admin - Audit"], response_model=AuditProof)
 async def get_merkle_proof(
     log_id: UUID,
     auth: dict = Depends(verify_api_key),
@@ -1763,7 +1839,7 @@ async def get_usage_metrics(
         "daily_breakdown": daily_breakdown,
     }
 
-@app.get("/admin/organization", tags=["Admin - Organization"])
+@app.get("/admin/organization", tags=["Admin - Organization"], response_model=OrganizationResponse)
 async def get_organization(
     auth: dict = Depends(verify_api_key),
     database: Database = Depends(get_db),

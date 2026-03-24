@@ -1,25 +1,11 @@
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Inntris Console — Control agent policy before execution",
-  description:
-    "Define enforcement rules, manage trust thresholds, and control how agent actions are evaluated before they run.",
-  openGraph: {
-    title: "Inntris Console — Control agent policy before execution",
-    description:
-      "Define enforcement rules, manage trust thresholds, and control how agent actions are evaluated before they run.",
-    type: "website",
-    siteName: "Inntris",
-  },
-  twitter: {
-    card: "summary",
-    title: "Inntris Console — Control agent policy before execution",
-    description:
-      "Define enforcement rules, manage trust thresholds, and control how agent actions are evaluated before they run.",
-  },
-  robots: { index: true, follow: true },
+  title: "Inntris Admin",
+  description: "Inntris administration console — manage agents, review audit records, and monitor operations.",
+  robots: { index: false, follow: false },
 };
 
-export default function AdminLayout({ children }: { children: React.ReactNode }) {
+export default function AdminRootLayout({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
