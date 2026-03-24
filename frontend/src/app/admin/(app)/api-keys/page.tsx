@@ -203,7 +203,7 @@ export default function APIKeysPage() {
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="text-destructive"
+                          className=text-destructive"
                           onClick={() => handleRevokeKey(key.key_prefix)}
                           disabled={revokeApiKey.isPending}
                         >
