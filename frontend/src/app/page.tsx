@@ -116,7 +116,7 @@ export default async function InntrisCoreDarkPreview() {
               {[
                 "Cryptographic identity — Ed25519 signatures bind every action to its agent",
                 "Policy before execution — rate limits, spend caps, and allowlists enforced before the action runs",
-                "Tamper-evident audit — append-only logs anchored on Base L2 with receipt integrity you can verify yourself",
+                "Tamper-evident audit — only logs anchored on Base L2 with receipt integrity you can verify yourself",
               ].map((item) => (
                 <li
                   key={item}
