@@ -266,7 +266,9 @@ export default function APIKeysPage() {
           <DialogHeader>
             <DialogTitle>API Key Created</DialogTitle>
             <DialogDescription>
-              Copy your API key now. You won't be able to see it again!
+              <p className="text-destructive">
+               {"Copy your API key now. You won't be able to see it again!"}
+              </p>
             </DialogDescription>
           </DialogHeader>
           <div className="py-4">
