@@ -1,6 +1,6 @@
 # Inntris Core
 
-> **Cryptographic verification and policy enforcement for AI agent actions.**
+> **Cryptographic verification and policy enforcement for AI agent actions.** 
 
 Inntris is a runtime verification and cryptographic audit layer for AI agents. It verifies agent actions before execution, signs decisions with agent identity, and produces a tamper-evident receipt for every decision.
 
