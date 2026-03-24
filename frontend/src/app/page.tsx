@@ -213,43 +213,46 @@ export default async function InntrisCoreDarkPreview() {
               One control plane. Four modules.
             </h2>
           </div>
-          <div className="grid gap-5 md:grid-cols-2">
-            {[
-              { label: "Operate", items: modules.slice(0, 2) },
-              { label: "Prove", items: modules.slice(2, 4) },
-            ].map((group) => (
-              <div key={group.label}>
-                <div className="mb-2">
-                  <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#4A6FA5]">
-                    {group.label}
-                  </span>
-                </div>
-                <div className="grid gap-5 md:grid-cols-2">
-                  {group.items.map((item) => {
-                    const Icon = item.icon;
-                    return (
-                      <Card
-                        key={item.title}
-                        className="group h-full rounded-[24px] border-[#22314D] bg-[#0D1728] shadow-none transition duration-200 hover:-translate-y-1 hover:border-[#35507A] hover:bg-[#101C31]"
-                      >
-                        <CardContent className="flex h-full flex-col p-6">
-                          <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-2xl border border-[#22314D] bg-[#101C31] text-[#8FB8FF]">
-                            <Icon className="h-6 w-6" />
-                          </div>
-                          <h3 className="text-xl font-semibold tracking-tight text-[#F5F7FB]">{item.title}</h3>
-                          <p className="mt-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-[#6AA2FF]">{item.role}</p>
-                          <p className="mt-3 min-h-[72px] text-[14px] leading-7 text-[#C4CFDE]">{item.body}</p>
-                          <Link href={item.href} className="mt-auto inline-flex items-center gap-2 pt-5 text-sm font-medium text-[#8FB8FF] transition group-hover:text-white">
-                            {item.cta}
-                            <ChevronRight className="h-4 w-4" />
-                          </Link>
-                        </CardContent>
-                      </Card>
-                    );
-                  })}
-                </div>
-              </div>
-            ))}
+          <div className="grid grid-cols-2 gap-x-5 md:grid-cols-4">
+            <div className="col-span-2 mb-2">
+              <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#4A6FA5]">
+                Operate
+              </span>
+            </div>
+            <div className="col-span-2 mb-2">
+              <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#4A6FA5]">
+                Prove
+              </span>
+            </div>
+            {modules.map((item) => {
+              const Icon = item.icon;
+              return (
+                <Card
+                  key={item.title}
+                  className="group rounded-[24px] border-[#22314D] bg-[#0D1728] shadow-none transition duration-200 hover:-translate-y-1 hover:border-[#35507A] hover:bg-[#101C31] mb-5"
+                >
+                  <CardContent className="flex h-full flex-col p-6">
+                    <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-2xl border border-[#22314D] bg-[#101C31] text-[#8FB8FF]">
+                      <Icon className="h-6 w-6" />
+                    </div>
+                    <h3 className="text-xl font-semibold tracking-tight text-[#F5F7FB]">{item.title}</h3>
+                    <p className="mt-1.5 min-h-[32px] text-[11px] font-semibold uppercase tracking-[0.16em] text-[#6AA2FF]">{item.role}</p>
+                    <p className="mt-3 flex-1 min-h-[84px] text-[14px] leading-7 text-[#C4CFDE]">{item.body}</p>
+                    {item.href.startsWith("http") ? (
+                      <a href={item.href} target="_blank" rel="noopener noreferrer" className="mt-auto inline-flex items-center gap-2 pt-5 text-sm font-medium text-[#8FB8FF] transition group-hover:text-white">
+                        {item.cta}
+                        <ChevronRight className="h-4 w-4" />
+                      </a>
+                    ) : (
+                      <Link href={item.href} className="mt-auto inline-flex items-center gap-2 pt-5 text-sm font-medium text-[#8FB8FF] transition group-hover:text-white">
+                        {item.cta}
+                        <ChevronRight className="h-4 w-4" />
+                      </Link>
+                    )}
+                  </CardContent>
+                </Card>
+              );
+            })}
           </div>
         </section>
         <section id="use-cases" className="mx-auto max-w-7xl px-6 py-8 lg:px-8">
