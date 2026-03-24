@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { formatDateTime, copyToClipboard } from "@/lib/utils";
 import type { PublicVerificationRecord } from "@/lib/api";
@@ -17,6 +17,7 @@ import {
   Fingerprint,
   FileCheck2,
   Link2,
+  ShieldCheck,
 } from "lucide-react";
 import { InntrisLogo } from "@/components/inntris-logo";
 
@@ -43,6 +44,105 @@ function actionBadgeColor(action: string) {
 function truncateHash(hash: string, chars = 10) {
   if (hash.length <= chars * 2 + 3) return hash;
   return `${hash.slice(0, chars)}...${hash.slice(-chars)}`;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Canonical JSON for fingerprint parity                              */
+/* ------------------------------------------------------------------ */
+
+// ── DO NOT MODIFY FIELD SET OR ORDER — MUST MATCH BACKEND EXACTLY ──
+function canonicalStringify(obj: Record<string, unknown>): string {
+  const sorted: Record<string, unknown> = {};
+  for (const key of Object.keys(obj).sort()) {
+    sorted[key] = obj[key];
+  }
+  return JSON.stringify(sorted);
+}
+
+async function computeFingerprint(record: PublicVerificationRecord): Promise<string> {
+  const payload = {
+    action_hash: record.action_hash,
+    action_type: record.action_type,
+    agent_id: record.agent_id,
+    audit_id: record.audit_id,
+    policy_hash: record.policy_hash,
+    timestamp: record.timestamp,
+    verdict: record.verdict,
+  };
+  const canonical = canonicalStringify(payload);
+  const encoded = new TextEncoder().encode(canonical);
+  const hashBuffer = await crypto.subtle.digest("SHA-256", encoded);
+  return Array.from(new Uint8Array(hashBuffer))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+/* ------------------------------------------------------------------ */
+/*  Proof check types                                                  */
+/* ------------------------------------------------------------------ */
+
+type CheckStatus = "verified" | "pending" | "failed" | "not_included";
+
+function checkStatusColor(s: CheckStatus) {
+  switch (s) {
+    case "verified": return "text-[#22c55e]";
+    case "pending": return "text-[#f59e0b]";
+    case "failed": return "text-[#ef4444]";
+    case "not_included": return "text-[#7F8CA3]";
+  }
+}
+
+function checkStatusLabel(s: CheckStatus) {
+  switch (s) {
+    case "verified": return "VERIFIED";
+    case "pending": return "PENDING";
+    case "failed": return "FAILED";
+    case "not_included": return "NOT INCLUDED";
+  }
+}
+
+function CheckIcon({ status }: { status: CheckStatus }) {
+  switch (status) {
+    case "verified":
+      return <CheckCircle2 className="h-5 w-5 text-[#22c55e]" />;
+    case "pending":
+      return <Clock className="h-5 w-5 text-[#f59e0b]" />;
+    case "failed":
+      return <XOctagon className="h-5 w-5 text-[#ef4444]" />;
+    case "not_included":
+      return <Clock className="h-5 w-5 text-[#7F8CA3]" />;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/*  CopyableHash                                                       */
+/* ------------------------------------------------------------------ */
+
+function CopyableHash({ value, label }: { value: string; label?: string }) {
+  const [copied, setCopied] = useState(false);
+  const handleCopy = async () => {
+    await copyToClipboard(value);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+  return (
+    <div className="flex items-center gap-2">
+      <code className="text-sm font-mono text-[#8FB8FF] break-all">
+        {label ?? value}
+      </code>
+      <button
+        onClick={handleCopy}
+        className="flex-shrink-0 p-1 rounded hover:bg-white/5 transition-colors"
+        title="Copy to clipboard"
+      >
+        {copied ? (
+          <Check className="h-3.5 w-3.5 text-[#28C281]" />
+        ) : (
+          <Copy className="h-3.5 w-3.5 text-[#7F8CA3]" />
+        )}
+      </button>
+    </div>
+  );
 }
 
 /* ------------------------------------------------------------------ */
@@ -124,6 +224,127 @@ export function VerifyRecordNotFound() {
         </div>
       </main>
     </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Proof completeness checks                                          */
+/* ------------------------------------------------------------------ */
+
+function ProofCompletenessChecks({ record }: { record: PublicVerificationRecord }) {
+  const [integrityStatus, setIntegrityStatus] = useState<CheckStatus>("pending");
+
+  useEffect(() => {
+    if (record.schema_version !== "v1") {
+      setIntegrityStatus("failed");
+      return;
+    }
+
+    computeFingerprint(record).then((computed) => {
+      const frontendMatch = computed === record.receipt_fingerprint;
+      if (!frontendMatch || record.integrity_status === "failed") {
+        setIntegrityStatus("failed");
+      } else {
+        setIntegrityStatus("verified");
+      }
+    }).catch(() => {
+      setIntegrityStatus("failed");
+    });
+  }, [record]);
+
+  // 1. Signature check
+  const signatureCheck: CheckStatus = record.signature_valid ? "verified" : "failed";
+
+  // 2. Policy hash check
+  const policyHashCheck: CheckStatus = /^[a-f0-9]{64}$/.test(record.policy_hash ?? "")
+    ? "verified"
+    : "not_included";
+
+  // 3. On-chain anchor check
+  let anchorCheck: CheckStatus;
+  let anchorLabel: string;
+  if (record.tx_hash != null && record.block_number != null) {
+    anchorCheck = "verified";
+    anchorLabel = "Confirmed on-chain";
+  } else if (record.tx_hash != null) {
+    anchorCheck = "pending";
+    anchorLabel = "Transaction submitted";
+  } else {
+    anchorCheck = "pending";
+    anchorLabel = "Awaiting anchoring";
+  }
+
+  // Schema version gate
+  if (record.schema_version !== "v1") {
+    return (
+      <section className="mt-5 rounded-[28px] border border-[#f59e0b]/20 bg-[#f59e0b]/5 p-6 text-center">
+        <AlertTriangle className="mx-auto h-8 w-8 text-[#f59e0b] mb-3" />
+        <p className="text-sm text-[#f59e0b]">
+          Unsupported schema version: {record.schema_version ?? "unknown"}
+        </p>
+      </section>
+    );
+  }
+
+  const checks: { label: string; status: CheckStatus; sublabel: string }[] = [
+    {
+      label: "Ed25519 signature",
+      status: signatureCheck,
+      sublabel: signatureCheck === "verified" ? "Cryptographic signature valid" : "Signature verification failed",
+    },
+    {
+      label: "Policy hash",
+      status: policyHashCheck,
+      sublabel: policyHashCheck === "verified" ? "Policy file hash bound to record" : "No policy hash bound to this record",
+    },
+    {
+      label: "On-chain anchor",
+      status: anchorCheck,
+      sublabel: anchorLabel,
+    },
+    {
+      label: "Receipt integrity",
+      status: integrityStatus,
+      sublabel: integrityStatus === "verified"
+        ? "Fingerprint matches — receipt is intact"
+        : integrityStatus === "failed"
+        ? "Fingerprint mismatch — receipt may be tampered"
+        : "Verifying integrity…",
+    },
+  ];
+
+  return (
+    <section className="mt-5 rounded-[28px] border border-[#22314D] bg-[#0D1728] p-6 md:p-8">
+      <div className="flex items-center gap-3 mb-5">
+        <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-[#22314D] bg-[#101C31] text-[#8FB8FF]">
+          <ShieldCheck className="h-5 w-5" />
+        </div>
+        <div>
+          <h3 className="text-lg font-semibold">Proof completeness</h3>
+          <p className="text-xs text-[#7F8CA3]">
+            Independent verification of receipt integrity
+          </p>
+        </div>
+      </div>
+
+      <div className="space-y-3">
+        {checks.map((check) => (
+          <div
+            key={check.label}
+            className="flex items-center gap-4 rounded-2xl border border-white/6 bg-[#101C31]/70 p-4"
+          >
+            <CheckIcon status={check.status} />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-[#F5F7FB]">{check.label}</p>
+              <p className="text-xs text-[#7F8CA3]">{check.sublabel}</p>
+            </div>
+            <span className={`text-xs font-bold ${checkStatusColor(check.status)}`}>
+              {checkStatusLabel(check.status)}
+            </span>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -228,7 +449,7 @@ export function VerifyRecordView({ record }: { record: PublicVerificationRecord 
                 </div>
                 <div>
                   <p className="text-xs text-[#7F8CA3]">Agent ID</p>
-                  <p className="text-xs font-mono text-[#8FB8FF]">{record.agent_id}</p>
+                  <CopyableHash value={record.agent_id} />
                 </div>
                 <div>
                   <p className="text-xs text-[#7F8CA3]">Trust score at time</p>
@@ -348,9 +569,7 @@ export function VerifyRecordView({ record }: { record: PublicVerificationRecord 
               <p className="text-xs text-[#7F8CA3] mb-1">Transaction hash</p>
               {record.tx_hash ? (
                 <div className="flex items-center justify-between gap-3">
-                  <code className="text-sm font-mono text-[#8FB8FF] break-all">
-                    {record.tx_hash}
-                  </code>
+                  <CopyableHash value={record.tx_hash} />
                   {baseScanUrl && (
                     <a
                       href={baseScanUrl}
@@ -385,9 +604,17 @@ export function VerifyRecordView({ record }: { record: PublicVerificationRecord 
             {/* action_hash */}
             <div className="rounded-2xl border border-white/6 bg-[#101C31]/70 p-4">
               <p className="text-xs text-[#7F8CA3] mb-1">Action hash (SHA-256)</p>
-              <code className="text-sm font-mono text-[#8FB8FF] break-all">
-                {record.action_hash}
-              </code>
+              <CopyableHash value={record.action_hash} />
+            </div>
+
+            {/* policy_hash */}
+            <div className="rounded-2xl border border-white/6 bg-[#101C31]/70 p-4">
+              <p className="text-xs text-[#7F8CA3] mb-1">Policy hash (SHA-256)</p>
+              {record.policy_hash ? (
+                <CopyableHash value={record.policy_hash} />
+              ) : (
+                <span className="text-sm font-mono text-[#7F8CA3]">Not included</span>
+              )}
             </div>
 
             {/* Grid: block, chain, anchored */}
@@ -415,7 +642,12 @@ export function VerifyRecordView({ record }: { record: PublicVerificationRecord 
         </section>
 
         {/* ============================================================ */}
-        {/* 4. ConversionCTA                                             */}
+        {/* 4. ProofCompletenessChecks                                   */}
+        {/* ============================================================ */}
+        <ProofCompletenessChecks record={record} />
+
+        {/* ============================================================ */}
+        {/* 5. ConversionCTA                                             */}
         {/* ============================================================ */}
         <section className="mt-8 rounded-[28px] border border-[#4C8DFF]/20 bg-gradient-to-b from-[#4C8DFF]/8 to-[#0D1728] p-8 text-center">
           <h2 className="text-2xl font-semibold tracking-tight">

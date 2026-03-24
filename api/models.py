@@ -85,6 +85,11 @@ class VerifyActionRequest(BaseModel):
         ...,
         description="Client-side timestamp (ISO 8601 string)"
     )
+    policy_hash: Optional[str] = Field(
+        None,
+        max_length=64,
+        description="SHA-256 hash of .inntris.yml policy file"
+    )
 
     @field_validator("action_type")
     @classmethod
@@ -234,6 +239,9 @@ class PublicVerificationRecord(BaseModel):
     risk_level: Optional[str] = Field(None, description="Risk level from payload")
     violations: list[str] = Field(default_factory=list, description="Policy violations if any")
 
+    # Policy binding
+    policy_hash: Optional[str] = Field(None, description="SHA-256 hash of policy file at verification time")
+
     # On-chain proof
     action_hash: str = Field(..., description="SHA-256 hash of the action")
     signature_valid: bool = Field(..., description="Whether Ed25519 signature was valid")
@@ -242,6 +250,11 @@ class PublicVerificationRecord(BaseModel):
     block_number: Optional[int] = Field(None, description="Block number on Base L2")
     chain_id: int = Field(default=8453, description="Chain ID (Base L2)")
     anchored_at: Optional[datetime] = Field(None, description="When the proof was anchored on-chain")
+
+    # Receipt integrity
+    schema_version: str = Field(default="v1", description="Receipt schema version")
+    receipt_fingerprint: str = Field(..., description="SHA-256 of canonical core fields for integrity verification")
+    integrity_status: str = Field(default="verified", description="Server-side integrity verification status")
 
 
 class HealthResponse(BaseModel):
@@ -321,4 +334,5 @@ class AuditLogEntry(BaseModel):
     response_time_ms: Optional[int]
     trust_score_at_time: int
     chain_previous_hash: Optional[str]
+    policy_hash: Optional[str] = None
     metadata: dict[str, Any] = Field(default_factory=dict)

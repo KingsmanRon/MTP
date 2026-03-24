@@ -384,9 +384,9 @@ class Database:
                 agent_id, action_type, action_hash, payload, verdict,
                 verdict_reason, signature, signature_valid, request_ip,
                 request_user_agent, response_time_ms, trust_score_at_time,
-                chain_previous_hash, metadata
+                chain_previous_hash, policy_hash, metadata
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
             RETURNING id
         """
         async with self.acquire() as conn:
@@ -405,6 +405,7 @@ class Database:
                 entry.response_time_ms,
                 entry.trust_score_at_time,
                 entry.chain_previous_hash,
+                entry.policy_hash,
                 json.dumps(entry.metadata),
             )
 

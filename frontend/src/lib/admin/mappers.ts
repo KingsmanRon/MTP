@@ -137,6 +137,7 @@ export function mapAuditLog(raw: unknown): MappedAuditLog | null {
     transaction_hash: strOrNull(raw.transaction_hash),
     chain_id: numOrNull(raw.chain_id),
     response_time_ms: numOrNull(raw.response_time_ms),
+    policy_hash: strOrNull(raw.policy_hash),
   };
 }
 
@@ -179,6 +180,7 @@ export function mapAuditDetail(raw: unknown): MappedAuditDetail | null {
     merkle_root_id: strOrNull(raw.merkle_root_id),
     merkle_leaf_index: numOrNull(raw.merkle_leaf_index) as number | null | undefined,
     response_time_ms: numOrNull(raw.response_time_ms),
+    policy_hash: strOrNull(raw.policy_hash),
   };
 }
 

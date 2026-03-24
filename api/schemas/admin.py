@@ -2,7 +2,8 @@
 Typed admin response models aligned with the documented endpoint paths, enums,
 and query parameters from the live OpenAPI spec.
 
-Fields not confirmed as guaranteed by current route output are Optional.
+Fields are required where the database schema uses NOT NULL constraints.
+Fields remain Optional where the column is nullable or the data is derived/joined.
 """
 
 from __future__ import annotations
@@ -29,35 +30,35 @@ class AgentStatus(str, Enum):
 
 
 class OrganizationResponse(BaseModel):
-    id: Optional[str] = None  # TODO: not yet guaranteed by route — relax until confirmed
-    name: Optional[str] = None
-    billing_tier: Optional[str] = None
-    contact_email: Optional[str] = None
+    id: str
+    name: str
+    billing_tier: str
+    contact_email: str
     webhook_url: Optional[str] = None
-    daily_limit_usd: Optional[float] = None
-    monthly_limit_usd: Optional[float] = None
+    daily_limit_usd: float
+    monthly_limit_usd: float
     metadata: Optional[dict[str, Any]] = None
-    created_at: Optional[str] = None
+    created_at: str
     updated_at: Optional[str] = None
 
 
 class AgentSummary(BaseModel):
     id: str
     org_id: Optional[str] = None
-    name: Optional[str] = None
-    status: Optional[AgentStatus | str] = None
+    name: str
+    status: AgentStatus | str
     public_key_fingerprint: Optional[str] = None
-    trust_score: Optional[int] = Field(default=None, ge=0, le=100)
-    daily_limit_usd: Optional[float] = None
-    per_action_limit_usd: Optional[float] = None
+    trust_score: int = Field(..., ge=0, le=100)
+    daily_limit_usd: float
+    per_action_limit_usd: float
     allowed_actions: Optional[list[str]] = None
     blocked_actions: Optional[list[str]] = None
-    rate_limit_per_minute: Optional[int] = None
+    rate_limit_per_minute: int
     last_action_at: Optional[str] = None
-    total_actions_count: Optional[int] = None
-    total_blocked_count: Optional[int] = None
+    total_actions_count: int
+    total_blocked_count: int
     metadata: Optional[dict[str, Any]] = None
-    created_at: Optional[str] = None
+    created_at: str
     updated_at: Optional[str] = None
 
 
@@ -78,75 +79,76 @@ class Policy(BaseModel):
 class AgentDetail(BaseModel):
     id: str
     org_id: Optional[str] = None
-    name: Optional[str] = None
-    status: Optional[AgentStatus | str] = None
+    name: str
+    status: AgentStatus | str
     public_key_fingerprint: Optional[str] = None
-    trust_score: Optional[int] = Field(default=None, ge=0, le=100)
-    daily_limit_usd: Optional[float] = None
-    per_action_limit_usd: Optional[float] = None
+    trust_score: int = Field(..., ge=0, le=100)
+    daily_limit_usd: float
+    per_action_limit_usd: float
     allowed_actions: Optional[list[str]] = None
     blocked_actions: Optional[list[str]] = None
-    rate_limit_per_minute: Optional[int] = None
+    rate_limit_per_minute: int
     last_action_at: Optional[str] = None
-    total_actions_count: Optional[int] = None
-    total_blocked_count: Optional[int] = None
-    policy: Optional[Policy] = None  # Optional at schema level.
-                                     # Frontend must treat None as error state.
+    total_actions_count: int
+    total_blocked_count: int
+    policy: Optional[Policy] = None
     metadata: Optional[dict[str, Any]] = None
-    created_at: Optional[str] = None
+    created_at: str
     updated_at: Optional[str] = None
 
 
 class AuditLogSummary(BaseModel):
     id: str
-    agent_id: Optional[str] = None
+    agent_id: str
     agent_name: Optional[str] = None
-    timestamp: Optional[str] = None
-    action_type: Optional[str] = None
-    action_hash: Optional[str] = None
+    timestamp: str
+    action_type: str
+    action_hash: str
     payload: Optional[dict[str, Any]] = None
-    verdict: Optional[ActionVerdict | str] = None
+    verdict: ActionVerdict | str
     verdict_reason: Optional[str] = None
-    signature_valid: Optional[bool] = None
+    signature_valid: bool
     request_ip: Optional[str] = None
     request_user_agent: Optional[str] = None
     response_time_ms: Optional[int] = None
-    trust_score_at_time: Optional[int] = None
+    trust_score_at_time: int
     risk_level: Optional[str] = None
     violations: Optional[list[str]] = None
     merkle_root_id: Optional[str] = None
     merkle_leaf_index: Optional[int] = None
     tx_hash: Optional[str] = None
+    policy_hash: Optional[str] = None
     metadata: Optional[dict[str, Any]] = None
 
 
 class AuditSearchResponse(BaseModel):
     logs: list[AuditLogSummary]
     total: int
-    limit: int   # reflects limit query param — not page
-    offset: int  # reflects offset query param
+    limit: int
+    offset: int
 
 
 class AuditLogDetail(BaseModel):
     id: str
-    agent_id: Optional[str] = None
+    agent_id: str
     agent_name: Optional[str] = None
-    timestamp: Optional[str] = None
-    action_type: Optional[str] = None
-    action_hash: Optional[str] = None
+    timestamp: str
+    action_type: str
+    action_hash: str
     payload: Optional[dict[str, Any]] = None
-    verdict: Optional[ActionVerdict | str] = None
+    verdict: ActionVerdict | str
     verdict_reason: Optional[str] = None
-    signature_valid: Optional[bool] = None
+    signature_valid: bool
     request_ip: Optional[str] = None
     request_user_agent: Optional[str] = None
     response_time_ms: Optional[int] = None
-    trust_score_at_time: Optional[int] = None
+    trust_score_at_time: int
     policy_rule_triggered: Optional[str] = None
     risk_level: Optional[str] = None
     violations: Optional[list[str]] = None
     merkle_root_id: Optional[str] = None
     merkle_leaf_index: Optional[int] = None
+    policy_hash: Optional[str] = None
     metadata: Optional[dict[str, Any]] = None
 
 

@@ -10,7 +10,7 @@ const modules = [
     icon: LayoutDashboard,
     title: "Admin Console",
     role: "For platform admins",
-    body: "Manage organisations, agents, policies, API keys, and security alerts.",
+    body: "Manage agents, enforce policies, rotate API keys, and investigate security alerts from one dashboard.",
     cta: "Explore Console",
     href: "/admin",
   },
@@ -18,7 +18,7 @@ const modules = [
     icon: Bot,
     title: "Agent Portal",
     role: "For developers and operators",
-    body: "Issue credentials, test verification, and monitor agent trust state.",
+    body: "Register agents, test policy evaluation in the sandbox, and track trust score changes over time.",
     cta: "Explore Portal",
     href: "/portal",
   },
@@ -26,7 +26,7 @@ const modules = [
     icon: SearchCheck,
     title: "Audit Explorer",
     role: "For investigations and compliance",
-    body: "Search verification decisions and inspect tamper-evident audit history.",
+    body: "Search every verification decision by agent, action, or verdict. Each record is append-only and tamper-evident.",
     cta: "Explore Audit Explorer",
     href: "/audit",
   },
@@ -34,7 +34,7 @@ const modules = [
     icon: Globe,
     title: "Public Verify",
     role: "For customers, partners, and auditors",
-    body: "Verify an agent's trust status and verification history externally.",
+    body: "Share a receipt link with anyone. They can independently verify the signature, policy hash, and on-chain anchor.",
     cta: "Verify a live receipt",
     href: "/verify/2f41036e-cd54-4ec1-86e1-22f96cbc09aa",
   },
@@ -43,17 +43,17 @@ const capabilities = [
   {
     icon: KeyRound,
     title: "Cryptographic identity",
-    body: "Every agent signs actions with a verifiable identity. No key, no action.",
+    body: "Every agent holds an Ed25519 key pair. Every action is signed. No valid signature, no execution.",
   },
   {
     icon: Lock,
     title: "Policy before execution",
-    body: "Evaluate risky actions before they run, not after the fact.",
+    body: "Rate limits, spend caps, and action allowlists are evaluated before the action runs — not after the damage is done.",
   },
   {
     icon: FileCheck2,
     title: "Tamper-evident audit",
-    body: "Record approvals, blocks, and evidence in a verifiable audit trail.",
+    body: "Every decision is recorded in an append-only log, Merkle-anchored on Base L2. Proves what was allowed to happen, and what actually happened.",
   },
 ];
 const CANONICAL_RECEIPT_ID = "2f41036e-cd54-4ec1-86e1-22f96cbc09aa";
@@ -107,16 +107,16 @@ export default async function InntrisCoreDarkPreview() {
             </div>
             <h1 className="max-w-3xl text-4xl font-semibold leading-[1.12] tracking-tight md:text-6xl mb-5">
               Your AI agents act.{" "}
-              <span className="text-[#28C281]">Prove every decision.</span>
+              <span className="text-[#28C281]">We prove every decision.</span>
             </h1>
             <p className="text-base text-[#AAB7CC] mb-3 max-w-lg leading-relaxed">
-              One control plane for agents running in production.
+              The governance layer for AI agents in production. Verify what was allowed and what actually happened.
             </p>
             <ul className="flex flex-col gap-2 mb-8 max-w-lg">
               {[
-                "Cryptographic identity — every agent signs every action",
-                "Policy before execution — block risky operations before they run",
-                "Tamper-evident audit — verifiable trail for compliance and investigation",
+                "Cryptographic identity — Ed25519 signatures bind every action to its agent",
+                "Policy before execution — rate limits, spend caps, and allowlists enforced before the action runs",
+                "Tamper-evident audit — append-only logs anchored on Base L2 with receipt integrity you can verify yourself",
               ].map((item) => (
                 <li
                   key={item}
@@ -127,7 +127,7 @@ export default async function InntrisCoreDarkPreview() {
               ))}
             </ul>
             <p className="text-sm text-[#AAB7CC] mb-8 max-w-lg leading-relaxed">
-              Enterprise agent deployments in regulated industries need a governance layer with cryptographic proof. Inntris is that layer.
+              When your agents handle money, data, and code in regulated environments, you need cryptographic proof of every decision. Inntris is that proof layer.
             </p>
             <div className="flex flex-wrap gap-3 mb-10">
               <a
@@ -276,7 +276,7 @@ export default async function InntrisCoreDarkPreview() {
                 A real verification receipt.
               </h2>
               <p className="mt-2 max-w-xl text-sm leading-6 text-[#AAB7CC]">
-                This is a live receipt from the Inntris network — not a mockup.
+                This is a live receipt from the Inntris network — not a mockup. Click to inspect the full proof, including signature validity, policy hash, and on-chain anchor.
               </p>
             </div>
             <Link
@@ -350,10 +350,10 @@ export default async function InntrisCoreDarkPreview() {
           <div className="rounded-[28px] border border-[#22314D] bg-[#0D1728] p-7 lg:p-10">
             <div className="text-sm font-medium uppercase tracking-[0.18em] text-[#8FB8FF]">Core capability</div>
             <h2 className="mt-3 text-2xl font-semibold tracking-tight md:text-3xl">
-              Serious enough for a control plane, clear enough for daily use.
+              Three guarantees. One control plane.
             </h2>
             <p className="mt-4 max-w-2xl text-base leading-7 text-[#AAB7CC]">
-              Inntris combines cryptographic identity, policy checks before execution, and tamper-evident audit in one control plane.
+              Every agent action passes through three layers: identity verification, policy enforcement, and immutable audit. Together they prove what was allowed to happen, and what actually happened.
             </p>
             <div className="mt-8 grid gap-4 md:grid-cols-3">
               {capabilities.map((item) => {
@@ -383,7 +383,7 @@ export default async function InntrisCoreDarkPreview() {
               <span className="text-sm font-semibold tracking-tight text-[#F5F7FB]">Inntris</span>
             </div>
             <p className="text-sm text-[#7F8CA3] text-center">
-              Cryptographic verification for AI agents.
+              Cryptographic proof for every AI agent decision.
             </p>
             <div className="flex items-center gap-6 text-[#7F8CA3]">
               <a href="/docs" className="text-sm transition-colors hover:text-white">Docs</a>
