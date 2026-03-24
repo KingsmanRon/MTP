@@ -451,21 +451,6 @@ export function VerifyRecordView({ record }: { record: PublicVerificationRecord 
                   <p className="text-xs text-[#7F8CA3]">Agent ID</p>
                   <CopyableHash value={record.agent_id} />
                 </div>
-                <div>
-                  <p className="text-xs text-[#7F8CA3]">Trust score at time</p>
-                  <p
-                    className={`text-lg font-bold ${
-                      record.trust_score >= 70
-                        ? "text-[#22c55e]"
-                        : record.trust_score >= 40
-                        ? "text-[#f59e0b]"
-                        : "text-[#ef4444]"
-                    }`}
-                  >
-                    {record.trust_score}
-                    <span className="text-sm text-[#7F8CA3]">/100</span>
-                  </p>
-                </div>
               </div>
             </div>
 
@@ -639,6 +624,25 @@ export function VerifyRecordView({ record }: { record: PublicVerificationRecord 
               </div>
             </div>
           </div>
+        </section>
+
+        {/* ============================================================ */}
+        {/* 3b. Trust score (advisory)                                   */}
+        {/* ============================================================ */}
+        <section className="mt-3 rounded-2xl border border-white/6 bg-[#101C31]/70 p-4">
+          <p className="text-xs text-[#7F8CA3] mb-1">Trust score (advisory)</p>
+          <p
+            className={`text-sm font-medium ${
+              record.trust_score >= 70
+                ? "text-[#22c55e]"
+                : record.trust_score >= 40
+                ? "text-[#f59e0b]"
+                : "text-[#ef4444]"
+            }`}
+          >
+            {record.trust_score}
+            <span className="text-xs text-[#7F8CA3]">/100</span>
+          </p>
         </section>
 
         {/* ============================================================ */}

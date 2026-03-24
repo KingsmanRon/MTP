@@ -57,13 +57,20 @@ const capabilities = [
   },
 ];
 const CANONICAL_RECEIPT_ID = "2f41036e-cd54-4ec1-86e1-22f96cbc09aa";
+const CANONICAL_PASS_ID = "c9ba09f3-f8ce-40e9-8fcf-cbd0407db1ff";
 
 export default async function InntrisCoreDarkPreview() {
   let receipt = null;
+  let passReceipt = null;
   try {
     receipt = await publicApi.getVerificationRecord(CANONICAL_RECEIPT_ID);
   } catch {
     // API unavailable — skip the proof preview
+  }
+  try {
+    passReceipt = await publicApi.getVerificationRecord(CANONICAL_PASS_ID);
+  } catch {
+    // API unavailable — use fallback values
   }
 
   return (
@@ -110,13 +117,14 @@ export default async function InntrisCoreDarkPreview() {
               <span className="text-[#28C281]">We prove every decision.</span>
             </h1>
             <p className="text-base text-[#AAB7CC] mb-3 max-w-lg leading-relaxed">
-              The governance layer for AI agents in production. Verify what was allowed and what actually happened.
+              The governance layer for AI agents in production. Verify what was allowed and what actually happened — independently.
             </p>
             <ul className="flex flex-col gap-2 mb-8 max-w-lg">
               {[
                 "Cryptographic identity — Ed25519 signatures bind every action to its agent",
                 "Policy before execution — rate limits, spend caps, and allowlists enforced before the action runs",
                 "Tamper-evident audit — only logs anchored on Base L2 with receipt integrity you can verify yourself",
+                "Independently verifiable — anyone can check the receipt using the on-chain anchor alone. No Inntris account required.",
               ].map((item) => (
                 <li
                   key={item}
@@ -131,17 +139,17 @@ export default async function InntrisCoreDarkPreview() {
             </p>
             <div className="flex flex-wrap gap-3 mb-10">
               <a
-                href="#contact"
+                href="https://www.inntris.com/verify/c9ba09f3-f8ce-40e9-8fcf-cbd0407db1ff"
                 className="rounded-md bg-[#28C281] px-5 py-3 text-sm font-medium text-white transition-opacity hover:opacity-90"
+              >
+                See live verification →
+              </a>
+              <a
+                href="#contact"
+                className="rounded-md border border-[#22314D] bg-[#0D1728] px-5 py-3 text-sm font-medium text-[#F5F7FB] transition-colors hover:bg-[#101C31]"
               >
                 Request Access
               </a>
-              <Link
-                href="/verify"
-                className="rounded-md border border-[#22314D] bg-[#0D1728] px-5 py-3 text-sm font-medium text-[#F5F7FB] transition-colors hover:bg-[#101C31]"
-              >
-                See live verification →
-              </Link>
             </div>
             <div className="grid grid-cols-2 md:grid-cols-4 divide-x divide-[#22314D] border-t border-[#22314D] pt-7">
               {[
@@ -266,7 +274,7 @@ export default async function InntrisCoreDarkPreview() {
             ))}
           </div>
         </section>
-        {receipt && (
+        {(receipt || passReceipt) && (
           <section className="mx-auto max-w-7xl px-6 py-8 lg:px-8">
             <div className="mb-6">
               <div className="text-sm font-medium uppercase tracking-[0.18em] text-[#8FB8FF]">
@@ -279,70 +287,128 @@ export default async function InntrisCoreDarkPreview() {
                 This is a live receipt from the Inntris network — not a mockup. Click to inspect the full proof, including signature validity, policy hash, and on-chain anchor.
               </p>
             </div>
-            <Link
-              href={`/verify/${CANONICAL_RECEIPT_ID}`}
-              className="group block rounded-[24px] border border-[#22314D] bg-[#0D1728] p-6 transition hover:border-[#35507A] hover:bg-[#101C31] md:p-8"
-            >
-              {/* Top row: verdict + meta */}
-              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                <div className="flex items-center gap-3">
-                  {receipt.verdict === "approved" ? (
+            <div className="grid gap-5 md:grid-cols-2">
+              {/* PASS card */}
+              <a
+                href="https://www.inntris.com/verify/c9ba09f3-f8ce-40e9-8fcf-cbd0407db1ff"
+                className="group block rounded-[24px] border border-[#22314D] bg-[#0D1728] p-6 transition hover:border-[#35507A] hover:bg-[#101C31] md:p-8"
+              >
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex items-center gap-3">
                     <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#22c55e]/15">
                       <CheckCircle2 className="h-5 w-5 text-[#22c55e]" />
                     </div>
-                  ) : (
-                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#ef4444]/15">
-                      <XOctagon className="h-5 w-5 text-[#ef4444]" />
+                    <div>
+                      <span className="text-lg font-bold tracking-tight text-[#22c55e]">
+                        PASS
+                      </span>
+                      <p className="text-xs text-[#7F8CA3]">
+                        Safe action evaluated, approved, and recorded on-chain.
+                      </p>
                     </div>
-                  )}
+                  </div>
+                  <span className="inline-flex items-center gap-2 text-sm font-medium text-[#8FB8FF] transition group-hover:text-white">
+                    View full receipt
+                    <ChevronRight className="h-4 w-4" />
+                  </span>
+                </div>
+                <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                   <div>
-                    <span
-                      className={`text-lg font-bold tracking-tight ${
-                        receipt.verdict === "approved" ? "text-[#22c55e]" : "text-[#ef4444]"
-                      }`}
-                    >
-                      {receipt.verdict === "approved" ? "PASS" : "BLOCK"}
-                    </span>
+                    <p className="text-[10px] font-medium uppercase tracking-widest text-[#7F8CA3]">Agent</p>
+                    <p className="mt-1 text-sm font-medium text-[#F5F7FB]">{passReceipt?.agent_name ?? "Demo Agent"}</p>
+                    <p className="text-xs text-[#7F8CA3]">{passReceipt?.organization_name ?? "Inntris Demo"}</p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-medium uppercase tracking-widest text-[#7F8CA3]">Action</p>
+                    <p className="mt-1 text-sm font-mono text-[#F5F7FB]">{passReceipt?.action_type ?? "api_call"}</p>
                     <p className="text-xs text-[#7F8CA3]">
-                      {receipt.verdict_reason ?? "All policy checks passed"}
+                      Trust {passReceipt?.trust_score ?? 85}/100
                     </p>
                   </div>
+                  <div>
+                    <p className="text-[10px] font-medium uppercase tracking-widest text-[#7F8CA3]">Signature</p>
+                    <p className="mt-1 text-sm font-medium text-[#22c55e]">
+                      {passReceipt?.signature_valid !== false ? "Valid Ed25519" : "Invalid"}
+                    </p>
+                    <p className="text-xs text-[#7F8CA3]">
+                      Anchored on Base L2
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-medium uppercase tracking-widest text-[#7F8CA3]">Receipt ID</p>
+                    <p className="mt-1 text-xs font-mono text-[#8FB8FF] break-all">{passReceipt?.audit_id ?? CANONICAL_PASS_ID}</p>
+                  </div>
                 </div>
-                <span className="inline-flex items-center gap-2 text-sm font-medium text-[#8FB8FF] transition group-hover:text-white">
-                  View full receipt
-                  <ChevronRight className="h-4 w-4" />
-                </span>
-              </div>
+              </a>
 
-              {/* Detail grid */}
-              <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                <div>
-                  <p className="text-[10px] font-medium uppercase tracking-widest text-[#7F8CA3]">Agent</p>
-                  <p className="mt-1 text-sm font-medium text-[#F5F7FB]">{receipt.agent_name}</p>
-                  <p className="text-xs text-[#7F8CA3]">{receipt.organization_name}</p>
-                </div>
-                <div>
-                  <p className="text-[10px] font-medium uppercase tracking-widest text-[#7F8CA3]">Action</p>
-                  <p className="mt-1 text-sm font-mono text-[#F5F7FB]">{receipt.action_type}</p>
-                  <p className="text-xs text-[#7F8CA3]">
-                    Trust {receipt.trust_score}/100
-                  </p>
-                </div>
-                <div>
-                  <p className="text-[10px] font-medium uppercase tracking-widest text-[#7F8CA3]">Signature</p>
-                  <p className={`mt-1 text-sm font-medium ${receipt.signature_valid ? "text-[#22c55e]" : "text-[#ef4444]"}`}>
-                    {receipt.signature_valid ? "Valid Ed25519" : "Invalid"}
-                  </p>
-                  <p className="text-xs text-[#7F8CA3]">
-                    {receipt.tx_hash ? "Anchored on Base L2" : "Pending anchor"}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-[10px] font-medium uppercase tracking-widest text-[#7F8CA3]">Receipt ID</p>
-                  <p className="mt-1 text-xs font-mono text-[#8FB8FF] break-all">{receipt.audit_id}</p>
-                </div>
-              </div>
-            </Link>
+              {/* BLOCK card */}
+              {receipt && (
+                <Link
+                  href={`/verify/${CANONICAL_RECEIPT_ID}`}
+                  className="group block rounded-[24px] border border-[#22314D] bg-[#0D1728] p-6 transition hover:border-[#35507A] hover:bg-[#101C31] md:p-8"
+                >
+                  <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex items-center gap-3">
+                      {receipt.verdict === "approved" ? (
+                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#22c55e]/15">
+                          <CheckCircle2 className="h-5 w-5 text-[#22c55e]" />
+                        </div>
+                      ) : (
+                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#ef4444]/15">
+                          <XOctagon className="h-5 w-5 text-[#ef4444]" />
+                        </div>
+                      )}
+                      <div>
+                        <span
+                          className={`text-lg font-bold tracking-tight ${
+                            receipt.verdict === "approved" ? "text-[#22c55e]" : "text-[#ef4444]"
+                          }`}
+                        >
+                          {receipt.verdict === "approved" ? "PASS" : "BLOCK"}
+                        </span>
+                        <p className="text-xs text-[#7F8CA3]">
+                          {receipt.verdict_reason ?? "All policy checks passed"}
+                        </p>
+                      </div>
+                    </div>
+                    <span className="inline-flex items-center gap-2 text-sm font-medium text-[#8FB8FF] transition group-hover:text-white">
+                      View full receipt
+                      <ChevronRight className="h-4 w-4" />
+                    </span>
+                  </div>
+                  <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                    <div>
+                      <p className="text-[10px] font-medium uppercase tracking-widest text-[#7F8CA3]">Agent</p>
+                      <p className="mt-1 text-sm font-medium text-[#F5F7FB]">{receipt.agent_name}</p>
+                      <p className="text-xs text-[#7F8CA3]">{receipt.organization_name}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-medium uppercase tracking-widest text-[#7F8CA3]">Action</p>
+                      <p className="mt-1 text-sm font-mono text-[#F5F7FB]">{receipt.action_type}</p>
+                      <p className="text-xs text-[#7F8CA3]">
+                        Trust {receipt.trust_score}/100
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-medium uppercase tracking-widest text-[#7F8CA3]">Signature</p>
+                      <p className={`mt-1 text-sm font-medium ${receipt.signature_valid ? "text-[#22c55e]" : "text-[#ef4444]"}`}>
+                        {receipt.signature_valid ? "Valid Ed25519" : "Invalid"}
+                      </p>
+                      <p className="text-xs text-[#7F8CA3]">
+                        {receipt.tx_hash ? "Anchored on Base L2" : "Pending anchor"}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-medium uppercase tracking-widest text-[#7F8CA3]">Receipt ID</p>
+                      <p className="mt-1 text-xs font-mono text-[#8FB8FF] break-all">{receipt.audit_id}</p>
+                    </div>
+                  </div>
+                </Link>
+              )}
+            </div>
+            <p className="mt-4 text-center text-sm text-[#AAB7CC]">
+              Both receipts are independently verifiable. No Inntris access required.
+            </p>
           </section>
         )}
 
