@@ -1,21 +1,21 @@
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Inntris Public Verifier — Verify a decision. See the proof.",
+  title: "Verify — Inntris | AI Agent Verification Receipts",
   description:
-    "Check the policy decision, verification details, and on-chain audit trail of any Inntris verification record.",
+    "Independently verify AI agent actions. Check Ed25519 signatures, policy hash binding, on-chain Merkle root anchoring, and receipt integrity — no Inntris account required.",
   openGraph: {
-    title: "Inntris Public Verifier — Verify a decision. See the proof.",
+    title: "Verify — Inntris | AI Agent Verification Receipts",
     description:
-      "Check the policy decision, verification details, and on-chain audit trail of any Inntris verification record.",
+      "Independently verify AI agent actions. Check Ed25519 signatures, policy hash binding, on-chain Merkle root anchoring, and receipt integrity — no Inntris account required.",
     type: "website",
     siteName: "Inntris",
   },
   twitter: {
     card: "summary",
-    title: "Inntris Public Verifier — Verify a decision. See the proof.",
+    title: "Verify — Inntris | AI Agent Verification Receipts",
     description:
-      "Check the policy decision, verification details, and on-chain audit trail of any Inntris verification record.",
+      "Independently verify AI agent actions. Check Ed25519 signatures, policy hash binding, on-chain Merkle root anchoring, and receipt integrity — no Inntris account required.",
   },
   robots: { index: true, follow: true },
 };

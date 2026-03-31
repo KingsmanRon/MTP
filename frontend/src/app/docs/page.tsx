@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import {
   Shield,
@@ -13,6 +14,12 @@ import {
   Database,
 } from "lucide-react";
 import { InntrisLogo } from "@/components/inntris-logo";
+
+export const metadata: Metadata = {
+  title: "Documentation — Inntris | AI Agent Governance Integration Guide",
+  description:
+    "Integrate Inntris into your AI agent stack. MCP server setup, GitHub Action configuration, policy-as-code with .inntris.yml, and cryptographic receipt verification. Get started in under 20 minutes.",
+};
 
 export default function DocsPage() {
   return (
