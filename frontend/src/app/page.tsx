@@ -73,7 +73,25 @@ export default async function InntrisCoreDarkPreview() {
     // API unavailable — use fallback values
   }
 
+  const jsonLd = {
+    "@context": "https://schema.org",
+    "@type": "Organization",
+    "name": "Inntris",
+    "legalName": "Inntris Inc.",
+    "url": "https://www.inntris.com",
+    "logo": "https://www.inntris.com/logo.svg",
+    "description":
+      "Cryptographic verification and governance layer for AI agents. Identity, policy enforcement, and tamper-evident audit trails anchored on Base L2.",
+    "foundingDate": "2025",
+    "sameAs": ["https://github.com/Inntris"],
+  };
+
   return (
+    <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+      />
     <div className="min-h-screen bg-[#07111F] text-[#F5F7FB]">
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(76,141,255,0.14),transparent_32%),radial-gradient(circle_at_80%_30%,rgba(143,184,255,0.08),transparent_24%)] pointer-events-none" />
       <header className="sticky top-0 z-20 border-b border-white/8 bg-[#07111F]/85 backdrop-blur">
@@ -116,6 +134,9 @@ export default async function InntrisCoreDarkPreview() {
               Your AI agents act.{" "}
               <span className="text-[#28C281]">We prove every decision.</span>
             </h1>
+            <p className="text-lg text-[#7F8CA3] mb-5 max-w-2xl leading-relaxed">
+              AI agent governance with cryptographic verification — identity, policy enforcement, and on-chain proof for every decision.
+            </p>
             <p className="text-base text-[#AAB7CC] mb-3 max-w-lg leading-relaxed">
               The governance layer for AI agents in production. Verify what was allowed and what actually happened — independently.
             </p>
@@ -473,5 +494,6 @@ export default async function InntrisCoreDarkPreview() {
         </div>
       </footer>
     </div>
+    </>
   );
 }
