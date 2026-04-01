@@ -34,8 +34,8 @@ CONTRACTS = {
     }
 }
 
-# Default to testnet
-NETWORK = "base_sepolia"
+# Default to mainnet
+NETWORK = "base_mainnet"
 
 
 def print_header(title: str):
