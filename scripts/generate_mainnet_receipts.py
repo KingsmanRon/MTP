@@ -1,17 +1,17 @@
 """
 Generate PASS and BLOCK receipts on the live mainnet-anchored API.
 
-Usage:
-    python scripts/generate_mainnet_receipts.py --api-url https://api.inntris.com --admin-key YOUR_MASTER_ADMIN_KEY
+This version creates the agent directly via the database (Supabase),
+then submits verifications through the API.
 
-The script will:
-1. Create a temporary org + agent
-2. Submit a PASS verification (small amount, within limits)
-3. Submit a BLOCK verification (amount exceeds per-action limit)
-4. Print both audit IDs — these are your new mainnet receipt IDs
+Usage:
+    python scripts/generate_mainnet_receipts.py --api-url https://api.inntris.com --database-url "postgresql://..."
+
+Get your DATABASE_URL from Supabase → Project Settings → Database → Connection String (URI).
 """
 
 import argparse
+import asyncio
 import hashlib
 import json
 import base64
@@ -22,8 +22,9 @@ from uuid import uuid4
 try:
     import requests
     from nacl.signing import SigningKey
+    import asyncpg
 except ImportError:
-    print("Missing dependencies. Run: pip install requests pynacl")
+    print("Missing dependencies. Run: pip install requests pynacl asyncpg")
     sys.exit(1)
 
 
@@ -71,10 +72,59 @@ def submit_verification(api_url: str, agent_id: str, signing_key: SigningKey,
     return response.json()
 
 
+async def setup_agent(database_url: str, signing_key: SigningKey) -> str:
+    """Create an agent directly in the database and return its ID."""
+    conn = await asyncpg.connect(database_url)
+    try:
+        # Find the first org
+        org = await conn.fetchrow("SELECT id, name FROM organizations LIMIT 1")
+        if not org:
+            print("  ERROR: No organizations found in database")
+            sys.exit(1)
+        print(f"  Using org: {org['name']} ({org['id']})")
+
+        public_key = bytes(signing_key.verify_key)
+        fingerprint = hashlib.sha256(public_key).hexdigest()
+        agent_id = uuid4()
+
+        await conn.execute(
+            """
+            INSERT INTO agents (
+                id, org_id, name, public_key, public_key_fingerprint,
+                status, trust_score,
+                daily_limit_usd, per_action_limit_usd, rate_limit_per_minute,
+                allowed_actions, blocked_actions, metadata,
+                total_actions_count, total_blocked_count,
+                created_at, updated_at
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $16)
+            """,
+            agent_id,
+            org["id"],
+            "Mainnet Receipt Agent",
+            public_key,
+            fingerprint,
+            "active",
+            85,
+            500,     # daily limit
+            50,      # per-action limit ($50 so $75 triggers BLOCK)
+            60,      # rate limit per minute
+            ["financial_transaction", "api_call"],
+            [],
+            json.dumps({"description": "Agent for mainnet receipt generation"}),
+            0, 0,
+            datetime.now(timezone.utc),
+        )
+        print(f"  Created agent: {agent_id}")
+        return str(agent_id)
+    finally:
+        await conn.close()
+
+
 def main():
     parser = argparse.ArgumentParser(description="Generate mainnet PASS and BLOCK receipts")
     parser.add_argument("--api-url", required=True, help="e.g. https://api.inntris.com")
-    parser.add_argument("--admin-key", required=True, help="Your MASTER_ADMIN_KEY")
+    parser.add_argument("--database-url", required=True, help="Supabase connection string")
     args = parser.parse_args()
 
     api_url = args.api_url.rstrip("/")
@@ -87,53 +137,13 @@ def main():
         sys.exit(1)
     print("  OK")
 
-    # --- Create org ---
-    print("\nCreating temporary organization...")
-    org_resp = requests.post(
-        f"{api_url}/admin/organizations",
-        headers={"Content-Type": "application/json", "X-Admin-Key": args.admin_key},
-        json={
-            "name": f"Mainnet Receipt Gen {uuid4().hex[:8]}",
-            "contact_email": "receipts@inntris.com",
-            "billing_tier": "professional",
-        },
-        timeout=30,
-    )
-    if org_resp.status_code != 200:
-        print(f"  ERROR: {org_resp.status_code} - {org_resp.text}")
-        sys.exit(1)
-
-    org_data = org_resp.json()
-    api_key = org_data["api_key"]
-    org_id = org_data["id"]
-    print(f"  Org ID: {org_id}")
-
     # --- Generate keypair ---
     signing_key = SigningKey.generate()
-    public_key_b64 = base64.b64encode(bytes(signing_key.verify_key)).decode()
+    print(f"\nGenerated Ed25519 keypair")
 
-    # --- Create agent with low per-action limit ($50) so we can trigger BLOCK ---
-    print("Creating agent (per-action limit: $50)...")
-    agent_resp = requests.post(
-        f"{api_url}/admin/agents",
-        headers={"Content-Type": "application/json", "X-API-Key": api_key},
-        json={
-            "org_id": org_id,
-            "name": "Mainnet Receipt Agent",
-            "public_key": public_key_b64,
-            "daily_limit_usd": 500,
-            "per_action_limit_usd": 50,
-            "rate_limit_per_minute": 60,
-            "allowed_actions": ["financial_transaction", "api_call"],
-        },
-        timeout=30,
-    )
-    if agent_resp.status_code != 200:
-        print(f"  ERROR: {agent_resp.status_code} - {agent_resp.text}")
-        sys.exit(1)
-
-    agent_id = agent_resp.json()["id"]
-    print(f"  Agent ID: {agent_id}")
+    # --- Create agent in database ---
+    print("Setting up agent in database...")
+    agent_id = asyncio.run(setup_agent(args.database_url, signing_key))
 
     # --- PASS receipt: $25 transaction (under $50 limit) ---
     print("\nSubmitting PASS verification ($25 transaction)...")
