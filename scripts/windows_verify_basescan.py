@@ -25,7 +25,7 @@ API_URL = "http://localhost:8000"
 # AnchorRegistry contract addresses
 CONTRACTS = {
     "base_mainnet": {
-        "address": "YOUR_MAINNET_CONTRACT_ADDRESS",
+        "address": "0x0600eA15802c8d2EA429371b2EB0aacCFe321480",
         "explorer": "https://basescan.org"
     },
     "base_sepolia": {
