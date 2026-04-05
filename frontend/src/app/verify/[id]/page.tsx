@@ -53,7 +53,7 @@ export async function generateMetadata({
 
   const verdict = verdictLabel(record.verdict);
   const sigStatus = record.signature_valid ? "Signature valid" : "Signature invalid";
-  const chainLabel = record.chain_id === 84532 ? "Base Sepolia" : "Base L2";
+  const chainLabel = record.chain_id === 84532 ? "Base Sepolia (Testnet)" : "Base Mainnet";
   const chainStatus = record.tx_hash ? `Anchored on ${chainLabel}` : "Pending anchor";
   const title = `Verification Receipt ${id.slice(0, 8)}… — Inntris`;
   const description = `Independently verify this AI agent action. Cryptographic signature, policy hash, and on-chain anchor checked in real time. ${verdict} — ${record.agent_name}, ${record.action_type}. ${sigStatus}. ${chainStatus}.`;
