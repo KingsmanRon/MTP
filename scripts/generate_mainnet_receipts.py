@@ -65,11 +65,17 @@ def submit_verification(api_url: str, agent_id: str, signing_key: SigningKey,
         timeout=30,
     )
 
-    if response.status_code != 200:
+    # 200 = approved, 403 = blocked (policy violation), 429 = rate limited
+    # All three are valid verdicts that create audit log entries
+    if response.status_code == 200:
+        return response.json()
+    elif response.status_code in (403, 429):
+        # Blocked/rate-limited: the audit log was created but the API returns an error
+        # We need to fetch the audit_id from the database
+        return {"verdict": "blocked", "detail": response.json().get("detail", ""), "_status": response.status_code}
+    else:
         print(f"  ERROR {response.status_code}: {response.text}")
         sys.exit(1)
-
-    return response.json()
 
 
 async def setup_agent(database_url: str, signing_key: SigningKey) -> str:
@@ -121,6 +127,23 @@ async def setup_agent(database_url: str, signing_key: SigningKey) -> str:
         await conn.close()
 
 
+async def fetch_latest_audit_id(database_url: str, agent_id: str, verdict: str) -> str:
+    """Fetch the most recent audit log ID for an agent with a given verdict."""
+    conn = await asyncpg.connect(database_url)
+    try:
+        row = await conn.fetchrow(
+            "SELECT id FROM audit_logs WHERE agent_id = $1 AND verdict = $2 ORDER BY timestamp DESC LIMIT 1",
+            __import__("uuid").UUID(agent_id),
+            verdict,
+        )
+        if not row:
+            print(f"  ERROR: No {verdict} audit log found for agent {agent_id}")
+            sys.exit(1)
+        return str(row["id"])
+    finally:
+        await conn.close()
+
+
 def main():
     parser = argparse.ArgumentParser(description="Generate mainnet PASS and BLOCK receipts")
     parser.add_argument("--api-url", required=True, help="e.g. https://api.inntris.com")
@@ -161,6 +184,8 @@ def main():
     print(f"  Audit ID: {pass_audit_id}")
 
     # --- BLOCK receipt: $75 transaction (exceeds $50 limit) ---
+    # The API returns 403 for blocked actions, but still creates an audit log.
+    # We fetch the audit_id from the database after submission.
     print("\nSubmitting BLOCK verification ($75 transaction, exceeds $50 limit)...")
     block_result = submit_verification(
         api_url=api_url,
@@ -171,11 +196,15 @@ def main():
                  "description": "Mainnet verification test - blocked"},
     )
     block_verdict = block_result.get("verdict", "unknown")
-    block_audit_id = block_result.get("audit_id", "unknown")
+    block_detail = block_result.get("detail", "")
     print(f"  Verdict: {block_verdict}")
+    if block_detail:
+        print(f"  Reason: {block_detail}")
+
+    # Fetch the BLOCK audit_id from database (most recent blocked entry for this agent)
+    print("  Fetching BLOCK audit ID from database...")
+    block_audit_id = asyncio.run(fetch_latest_audit_id(args.database_url, agent_id, "blocked"))
     print(f"  Audit ID: {block_audit_id}")
-    if "verdict_reason" in block_result:
-        print(f"  Reason: {block_result['verdict_reason']}")
 
     # --- Summary ---
     print("\n" + "=" * 60)
