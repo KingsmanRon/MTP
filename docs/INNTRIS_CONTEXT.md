@@ -39,15 +39,14 @@ v1 — legacy
 ## Canonical homepage demo receipts
 
 ```
-CANONICAL_PASS_ID    = 659c20b1-d1b1-4a4e-9676-4d04e222ae58  (Sepolia-era — TODO: regenerate on mainnet under v2)
-CANONICAL_RECEIPT_ID = 62afc74f-9e57-4748-82e3-10f1bfe07b9f  (Sepolia-era — TODO: regenerate on mainnet under v2)
+CANONICAL_PASS_ID    = d8dd0902-4750-42d2-9516-92bf6362e815
+CANONICAL_RECEIPT_ID = 3030c27c-87c4-4464-b4af-605fbe638e0e
+Demo policy hash     = b5e687b5bd9878f561f8050e994fbd8632fec823503fa4bd8c047a3e3b14f686
+Anchored             = Base mainnet (chain 8453), block 44,401,999,
+                       tx 0x3f86eea4328d00fbd968181f5f188aee95dea65ea690273f229534edd68ecd84
 ```
 
-The fresh-receipt regeneration step (PR1 §1.3 / §1.5) requires production
-database access plus the anchor worker's signing key and Base mainnet RPC
-credentials, none of which are present in the development sandbox. This step
-must be run from an environment with those secrets before the canonical IDs
-in `frontend/src/app/page.tsx` can be swapped.
+Regenerated on mainnet under schema v2. Mainnet migration fully complete.
 
 ## Prior PENDING integrity state — root cause
 
