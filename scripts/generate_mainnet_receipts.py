@@ -33,8 +33,26 @@ def compute_hash(data: dict) -> str:
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
+# Demo policy for the canonical homepage receipts. Per the architectural rule
+# the backend never sees the raw YAML — only the SHA-256 hex of it. Computing
+# the hash here mirrors what the GitHub Action does in production.
+DEMO_POLICY_YAML = """\
+version: 1
+agent: mainnet-receipt-agent
+limits:
+  per_action_usd: 50
+  daily_usd: 500
+  rate_per_minute: 60
+allowed_actions:
+  - financial_transaction
+  - api_call
+"""
+DEMO_POLICY_HASH = hashlib.sha256(DEMO_POLICY_YAML.encode("utf-8")).hexdigest()
+
+
 def submit_verification(api_url: str, agent_id: str, signing_key: SigningKey,
-                        action_type: str, payload: dict) -> dict:
+                        action_type: str, payload: dict,
+                        policy_hash: str) -> dict:
     nonce = str(uuid4())
     timestamp = datetime.now(timezone.utc).isoformat()
 
@@ -61,6 +79,7 @@ def submit_verification(api_url: str, agent_id: str, signing_key: SigningKey,
             "nonce": nonce,
             "timestamp": timestamp,
             "signature": signature_b64,
+            "policy_hash": policy_hash,
         },
         timeout=30,
     )
@@ -163,6 +182,7 @@ def main():
     # --- Generate keypair ---
     signing_key = SigningKey.generate()
     print(f"\nGenerated Ed25519 keypair")
+    print(f"Demo policy hash: {DEMO_POLICY_HASH}")
 
     # --- Create agent in database ---
     print("Setting up agent in database...")
@@ -177,6 +197,7 @@ def main():
         action_type="financial_transaction",
         payload={"amount": 25.00, "currency": "USD", "recipient": "vendor_001",
                  "description": "Mainnet verification test - approved"},
+        policy_hash=DEMO_POLICY_HASH,
     )
     pass_verdict = pass_result.get("verdict", "unknown")
     pass_audit_id = pass_result.get("audit_id", "unknown")
@@ -194,6 +215,7 @@ def main():
         action_type="financial_transaction",
         payload={"amount": 75.00, "currency": "USD", "recipient": "vendor_002",
                  "description": "Mainnet verification test - blocked"},
+        policy_hash=DEMO_POLICY_HASH,
     )
     block_verdict = block_result.get("verdict", "unknown")
     block_detail = block_result.get("detail", "")
