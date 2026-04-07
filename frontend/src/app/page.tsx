@@ -4,6 +4,7 @@ import { LayoutDashboard, Bot, SearchCheck, Globe, KeyRound, Lock, FileCheck2, C
 import { Card, CardContent } from "@/components/ui/card";
 import { InntrisLogo } from "@/components/inntris-logo";
 import ContactSection from "@/components/contact-section";
+import { ReceiptIdCopy } from "@/components/receipt-id-copy";
 import { publicApi } from "@/lib/api";
 const modules = [
   {
@@ -336,31 +337,31 @@ export default async function InntrisCoreDarkPreview() {
                     <ChevronRight className="h-4 w-4" />
                   </span>
                 </div>
-                <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                  <div>
+                <div className="mt-5 grid grid-cols-2 gap-x-6 gap-y-4 pt-5 border-t border-white/10">
+                  <div className="min-w-0">
                     <p className="text-[10px] font-medium uppercase tracking-widest text-[#7F8CA3]">Agent</p>
-                    <p className="mt-1 text-sm font-medium text-[#F5F7FB]">{passReceipt?.agent_name ?? "Demo Agent"}</p>
-                    <p className="text-xs text-[#7F8CA3]">{passReceipt?.organization_name ?? "Inntris Demo"}</p>
+                    <p className="mt-1 truncate text-sm font-medium text-[#F5F7FB]">{passReceipt?.agent_name ?? "Demo Agent"}</p>
+                    <p className="truncate text-xs text-[#7F8CA3]">{passReceipt?.organization_name ?? "Inntris Demo"}</p>
                   </div>
-                  <div>
+                  <div className="min-w-0">
                     <p className="text-[10px] font-medium uppercase tracking-widest text-[#7F8CA3]">Action</p>
-                    <p className="mt-1 text-sm font-mono text-[#F5F7FB]">{passReceipt?.action_type ?? "api_call"}</p>
-                    <p className="text-xs text-[#7F8CA3]">
+                    <p className="mt-1 truncate font-mono text-xs text-[#F5F7FB]">{passReceipt?.action_type ?? "api_call"}</p>
+                    <p className="truncate text-xs text-[#7F8CA3]">
                       Trust {passReceipt?.trust_score ?? 85}/100
                     </p>
                   </div>
-                  <div>
+                  <div className="min-w-0">
                     <p className="text-[10px] font-medium uppercase tracking-widest text-[#7F8CA3]">Signature</p>
-                    <p className="mt-1 text-sm font-medium text-[#22c55e]">
+                    <p className="mt-1 truncate text-sm font-medium text-[#22c55e]">
                       {passReceipt?.signature_valid !== false ? "Valid Ed25519" : "Invalid"}
                     </p>
-                    <p className="text-xs text-[#7F8CA3]">
+                    <p className="truncate text-xs text-[#7F8CA3]">
                       Anchored on Base L2
                     </p>
                   </div>
-                  <div>
+                  <div className="min-w-0">
                     <p className="text-[10px] font-medium uppercase tracking-widest text-[#7F8CA3]">Receipt ID</p>
-                    <p className="mt-1 text-xs font-mono text-[#8FB8FF] break-all">{passReceipt?.audit_id ?? CANONICAL_PASS_ID}</p>
+                    <ReceiptIdCopy id={passReceipt?.audit_id ?? CANONICAL_PASS_ID} />
                   </div>
                 </div>
               </a>
@@ -400,31 +401,31 @@ export default async function InntrisCoreDarkPreview() {
                       <ChevronRight className="h-4 w-4" />
                     </span>
                   </div>
-                  <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                    <div>
+                  <div className="mt-5 grid grid-cols-2 gap-x-6 gap-y-4 pt-5 border-t border-white/10">
+                    <div className="min-w-0">
                       <p className="text-[10px] font-medium uppercase tracking-widest text-[#7F8CA3]">Agent</p>
-                      <p className="mt-1 text-sm font-medium text-[#F5F7FB]">{receipt.agent_name}</p>
-                      <p className="text-xs text-[#7F8CA3]">{receipt.organization_name}</p>
+                      <p className="mt-1 truncate text-sm font-medium text-[#F5F7FB]">{receipt.agent_name}</p>
+                      <p className="truncate text-xs text-[#7F8CA3]">{receipt.organization_name}</p>
                     </div>
-                    <div>
+                    <div className="min-w-0">
                       <p className="text-[10px] font-medium uppercase tracking-widest text-[#7F8CA3]">Action</p>
-                      <p className="mt-1 text-sm font-mono text-[#F5F7FB]">{receipt.action_type}</p>
-                      <p className="text-xs text-[#7F8CA3]">
+                      <p className="mt-1 truncate font-mono text-xs text-[#F5F7FB]">{receipt.action_type}</p>
+                      <p className="truncate text-xs text-[#7F8CA3]">
                         Trust {receipt.trust_score}/100
                       </p>
                     </div>
-                    <div>
+                    <div className="min-w-0">
                       <p className="text-[10px] font-medium uppercase tracking-widest text-[#7F8CA3]">Signature</p>
-                      <p className={`mt-1 text-sm font-medium ${receipt.signature_valid ? "text-[#22c55e]" : "text-[#ef4444]"}`}>
+                      <p className={`mt-1 truncate text-sm font-medium ${receipt.signature_valid ? "text-[#22c55e]" : "text-[#ef4444]"}`}>
                         {receipt.signature_valid ? "Valid Ed25519" : "Invalid"}
                       </p>
-                      <p className="text-xs text-[#7F8CA3]">
+                      <p className="truncate text-xs text-[#7F8CA3]">
                         {receipt.tx_hash ? "Anchored on Base L2" : "Pending anchor"}
                       </p>
                     </div>
-                    <div>
+                    <div className="min-w-0">
                       <p className="text-[10px] font-medium uppercase tracking-widest text-[#7F8CA3]">Receipt ID</p>
-                      <p className="mt-1 text-xs font-mono text-[#8FB8FF] break-all">{receipt.audit_id}</p>
+                      <ReceiptIdCopy id={receipt.audit_id} />
                     </div>
                   </div>
                 </Link>
