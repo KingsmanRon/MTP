@@ -489,7 +489,7 @@ export default async function InntrisCoreDarkPreview() {
               </a>
             </div>
             <p className="text-xs text-[#7F8CA3]/60">
-              &copy; 2026 Inntris INC
+              &copy; 2026 Inntris, Inc.
             </p>
           </div>
         </div>
