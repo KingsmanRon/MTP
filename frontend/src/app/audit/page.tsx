@@ -27,13 +27,13 @@ const previewRecords = [
   },
   {
     id: "2f41..09aa",
-    verdict: "PERMIT",
+    verdict: "PASS",
     timestamp: "2026-03-18  14:28 UTC",
     status: "Verified",
   },
   {
     id: "a1d7..b204",
-    verdict: "PERMIT",
+    verdict: "PASS",
     timestamp: "2026-03-18  14:21 UTC",
     status: "Verified",
   },
@@ -133,7 +133,7 @@ export default function AuditPreviewPage() {
                 {[
                   { label: "Receipt ID", value: "8f3a21c4-...-c91e" },
                   { label: "Agent ID", value: "agent-pr-reviewer-01" },
-                  { label: "Outcome", value: "BLOCK / PERMIT" },
+                  { label: "Outcome", value: "PASS / BLOCK / ESCALATE" },
                   { label: "Date range", value: "2026-03-12 — 2026-03-18" },
                 ].map((row) => (
                   <div

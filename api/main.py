@@ -439,6 +439,20 @@ async def get_public_verification_record(
     canonical = json.dumps(fingerprint_payload, sort_keys=True, separators=(",", ":"))
     receipt_fingerprint = hashlib.sha256(canonical.encode()).hexdigest()
 
+    # Receipt schema versioning.
+    #
+    # v2: policy_hash is part of the canonical JSON used to compute the receipt
+    #     fingerprint for any policy-evaluated decision. The presence of a
+    #     non-null policy_hash on the audit row marks the receipt as a v2
+    #     receipt — the policy was evaluated and is bound to the decision.
+    # v1: legacy receipts that pre-date the v2 cutover, where policy_hash may
+    #     or may not have been bound. Old receipts remain valid under their
+    #     own version; their fingerprint already includes the same field set.
+    #
+    # The fingerprint field set itself is identical across v1 and v2 — what
+    # changes is the *guarantee*: a v2 receipt is asserted to bind a policy.
+    schema_version = "v2" if row.get("policy_hash") else "v1"
+
     return PublicVerificationRecord(
         audit_id=row["id"],
         timestamp=row["timestamp"],
@@ -459,7 +473,7 @@ async def get_public_verification_record(
         block_number=row.get("block_number"),
         chain_id=row.get("chain_id") or 8453,
         anchored_at=row.get("anchored_at"),
-        schema_version="v1",
+        schema_version=schema_version,
         receipt_fingerprint=receipt_fingerprint,
         integrity_status="verified",
     )

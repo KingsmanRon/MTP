@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { publicApi } from "@/lib/api";
+import { verdictLabel } from "@/lib/verdict";
 import { VerifyRecordView, VerifyRecordNotFound } from "./verify-record-client";
 
 /* ------------------------------------------------------------------ */
@@ -12,14 +13,6 @@ async function fetchRecord(id: string) {
   } catch {
     return null;
   }
-}
-
-/* ------------------------------------------------------------------ */
-/*  Dynamic metadata / Open Graph                                     */
-/* ------------------------------------------------------------------ */
-
-function verdictLabel(v: string) {
-  return v === "approved" ? "PASS" : "BLOCK";
 }
 
 export async function generateMetadata({

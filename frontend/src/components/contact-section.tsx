@@ -416,7 +416,7 @@ export default function ContactSection() {
 
                 {status === "error" && (
                   <p className="font-sans text-sm" style={{ color: "#ef4444" }}>
-                    Something went wrong. Email us directly at applications@inntris.com
+                    Something went wrong. Email us directly at sales@inntris.com
                   </p>
                 )}
 
@@ -463,11 +463,11 @@ export default function ContactSection() {
                   Email
                 </p>
                 <a
-                  href="mailto:applications@inntris.com"
+                  href="mailto:sales@inntris.com"
                   className="w-fit font-mono text-sm underline-offset-4 transition-all duration-200 hover:underline focus:outline-none focus:ring-2 focus:ring-[#4C8DFF]/20"
                   style={{ color: "#4C8DFF" }}
                 >
-                  applications@inntris.com
+                  sales@inntris.com
                 </a>
               </div>
 
@@ -494,6 +494,18 @@ export default function ContactSection() {
           <p className="text-center font-sans text-sm leading-relaxed" style={{ color: "#7F8CA3" }}>
             We respond within 24 hours. If you&apos;re running agents against code, data,
             or financial operations — that&apos;s our sweet spot.
+          </p>
+          <p className="mt-3 text-center font-sans text-sm leading-relaxed" style={{ color: "#7F8CA3" }}>
+            For design partner discussions, platform reviews, and production agent
+            deployments, contact{" "}
+            <a
+              href="mailto:sales@inntris.com"
+              className="font-mono underline-offset-4 hover:underline"
+              style={{ color: "#4C8DFF" }}
+            >
+              sales@inntris.com
+            </a>
+            .
           </p>
         </div>
       </div>
