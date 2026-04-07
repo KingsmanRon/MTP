@@ -6,6 +6,7 @@ import { InntrisLogo } from "@/components/inntris-logo";
 import ContactSection from "@/components/contact-section";
 import { ReceiptIdCopy } from "@/components/receipt-id-copy";
 import { publicApi } from "@/lib/api";
+import { verdictLabel, isPassVerdict, isEscalateVerdict } from "@/lib/verdict";
 const modules = [
   {
     icon: LayoutDashboard,
@@ -396,7 +397,7 @@ export default async function InntrisCoreDarkPreview() {
                 >
                   <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                     <div className="flex items-center gap-3">
-                      {receipt.verdict === "approved" ? (
+                      {isPassVerdict(receipt.verdict) ? (
                         <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#22c55e]/15">
                           <CheckCircle2 className="h-5 w-5 text-[#22c55e]" />
                         </div>
@@ -408,10 +409,14 @@ export default async function InntrisCoreDarkPreview() {
                       <div>
                         <span
                           className={`text-lg font-bold tracking-tight ${
-                            receipt.verdict === "approved" ? "text-[#22c55e]" : "text-[#ef4444]"
+                            isPassVerdict(receipt.verdict)
+                              ? "text-[#22c55e]"
+                              : isEscalateVerdict(receipt.verdict)
+                              ? "text-[#f59e0b]"
+                              : "text-[#ef4444]"
                           }`}
                         >
-                          {receipt.verdict === "approved" ? "PASS" : "BLOCK"}
+                          {verdictLabel(receipt.verdict)}
                         </span>
                         <p className="text-xs text-[#7F8CA3]">
                           {receipt.verdict_reason ?? "All policy checks passed"}
@@ -463,6 +468,43 @@ export default async function InntrisCoreDarkPreview() {
             </p>
           </section>
         )}
+
+        {/* ============================================================ */}
+        {/*  What a public receipt proves                                */}
+        {/* ============================================================ */}
+        <section
+          id="what-a-receipt-proves"
+          aria-labelledby="what-a-receipt-proves-heading"
+          className="mx-auto max-w-7xl px-6 pb-4 lg:px-8"
+        >
+          <div className="rounded-[24px] border border-[#22314D] bg-[#0D1728] p-6 md:p-8">
+            <h2
+              id="what-a-receipt-proves-heading"
+              className="text-lg font-semibold tracking-tight text-[#F5F7FB]"
+            >
+              What a public receipt proves
+            </h2>
+            <ul className="mt-4 grid gap-3 md:grid-cols-2">
+              {[
+                ["Which agent acted", "via Ed25519 signature validation"],
+                ["What decision was made", "PASS, BLOCK, or ESCALATE"],
+                ["Which policy bound the decision", "via policy hash"],
+                ["That the record was anchored", "via Base L2 transaction proof"],
+              ].map(([primary, secondary]) => (
+                <li
+                  key={primary}
+                  className="flex items-start gap-3 rounded-xl border border-white/6 bg-[#101C31]/70 px-4 py-3"
+                >
+                  <CheckCircle2 className="mt-0.5 h-4 w-4 flex-shrink-0 text-[#28C281]" />
+                  <p className="text-sm leading-6 text-[#C4CFDE]">
+                    <span className="font-medium text-[#F5F7FB]">{primary}</span>
+                    <span className="text-[#7F8CA3]"> — {secondary}</span>
+                  </p>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </section>
 
         <section id="product" className="mx-auto max-w-7xl px-6 pb-16 lg:px-8 lg:pb-24">
           <div className="rounded-[28px] border border-[#22314D] bg-[#0D1728] p-7 lg:p-10">

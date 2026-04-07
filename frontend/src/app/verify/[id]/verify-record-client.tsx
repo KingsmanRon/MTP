@@ -20,15 +20,15 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { InntrisLogo } from "@/components/inntris-logo";
-
-/* ------------------------------------------------------------------ */
-/*  Helpers                                                           */
-/* ------------------------------------------------------------------ */
-
-function verdictLabel(v: string) {
-  if (v === "approved") return "PASS";
-  return "BLOCK";
-}
+import { verdictLabel, isPassVerdict, isEscalateVerdict } from "@/lib/verdict";
+import {
+  signatureCheckStatus,
+  policyHashCheckStatus,
+  anchorCheckStatus,
+  isSupportedSchemaVersion,
+  checkStatusUiLabel,
+  type CheckStatus,
+} from "@/lib/proof-state";
 
 function actionBadgeColor(action: string) {
   const map: Record<string, string> = {
@@ -81,23 +81,12 @@ async function computeFingerprint(record: PublicVerificationRecord): Promise<str
 /*  Proof check types                                                  */
 /* ------------------------------------------------------------------ */
 
-type CheckStatus = "verified" | "pending" | "failed" | "not_included";
-
 function checkStatusColor(s: CheckStatus) {
   switch (s) {
     case "verified": return "text-[#22c55e]";
     case "pending": return "text-[#f59e0b]";
     case "failed": return "text-[#ef4444]";
-    case "not_included": return "text-[#7F8CA3]";
-  }
-}
-
-function checkStatusLabel(s: CheckStatus) {
-  switch (s) {
-    case "verified": return "VERIFIED";
-    case "pending": return "PENDING";
-    case "failed": return "FAILED";
-    case "not_included": return "NOT INCLUDED";
+    case "not_applicable": return "text-[#7F8CA3]";
   }
 }
 
@@ -109,8 +98,8 @@ function CheckIcon({ status }: { status: CheckStatus }) {
       return <Clock className="h-5 w-5 text-[#f59e0b]" />;
     case "failed":
       return <XOctagon className="h-5 w-5 text-[#ef4444]" />;
-    case "not_included":
-      return <Clock className="h-5 w-5 text-[#7F8CA3]" />;
+    case "not_applicable":
+      return <ShieldCheck className="h-5 w-5 text-[#7F8CA3]" />;
   }
 }
 
@@ -235,7 +224,7 @@ function ProofCompletenessChecks({ record }: { record: PublicVerificationRecord 
   const [integrityStatus, setIntegrityStatus] = useState<CheckStatus>("pending");
 
   useEffect(() => {
-    if (record.schema_version !== "v1") {
+    if (!isSupportedSchemaVersion(record.schema_version)) {
       setIntegrityStatus("failed");
       return;
     }
@@ -252,30 +241,19 @@ function ProofCompletenessChecks({ record }: { record: PublicVerificationRecord 
     });
   }, [record]);
 
-  // 1. Signature check
-  const signatureCheck: CheckStatus = record.signature_valid ? "verified" : "failed";
-
-  // 2. Policy hash check
-  const policyHashCheck: CheckStatus = /^[a-f0-9]{64}$/.test(record.policy_hash ?? "")
-    ? "verified"
-    : "not_included";
-
-  // 3. On-chain anchor check
-  let anchorCheck: CheckStatus;
-  let anchorLabel: string;
-  if (record.tx_hash != null && record.block_number != null) {
-    anchorCheck = "verified";
-    anchorLabel = "Confirmed on-chain";
-  } else if (record.tx_hash != null) {
-    anchorCheck = "pending";
-    anchorLabel = "Transaction submitted";
-  } else {
-    anchorCheck = "pending";
-    anchorLabel = "Awaiting anchoring";
-  }
+  // Pure deterministic checks (see lib/proof-state.ts).
+  const signatureCheck: CheckStatus = signatureCheckStatus(record.signature_valid);
+  const policyHashCheck: CheckStatus = policyHashCheckStatus(record.policy_hash);
+  const anchorCheck: CheckStatus = anchorCheckStatus(record.tx_hash, record.block_number);
+  const anchorLabel: string =
+    anchorCheck === "verified"
+      ? "Confirmed on-chain"
+      : record.tx_hash != null
+      ? "Transaction submitted"
+      : "Awaiting anchoring";
 
   // Schema version gate
-  if (record.schema_version !== "v1") {
+  if (!isSupportedSchemaVersion(record.schema_version)) {
     return (
       <section className="mt-5 rounded-[28px] border border-[#f59e0b]/20 bg-[#f59e0b]/5 p-6 text-center">
         <AlertTriangle className="mx-auto h-8 w-8 text-[#f59e0b] mb-3" />
@@ -295,7 +273,12 @@ function ProofCompletenessChecks({ record }: { record: PublicVerificationRecord 
     {
       label: "Policy hash",
       status: policyHashCheck,
-      sublabel: policyHashCheck === "verified" ? "Policy file hash bound to record" : "No policy hash bound to this record",
+      sublabel:
+        policyHashCheck === "verified"
+          ? "Policy file hash bound to record"
+          : policyHashCheck === "not_applicable"
+          ? "Receipt does not bind a policy"
+          : "Policy hash present but did not validate",
     },
     {
       label: "On-chain anchor",
@@ -339,7 +322,7 @@ function ProofCompletenessChecks({ record }: { record: PublicVerificationRecord 
               <p className="text-xs text-[#7F8CA3]">{check.sublabel}</p>
             </div>
             <span className={`text-xs font-bold ${checkStatusColor(check.status)}`}>
-              {checkStatusLabel(check.status)}
+              {checkStatusUiLabel(check.status)}
             </span>
           </div>
         ))}
@@ -360,7 +343,8 @@ export function VerifyRecordView({ record }: { record: PublicVerificationRecord 
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const isPass = record.verdict === "approved";
+  const isPass = isPassVerdict(record.verdict);
+  const isEscalate = isEscalateVerdict(record.verdict);
   const baseScanDomain =
     record.chain_id === 84532
       ? "https://sepolia.basescan.org"
@@ -383,6 +367,8 @@ export function VerifyRecordView({ record }: { record: PublicVerificationRecord 
           className={`rounded-t-[28px] border border-b-0 p-8 text-center ${
             isPass
               ? "border-[#22c55e]/20 bg-gradient-to-b from-[#22c55e]/10 to-[#0D1728]"
+              : isEscalate
+              ? "border-[#f59e0b]/20 bg-gradient-to-b from-[#f59e0b]/10 to-[#0D1728]"
               : "border-[#ef4444]/20 bg-gradient-to-b from-[#ef4444]/10 to-[#0D1728]"
           }`}
         >
@@ -391,6 +377,10 @@ export function VerifyRecordView({ record }: { record: PublicVerificationRecord 
             {isPass ? (
               <div className="flex h-20 w-20 items-center justify-center rounded-full bg-[#22c55e]/15 ring-4 ring-[#22c55e]/10">
                 <CheckCircle2 className="h-10 w-10 text-[#22c55e]" />
+              </div>
+            ) : isEscalate ? (
+              <div className="flex h-20 w-20 items-center justify-center rounded-full bg-[#f59e0b]/15 ring-4 ring-[#f59e0b]/10">
+                <AlertTriangle className="h-10 w-10 text-[#f59e0b]" />
               </div>
             ) : (
               <div className="flex h-20 w-20 items-center justify-center rounded-full bg-[#ef4444]/15 ring-4 ring-[#ef4444]/10">
@@ -402,7 +392,7 @@ export function VerifyRecordView({ record }: { record: PublicVerificationRecord 
           {/* Verdict text */}
           <h1
             className={`text-4xl font-bold tracking-tight mb-2 ${
-              isPass ? "text-[#22c55e]" : "text-[#ef4444]"
+              isPass ? "text-[#22c55e]" : isEscalate ? "text-[#f59e0b]" : "text-[#ef4444]"
             }`}
           >
             {verdictLabel(record.verdict)}
@@ -467,6 +457,8 @@ export function VerifyRecordView({ record }: { record: PublicVerificationRecord 
                     className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-bold ${
                       isPass
                         ? "border-[#22c55e]/30 bg-[#22c55e]/10 text-[#22c55e]"
+                        : isEscalate
+                        ? "border-[#f59e0b]/30 bg-[#f59e0b]/10 text-[#f59e0b]"
                         : "border-[#ef4444]/30 bg-[#ef4444]/10 text-[#ef4444]"
                     }`}
                   >
@@ -598,7 +590,7 @@ export function VerifyRecordView({ record }: { record: PublicVerificationRecord 
               {record.policy_hash ? (
                 <CopyableHash value={record.policy_hash} />
               ) : (
-                <span className="text-sm font-mono text-[#7F8CA3]">Not included</span>
+                <span className="text-sm font-mono text-[#7F8CA3]">Not applicable</span>
               )}
             </div>
 

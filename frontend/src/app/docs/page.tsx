@@ -351,12 +351,12 @@ POST /admin/agents
               {
                 icon: Globe,
                 title: "Universal Standard",
-                body: 'We aim to become the universal verification standard for AI agents — the "VISA network" for autonomous systems. Any agent, any platform, one trust layer.',
+                body: "Inntris provides a verification layer for teams that need signed decisions, policy enforcement, and tamper-evident audit trails for AI agent actions.",
               },
               {
                 icon: Building2,
                 title: "Enterprise Ready",
-                body: "From startups to regulated enterprises, Inntris scales with your needs. Built for auditability. Designed for enterprise control requirements. Optional on-premise deployment available for compliance-heavy industries.",
+                body: "From startups to regulated enterprises, Inntris scales with your needs. Built for auditability. Designed for enterprise control requirements. Deployment and security requirements are reviewed with each team during evaluation.",
               },
               {
                 icon: Lock,

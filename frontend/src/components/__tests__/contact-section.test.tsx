@@ -33,7 +33,7 @@ describe("ContactSection", () => {
 
     it("renders the sidebar with contact info", () => {
       render(<ContactSection />);
-      expect(screen.getByText("applications@inntris.com")).toBeInTheDocument();
+      expect(screen.getAllByText("sales@inntris.com").length).toBeGreaterThan(0);
       expect(screen.getByText("Within 24 hours")).toBeInTheDocument();
     });
 
@@ -44,8 +44,14 @@ describe("ContactSection", () => {
 
     it("renders the email link with correct href", () => {
       render(<ContactSection />);
-      const emailLink = screen.getByText("applications@inntris.com");
-      expect(emailLink).toHaveAttribute("href", "mailto:applications@inntris.com");
+      const emailLinks = screen.getAllByText("sales@inntris.com");
+      expect(emailLinks.length).toBeGreaterThan(0);
+      expect(emailLinks[0]).toHaveAttribute("href", "mailto:sales@inntris.com");
+    });
+
+    it("does not present applications@inntris.com as the buyer-facing address", () => {
+      const { container } = render(<ContactSection />);
+      expect(container.textContent ?? "").not.toContain("applications@inntris.com");
     });
   });
 
@@ -174,7 +180,7 @@ describe("ContactSection", () => {
 
       await waitFor(() => {
         expect(
-          screen.getByText("Something went wrong. Email us directly at applications@inntris.com")
+          screen.getByText("Something went wrong. Email us directly at sales@inntris.com")
         ).toBeInTheDocument();
       });
     });
@@ -192,7 +198,7 @@ describe("ContactSection", () => {
 
       await waitFor(() => {
         expect(
-          screen.getByText("Something went wrong. Email us directly at applications@inntris.com")
+          screen.getByText("Something went wrong. Email us directly at sales@inntris.com")
         ).toBeInTheDocument();
       });
     });
@@ -210,7 +216,7 @@ describe("ContactSection", () => {
 
       await waitFor(() => {
         expect(
-          screen.getByText("Something went wrong. Email us directly at applications@inntris.com")
+          screen.getByText("Something went wrong. Email us directly at sales@inntris.com")
         ).toBeInTheDocument();
       });
 
