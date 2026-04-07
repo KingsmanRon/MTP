@@ -58,8 +58,8 @@ const capabilities = [
     body: "Every decision is recorded in an append-only log, Merkle-anchored on Base L2. Proves what was allowed to happen, and what actually happened.",
   },
 ];
-const CANONICAL_RECEIPT_ID = "62afc74f-9e57-4748-82e3-10f1bfe07b9f";
-const CANONICAL_PASS_ID = "659c20b1-d1b1-4a4e-9676-4d04e222ae58";
+const CANONICAL_RECEIPT_ID = "3030c27c-87c4-4464-b4af-605fbe638e0e";
+const CANONICAL_PASS_ID = "d8dd0902-4750-42d2-9516-92bf6362e815";
 
 function formatReceiptTimestamp(iso: string | null | undefined): string | null {
   if (!iso) return null;
@@ -179,7 +179,7 @@ export default async function InntrisCoreDarkPreview() {
             </p>
             <div className="flex flex-wrap gap-3 mb-10">
               <a
-                href="https://www.inntris.com/verify/659c20b1-d1b1-4a4e-9676-4d04e222ae58"
+                href="https://www.inntris.com/verify/d8dd0902-4750-42d2-9516-92bf6362e815"
                 className="rounded-md bg-[#28C281] px-5 py-3 text-sm font-medium text-white transition-opacity hover:opacity-90"
               >
                 See live verification →
@@ -333,7 +333,7 @@ export default async function InntrisCoreDarkPreview() {
             <div className="grid gap-5 md:grid-cols-2">
               {/* PASS card */}
               <a
-                href="https://www.inntris.com/verify/659c20b1-d1b1-4a4e-9676-4d04e222ae58"
+                href="https://www.inntris.com/verify/d8dd0902-4750-42d2-9516-92bf6362e815"
                 className="group block rounded-[24px] border border-[#22314D] bg-[#0D1728] p-6 transition hover:border-[#35507A] hover:bg-[#101C31] md:p-8"
               >
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
