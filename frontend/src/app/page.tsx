@@ -60,6 +60,25 @@ const capabilities = [
 const CANONICAL_RECEIPT_ID = "62afc74f-9e57-4748-82e3-10f1bfe07b9f";
 const CANONICAL_PASS_ID = "659c20b1-d1b1-4a4e-9676-4d04e222ae58";
 
+function formatReceiptTimestamp(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  const diffMs = Date.now() - d.getTime();
+  const sec = Math.round(diffMs / 1000);
+  const min = Math.round(sec / 60);
+  const hr = Math.round(min / 60);
+  const day = Math.round(hr / 24);
+  let relative: string;
+  if (sec < 60) relative = "just now";
+  else if (min < 60) relative = `${min} minute${min === 1 ? "" : "s"} ago`;
+  else if (hr < 24) relative = `${hr} hour${hr === 1 ? "" : "s"} ago`;
+  else relative = `${day} day${day === 1 ? "" : "s"} ago`;
+  const pad = (n: number) => n.toString().padStart(2, "0");
+  const absolute = `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())} UTC`;
+  return `Generated ${relative} · ${absolute}`;
+}
+
 export default async function InntrisCoreDarkPreview() {
   let receipt = null;
   let passReceipt = null;
@@ -107,12 +126,10 @@ export default async function InntrisCoreDarkPreview() {
             </div>
           </div>
           <nav className="hidden items-center gap-5 text-[15px] text-[#C4CFDE] md:flex lg:gap-7">
-            <a className="transition hover:text-white" href="#overview">Overview</a>
-            <a className="transition hover:text-white" href="#modules">Modules</a>
-            <a className="transition hover:text-white" href="#contact">Contact</a>
-            <Link className="transition hover:text-white" href="/verify">Verify</Link>
-            <Link className="transition hover:text-white" href="/admin">Console</Link>
+            <a className="transition hover:text-white" href="/#overview">Overview</a>
+            <a className="transition hover:text-white" href="/#modules">Modules</a>
             <Link className="transition hover:text-white" href="/docs">Docs</Link>
+            <Link className="transition hover:text-white" href="/verify">Verify</Link>
           </nav>
           <div className="flex items-center gap-3">
             <a
@@ -309,7 +326,7 @@ export default async function InntrisCoreDarkPreview() {
                 A real verification receipt.
               </h2>
               <p className="mt-2 max-w-xl text-sm leading-6 text-[#AAB7CC]">
-                This is a live receipt from the Inntris network — not a mockup. Click to inspect the full proof, including signature validity, policy hash, and on-chain anchor.
+                Every receipt below is live, signed, anchored to Base L2, and independently verifiable. Click any receipt to inspect the full proof — signature, policy hash, and on-chain anchor.
               </p>
             </div>
             <div className="grid gap-5 md:grid-cols-2">
@@ -364,6 +381,11 @@ export default async function InntrisCoreDarkPreview() {
                     <ReceiptIdCopy id={passReceipt?.audit_id ?? CANONICAL_PASS_ID} />
                   </div>
                 </div>
+                {formatReceiptTimestamp(passReceipt?.timestamp) && (
+                  <p className="mt-4 text-[11px] text-[#7F8CA3]">
+                    {formatReceiptTimestamp(passReceipt?.timestamp)}
+                  </p>
+                )}
               </a>
 
               {/* BLOCK card */}
@@ -428,6 +450,11 @@ export default async function InntrisCoreDarkPreview() {
                       <ReceiptIdCopy id={receipt.audit_id} />
                     </div>
                   </div>
+                  {formatReceiptTimestamp(receipt.timestamp) && (
+                    <p className="mt-4 text-[11px] text-[#7F8CA3]">
+                      {formatReceiptTimestamp(receipt.timestamp)}
+                    </p>
+                  )}
                 </Link>
               )}
             </div>
