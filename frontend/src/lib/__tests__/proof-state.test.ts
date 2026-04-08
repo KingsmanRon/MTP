@@ -5,6 +5,10 @@ import {
   deriveIntegrityStatus,
   isSupportedSchemaVersion,
   checkStatusUiLabel,
+  canonicalFingerprintPayload,
+  canonicalStringify,
+  computeReceiptFingerprint,
+  type FingerprintableRecord,
 } from "../proof-state";
 
 describe("proof-state helpers (PR1 §1.4)", () => {
@@ -109,6 +113,78 @@ describe("proof-state helpers (PR1 §1.4)", () => {
       expect(checkStatusUiLabel("failed")).toBe("FAILED");
       expect(checkStatusUiLabel("pending")).toBe("PENDING");
       expect(checkStatusUiLabel("not_applicable")).toBe("NOT APPLICABLE");
+    });
+  });
+
+  /* ---------------------------------------------------------------- */
+  /*  Canonical fingerprint parity with the Python backend            */
+  /* ---------------------------------------------------------------- */
+  //
+  // The expected SHA-256 hex values below are produced by the identical
+  // canonical form used in api/main.py (the `canonical_wire_timestamp`
+  // helper + `fingerprint_payload` dict). If you change the field set,
+  // ordering, or timestamp encoding, these tests MUST be updated on both
+  // sides together — otherwise every public receipt will report
+  // "Fingerprint mismatch — receipt may be tampered".
+  describe("canonical fingerprint", () => {
+    const v2Record: FingerprintableRecord = {
+      action_hash:
+        "b913fee92806720122d84285c779582172446c1c1c03645cb865f93fc36b8b5b",
+      action_type: "financial_transaction",
+      agent_id: "11111111-2222-3333-4444-555555555555",
+      audit_id: "d8dd0902-4750-42d2-9516-92bf6362e815",
+      policy_hash:
+        "b5e687b5bd9878f561f8050e994fbd8632fec823503fa4bd8c047a3e3b14f686",
+      timestamp: "2026-04-07T22:22:25Z",
+      verdict: "approved",
+    };
+
+    it("canonicalStringify produces compact, key-sorted JSON (no spaces)", () => {
+      const s = canonicalStringify(canonicalFingerprintPayload(v2Record));
+      expect(s).toBe(
+        '{"action_hash":"b913fee92806720122d84285c779582172446c1c1c03645cb865f93fc36b8b5b",' +
+          '"action_type":"financial_transaction",' +
+          '"agent_id":"11111111-2222-3333-4444-555555555555",' +
+          '"audit_id":"d8dd0902-4750-42d2-9516-92bf6362e815",' +
+          '"policy_hash":"b5e687b5bd9878f561f8050e994fbd8632fec823503fa4bd8c047a3e3b14f686",' +
+          '"timestamp":"2026-04-07T22:22:25Z",' +
+          '"verdict":"approved"}',
+      );
+    });
+
+    it("pins SHA-256 of a v2 receipt to the backend-canonical value", async () => {
+      const hex = await computeReceiptFingerprint(v2Record);
+      expect(hex).toBe(
+        "2fc29223fb1265448f2da2afd730628d228bcf3b09bb29b7006d5b19ce30bf63",
+      );
+    });
+
+    it("pins SHA-256 of a v1 receipt (null policy_hash, blocked verdict)", async () => {
+      const v1Record: FingerprintableRecord = {
+        ...v2Record,
+        policy_hash: null,
+        verdict: "blocked",
+      };
+      const hex = await computeReceiptFingerprint(v1Record);
+      expect(hex).toBe(
+        "7085431bb41614f6d847cddbf0f579d38550caeb77720de27bc78f5faa7f3c7c",
+      );
+    });
+
+    it("rejects the pre-fix '+00:00' timestamp form (regression guard)", async () => {
+      // Before the canonical_wire_timestamp fix, the backend hashed
+      // "2026-04-07T22:22:25+00:00" while pydantic v2 shipped
+      // "2026-04-07T22:22:25Z" on the wire. Make sure the two strings
+      // really do hash to different values so any future regression on
+      // either side is caught loudly.
+      const legacyRecord: FingerprintableRecord = {
+        ...v2Record,
+        timestamp: "2026-04-07T22:22:25+00:00",
+      };
+      const legacyHex = await computeReceiptFingerprint(legacyRecord);
+      expect(legacyHex).not.toBe(
+        "2fc29223fb1265448f2da2afd730628d228bcf3b09bb29b7006d5b19ce30bf63",
+      );
     });
   });
 });
