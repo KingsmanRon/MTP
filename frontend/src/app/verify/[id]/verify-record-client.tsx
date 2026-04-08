@@ -27,6 +27,7 @@ import {
   anchorCheckStatus,
   isSupportedSchemaVersion,
   checkStatusUiLabel,
+  computeReceiptFingerprint,
   type CheckStatus,
 } from "@/lib/proof-state";
 
@@ -44,37 +45,6 @@ function actionBadgeColor(action: string) {
 function truncateHash(hash: string, chars = 10) {
   if (hash.length <= chars * 2 + 3) return hash;
   return `${hash.slice(0, chars)}...${hash.slice(-chars)}`;
-}
-
-/* ------------------------------------------------------------------ */
-/*  Canonical JSON for fingerprint parity                              */
-/* ------------------------------------------------------------------ */
-
-// ── DO NOT MODIFY FIELD SET OR ORDER — MUST MATCH BACKEND EXACTLY ──
-function canonicalStringify(obj: Record<string, unknown>): string {
-  const sorted: Record<string, unknown> = {};
-  for (const key of Object.keys(obj).sort()) {
-    sorted[key] = obj[key];
-  }
-  return JSON.stringify(sorted);
-}
-
-async function computeFingerprint(record: PublicVerificationRecord): Promise<string> {
-  const payload = {
-    action_hash: record.action_hash,
-    action_type: record.action_type,
-    agent_id: record.agent_id,
-    audit_id: record.audit_id,
-    policy_hash: record.policy_hash,
-    timestamp: record.timestamp,
-    verdict: record.verdict,
-  };
-  const canonical = canonicalStringify(payload);
-  const encoded = new TextEncoder().encode(canonical);
-  const hashBuffer = await crypto.subtle.digest("SHA-256", encoded);
-  return Array.from(new Uint8Array(hashBuffer))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
 }
 
 /* ------------------------------------------------------------------ */
@@ -229,7 +199,7 @@ function ProofCompletenessChecks({ record }: { record: PublicVerificationRecord 
       return;
     }
 
-    computeFingerprint(record).then((computed) => {
+    computeReceiptFingerprint(record).then((computed) => {
       const frontendMatch = computed === record.receipt_fingerprint;
       if (!frontendMatch || record.integrity_status === "failed") {
         setIntegrityStatus("failed");

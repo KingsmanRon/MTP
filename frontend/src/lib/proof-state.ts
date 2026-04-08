@@ -13,6 +13,11 @@
  *                         receipts; transient PENDING is legitimate for a
  *                         brand-new receipt that has not yet been confirmed.
  *   - Receipt integrity:  derived from the three above.
+ *
+ * The receipt fingerprint helpers (`canonicalFingerprintPayload`,
+ * `canonicalStringify`, `computeReceiptFingerprint`) live here too so they
+ * can be locked in by tests. The exact bytes hashed here MUST match the
+ * canonical wire form produced by the backend in `api/main.py`.
  */
 
 export type CheckStatus =
@@ -91,4 +96,78 @@ export function checkStatusUiLabel(s: CheckStatus): string {
     case "not_applicable":
       return "NOT APPLICABLE";
   }
+}
+
+/* ------------------------------------------------------------------ */
+/*  Canonical fingerprint — MUST stay byte-for-byte in sync with      */
+/*  api/main.py `canonical_wire_timestamp` + fingerprint_payload.     */
+/* ------------------------------------------------------------------ */
+
+/** Shape of the record fields required for fingerprint computation. */
+export interface FingerprintableRecord {
+  action_hash: string;
+  action_type: string;
+  agent_id: string;
+  audit_id: string;
+  policy_hash: string | null;
+  timestamp: string;
+  verdict: string;
+}
+
+/**
+ * Build the canonical fingerprint payload from a verification record. The
+ * field set and names are part of the receipt schema contract — do not
+ * reorder, rename, add, or remove fields without bumping the schema.
+ */
+export function canonicalFingerprintPayload(
+  record: FingerprintableRecord,
+): Record<string, string | null> {
+  return {
+    action_hash: record.action_hash,
+    action_type: record.action_type,
+    agent_id: record.agent_id,
+    audit_id: record.audit_id,
+    policy_hash: record.policy_hash,
+    timestamp: record.timestamp,
+    verdict: record.verdict,
+  };
+}
+
+/**
+ * Deterministic JSON encoding: keys sorted lexicographically, no whitespace.
+ * Must match Python's `json.dumps(..., sort_keys=True, separators=(",", ":"))`.
+ */
+export function canonicalStringify(obj: Record<string, unknown>): string {
+  const sorted: Record<string, unknown> = {};
+  for (const key of Object.keys(obj).sort()) {
+    sorted[key] = obj[key];
+  }
+  return JSON.stringify(sorted);
+}
+
+function bytesToHex(bytes: Uint8Array): string {
+  let out = "";
+  for (let i = 0; i < bytes.length; i++) {
+    out += bytes[i].toString(16).padStart(2, "0");
+  }
+  return out;
+}
+
+/**
+ * SHA-256 over the canonical fingerprint payload of a receipt.
+ *
+ * The hash input is exactly:
+ *   canonicalStringify(canonicalFingerprintPayload(record))
+ *
+ * The backend computes the identical bytes in `api/main.py`. The timestamp
+ * field must already be in the canonical wire form used by pydantic v2
+ * (UTC suffix `Z`, not `+00:00`); we trust the wire value as received.
+ */
+export async function computeReceiptFingerprint(
+  record: FingerprintableRecord,
+): Promise<string> {
+  const canonical = canonicalStringify(canonicalFingerprintPayload(record));
+  const encoded = new TextEncoder().encode(canonical);
+  const hashBuffer = await crypto.subtle.digest("SHA-256", encoded);
+  return bytesToHex(new Uint8Array(hashBuffer));
 }

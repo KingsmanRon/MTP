@@ -85,6 +85,23 @@ if ENVIRONMENT != "development":
 
 SERVER_SECRET = (SERVER_SECRET_RAW or "dev-secret-do-not-use-in-production").encode("utf-8")
 
+
+def canonical_wire_timestamp(dt: datetime) -> str:
+    """Format ``dt`` to match pydantic v2's JSON wire output exactly.
+
+    Pydantic v2 serialises a UTC ``datetime`` with a ``Z`` suffix
+    (``2026-04-07T22:22:25Z``) while ``datetime.isoformat`` produces
+    ``2026-04-07T22:22:25+00:00``. The receipt fingerprint is computed on
+    the backend over the canonical core fields and recomputed on the
+    frontend over the wire-format strings, so the two MUST agree on the
+    timestamp encoding or every receipt fails its integrity check.
+    """
+    s = dt.isoformat()
+    if s.endswith("+00:00"):
+        s = s[:-6] + "Z"
+    return s
+
+
 app = FastAPI(
     title="Inntris Core API",
     description="Forensic-grade AI Agent Verification & Audit System",
@@ -427,13 +444,18 @@ async def get_public_verification_record(
             violations = [reason]
 
     # ── DO NOT MODIFY FIELD SET OR ORDER — MUST MATCH FRONTEND EXACTLY ──
+    #
+    # The frontend recomputes this fingerprint from the wire JSON it receives,
+    # so each value here MUST be the exact string that pydantic will emit on
+    # the wire. In particular, ``timestamp`` must use the ``Z`` suffix for UTC
+    # (pydantic v2 wire format) rather than ``datetime.isoformat``'s ``+00:00``.
     fingerprint_payload = {
         "action_hash": row["action_hash"],
         "action_type": row["action_type"],
         "agent_id": str(row["agent_id"]),
         "audit_id": str(row["id"]),
         "policy_hash": row.get("policy_hash"),
-        "timestamp": row["timestamp"].isoformat(),
+        "timestamp": canonical_wire_timestamp(row["timestamp"]),
         "verdict": row["verdict"],
     }
     canonical = json.dumps(fingerprint_payload, sort_keys=True, separators=(",", ":"))
