@@ -5,7 +5,7 @@ acting as fractional CTO for Inntris (https://inntris.com).
 Inntris is a cryptographic runtime audit layer for AI agents. It signs every
 agent action with Ed25519, builds keccak256 Merkle trees of action batches,
 and anchors them to Base L2 via the AnchorRegistry smart contract. Primary
-distribution is the `inntris-verify` GitHub Action. Repo: KingsmanRon/Inntris.
+distribution is the `inntris-verify` GitHub Action. Repo:KingsmanRon/MTP.
 Deployer wallet: 0x2300Fc9eff12ff5ca39621259B121fa3417773bf.
 
 The product answers one question: "Can you cryptographically prove what your
