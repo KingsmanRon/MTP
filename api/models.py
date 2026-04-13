@@ -162,6 +162,50 @@ class RegisterAgentRequest(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict, description="Additional metadata")
 
 
+class PublicRegisterAgentRequest(BaseModel):
+    """
+    Request to bootstrap an agent via the public (no-auth) registration endpoint.
+
+    The agent provides its own Ed25519 public key; Inntris assigns an org and
+    returns a stable agent_id that can be used immediately for /verify calls.
+    """
+    model_config = ConfigDict(strict=False)
+
+    email: str = Field(
+        ...,
+        max_length=255,
+        description="Contact email for the registrant — used for org lookup/creation",
+    )
+    public_key: str = Field(
+        ...,
+        min_length=44,
+        max_length=64,
+        description="Base64-encoded Ed25519 public key (32 raw bytes)",
+    )
+    adapter_metadata: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Adapter-specific metadata (e.g. platform, version, config)",
+    )
+
+
+class PublicRegisterAgentResponse(BaseModel):
+    """Response from public agent registration."""
+    model_config = ConfigDict(strict=False)
+
+    agent_id: str = Field(..., description="Newly created agent UUID")
+    public_key_fingerprint: str = Field(
+        ...,
+        description="SHA-256 fingerprint of the registered public key",
+    )
+    org_id: str = Field(..., description="Organization UUID the agent was assigned to")
+    status: str = Field(default="active", description="Initial agent status")
+    created_at: str = Field(..., description="ISO 8601 creation timestamp")
+    message: str = Field(
+        default="Agent registered. Use agent_id with POST /verify.",
+        description="Human-readable confirmation",
+    )
+
+
 class CreateOrganizationRequest(BaseModel):
     """Request to create a new organization."""
     # UPDATED: strict=False allows JSON strings to be parsed into Types (UUID, Decimal)
