@@ -257,6 +257,29 @@ class PublicVerificationRecord(BaseModel):
     integrity_status: str = Field(default="verified", description="Server-side integrity verification status")
 
 
+class PublicProofResponse(BaseModel):
+    """Public Merkle proof response for an audit log entry."""
+    model_config = ConfigDict(strict=False)
+
+    audit_id: str = Field(..., description="Audit log ID")
+    status: str = Field(..., description="'anchored' or 'pending_anchor'")
+    action_hash: str = Field(..., description="Leaf hash (SHA-256 of action)")
+    proof: list[str] = Field(default_factory=list, description="Sibling hashes in proof path")
+    positions: list[bool] = Field(
+        default_factory=list,
+        description="True = sibling is on the right, False = on the left",
+    )
+    merkle_root: Optional[str] = Field(None, description="Merkle root hash of the anchor batch")
+    tx_hash: Optional[str] = Field(None, description="On-chain transaction hash")
+    chain_id: Optional[int] = Field(None, description="Chain ID (8453 for Base Mainnet)")
+    block_number: Optional[int] = Field(None, description="Block number of the anchor transaction")
+    anchored_at: Optional[str] = Field(None, description="ISO 8601 timestamp of on-chain anchor")
+    submitter: Optional[str] = Field(None, description="Wallet address that submitted the Merkle root")
+    receipt_fingerprint: Optional[str] = Field(None, description="SHA-256 receipt fingerprint from the audit log")
+    policy_hash: Optional[str] = Field(None, description="Policy hash bound to this receipt, if any")
+    timestamp: Optional[str] = Field(None, description="ISO 8601 timestamp of the original verification event")
+
+
 class HealthResponse(BaseModel):
     """API health check response."""
     status: str = Field(..., description="Service status")

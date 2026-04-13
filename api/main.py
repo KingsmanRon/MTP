@@ -45,6 +45,7 @@ from api.models import (
     AuditLogEntry,
     AgentStatus,
     PublicVerificationRecord,
+    PublicProofResponse,
 )
 from api.crypto import (
     CryptoService,
@@ -524,6 +525,96 @@ async def get_public_verification_record(
         schema_version=schema_version,
         receipt_fingerprint=receipt_fingerprint,
         integrity_status=_compute_integrity_status(row.get("tx_hash")),
+    )
+
+
+@app.get(
+    "/public/verify/{audit_id}/proof",
+    response_model=PublicProofResponse,
+    responses={
+        404: {"model": ErrorResponse, "description": "Audit log not found"},
+    },
+    tags=["Public"],
+)
+async def get_public_proof(
+    audit_id: UUID,
+    database: Database = Depends(get_db),
+):
+    """
+    Public, unauthenticated Merkle proof for an audit log entry.
+
+    Returns the full proof path needed to verify inclusion in the on-chain
+    Merkle root. If the receipt exists but has not yet been anchored, returns
+    a pending-anchor state rather than 404.
+    """
+    async with database.acquire() as conn:
+        log_row = await conn.fetchrow(
+            """
+            SELECT al.id, al.action_hash, al.merkle_root_id,
+                   al.merkle_leaf_index, al.policy_hash,
+                   al.timestamp
+            FROM audit_logs al
+            WHERE al.id = $1
+            """,
+            audit_id,
+        )
+
+    if not log_row:
+        raise HTTPException(status_code=404, detail="Audit log not found")
+
+    # Unanchored: return pending state explicitly rather than 404
+    if not log_row["merkle_root_id"]:
+        return PublicProofResponse(
+            audit_id=str(log_row["id"]),
+            status="pending_anchor",
+            action_hash=log_row["action_hash"],
+            proof=[],
+            positions=[],
+            merkle_root=None,
+            tx_hash=None,
+            chain_id=None,
+            block_number=None,
+            anchored_at=None,
+            submitter=None,
+            receipt_fingerprint=None,
+            policy_hash=log_row["policy_hash"],
+            timestamp=canonical_wire_timestamp(log_row["timestamp"]) if log_row["timestamp"] else None,
+        )
+
+    # Anchored: fetch proof record
+    async with database.acquire() as conn:
+        proof_row = await conn.fetchrow(
+            "SELECT * FROM merkle_proofs WHERE id = $1",
+            log_row["merkle_root_id"],
+        )
+
+    if not proof_row:
+        raise HTTPException(status_code=404, detail="Merkle proof record not found")
+
+    leaf_hashes = proof_row["leaf_hashes"]
+    leaf_index = log_row["merkle_leaf_index"]
+
+    from workers.anchor_worker import compute_merkle_proof
+    try:
+        proof_path = compute_merkle_proof(leaf_hashes, leaf_index)
+    except Exception:
+        proof_path = []
+
+    return PublicProofResponse(
+        audit_id=str(log_row["id"]),
+        status="anchored",
+        action_hash=log_row["action_hash"],
+        proof=[p["hash"] for p in proof_path],
+        positions=[p["position"] == 1 for p in proof_path],
+        merkle_root=proof_row["root_hash"],
+        tx_hash=proof_row["transaction_hash"],
+        chain_id=proof_row.get("chain_id") or 8453,
+        block_number=proof_row.get("block_number"),
+        anchored_at=proof_row["confirmed_at"].isoformat() if proof_row["confirmed_at"] else None,
+        submitter=proof_row.get("submitted_by"),
+        receipt_fingerprint=None,
+        policy_hash=log_row["policy_hash"],
+        timestamp=canonical_wire_timestamp(log_row["timestamp"]) if log_row["timestamp"] else None,
     )
 
 
