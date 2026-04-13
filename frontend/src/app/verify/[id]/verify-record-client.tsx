@@ -572,7 +572,7 @@ export function VerifyRecordView({ record }: { record: PublicVerificationRecord 
               <div className="rounded-2xl border border-white/6 bg-[#101C31]/70 p-4">
                 <p className="text-xs text-[#7F8CA3] mb-1">Chain</p>
                 <p className="text-sm font-mono text-[#F5F7FB]">
-                  {record.chain_id === 84532 ? "Base Sepolia (Testnet)" : "Base Mainnet"} ({record.chain_id})
+                  Base Mainnet ({record.chain_id})
                 </p>
               </div>
               <div className="rounded-2xl border border-white/6 bg-[#101C31]/70 p-4">
