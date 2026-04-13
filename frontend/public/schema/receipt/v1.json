@@ -69,7 +69,7 @@
     "policy_hash": {
       "type": ["string", "null"],
       "pattern": "^[a-f0-9]{64}$",
-      "description": "SHA-256 hash of .inntris.yml policy file at verification time"
+      "description": "SHA-256 hash of the adapter-specific governing policy contract at verification time. Meaning depends on the adapter (e.g. .inntris.yml for the default adapter, a promptfoo config hash for the promptfoo adapter)."
     },
     "action_hash": {
       "type": "string",
@@ -96,7 +96,7 @@
     "chain_id": {
       "type": "integer",
       "default": 8453,
-      "description": "Chain ID (8453 for Base L2, 84532 for Base Sepolia)"
+      "description": "Chain ID. Public receipts are always 8453 (Base Mainnet)."
     },
     "anchored_at": {
       "type": ["string", "null"],
@@ -105,8 +105,8 @@
     },
     "schema_version": {
       "type": "string",
-      "const": "v1",
-      "description": "Schema version identifier"
+      "enum": ["v1", "v2"],
+      "description": "Schema version. v1: legacy receipts. v2: policy_hash is bound to the decision and included in the canonical fingerprint."
     },
     "receipt_fingerprint": {
       "type": "string",
