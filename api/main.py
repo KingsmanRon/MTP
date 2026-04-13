@@ -46,6 +46,8 @@ from api.models import (
     AgentStatus,
     PublicVerificationRecord,
     PublicProofResponse,
+    PublicRegisterAgentRequest,
+    PublicRegisterAgentResponse,
 )
 from api.crypto import (
     CryptoService,
@@ -221,6 +223,36 @@ async def verify_api_key(
         logger.error(f"API key verification error: {e}")
         raise HTTPException(status_code=401, detail="Invalid API key")
 
+
+async def _check_public_rate_limit(
+    request: Request,
+    redis_conn: Optional[redis.Redis],
+    key_prefix: str,
+    max_per_hour: int = 5,
+) -> None:
+    """
+    Enforce per-IP hourly rate limit for unauthenticated public endpoints.
+
+    Uses Redis INCR + EXPIRE (sliding window by hour). Fail-open when Redis
+    is unavailable — registration is not a security gate, and availability
+    matters more than strict limiting here.
+
+    Raises HTTP 429 when the caller exceeds ``max_per_hour``.
+    """
+    if redis_conn is None:
+        return  # fail-open: Redis unavailable
+    ip = request.client.host if request.client else "unknown"
+    hour_str = datetime.now(timezone.utc).strftime("%Y%m%dT%H")
+    window_key = f"inntris:{key_prefix}:{ip}:{hour_str}"
+    count = await redis_conn.incr(window_key)
+    if count == 1:
+        await redis_conn.expire(window_key, 3600)
+    if count > max_per_hour:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Rate limit exceeded. Max {max_per_hour} registrations per IP per hour.",
+        )
+
 # =============================================================================
 # STARTUP / SHUTDOWN
 # =============================================================================
@@ -367,6 +399,153 @@ async def get_public_agent_info(
         raise HTTPException(status_code=404, detail="Agent not found")
     except OrganizationNotFoundError:
         raise HTTPException(status_code=404, detail="Organization not found")
+
+
+@app.post(
+    "/public/agents/register",
+    response_model=PublicRegisterAgentResponse,
+    status_code=201,
+    tags=["Public"],
+)
+async def public_register_agent(
+    request_data: PublicRegisterAgentRequest,
+    request: Request,
+    database: Database = Depends(get_db),
+    redis_conn: Optional[redis.Redis] = Depends(get_redis),
+):
+    """
+    Bootstrap a new agent without an API key.
+
+    Creates (or reuses) an organization keyed by email, then registers the
+    agent with the provided Ed25519 public key. Rate-limited to 5 per IP
+    per hour to prevent abuse.
+    """
+    await _check_public_rate_limit(request, redis_conn, key_prefix="pub_register")
+
+    # Decode and validate the public key
+    try:
+        public_key_bytes = base64.b64decode(request_data.public_key)
+    except Exception:
+        raise HTTPException(status_code=400, detail="public_key must be valid base64")
+    if len(public_key_bytes) != 32:
+        raise HTTPException(status_code=400, detail="public_key must decode to exactly 32 bytes (Ed25519)")
+
+    fingerprint = CryptoService.compute_public_key_fingerprint(public_key_bytes)
+
+    # Find or create a default public organization for this email
+    async with database.acquire() as conn:
+        org_row = await conn.fetchrow(
+            "SELECT id FROM organizations WHERE contact_email = $1 LIMIT 1",
+            request_data.email,
+        )
+        if org_row:
+            org_id = org_row["id"]
+        else:
+            org_id = await conn.fetchval(
+                """
+                INSERT INTO organizations (name, contact_email, billing_tier)
+                VALUES ($1, $2, 'free')
+                RETURNING id
+                """,
+                f"Public Org — {request_data.email}",
+                request_data.email,
+            )
+
+    # Register the agent
+    adapter_meta = dict(request_data.adapter_metadata or {})
+    allowed_actions = adapter_meta.pop("allowed_actions", ["tool_call", "api_call", "data_export"])
+    agent_id = await database.create_agent(
+        org_id=org_id,
+        name=f"agent-{fingerprint[:8]}",
+        public_key=public_key_bytes,
+        allowed_actions=allowed_actions,
+        metadata={"source": "public_registration", **adapter_meta},
+    )
+
+    return PublicRegisterAgentResponse(
+        agent_id=str(agent_id),
+        public_key_fingerprint=fingerprint,
+        org_id=str(org_id),
+        status="active",
+        created_at=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        message="Agent registered. Use agent_id with POST /verify.",
+    )
+
+
+@app.post(
+    "/public/agents/register-promptfoo",
+    response_model=PublicRegisterAgentResponse,
+    status_code=201,
+    tags=["Public"],
+)
+async def public_register_promptfoo_agent(
+    request_data: PublicRegisterAgentRequest,
+    request: Request,
+    database: Database = Depends(get_db),
+    redis_conn: Optional[redis.Redis] = Depends(get_redis),
+):
+    """
+    Promptfoo-specific agent registration alias.
+
+    Pre-fills Promptfoo platform defaults:
+    - allowed_actions includes ``promptfoo_eval``
+    - adapter_metadata tagged with ``platform: promptfoo``
+
+    Same rate limiting as /public/agents/register.
+    """
+    await _check_public_rate_limit(request, redis_conn, key_prefix="pub_register")
+
+    # Decode and validate the public key
+    try:
+        public_key_bytes = base64.b64decode(request_data.public_key)
+    except Exception:
+        raise HTTPException(status_code=400, detail="public_key must be valid base64")
+    if len(public_key_bytes) != 32:
+        raise HTTPException(status_code=400, detail="public_key must decode to exactly 32 bytes (Ed25519)")
+
+    fingerprint = CryptoService.compute_public_key_fingerprint(public_key_bytes)
+
+    # Inject Promptfoo defaults
+    meta = dict(request_data.adapter_metadata or {})
+    meta.setdefault("platform", "promptfoo")
+    meta.setdefault("version", "unknown")
+    allowed_actions = meta.pop("allowed_actions", ["promptfoo_eval", "tool_call", "api_call"])
+
+    # Find or create organization
+    async with database.acquire() as conn:
+        org_row = await conn.fetchrow(
+            "SELECT id FROM organizations WHERE contact_email = $1 LIMIT 1",
+            request_data.email,
+        )
+        if org_row:
+            org_id = org_row["id"]
+        else:
+            org_id = await conn.fetchval(
+                """
+                INSERT INTO organizations (name, contact_email, billing_tier)
+                VALUES ($1, $2, 'free')
+                RETURNING id
+                """,
+                f"Promptfoo Org — {request_data.email}",
+                request_data.email,
+            )
+
+    agent_id = await database.create_agent(
+        org_id=org_id,
+        name=f"promptfoo-{fingerprint[:8]}",
+        public_key=public_key_bytes,
+        allowed_actions=allowed_actions,
+        metadata={"source": "public_registration_promptfoo", **meta},
+    )
+
+    return PublicRegisterAgentResponse(
+        agent_id=str(agent_id),
+        public_key_fingerprint=fingerprint,
+        org_id=str(org_id),
+        status="active",
+        created_at=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        message="Promptfoo agent registered. Use agent_id with POST /verify.",
+    )
 
 
 @app.get(
