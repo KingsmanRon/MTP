@@ -315,10 +315,7 @@ export function VerifyRecordView({ record }: { record: PublicVerificationRecord 
 
   const isPass = isPassVerdict(record.verdict);
   const isEscalate = isEscalateVerdict(record.verdict);
-  const baseScanDomain =
-    record.chain_id === 84532
-      ? "https://sepolia.basescan.org"
-      : "https://basescan.org";
+  const baseScanDomain = "https://basescan.org";
   const baseScanUrl = record.tx_hash
     ? `${baseScanDomain}/tx/${record.tx_hash}`
     : null;
