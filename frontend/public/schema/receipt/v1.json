@@ -115,8 +115,8 @@
     },
     "integrity_status": {
       "type": "string",
-      "enum": ["verified", "failed"],
-      "description": "Server-side integrity verification status"
+      "enum": ["verified", "pending_anchor", "failed"],
+      "description": "Server-side integrity verification status. pending_anchor means the receipt exists but has not yet been anchored on-chain."
     }
   },
   "additionalProperties": false

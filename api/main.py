@@ -102,7 +102,7 @@ def canonical_wire_timestamp(dt: datetime) -> str:
     return s
 
 
-def _compute_integrity_status(tx_hash) -> str:
+def _compute_integrity_status(tx_hash: "Optional[str]") -> str:
     """Return integrity_status reflecting whether the receipt has been anchored.
 
     - ``"verified"``       — receipt exists and is anchored on-chain
@@ -323,7 +323,7 @@ RECEIPT_SCHEMA_V1 = {
         "anchored_at": {"type": ["string", "null"], "format": "date-time"},
         "schema_version": {"type": "string", "const": "v1"},
         "receipt_fingerprint": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
-        "integrity_status": {"type": "string", "enum": ["verified", "failed"]},
+        "integrity_status": {"type": "string", "enum": ["verified", "pending_anchor", "failed"]},
     },
     "additionalProperties": False,
 }
@@ -431,9 +431,11 @@ async def get_public_verification_record(
     if not row:
         raise HTTPException(status_code=404, detail="Verification record not found")
 
-    # F1: Public verify is mainnet-only.
+    # Public verify is mainnet-only.
     # Sepolia (84532) receipts are testnet artefacts; direct callers to the
     # admin portal instead of exposing them on the unauthenticated public path.
+    # NULL chain_id means the record has no proof row yet (unanchored).
+    # Treat it as mainnet-eligible so pending receipts are still accessible.
     record_chain_id = row.get("chain_id") or 8453
     if record_chain_id != 8453:
         raise HTTPException(
