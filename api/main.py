@@ -102,6 +102,15 @@ def canonical_wire_timestamp(dt: datetime) -> str:
     return s
 
 
+def _compute_integrity_status(tx_hash) -> str:
+    """Return integrity_status reflecting whether the receipt has been anchored.
+
+    - ``"verified"``       — receipt exists and is anchored on-chain
+    - ``"pending_anchor"`` — receipt exists but anchor batch not yet submitted
+    """
+    return "verified" if tx_hash else "pending_anchor"
+
+
 app = FastAPI(
     title="Inntris Core API",
     description="Forensic-grade AI Agent Verification & Audit System",
@@ -422,6 +431,21 @@ async def get_public_verification_record(
     if not row:
         raise HTTPException(status_code=404, detail="Verification record not found")
 
+    # F1: Public verify is mainnet-only.
+    # Sepolia (84532) receipts are testnet artefacts; direct callers to the
+    # admin portal instead of exposing them on the unauthenticated public path.
+    record_chain_id = row.get("chain_id") or 8453
+    if record_chain_id != 8453:
+        raise HTTPException(
+            status_code=410,
+            detail=(
+                "This receipt was anchored on a testnet or legacy chain "
+                f"(chain_id={record_chain_id}). "
+                "Public verification is only available for Base Mainnet (chain_id=8453). "
+                "Access this record via the authenticated admin portal."
+            ),
+        )
+
     # Get organization name
     try:
         org = await database.get_organization_by_id(row["org_id"])
@@ -497,7 +521,7 @@ async def get_public_verification_record(
         anchored_at=row.get("anchored_at"),
         schema_version=schema_version,
         receipt_fingerprint=receipt_fingerprint,
-        integrity_status="verified",
+        integrity_status=_compute_integrity_status(row.get("tx_hash")),
     )
 
 
