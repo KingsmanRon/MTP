@@ -1,0 +1,61 @@
+{
+  "_comment": "Known-input / known-output SHA-256 vectors for receipt fingerprint canonicalization. These values are shared verbatim with the frontend test suite.",
+  "vectors": [
+    {
+      "name": "v2_receipt",
+      "description": "v2 receipt: non-null policy_hash, approved verdict",
+      "input": {
+        "action_hash": "b913fee92806720122d84285c779582172446c1c1c03645cb865f93fc36b8b5b",
+        "action_type": "financial_transaction",
+        "agent_id": "11111111-2222-3333-4444-555555555555",
+        "audit_id": "d8dd0902-4750-42d2-9516-92bf6362e815",
+        "policy_hash": "b5e687b5bd9878f561f8050e994fbd8632fec823503fa4bd8c047a3e3b14f686",
+        "timestamp": "2026-04-07T22:22:25Z",
+        "verdict": "approved"
+      },
+      "expected_sha256": "2fc29223fb1265448f2da2afd730628d228bcf3b09bb29b7006d5b19ce30bf63"
+    },
+    {
+      "name": "v1_receipt",
+      "description": "v1 receipt: null policy_hash, blocked verdict",
+      "input": {
+        "action_hash": "b913fee92806720122d84285c779582172446c1c1c03645cb865f93fc36b8b5b",
+        "action_type": "financial_transaction",
+        "agent_id": "11111111-2222-3333-4444-555555555555",
+        "audit_id": "d8dd0902-4750-42d2-9516-92bf6362e815",
+        "policy_hash": null,
+        "timestamp": "2026-04-07T22:22:25Z",
+        "verdict": "blocked"
+      },
+      "expected_sha256": "7085431bb41614f6d847cddbf0f579d38550caeb77720de27bc78f5faa7f3c7c"
+    },
+    {
+      "name": "timestamp_plus_00_00_is_different",
+      "description": "Regression guard: +00:00 suffix produces a DIFFERENT hash than Z suffix",
+      "input": {
+        "action_hash": "b913fee92806720122d84285c779582172446c1c1c03645cb865f93fc36b8b5b",
+        "action_type": "financial_transaction",
+        "agent_id": "11111111-2222-3333-4444-555555555555",
+        "audit_id": "d8dd0902-4750-42d2-9516-92bf6362e815",
+        "policy_hash": "b5e687b5bd9878f561f8050e994fbd8632fec823503fa4bd8c047a3e3b14f686",
+        "timestamp": "2026-04-07T22:22:25+00:00",
+        "verdict": "approved"
+      },
+      "expected_sha256": "__MUST_NOT_EQUAL__2fc29223fb1265448f2da2afd730628d228bcf3b09bb29b7006d5b19ce30bf63"
+    },
+    {
+      "name": "tool_call_attestation",
+      "description": "tool_call action type, no policy_hash (v1)",
+      "input": {
+        "action_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "action_type": "tool_call",
+        "agent_id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+        "audit_id": "ffffffff-0000-1111-2222-333333333333",
+        "policy_hash": null,
+        "timestamp": "2026-04-13T12:00:00Z",
+        "verdict": "approved"
+      },
+      "expected_sha256": "3a5fe8f1d5e21e29d20744d31b0e539ce1849c9c93bdf049b451aa2ad4137351"
+    }
+  ]
+}
