@@ -28,13 +28,15 @@ CONTRACTS = {
         "address": "0x0600eA15802c8d2EA429371b2EB0aacCFe321480",
         "explorer": "https://basescan.org"
     },
-    "base_sepolia": {
+    # Internal dev only — not a valid public verification path.
+    # Public verify endpoint rejects chain_id != 8453 with HTTP 410.
+    "_base_sepolia_dev_only": {
         "address": "0x0600ea15802c8d2ea429371b2eb0aaccfe321480",
         "explorer": "https://sepolia.basescan.org"
     }
 }
 
-# Default to mainnet
+# Default to mainnet — the only valid public chain
 NETWORK = "base_mainnet"
 
 

@@ -262,7 +262,7 @@ Dashboard: https://inntris.com/admin
 
 Blockchain Anchoring:
   - Audit logs can be batched into Merkle trees
-  - Root hash anchored to Base Sepolia: 0x0600ea15802c8d2ea429371b2eb0aaccfe321480
+  - Root hash anchored to Base Mainnet: 0x0600eA15802c8d2EA429371b2EB0aacCFe321480
   - Provides tamper-proof, cryptographic verification
 """)
 
