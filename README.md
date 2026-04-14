@@ -45,7 +45,7 @@ A **policy decision point and evidence system** for AI agent actions — not obs
         ▼                              ▼                              ▼
 ┌───────────────┐           ┌───────────────────┐           ┌───────────────┐
 │   PostgreSQL  │           │   Anchor Worker   │           │  Trust Badge  │
-│  (Supabase)   │           │ "Tamper-Evident Recorder"│          │   (React)     │
+│  (Supabase)   │        │ "Tamper-Evident Recorder"│       │   (React)     │
 │  + TimescaleDB│           │  Merkle → Base L2 │           │ "Verified UI" │
 └───────────────┘           └───────────────────┘           └───────────────┘
                                                                     │
