@@ -23,7 +23,7 @@ A **policy decision point and evidence system** for AI agent actions — not obs
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                           AI AGENT (Lovable/Replit/LangChain)               │
-│                                      │                                       │
+│                                      │                                      │
 │                          ┌───────────▼───────────┐                          │
 │                          │   MCP Server (Inntris)│                          │
 │                          │   "Universal Adapter" │                          │
