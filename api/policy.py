@@ -47,11 +47,22 @@ class PolicyEngine:
     the action is blocked.
     """
 
-    # Minimum trust score required for different action types
+    # Attestation actions: pass-through semantics.
+    # These are logged for auditing but do NOT gate on trust score.
+    # They record that something happened (eval, push, export receipt),
+    # not that the system is authorizing a live operation.
+    ATTESTATION_ACTIONS: frozenset = frozenset({
+        "promptfoo_eval",
+        "repo_change",
+    })
+
+    # Runtime actions: PASS/BLOCK/ESCALATE semantics.
+    # The caller is asking the system to authorize a live operation.
     TRUST_THRESHOLDS = {
         "financial_transaction": 30,
         "email_send": 20,
         "api_call": 10,
+        "tool_call": 10,
         "data_export": 40,
         "admin_action": 70,
     }
@@ -177,7 +188,16 @@ class PolicyEngine:
         agent: AgentRecord,
         action_type: str,
     ) -> PolicyResult:
-        """Check if agent's trust score meets threshold for action."""
+        """Check if agent's trust score meets threshold for action.
+
+        Attestation actions (``ATTESTATION_ACTIONS``) are pass-through —
+        they record facts rather than gate live operations, so no trust
+        threshold is enforced.
+        """
+        # Attestation actions are exempt from trust-score gating
+        if action_type in self.ATTESTATION_ACTIONS:
+            return PolicyResult(allowed=True, verdict=ActionVerdict.APPROVED)
+
         threshold = self.TRUST_THRESHOLDS.get(action_type, 20)
 
         if agent.trust_score < threshold:
