@@ -52,6 +52,29 @@ class VerifyActionRequest(BaseModel):
 
     The agent sends this payload with its cryptographic signature.
     CRITICAL: The signature MUST cover the entire payload hash.
+
+    ## Minimum Required Fields (checked at model level)
+    - agent_id, action_type, payload, signature, nonce, timestamp, policy_hash
+
+    ## Expected Payload Sub-fields (not enforced at model level, adapter-specific)
+    The ``payload`` dict is adapter-specific. For the standard runtime envelope,
+    the following keys are expected:
+
+    - ``resource``      (str)  — class of resource being acted on, e.g. "file", "database"
+    - ``resource_id``   (str)  — specific resource identifier
+    - ``operation``     (str)  — operation name, e.g. "read", "write", "delete"
+    - ``risk_flags``    (list) — caller-declared risk signals, e.g. ["pii", "financial"]
+    - ``payload_hash``  (str)  — SHA-256 of the inner payload, for additional integrity
+    - ``policy_context`` (dict) — adapter-specific policy evaluation context
+
+    For attestation actions (e.g. ``promptfoo_eval``), ``risk_flags`` and
+    ``resource_id`` are optional. The adapter is responsible for documenting
+    its own payload contract.
+
+    ## Platform Field
+    Callers may include ``platform`` in ``payload`` or ``adapter_metadata``
+    to identify the integration (e.g. ``"promptfoo"``, ``"langchain"``).
+    This is surfaced in audit logs but not validated at the API level.
     """
     # UPDATED: strict=False allows JSON strings to be parsed into Types (UUID, Decimal)
     model_config = ConfigDict(strict=False)
