@@ -441,14 +441,18 @@ async def public_register_agent(
         if org_row:
             org_id = org_row["id"]
         else:
+            # api_key_hash is NOT NULL — generate a placeholder hash for
+            # publicly-registered orgs (they authenticate via agent keys, not API keys)
+            placeholder_key_hash = hashlib.sha256(os.urandom(32)).digest()
             org_id = await conn.fetchval(
                 """
-                INSERT INTO organizations (name, contact_email, billing_tier)
-                VALUES ($1, $2, 'free')
+                INSERT INTO organizations (name, contact_email, billing_tier, api_key_hash)
+                VALUES ($1, $2, 'free', $3)
                 RETURNING id
                 """,
                 f"Public Org — {request_data.email}",
                 request_data.email,
+                placeholder_key_hash,
             )
 
     # Register the agent
@@ -520,14 +524,16 @@ async def public_register_promptfoo_agent(
         if org_row:
             org_id = org_row["id"]
         else:
+            placeholder_key_hash = hashlib.sha256(os.urandom(32)).digest()
             org_id = await conn.fetchval(
                 """
-                INSERT INTO organizations (name, contact_email, billing_tier)
-                VALUES ($1, $2, 'free')
+                INSERT INTO organizations (name, contact_email, billing_tier, api_key_hash)
+                VALUES ($1, $2, 'free', $3)
                 RETURNING id
                 """,
                 f"Promptfoo Org — {request_data.email}",
                 request_data.email,
+                placeholder_key_hash,
             )
 
     agent_id = await database.create_agent(
