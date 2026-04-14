@@ -1064,12 +1064,17 @@ async def test_verify_action(
     database: Database = Depends(get_db),
 ):
     """
-    Test verification endpoint for playground.
+    Test verification endpoint for playground only.
 
-    Runs full policy evaluation without requiring cryptographic signature.
+    SECURITY NOTE: This endpoint is NOT a proof-eligible verification path.
+    - Audit log entries created here are marked with ``test_request: True``
+      in metadata and are excluded from Merkle batch anchoring.
+    - The signature field is set to ``b"TEST_REQUEST"`` as a sentinel marker.
+    - Do NOT direct public demos or external documentation to this endpoint.
+    - No public demo scripts should reference this path.
+
+    Runs full policy evaluation without requiring a cryptographic signature.
     Use this to test how the policy engine will evaluate different actions.
-
-    Note: Creates audit log entries marked as test requests.
     """
     start_time = time.time()
 
