@@ -278,9 +278,9 @@ POST /admin/agents
                 </p>
                 <div className="grid gap-4 sm:grid-cols-3">
                   {[
-                    { label: "APPROVED", desc: "Action verified & logged", color: "#22c55e", icon: CheckCircle },
-                    { label: "BLOCKED", desc: "Policy violation", color: "#ef4444", icon: Shield },
-                    { label: "RATE LIMITED", desc: "Too many requests", color: "#f59e0b", icon: Zap },
+                    { label: "PASS", desc: "Action verified & logged", color: "#22c55e", icon: CheckCircle },
+                    { label: "BLOCK", desc: "Policy violation", color: "#ef4444", icon: Shield },
+                    { label: "ESCALATE", desc: "Too many requests", color: "#f59e0b", icon: Zap },
                   ].map((outcome) => {
                     const Icon = outcome.icon;
                     return (
@@ -324,6 +324,9 @@ POST /admin/agents
   "root_hash": "e56891f1de39aca50725f0e36ee4b1c4fe1c50966f69a1b368e1d691c2466149"
 }`}
             </pre>
+            <p className="mt-3 text-xs text-[#7F8CA3]">
+              The UI presents <code className="font-mono text-[#8FB8FF]">approved</code> as <code className="font-mono text-[#8FB8FF]">PASS</code>, <code className="font-mono text-[#8FB8FF]">blocked</code> as <code className="font-mono text-[#8FB8FF]">BLOCK</code>, and <code className="font-mono text-[#8FB8FF]">rate_limited</code> as <code className="font-mono text-[#8FB8FF]">ESCALATE</code>.
+            </p>
           </div>
 
           <p className="text-[#AAB7CC] mb-5">

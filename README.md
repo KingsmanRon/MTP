@@ -465,7 +465,7 @@ Business Source Licence 1.1 — See [LICENSE](LICENSE) for details.
 
 You may use this code for internal purposes. You may not use it to offer a competing hosted verification or audit service without a commercial licence from Inntris INC. Converts to Apache 2.0 on 2030-03-18.
 
-Commercial licensing: applications@inntris.com
+Commercial licensing: sales@inntris.com
 
 ---
 
@@ -479,7 +479,7 @@ We welcome contributions! Please open an issue to discuss proposed changes befor
 
 - **Documentation**: See the `/docs` page in the frontend dashboard
 - **Issues**: Open an issue in this repository
-- **Contact**: applications@inntris.com
+- **Contact**: sales@inntris.com
 
 ---
 

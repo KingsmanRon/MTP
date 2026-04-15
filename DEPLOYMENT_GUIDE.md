@@ -216,7 +216,7 @@ cast send YOUR_CONTRACT_ADDRESS \
 
 The Inntris Core repository is access-controlled.
 
-Contact **applications@inntris.com** to request repository access. You will receive onboarding instructions within 24 hours.
+Contact **sales@inntris.com** to request repository access. You will receive onboarding instructions within 24 hours.
 
 ### 4.2 Create Railway Project
 1. Go to https://railway.app/dashboard

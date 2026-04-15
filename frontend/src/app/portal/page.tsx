@@ -152,28 +152,28 @@ export default function PortalPreviewPage() {
               </div>
               <div className="space-y-2">
                 {[
-                  { verdict: "Permit", rule: "api_call", time: "14:32 UTC" },
-                  { verdict: "Block", rule: "data_export", time: "14:28 UTC" },
-                  { verdict: "Permit", rule: "api_call", time: "14:21 UTC" },
-                  { verdict: "Escalate", rule: "financial_transaction", time: "14:15 UTC" },
+                  { verdict: "PASS", rule: "api_call", time: "14:32 UTC" },
+                  { verdict: "BLOCK", rule: "data_export", time: "14:28 UTC" },
+                  { verdict: "PASS", rule: "api_call", time: "14:21 UTC" },
+                  { verdict: "ESCALATE", rule: "financial_transaction", time: "14:15 UTC" },
                 ].map((dec, i) => (
                   <div
                     key={i}
                     className="flex items-center justify-between rounded-xl border border-white/6 bg-[#101C31]/70 px-4 py-3"
                   >
                     <div className="flex items-center gap-3">
-                      {dec.verdict === "Block" ? (
+                      {dec.verdict === "BLOCK" ? (
                         <XOctagon className="h-4 w-4 text-[#ef4444]" />
-                      ) : dec.verdict === "Escalate" ? (
+                      ) : dec.verdict === "ESCALATE" ? (
                         <Clock className="h-4 w-4 text-[#f59e0b]" />
                       ) : (
                         <CheckCircle2 className="h-4 w-4 text-[#22c55e]" />
                       )}
                       <span
                         className={`text-xs font-bold ${
-                          dec.verdict === "Block"
+                          dec.verdict === "BLOCK"
                             ? "text-[#ef4444]"
-                            : dec.verdict === "Escalate"
+                            : dec.verdict === "ESCALATE"
                             ? "text-[#f59e0b]"
                             : "text-[#22c55e]"
                         }`}

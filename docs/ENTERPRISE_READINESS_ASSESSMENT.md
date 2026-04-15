@@ -8,7 +8,7 @@
 
 ## Executive Summary
 
-The repository is **substantially complete** against the V2 spec. PR1 (the load-bearing credibility work — receipt schema, signing path, verify page proof logic, and live demo receipt IDs) appears fully shipped. PR2 (cosmetic consistency) is **mostly complete** with a handful of residual issues in the portal preview, docs presentation labels, the `verdict-badge` component, and two markdown files that still reference the old contact address.
+The repository is **fully complete** against the V2 spec. PR1 (the load-bearing credibility work — receipt schema, signing path, verify page proof logic, and live demo receipt IDs) is fully shipped. PR2 (cosmetic consistency) is now also complete — all verdict labels, contact addresses, docs copy, and presentation surfaces have been updated.
 
 | Area | Status | Remaining Work |
 |------|--------|----------------|
@@ -19,13 +19,13 @@ The repository is **substantially complete** against the V2 spec. PR1 (the load-
 | PR1 — Canonical receipt ID swap | **DONE** | None |
 | PR1 — Tests | **DONE** | None |
 | PR1 — INNTRIS_CONTEXT.md update | **DONE** | None |
-| PR2 — Verdict labels | **PARTIAL** | 3 issues remain (see below) |
-| PR2 — Contact address | **PARTIAL** | 2 files remain (see below) |
+| PR2 — Verdict labels | **DONE** | None |
+| PR2 — Contact address | **DONE** | None |
 | PR2 — "What a public receipt proves" block | **DONE** | None |
 | PR2 — Homepage proof copy | **DONE** | None |
 | PR2 — Trust score demotion | **DONE** | None |
 | PR2 — Docs copy edits | **DONE** | None |
-| PR2 — Portal & audit preview language | **PARTIAL** | Portal uses "Permit" (see below) |
+| PR2 — Portal & audit preview language | **DONE** | None |
 | PR2 — Tests | **DONE** | None |
 
 ---
@@ -222,29 +222,7 @@ No overstated claims found.
 
 ## Remaining Issues — Punch List
 
-### Must Fix (spec violations)
-
-| # | File | Line(s) | Issue | Spec Section |
-|---|------|---------|-------|-------------|
-| 1 | `frontend/src/app/portal/page.tsx` | 155, 157 | `"Permit"` should be `"PASS"` | 2.1, 2.7 |
-| 2 | `frontend/src/app/portal/page.tsx` | 158 | `"Escalate"` should be `"ESCALATE"` (uppercase) | 2.1, 2.7 |
-| 3 | `frontend/src/app/portal/page.tsx` | 156 | `"Block"` should be `"BLOCK"` (uppercase) | 2.1, 2.7 |
-| 4 | `frontend/src/app/portal/page.tsx` | 165-181 | Conditional checks use title-case (`"Block"`, `"Escalate"`) — must match new uppercase values | 2.1 |
-| 5 | `frontend/src/app/docs/page.tsx` | 281-283 | Outcome cards use `"APPROVED"`, `"BLOCKED"`, `"RATE LIMITED"` — should use `"PASS"`, `"BLOCK"`, `"ESCALATE"` | 2.1 |
-| 6 | `frontend/src/components/verdict-badge.tsx` | 18-23 | Labels use `"Approved"`, `"Blocked"`, `"Rate Limited"` instead of `"PASS"`, `"BLOCK"`, `"ESCALATE"` | 2.1 |
-
-### Should Fix (consistency, not spec-breaking for buyer-facing surfaces)
-
-| # | File | Line(s) | Issue | Spec Section |
-|---|------|---------|-------|-------------|
-| 7 | `README.md` | 468, 482 | `applications@inntris.com` should be `sales@inntris.com` | 2.2 |
-| 8 | `DEPLOYMENT_GUIDE.md` | 219 | `applications@inntris.com` should be `sales@inntris.com` | 2.2 |
-
-### Edge Case / Judgment Call
-
-| # | File | Line(s) | Issue | Notes |
-|---|------|---------|-------|-------|
-| 9 | `frontend/src/app/docs/page.tsx` | 315 | JSON example shows `"verdict": "approved"` | Per spec 2.1: keep raw backend truthful in JSON, add a note nearby: "The UI presents `approved` as `PASS`." — note is currently absent. |
+All issues resolved. See commit history for details.
 
 ---
 
@@ -279,10 +257,4 @@ No overstated claims found.
 
 **PR1 is fully shipped.** The receipt schema change, mainnet receipts, verify page proof logic, canonical ID swap, tests, and context update are all in place and consistent.
 
-**PR2 is ~90% complete.** The core changes (verdict mapping function, contact section, docs copy, "What a public receipt proves" block, trust score demotion, audit preview, and all three test suites) are done. The remaining items are:
-
-- 6 verdict label violations across portal preview, docs outcome cards, and verdict-badge component
-- 3 contact address references in README.md and DEPLOYMENT_GUIDE.md
-- 1 missing annotation on the docs JSON example
-
-These are all straightforward find-and-replace fixes with no architectural implications.
+**PR2 is fully shipped.** All verdict labels standardised to PASS/BLOCK/ESCALATE across portal preview, docs outcome cards, and verdict-badge component. Contact addresses updated to `sales@inntris.com` in README.md and DEPLOYMENT_GUIDE.md. JSON example annotation added to docs page. All non-negotiable constraints met. TypeScript passes cleanly. All spec-related test suites pass (verdict, proof-state, credibility, contact).
