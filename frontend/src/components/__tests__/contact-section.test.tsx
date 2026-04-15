@@ -119,6 +119,8 @@ describe("ContactSection", () => {
           body: JSON.stringify({
             name: "Jane Doe",
             email: "jane@example.com",
+            framework: "",
+            risk: "",
             subject: "Inquiry",
             message: "Hello!",
           }),

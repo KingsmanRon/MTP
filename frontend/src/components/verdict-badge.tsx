@@ -16,10 +16,10 @@ export function VerdictBadge({ verdict, showIcon = true }: VerdictBadgeProps) {
   };
 
   const labels = {
-    approved: "Approved",
-    blocked: "Blocked",
-    rate_limited: "Rate Limited",
-    signature_invalid: "Invalid Signature",
+    approved: "PASS",
+    blocked: "BLOCK",
+    rate_limited: "ESCALATE",
+    signature_invalid: "BLOCK",
   };
 
   const Icon = icons[verdict];
