@@ -200,7 +200,10 @@ def main():
         "risk_score": 0.15
     }
     nonce = str(uuid4())
-    timestamp = datetime.now(timezone.utc).isoformat()
+    # Canonical UTC wire form: matches api.crypto.canonicalize_timestamp.
+    # Use a Z suffix so the server-side hash re-computation agrees with the
+    # client-side hash that was signed.
+    timestamp = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
     print(f"  Action Type: {action_type}")
     print(f"  Amount: ${payload['amount']} {payload['currency']}")
