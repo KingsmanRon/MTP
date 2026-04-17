@@ -841,12 +841,18 @@ async def verify_action(
             )
 
         # STEP 2: Verify Ed25519 Signature
+        # The signing envelope version is echoed from the client so legacy
+        # agents signing with sig_version=1 continue to verify. New agents
+        # should pin sig_version=2 (the default), which normalizes the
+        # timestamp to canonical UTC. See Phase 0.3 / 0.4 in the
+        # enterprise-readiness plan.
         action_hash = CryptoService.compute_action_hash(
             agent_id=str(request_data.agent_id),
             action_type=request_data.action_type,
             payload=request_data.payload,
             nonce=request_data.nonce,
             timestamp=request_data.timestamp,
+            sig_version=request_data.sig_version,
         )
 
         try:

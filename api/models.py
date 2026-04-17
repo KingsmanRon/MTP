@@ -114,6 +114,29 @@ class VerifyActionRequest(BaseModel):
         description="SHA-256 hash of .inntris.yml policy file"
     )
 
+    # Signing-envelope version. Phase 0.4 introduced this field so the wire
+    # format of ``compute_action_hash`` can evolve without silently breaking
+    # older SDKs. Clients should pin the version they signed with; the
+    # server uses it to select the matching canonicalization.
+    #
+    #   1 = legacy form: timestamp embedded verbatim via ``.isoformat()`` with
+    #       no tz normalization (pre-Phase-0.3 behavior).
+    #   2 = current form: timestamp normalized to UTC with a ``Z`` suffix by
+    #       ``CryptoService.canonicalize_timestamp``; see Phase 0.3.
+    #
+    # Requests without ``sig_version`` are treated as version 2 — matching the
+    # current reference implementation.
+    sig_version: int = Field(
+        2,
+        ge=1,
+        le=2,
+        description=(
+            "Signing-envelope version. 2 = UTC-normalized timestamp (current). "
+            "1 = legacy isoformat without tz normalization. "
+            "Defaults to 2 when omitted."
+        ),
+    )
+
     @field_validator("action_type")
     @classmethod
     def validate_action_type(cls, v: str) -> str:

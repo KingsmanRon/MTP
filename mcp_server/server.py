@@ -187,7 +187,10 @@ class InntrisClient:
         action_hash = self._compute_action_hash(action_type, payload, nonce, timestamp)
         signature = self._sign_message(action_hash)
 
-        # Prepare request
+        # Prepare request. sig_version=2 pins the current UTC-normalized
+        # signing envelope (Phase 0.3 / 0.4). Do not drop this field: servers
+        # default to 2 when absent today, but pinning lets us evolve the wire
+        # format again without every deployed SDK breaking silently.
         request_body = {
             "agent_id": self.agent_id,
             "action_type": action_type,
@@ -195,6 +198,7 @@ class InntrisClient:
             "signature": signature,
             "nonce": nonce,
             "timestamp": canonical_ts,
+            "sig_version": 2,
         }
 
         logger.info(f"Requesting verification for action: {action_type}")

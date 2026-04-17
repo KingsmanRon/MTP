@@ -137,6 +137,13 @@ class CryptoService:
             iso = iso[:-6] + "Z"
         return iso
 
+    # Current (default) signing-envelope version. Kept here so callers that
+    # want to pin an explicit version without importing models.py don't have
+    # to hard-code an integer at every site.
+    SIG_VERSION_LEGACY = 1
+    SIG_VERSION_CURRENT = 2
+    SIG_VERSION_DEFAULT = SIG_VERSION_CURRENT
+
     @staticmethod
     def compute_action_hash(
         agent_id: str,
@@ -144,6 +151,7 @@ class CryptoService:
         payload: dict[str, Any],
         nonce: str,
         timestamp: "datetime | str",
+        sig_version: int = SIG_VERSION_DEFAULT,
     ) -> str:
         """
         Compute the hash that should be signed by the agent.
@@ -161,17 +169,40 @@ class CryptoService:
                        emitted as ``YYYY-MM-DDTHH:MM:SS[.ffffff]Z`` before
                        hashing, so two callers representing the same instant
                        always produce identical hashes.
+            sig_version: Signing-envelope version negotiated with the client.
+                         ``1`` = pre-Phase-0.3 form: the raw input timestamp
+                         (stringified via ``.isoformat()`` for datetimes) is
+                         embedded verbatim. ``2`` = current form: timestamp is
+                         routed through ``canonicalize_timestamp`` first.
 
         Returns:
             Lowercase hexadecimal SHA-256 hash.
         """
-        # Create signing payload
+        if sig_version == CryptoService.SIG_VERSION_LEGACY:
+            # Preserved for signatures produced by SDKs that predate
+            # Phase 0.3. The server still needs to be able to verify those
+            # signatures until all deployed agents are upgraded. Do not use
+            # this path for new hashing — it is ambiguous across timezones.
+            ts_repr = (
+                timestamp
+                if isinstance(timestamp, str)
+                else timestamp.isoformat()
+            )
+        elif sig_version == CryptoService.SIG_VERSION_CURRENT:
+            ts_repr = CryptoService.canonicalize_timestamp(timestamp)
+        else:
+            raise CryptoError(
+                f"Unsupported sig_version: {sig_version!r}. "
+                f"Expected {CryptoService.SIG_VERSION_LEGACY} or "
+                f"{CryptoService.SIG_VERSION_CURRENT}."
+            )
+
         signing_data = {
             "agent_id": str(agent_id),
             "action_type": action_type,
             "payload_hash": CryptoService.compute_payload_hash(payload),
             "nonce": nonce,
-            "timestamp": CryptoService.canonicalize_timestamp(timestamp),
+            "timestamp": ts_repr,
         }
         return CryptoService.compute_payload_hash(signing_data)
 

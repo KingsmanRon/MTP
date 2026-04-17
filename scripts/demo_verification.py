@@ -120,7 +120,9 @@ def verify_action(api_url: str, agent_id: str, action_type: str, payload: dict,
         "payload": payload,
         "nonce": nonce,
         "timestamp": timestamp,
-        "signature": signature
+        "signature": signature,
+        # Pin the signing envelope version the demo signs with.
+        "sig_version": 2,
     }
 
     response = requests.post(f"{api_url}/verify", headers=headers, json=data)
