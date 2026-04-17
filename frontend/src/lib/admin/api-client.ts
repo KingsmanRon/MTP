@@ -22,9 +22,10 @@ export async function adminFetch<T = unknown>(
   options: {
     method?: string;
     params?: Record<string, string | undefined>;
+    body?: unknown;
   } = {}
 ): Promise<AdminApiResponse<T>> {
-  const { method = "GET", params } = options;
+  const { method = "GET", params, body } = options;
 
   let url = `${BACKEND_URL}${path}`;
   if (params) {
@@ -44,6 +45,7 @@ export async function adminFetch<T = unknown>(
       "X-API-Key": apiKey,
       "Content-Type": "application/json",
     },
+    body: body === undefined ? undefined : JSON.stringify(body),
     cache: "no-store",
   });
 
