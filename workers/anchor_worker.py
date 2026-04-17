@@ -17,7 +17,7 @@ import logging
 import os
 import signal
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any, Optional
 from uuid import UUID
@@ -54,6 +54,30 @@ BATCH_SIZE = int(os.getenv("ANCHOR_BATCH_SIZE", "1000"))
 BATCH_INTERVAL_MINUTES = int(os.getenv("ANCHOR_INTERVAL_MINUTES", "60"))  # Default: 1 hour
 BATCH_INTERVAL_SECONDS = int(os.getenv("ANCHOR_BATCH_INTERVAL", str(BATCH_INTERVAL_MINUTES * 60)))
 MAX_RETRIES = int(os.getenv("ANCHOR_MAX_RETRIES", "5"))
+# Exponential backoff between failed retries. retry N waits
+# RETRY_BACKOFF_BASE_SECONDS * 2^(N-1), capped at RETRY_BACKOFF_MAX_SECONDS.
+RETRY_BACKOFF_BASE_SECONDS = int(os.getenv("ANCHOR_RETRY_BACKOFF_BASE", "60"))
+RETRY_BACKOFF_MAX_SECONDS = int(os.getenv("ANCHOR_RETRY_BACKOFF_MAX", str(60 * 60)))
+
+
+def compute_retry_backoff(
+    retry_count: int,
+    base_seconds: int = RETRY_BACKOFF_BASE_SECONDS,
+    max_seconds: int = RETRY_BACKOFF_MAX_SECONDS,
+) -> timedelta:
+    """Return the delay before retry #(retry_count+1) after `retry_count` failures.
+
+    retry_count=0 is the delay before the *first* retry (i.e. after the
+    initial attempt failed). Caps at ``max_seconds`` so a long-lived
+    failure doesn't push next_retry_at out past the heat death of the
+    universe via int overflow (2**63 retries is still wild, but bounded).
+    """
+    if retry_count < 0:
+        raise ValueError("retry_count must be non-negative")
+    # Clamp the exponent to avoid huge left-shifts before the min().
+    exponent = min(retry_count, 30)
+    delay = base_seconds * (2 ** exponent)
+    return timedelta(seconds=min(delay, max_seconds))
 
 # Base L2 Chain ID
 BASE_CHAIN_ID = int(os.getenv("BLOCKCHAIN_CHAIN_ID", "8453"))
@@ -380,8 +404,14 @@ class DatabaseService:
         gas_used: Optional[int] = None,
         gas_price_gwei: Optional[Decimal] = None,
         error_message: Optional[str] = None,
+        next_retry_at: Optional[datetime] = None,
     ):
-        # FIX 3: Added type casts ($2::varchar) to prevent ambiguous type errors
+        # $2::varchar avoids asyncpg "could not determine data type" errors.
+        # When status='failed', the worker has already computed next_retry_at
+        # for the caller based on the *current* retry_count, so bump
+        # retry_count in the same statement without re-reading the row.
+        # When status='dead_letter', stamp dead_lettered_at and clear
+        # next_retry_at so the retry query cannot pick this row up again.
         query = """
             UPDATE merkle_proofs
             SET
@@ -391,8 +421,22 @@ class DatabaseService:
                 gas_used = COALESCE($5, gas_used),
                 gas_price_gwei = COALESCE($6, gas_price_gwei),
                 error_message = COALESCE($7, error_message),
+                next_retry_at = CASE
+                    WHEN $2::varchar = 'failed' THEN $8
+                    WHEN $2::varchar = 'dead_letter' THEN NULL
+                    WHEN $2::varchar = 'confirmed' THEN NULL
+                    ELSE next_retry_at
+                END,
+                dead_lettered_at = CASE
+                    WHEN $2::varchar = 'dead_letter' AND dead_lettered_at IS NULL
+                        THEN NOW()
+                    ELSE dead_lettered_at
+                END,
                 confirmed_at = CASE WHEN $2::varchar = 'confirmed' THEN NOW() ELSE confirmed_at END,
-                retry_count = CASE WHEN $2::varchar = 'failed' THEN retry_count + 1 ELSE retry_count END
+                retry_count = CASE
+                    WHEN $2::varchar IN ('failed', 'dead_letter') THEN retry_count + 1
+                    ELSE retry_count
+                END
             WHERE id = $1
         """
         async with self._pool.acquire() as conn:
@@ -405,6 +449,7 @@ class DatabaseService:
                 gas_used,
                 gas_price_gwei,
                 error_message,
+                next_retry_at,
             )
 
     async def mark_logs_as_anchored(
@@ -431,12 +476,17 @@ class DatabaseService:
         logger.info(f"Marked {len(log_ids)} logs as anchored")
 
     async def get_pending_proofs(self) -> list[dict[str, Any]]:
+        # Only rows whose backoff window has elapsed. 'dead_letter' is a
+        # terminal state and is never returned here — operators must
+        # requeue manually once the underlying problem (RPC, gas, key) is
+        # fixed.
         query = """
             SELECT id, root_hash, leaf_hashes, retry_count,
                    start_timestamp, end_timestamp
             FROM merkle_proofs
             WHERE status IN ('pending', 'failed')
               AND retry_count < $1
+              AND (next_retry_at IS NULL OR next_retry_at <= NOW())
             ORDER BY created_at ASC
         """
         async with self._pool.acquire() as conn:
@@ -535,16 +585,17 @@ class AnchorWorker:
         log_count: int,
         start_timestamp: datetime,
         end_timestamp: datetime,
+        current_retry_count: int = 0,
     ):
         try:
             # FIX 4: Lowered threshold to 0.0001 ETH
             balance = self.blockchain.get_balance()
             if balance < Decimal("0.0001"):
                 logger.error(f"Insufficient balance: {balance} ETH")
-                await self.db.update_merkle_proof_status(
+                await self._record_failure(
                     proof_id,
-                    status="failed",
-                    error_message=f"Insufficient balance: {balance} ETH",
+                    current_retry_count,
+                    f"Insufficient balance: {balance} ETH",
                 )
                 return
 
@@ -572,11 +623,42 @@ class AnchorWorker:
 
         except Exception as e:
             logger.error(f"Blockchain submission failed: {e}")
+            await self._record_failure(proof_id, current_retry_count, str(e))
+
+    async def _record_failure(
+        self,
+        proof_id: UUID,
+        current_retry_count: int,
+        error_message: str,
+    ):
+        # After this attempt, retry_count becomes current_retry_count + 1
+        # (the SQL does the increment). Transition to dead_letter once we
+        # hit the cap so the retry query stops picking this row up.
+        next_retry_count = current_retry_count + 1
+        if next_retry_count >= MAX_RETRIES:
+            logger.error(
+                f"Proof {proof_id} exhausted {MAX_RETRIES} retries — "
+                f"transitioning to dead_letter. Last error: {error_message}"
+            )
             await self.db.update_merkle_proof_status(
                 proof_id,
-                status="failed",
-                error_message=str(e),
+                status="dead_letter",
+                error_message=error_message,
             )
+            return
+
+        backoff = compute_retry_backoff(next_retry_count)
+        next_retry_at = datetime.now(timezone.utc) + backoff
+        logger.warning(
+            f"Proof {proof_id} failed (attempt {next_retry_count}/{MAX_RETRIES}). "
+            f"Next retry at {next_retry_at.isoformat()} ({backoff})."
+        )
+        await self.db.update_merkle_proof_status(
+            proof_id,
+            status="failed",
+            error_message=error_message,
+            next_retry_at=next_retry_at,
+        )
 
     async def _retry_pending_proofs(self):
         pending = await self.db.get_pending_proofs()
@@ -590,6 +672,7 @@ class AnchorWorker:
                 log_count=len(proof["leaf_hashes"]),
                 start_timestamp=proof["start_timestamp"],
                 end_timestamp=proof["end_timestamp"],
+                current_retry_count=proof["retry_count"],
             )
 
 

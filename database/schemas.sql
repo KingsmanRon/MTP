@@ -190,10 +190,12 @@ CREATE TABLE merkle_proofs (
     start_timestamp TIMESTAMPTZ NOT NULL,
     end_timestamp TIMESTAMPTZ NOT NULL,
     leaf_hashes TEXT[] NOT NULL,  -- Array of all leaf hashes in order
-    status VARCHAR(20) NOT NULL DEFAULT 'pending',  -- 'pending', 'submitted', 'confirmed', 'failed'
+    status VARCHAR(20) NOT NULL DEFAULT 'pending',  -- 'pending', 'submitted', 'confirmed', 'failed', 'dead_letter'
     gas_used BIGINT,
     gas_price_gwei DECIMAL(18, 9),
     retry_count INTEGER NOT NULL DEFAULT 0,
+    next_retry_at TIMESTAMPTZ,  -- NULL = retry immediately; set on failure for exponential backoff (Phase 0.6)
+    dead_lettered_at TIMESTAMPTZ,  -- Set when retry_count is exhausted; requires manual intervention (Phase 0.6)
     error_message TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     confirmed_at TIMESTAMPTZ,
@@ -206,6 +208,8 @@ CREATE TABLE merkle_proofs (
 CREATE INDEX idx_merkle_proofs_status ON merkle_proofs(status);
 CREATE INDEX idx_merkle_proofs_created_at ON merkle_proofs(created_at DESC);
 CREATE INDEX idx_merkle_proofs_block_number ON merkle_proofs(block_number) WHERE block_number IS NOT NULL;
+CREATE INDEX idx_merkle_proofs_retry_due ON merkle_proofs (next_retry_at) WHERE status IN ('pending', 'failed');
+CREATE INDEX idx_merkle_proofs_dead_letter ON merkle_proofs (dead_lettered_at DESC) WHERE status = 'dead_letter';
 
 -- =============================================================================
 -- TABLE: security_alerts
