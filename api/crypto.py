@@ -18,6 +18,8 @@ from nacl.exceptions import BadSignatureError
 from nacl.signing import VerifyKey
 from nacl.encoding import RawEncoder
 
+from api import jcs
+
 logger = logging.getLogger(__name__)
 
 
@@ -140,8 +142,15 @@ class CryptoService:
     # Current (default) signing-envelope version. Kept here so callers that
     # want to pin an explicit version without importing models.py don't have
     # to hard-code an integer at every site.
+    #
+    # Phase 1B.1 introduces SIG_VERSION_JCS (3) which swaps the payload
+    # hash from Python's sort_keys serializer to strict RFC 8785 JCS so
+    # non-Python SDKs can produce byte-identical canonical forms. The
+    # default remains SIG_VERSION_CURRENT (2) because deployed agents
+    # still sign with it; servers accept all three.
     SIG_VERSION_LEGACY = 1
     SIG_VERSION_CURRENT = 2
+    SIG_VERSION_JCS = 3
     SIG_VERSION_DEFAULT = SIG_VERSION_CURRENT
 
     @staticmethod
@@ -188,23 +197,39 @@ class CryptoService:
                 if isinstance(timestamp, str)
                 else timestamp.isoformat()
             )
+            payload_hash = CryptoService.compute_payload_hash(payload)
+            outer_hash = CryptoService.compute_payload_hash
         elif sig_version == CryptoService.SIG_VERSION_CURRENT:
             ts_repr = CryptoService.canonicalize_timestamp(timestamp)
+            payload_hash = CryptoService.compute_payload_hash(payload)
+            outer_hash = CryptoService.compute_payload_hash
+        elif sig_version == CryptoService.SIG_VERSION_JCS:
+            # RFC 8785 JCS for both the inner payload hash and the outer
+            # signing envelope. Non-Python SDKs can only match this path
+            # byte-for-byte. See tests/fixtures/canonicalization/jcs_vectors.json
+            # for the cross-language contract.
+            try:
+                payload_hash = jcs.sha256_hex(payload)
+                ts_repr = CryptoService.canonicalize_timestamp(timestamp)
+                outer_hash = jcs.sha256_hex
+            except jcs.JCSError as exc:
+                raise CryptoError(f"JCS canonicalization failed: {exc}") from exc
         else:
             raise CryptoError(
                 f"Unsupported sig_version: {sig_version!r}. "
-                f"Expected {CryptoService.SIG_VERSION_LEGACY} or "
-                f"{CryptoService.SIG_VERSION_CURRENT}."
+                f"Expected {CryptoService.SIG_VERSION_LEGACY}, "
+                f"{CryptoService.SIG_VERSION_CURRENT}, or "
+                f"{CryptoService.SIG_VERSION_JCS}."
             )
 
         signing_data = {
             "agent_id": str(agent_id),
             "action_type": action_type,
-            "payload_hash": CryptoService.compute_payload_hash(payload),
+            "payload_hash": payload_hash,
             "nonce": nonce,
             "timestamp": ts_repr,
         }
-        return CryptoService.compute_payload_hash(signing_data)
+        return outer_hash(signing_data)
 
     @staticmethod
     def verify_ed25519_signature(

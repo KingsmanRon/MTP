@@ -123,15 +123,19 @@ class VerifyActionRequest(BaseModel):
     #       no tz normalization (pre-Phase-0.3 behavior).
     #   2 = current form: timestamp normalized to UTC with a ``Z`` suffix by
     #       ``CryptoService.canonicalize_timestamp``; see Phase 0.3.
+    #   3 = JCS form (Phase 1B.1): payload + signing envelope canonicalized
+    #       via RFC 8785. Required for byte-identical hashes from non-Python
+    #       SDKs. See tests/fixtures/canonicalization/jcs_vectors.json.
     #
     # Requests without ``sig_version`` are treated as version 2 — matching the
     # current reference implementation.
     sig_version: int = Field(
         2,
         ge=1,
-        le=2,
+        le=3,
         description=(
-            "Signing-envelope version. 2 = UTC-normalized timestamp (current). "
+            "Signing-envelope version. 3 = RFC 8785 JCS (Phase 1B.1). "
+            "2 = UTC-normalized timestamp (current default). "
             "1 = legacy isoformat without tz normalization. "
             "Defaults to 2 when omitted."
         ),
