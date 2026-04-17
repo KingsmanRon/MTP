@@ -19,8 +19,30 @@ export async function POST(request: NextRequest) {
     const ip = forwarded.split(",")[0].trim() || "unknown";
     const rateLimitKey = `ratelimit:admin:login:${ip}`;
 
+    // Fail closed: if Redis is not configured or is unreachable we cannot
+    // enforce the login rate limit. In that state we refuse new sign-ins
+    // rather than silently skipping the check — an attacker who can reach
+    // /api/admin/session could otherwise brute-force keys unbounded. Set
+    // INNTRIS_DISABLE_LOGIN_RATE_LIMIT=1 only in dev environments where
+    // brute-force is not a concern.
+    const rateLimitDisabled =
+      process.env.INNTRIS_DISABLE_LOGIN_RATE_LIMIT === "1";
+
     const redis = getRedis();
-    if (redis) {
+    if (!redis) {
+      if (!rateLimitDisabled) {
+        console.error(
+          "Login rejected: Redis unavailable, cannot enforce rate limit (fail closed)"
+        );
+        return NextResponse.json(
+          { error: "Authentication service temporarily unavailable" },
+          { status: 503 }
+        );
+      }
+      console.warn(
+        "Redis unavailable and INNTRIS_DISABLE_LOGIN_RATE_LIMIT=1 — login rate limit skipped"
+      );
+    } else {
       try {
         const count = await redis.get(rateLimitKey);
         if (count !== null && parseInt(count, 10) >= LOGIN_RATE_LIMIT) {
@@ -35,14 +57,21 @@ export async function POST(request: NextRequest) {
           // increments so the window does not slide.
           await redis.expire(rateLimitKey, LOGIN_RATE_WINDOW);
         }
-      } catch {
-        // Redis command failed — continue without rate limiting
-        console.warn("Redis unavailable — login rate limit skipped");
-        // TODO: change to fail closed before production
+      } catch (err) {
+        if (!rateLimitDisabled) {
+          console.error(
+            "Login rejected: Redis command failed, cannot enforce rate limit (fail closed)",
+            err
+          );
+          return NextResponse.json(
+            { error: "Authentication service temporarily unavailable" },
+            { status: 503 }
+          );
+        }
+        console.warn(
+          "Redis command failed and INNTRIS_DISABLE_LOGIN_RATE_LIMIT=1 — login rate limit skipped"
+        );
       }
-    } else {
-      console.warn("Redis unavailable — login rate limit skipped");
-      // TODO: change to fail closed before production
     }
 
     // -----------------------------------------------------------------------

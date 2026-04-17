@@ -47,6 +47,11 @@ export default function LoginPage() {
         setError(message || "Too many login attempts. Try again later.");
       } else if (res.status === 502) {
         setError("Cannot connect to API server. Please check if the backend is running.");
+      } else if (res.status === 503) {
+        setError(
+          message ||
+            "Authentication service temporarily unavailable. Please try again shortly."
+        );
       } else {
         setError(message || `Sign in failed (${res.status})`);
       }
