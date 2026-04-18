@@ -7,7 +7,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Key, Loader2, AlertCircle, ArrowRight } from "lucide-react";
 import { InntrisLogo } from "@/components/inntris-logo";
-import { createAuthenticatedApi } from "@/lib/api";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -27,22 +26,37 @@ export default function LoginPage() {
     setError(null);
 
     try {
-      // Validate the API key by calling the organization endpoint
-      const api = createAuthenticatedApi(apiKey.trim());
-      await api.getOrganization();
+      const res = await fetch("/api/admin/session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ api_key: apiKey.trim() }),
+        cache: "no-store",
+      });
 
-      // Success - store the key and redirect
-      localStorage.setItem("inntris_api_key", apiKey.trim());
-      router.push("/admin/dashboard");
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : "Invalid API key";
-      if (message.includes("401") || message.includes("403") || message.includes("Unauthorized")) {
-        setError("Invalid API key. Please check your key and try again.");
-      } else if (message.includes("Failed to fetch") || message.includes("Network")) {
-        setError("Cannot connect to API server. Please check if the backend is running.");
-      } else {
-        setError(message);
+      if (res.ok) {
+        router.push("/admin/dashboard");
+        return;
       }
+
+      const data = await res.json().catch(() => ({}));
+      const message = typeof data.error === "string" ? data.error : "";
+
+      if (res.status === 401) {
+        setError("Invalid API key. Please check your key and try again.");
+      } else if (res.status === 429) {
+        setError(message || "Too many login attempts. Try again later.");
+      } else if (res.status === 502) {
+        setError("Cannot connect to API server. Please check if the backend is running.");
+      } else if (res.status === 503) {
+        setError(
+          message ||
+            "Authentication service temporarily unavailable. Please try again shortly."
+        );
+      } else {
+        setError(message || `Sign in failed (${res.status})`);
+      }
+    } catch {
+      setError("Network error. Please try again.");
     } finally {
       setIsLoading(false);
     }

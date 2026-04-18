@@ -11,7 +11,7 @@ import { LoadingState } from "@/components/loading-state";
 import { EmptyState } from "@/components/empty-state";
 import { formatDateTime, copyToClipboard } from "@/lib/utils";
 import { useAgents } from "@/lib/hooks";
-import { createAuthenticatedApi, VerificationResult, ActionVerdict } from "@/lib/api";
+import { VerificationResult } from "@/lib/api";
 import { Play, Copy, Check, AlertCircle, CheckCircle, Loader2, Bot, Zap } from "lucide-react";
 
 const ACTION_TYPES = [
@@ -50,15 +50,6 @@ const SAMPLE_PAYLOADS: Record<string, object> = {
     changes: { max_requests: 100 },
   },
 };
-
-// Get API key from localStorage
-function getApiKey(): string {
-  if (typeof window !== "undefined") {
-    const stored = localStorage.getItem("inntris_api_key");
-    if (stored) return stored;
-  }
-  return process.env.NEXT_PUBLIC_API_KEY || "dev_test_key";
-}
 
 export default function PlaygroundPage() {
   const [selectedAgentId, setSelectedAgentId] = useState<string>("");
@@ -107,13 +98,29 @@ export default function PlaygroundPage() {
     }
 
     try {
-      const api = createAuthenticatedApi(getApiKey());
-      const response = await api.testVerify({
-        agent_id: selectedAgentId,
-        action_type: actionType,
-        payload: parsedPayload,
+      const res = await fetch("/api/portal/test-verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          agent_id: selectedAgentId,
+          action_type: actionType,
+          payload: parsedPayload,
+        }),
+        cache: "no-store",
       });
-      setResult(response);
+
+      const data: unknown = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        const detail =
+          data && typeof data === "object" && "error" in data && typeof (data as { error: unknown }).error === "string"
+            ? (data as { error: string }).error
+            : `Verification request failed (${res.status})`;
+        setError(detail);
+        return;
+      }
+
+      setResult(data as VerificationResult);
     } catch (err: unknown) {
       const errorMessage = err instanceof Error ? err.message : "Verification request failed";
       setError(errorMessage);

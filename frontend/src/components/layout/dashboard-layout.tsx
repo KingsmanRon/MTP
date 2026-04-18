@@ -17,20 +17,39 @@ export function DashboardLayout({ children, variant }: DashboardLayoutProps) {
   const { theme, setTheme } = useTheme();
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
 
-  // Check for API key on mount
+  // Check for session on mount
   useEffect(() => {
-    const apiKey = localStorage.getItem("inntris_api_key");
-    if (!apiKey) {
-      router.push("/login");
-    } else {
-      setIsAuthenticated(true);
-    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/admin/session", { cache: "no-store" });
+        if (cancelled) return;
+        if (res.ok) {
+          setIsAuthenticated(true);
+        } else {
+          router.push("/login");
+        }
+      } catch {
+        if (!cancelled) router.push("/login");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [router]);
 
-  const handleLogout = () => {
-    localStorage.removeItem("inntris_api_key");
-    localStorage.removeItem("onboarding_dismissed");
-    localStorage.removeItem("portal_agent_id");
+  const handleLogout = async () => {
+    try {
+      await fetch("/api/admin/session", { method: "DELETE", cache: "no-store" });
+    } catch {
+      // ignore — client-side cleanup still runs
+    }
+    try {
+      localStorage.removeItem("onboarding_dismissed");
+      localStorage.removeItem("portal_agent_id");
+    } catch {
+      // localStorage may be unavailable (SSR / privacy mode)
+    }
     router.push("/login");
   };
 

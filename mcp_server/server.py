@@ -86,6 +86,25 @@ class InntrisClient:
         """Close HTTP client."""
         await self._http_client.aclose()
 
+    @staticmethod
+    def _canonicalize_timestamp(timestamp: datetime) -> str:
+        """
+        Produce the canonical UTC wire form used for both the action-hash
+        signing payload and the request's ``timestamp`` field.
+
+        This MUST match ``api.crypto.CryptoService.canonicalize_timestamp``:
+        non-UTC timestamps are converted to UTC, naive datetimes are treated
+        as UTC, and the result uses a ``Z`` suffix (not ``+00:00``).
+        """
+        if timestamp.tzinfo is None:
+            ts = timestamp.replace(tzinfo=timezone.utc)
+        else:
+            ts = timestamp.astimezone(timezone.utc)
+        iso = ts.isoformat()
+        if iso.endswith("+00:00"):
+            iso = iso[:-6] + "Z"
+        return iso
+
     def _compute_action_hash(
         self,
         action_type: str,
@@ -114,7 +133,7 @@ class InntrisClient:
             "action_type": action_type,
             "payload_hash": payload_hash,
             "nonce": nonce,
-            "timestamp": timestamp.isoformat(),
+            "timestamp": self._canonicalize_timestamp(timestamp),
         }
 
         signing_canonical = json.dumps(
@@ -160,19 +179,26 @@ class InntrisClient:
         # Generate nonce and timestamp
         nonce = secrets.token_urlsafe(32)
         timestamp = datetime.now(timezone.utc)
+        canonical_ts = self._canonicalize_timestamp(timestamp)
 
-        # Compute hash and sign
+        # Compute hash and sign. Both the hash and the wire payload use the
+        # same canonical timestamp form — if the two ever drift, the server
+        # will reject every signature.
         action_hash = self._compute_action_hash(action_type, payload, nonce, timestamp)
         signature = self._sign_message(action_hash)
 
-        # Prepare request
+        # Prepare request. sig_version=2 pins the current UTC-normalized
+        # signing envelope (Phase 0.3 / 0.4). Do not drop this field: servers
+        # default to 2 when absent today, but pinning lets us evolve the wire
+        # format again without every deployed SDK breaking silently.
         request_body = {
             "agent_id": self.agent_id,
             "action_type": action_type,
             "payload": payload,
             "signature": signature,
             "nonce": nonce,
-            "timestamp": timestamp.isoformat(),
+            "timestamp": canonical_ts,
+            "sig_version": 2,
         }
 
         logger.info(f"Requesting verification for action: {action_type}")

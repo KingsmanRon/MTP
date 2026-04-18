@@ -84,6 +84,42 @@ class Database:
         async with self._pool.acquire() as conn:
             yield conn
 
+    @asynccontextmanager
+    async def acquire_as_tenant(
+        self, org_id: UUID
+    ) -> AsyncGenerator[Connection, None]:
+        """
+        Acquire a connection scoped to a tenant (Phase 1C.1).
+
+        Opens a transaction, downgrades the session to ``inntris_api`` via
+        ``SET LOCAL ROLE`` (requires the pool role to hold membership — see
+        migration 005), and installs ``app.current_org_id`` via ``set_config``
+        with ``is_local=true`` so the setting is torn down at transaction end.
+
+        All RLS policies created in migration 005 filter by
+        ``app.current_tenant()``, which reads this setting. Within the
+        ``async with`` block, every query executes with tenant isolation
+        enforced by the database — even if the application logic forgets an
+        ``org_id`` predicate, cross-tenant rows are invisible.
+
+        Usage:
+            async with db.acquire_as_tenant(org_id) as conn:
+                await conn.fetch("SELECT * FROM agents")  # only this org's agents
+
+        Raises:
+            asyncpg.InsufficientPrivilegeError: if the pool role does not
+                hold membership of ``inntris_api`` (operator must run
+                migration 005 and switch DATABASE_URL to ``inntris_worker``).
+        """
+        async with self._pool.acquire() as conn:
+            async with conn.transaction():
+                await conn.execute("SET LOCAL ROLE inntris_api")
+                await conn.execute(
+                    "SELECT set_config('app.current_org_id', $1, true)",
+                    str(org_id),
+                )
+                yield conn
+
     async def health_check(self) -> bool:
         """Check database connectivity."""
         try:
@@ -427,12 +463,20 @@ class Database:
         """
         Get audit logs that haven't been anchored to the blockchain yet.
 
-        These logs have merkle_root_id = NULL.
+        Excludes ``metadata.test_request = true`` rows (Phase 2B) — those come
+        from /admin/test-verify and carry a sentinel signature rather than a
+        real attestation. They must never appear in a Merkle batch that we
+        anchor publicly, because the leaf hash of a test row does not verify
+        against any agent public key.
         """
         query = """
             SELECT id, action_hash, timestamp
             FROM audit_logs
             WHERE merkle_root_id IS NULL
+              AND NOT COALESCE(
+                  (metadata->>'test_request')::boolean,
+                  false
+              )
             ORDER BY timestamp ASC
             LIMIT $1
         """

@@ -1,0 +1,38 @@
+# =============================================================================
+# Foundry configuration (Phase 2A)
+# =============================================================================
+# Smart-contract build and test config for contracts/AnchorRegistry.sol.
+#
+# OpenZeppelin is pulled in as a git submodule under lib/openzeppelin-contracts.
+# The remapping below lets the contract continue to use the npm-style import
+# path (``@openzeppelin/contracts/...``) without changes.
+
+[profile.default]
+src = "contracts"
+test = "test/contracts"
+out = "out"
+libs = ["lib"]
+solc_version = "0.8.24"
+optimizer = true
+optimizer_runs = 200
+evm_version = "paris"
+# Keep the build warning-as-error-lite: fail on stack-too-deep and
+# actual errors, but allow informational warnings. Switch to strict
+# in a follow-up once the contract is reviewed for OZ deprecation
+# notices.
+deny_warnings = false
+
+remappings = [
+    "@openzeppelin/=lib/openzeppelin-contracts/",
+    "forge-std/=lib/forge-std/src/",
+]
+
+# Fuzzing defaults — deterministic in CI via fixed seed so flaky failures
+# are reproducible locally with the same seed.
+[fuzz]
+runs = 256
+seed = "0x1"
+
+[invariant]
+runs = 64
+depth = 64

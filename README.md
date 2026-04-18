@@ -417,7 +417,7 @@ DATABASE_URL=postgresql://... docker compose up -d api anchor-worker
 
 ### Kubernetes
 
-Helm charts available in `deploy/kubernetes/` (coming soon).
+Kubernetes manifests and a Helm chart are not shipped in this repository. Anchor-worker and API are standard 12-factor processes that read configuration from environment variables (see `.env.example`) and can be run under any orchestrator.
 
 ---
 
@@ -446,16 +446,17 @@ black --check .
 
 ### Running Tests
 
+Backend unit tests live in `tests/` and run against the Python package with `PYTHONPATH=.`:
+
 ```bash
-# Unit tests
-pytest tests/unit/
+# Python unit tests
+PYTHONPATH=. pytest tests/
 
-# Integration tests (requires Docker)
-pytest tests/integration/ --docker
-
-# Blockchain tests (requires testnet)
-pytest tests/blockchain/ -m blockchain
+# Frontend (Jest — type-check, lint, invariant & unit tests)
+cd frontend && npm test
 ```
+
+Integration tests (end-to-end against a real Postgres + Redis + anchored chain) and blockchain-specific test suites are not included in this repository yet — see `docs/ENTERPRISE_READINESS_ASSESSMENT.md` for the planned rollout.
 
 ---
 

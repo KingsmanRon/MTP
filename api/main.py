@@ -63,11 +63,18 @@ from api.schemas.admin import (
     AuditProof,
 )
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-)
+# Configure logging. Phase 2C: switch to structured JSON output when
+# ``INNTRIS_JSON_LOGS=1`` so log aggregators can parse the stream directly.
+# Default stays as the legacy text format so local dev output is still
+# grep-friendly.
+if os.getenv("INNTRIS_JSON_LOGS") == "1":
+    from api.observability import configure_json_logging
+    configure_json_logging(level=logging.INFO)
+else:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    )
 logger = logging.getLogger(__name__)
 
 # =============================================================================
@@ -120,12 +127,53 @@ app = FastAPI(
     version="1.0.0",
 )
 
-# CORS Configuration
-origins = ["*"] if ENVIRONMENT == "development" else [
-    origin.strip() for origin in os.getenv("ALLOWED_ORIGINS", "").split(",") if origin.strip()
-]
-if ENVIRONMENT != "development" and os.getenv("ALLOWED_ORIGINS", "").strip() == "*":
-    origins = ["*"]
+# Phase 2D.2: CORS lockdown.
+#
+# Wildcard origins in production are a cross-site request forgery vector:
+# any site can make credentialed (or credential-forwarding) calls against
+# our API. The previous code *honored* ALLOWED_ORIGINS=* even in production,
+# which silently defeated the defense. We now fail-closed at boot instead.
+#
+# Rules:
+#   * development  -> "*" is allowed (local tools, no creds).
+#   * non-development:
+#       - ALLOWED_ORIGINS must be a non-empty comma list of explicit
+#         scheme+host origins.
+#       - "*" anywhere in the list is a fatal misconfiguration.
+#       - Each origin must parse as http(s)://host[:port]; no wildcards,
+#         no "null", no path suffix (CORS origins have no path).
+
+def _resolve_cors_origins(environment: str, raw: str) -> list[str]:
+    raw = (raw or "").strip()
+    if environment == "development":
+        return ["*"] if not raw or raw == "*" else [
+            o.strip() for o in raw.split(",") if o.strip()
+        ]
+
+    if not raw:
+        raise SystemExit(
+            "FATAL: ALLOWED_ORIGINS is required when ENVIRONMENT != development"
+        )
+    origins = [o.strip() for o in raw.split(",") if o.strip()]
+    if any(o == "*" for o in origins):
+        raise SystemExit(
+            "FATAL: ALLOWED_ORIGINS=* is not permitted outside development"
+        )
+    from urllib.parse import urlparse
+    for o in origins:
+        u = urlparse(o)
+        if u.scheme not in ("http", "https") or not u.netloc or "*" in u.netloc:
+            raise SystemExit(
+                f"FATAL: invalid CORS origin {o!r} — expected scheme://host[:port]"
+            )
+        if u.path not in ("", "/") or u.query or u.fragment:
+            raise SystemExit(
+                f"FATAL: CORS origin {o!r} must not include a path/query/fragment"
+            )
+    return origins
+
+
+origins = _resolve_cors_origins(ENVIRONMENT, os.getenv("ALLOWED_ORIGINS", ""))
 
 app.add_middleware(
     CORSMiddleware,
@@ -134,6 +182,16 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
+
+# Phase 2C: request ID correlation for log/trace joins.
+from api.observability import RequestIdMiddleware, metrics_endpoint  # noqa: E402
+app.add_middleware(RequestIdMiddleware)
+
+# Phase 2C: Prometheus scrape endpoint. Unauthenticated by design — the
+# operator is expected to expose /metrics only on an internal network or
+# scrape via kube-prometheus's ServiceMonitor. If you terminate TLS at a
+# reverse proxy, add a ``deny`` rule there for non-internal CIDRs.
+app.add_route("/metrics", metrics_endpoint, methods=["GET"])
 
 # Global Database Pool
 db_pool: Optional[Database] = None
@@ -841,12 +899,18 @@ async def verify_action(
             )
 
         # STEP 2: Verify Ed25519 Signature
+        # The signing envelope version is echoed from the client so legacy
+        # agents signing with sig_version=1 continue to verify. New agents
+        # should pin sig_version=2 (the default), which normalizes the
+        # timestamp to canonical UTC. See Phase 0.3 / 0.4 in the
+        # enterprise-readiness plan.
         action_hash = CryptoService.compute_action_hash(
             agent_id=str(request_data.agent_id),
             action_type=request_data.action_type,
             payload=request_data.payload,
             nonce=request_data.nonce,
             timestamp=request_data.timestamp,
+            sig_version=request_data.sig_version,
         )
 
         try:
@@ -862,6 +926,13 @@ async def verify_action(
         if not signature_valid:
             verdict = ActionVerdict.SIGNATURE_INVALID
             verdict_reason = "Ed25519 signature verification failed. Potential attack detected."
+
+            # Phase 2C: bump signature-failure counter before logging so the
+            # alerting rule (rate(inntris_signature_failures_total[5m]) > N)
+            # fires even if the audit insert later fails.
+            from api.observability import signature_failures_total, verify_requests_total
+            signature_failures_total.inc()
+            verify_requests_total.labels(verdict="invalid_signature").inc()
 
             logger.warning(f"SECURITY ALERT: Invalid signature from {agent.id}")
 
@@ -915,6 +986,12 @@ async def verify_action(
         try:
             nonce_set = await redis_conn.set(nonce_key, "1", ex=600, nx=True)
             if not nonce_set:
+                # Phase 2C — count before raising. A replay attempt is a
+                # security-relevant event; we want the metric even if the
+                # raised HTTPException short-circuits the rest of the handler.
+                from api.observability import nonce_replays_total, verify_requests_total
+                nonce_replays_total.inc()
+                verify_requests_total.labels(verdict="replay").inc()
                 raise HTTPException(status_code=401, detail="Nonce already used - possible replay attack")
         except Exception as e:
             logger.error(f"SECURITY: Redis error during nonce check: {e} - blocking request")
@@ -957,6 +1034,16 @@ async def verify_action(
 
         # STEP 5: Handle policy violations
         if not policy_result.allowed:
+            # Phase 2C metrics — count the block before audit/HTTP work, so
+            # dashboards reflect reality even if a downstream exception
+            # prevents us from reaching the raise.
+            from api.observability import rate_limit_trips_total, verify_requests_total
+            if verdict == ActionVerdict.RATE_LIMITED:
+                rate_limit_trips_total.labels(window="tenant_minute").inc()
+                verify_requests_total.labels(verdict="rate_limited").inc()
+            else:
+                verify_requests_total.labels(verdict="blocked").inc()
+
             logger.warning(
                 f"Policy violation for agent {agent.id}: {policy_result.violation} - {verdict_reason}"
             )
@@ -1040,6 +1127,13 @@ async def verify_action(
             verdict=verdict.value,
             server_secret=SERVER_SECRET
         )
+
+        # Phase 2C — successful verification. Observed after the audit insert
+        # and trust-score update so the counter reflects a fully-processed
+        # approval, not one that might have partially failed.
+        from api.observability import verify_latency_seconds, verify_requests_total
+        verify_requests_total.labels(verdict="approved").inc()
+        verify_latency_seconds.observe(time.time() - start_time)
 
         return VerifyActionResponse(
             verdict=verdict,

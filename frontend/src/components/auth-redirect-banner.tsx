@@ -13,8 +13,18 @@ export function AuthRedirectBanner({ dashboardPath, label }: AuthRedirectBannerP
   const [isAuthenticated, setIsAuthenticated] = useState(false);
 
   useEffect(() => {
-    const key = localStorage.getItem("inntris_api_key");
-    setIsAuthenticated(!!key);
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/admin/session", { cache: "no-store" });
+        if (!cancelled) setIsAuthenticated(res.ok);
+      } catch {
+        if (!cancelled) setIsAuthenticated(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   if (!isAuthenticated) return null;

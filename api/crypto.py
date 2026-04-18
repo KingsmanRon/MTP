@@ -18,6 +18,8 @@ from nacl.exceptions import BadSignatureError
 from nacl.signing import VerifyKey
 from nacl.encoding import RawEncoder
 
+from api import jcs
+
 logger = logging.getLogger(__name__)
 
 
@@ -84,12 +86,81 @@ class CryptoService:
         return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
     @staticmethod
+    def canonicalize_timestamp(timestamp: "datetime | str") -> str:
+        """
+        Normalize a client-supplied timestamp into the canonical UTC wire form
+        used when computing the action-hash that the agent signs.
+
+        Output: ``YYYY-MM-DDTHH:MM:SS[.ffffff]Z`` — ISO-8601 in UTC with a
+        ``Z`` suffix (matching pydantic v2's default datetime serialization
+        and ``canonical_wire_timestamp`` in ``api/main.py``).
+
+        Accepts either a ``datetime`` or a string:
+        * strings are parsed with ``datetime.fromisoformat`` (with ``Z`` first
+          normalised to ``+00:00``); invalid strings raise ``CryptoError``.
+        * naive datetimes are assumed to be UTC — a warning is logged but the
+          call succeeds so older SDKs that sent ``datetime.utcnow()`` do not
+          silently produce hash mismatches. New SDKs MUST send tz-aware UTC.
+        * tz-aware datetimes in any zone are converted to UTC.
+
+        The previous implementation just called ``timestamp.isoformat()``
+        with no tz handling, so a naive vs ``+00:00`` vs ``+02:00``
+        datetime representing the same instant produced three different
+        hashes — and therefore three different signatures over the same
+        logical action. See Phase 0.3 of the enterprise-readiness plan.
+        """
+        if isinstance(timestamp, str):
+            try:
+                ts = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+            except ValueError as exc:
+                raise CryptoError(
+                    f"Invalid ISO-8601 timestamp string: {timestamp!r}"
+                ) from exc
+        elif isinstance(timestamp, datetime):
+            ts = timestamp
+        else:
+            raise CryptoError(
+                f"Unsupported timestamp type for action-hash: {type(timestamp)!r}"
+            )
+
+        if ts.tzinfo is None:
+            logger.warning(
+                "Naive datetime passed to action-hash canonicalization; "
+                "assuming UTC. Upstream callers must send tz-aware UTC."
+            )
+            ts = ts.replace(tzinfo=timezone.utc)
+        else:
+            ts = ts.astimezone(timezone.utc)
+
+        # isoformat() on a UTC datetime yields "+00:00"; swap to "Z" so the
+        # canonical form matches the wire timestamp used for receipts.
+        iso = ts.isoformat()
+        if iso.endswith("+00:00"):
+            iso = iso[:-6] + "Z"
+        return iso
+
+    # Current (default) signing-envelope version. Kept here so callers that
+    # want to pin an explicit version without importing models.py don't have
+    # to hard-code an integer at every site.
+    #
+    # Phase 1B.1 introduces SIG_VERSION_JCS (3) which swaps the payload
+    # hash from Python's sort_keys serializer to strict RFC 8785 JCS so
+    # non-Python SDKs can produce byte-identical canonical forms. The
+    # default remains SIG_VERSION_CURRENT (2) because deployed agents
+    # still sign with it; servers accept all three.
+    SIG_VERSION_LEGACY = 1
+    SIG_VERSION_CURRENT = 2
+    SIG_VERSION_JCS = 3
+    SIG_VERSION_DEFAULT = SIG_VERSION_CURRENT
+
+    @staticmethod
     def compute_action_hash(
         agent_id: str,
         action_type: str,
         payload: dict[str, Any],
         nonce: str,
-        timestamp: datetime,
+        timestamp: "datetime | str",
+        sig_version: int = SIG_VERSION_DEFAULT,
     ) -> str:
         """
         Compute the hash that should be signed by the agent.
@@ -102,20 +173,63 @@ class CryptoService:
             action_type: Type of action being performed.
             payload: Action-specific payload.
             nonce: Unique nonce for replay protection.
-            timestamp: Client-side timestamp.
+            timestamp: Client-side timestamp (datetime or ISO-8601 string).
+                       Any timezone is accepted — it is converted to UTC and
+                       emitted as ``YYYY-MM-DDTHH:MM:SS[.ffffff]Z`` before
+                       hashing, so two callers representing the same instant
+                       always produce identical hashes.
+            sig_version: Signing-envelope version negotiated with the client.
+                         ``1`` = pre-Phase-0.3 form: the raw input timestamp
+                         (stringified via ``.isoformat()`` for datetimes) is
+                         embedded verbatim. ``2`` = current form: timestamp is
+                         routed through ``canonicalize_timestamp`` first.
 
         Returns:
             Lowercase hexadecimal SHA-256 hash.
         """
-        # Create signing payload
+        if sig_version == CryptoService.SIG_VERSION_LEGACY:
+            # Preserved for signatures produced by SDKs that predate
+            # Phase 0.3. The server still needs to be able to verify those
+            # signatures until all deployed agents are upgraded. Do not use
+            # this path for new hashing — it is ambiguous across timezones.
+            ts_repr = (
+                timestamp
+                if isinstance(timestamp, str)
+                else timestamp.isoformat()
+            )
+            payload_hash = CryptoService.compute_payload_hash(payload)
+            outer_hash = CryptoService.compute_payload_hash
+        elif sig_version == CryptoService.SIG_VERSION_CURRENT:
+            ts_repr = CryptoService.canonicalize_timestamp(timestamp)
+            payload_hash = CryptoService.compute_payload_hash(payload)
+            outer_hash = CryptoService.compute_payload_hash
+        elif sig_version == CryptoService.SIG_VERSION_JCS:
+            # RFC 8785 JCS for both the inner payload hash and the outer
+            # signing envelope. Non-Python SDKs can only match this path
+            # byte-for-byte. See tests/fixtures/canonicalization/jcs_vectors.json
+            # for the cross-language contract.
+            try:
+                payload_hash = jcs.sha256_hex(payload)
+                ts_repr = CryptoService.canonicalize_timestamp(timestamp)
+                outer_hash = jcs.sha256_hex
+            except jcs.JCSError as exc:
+                raise CryptoError(f"JCS canonicalization failed: {exc}") from exc
+        else:
+            raise CryptoError(
+                f"Unsupported sig_version: {sig_version!r}. "
+                f"Expected {CryptoService.SIG_VERSION_LEGACY}, "
+                f"{CryptoService.SIG_VERSION_CURRENT}, or "
+                f"{CryptoService.SIG_VERSION_JCS}."
+            )
+
         signing_data = {
             "agent_id": str(agent_id),
             "action_type": action_type,
-            "payload_hash": CryptoService.compute_payload_hash(payload),
+            "payload_hash": payload_hash,
             "nonce": nonce,
-            "timestamp": timestamp if isinstance(timestamp, str) else timestamp.isoformat(),
+            "timestamp": ts_repr,
         }
-        return CryptoService.compute_payload_hash(signing_data)
+        return outer_hash(signing_data)
 
     @staticmethod
     def verify_ed25519_signature(

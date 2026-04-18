@@ -17,7 +17,7 @@ import logging
 import os
 import signal
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any, Optional
 from uuid import UUID
@@ -54,9 +54,42 @@ BATCH_SIZE = int(os.getenv("ANCHOR_BATCH_SIZE", "1000"))
 BATCH_INTERVAL_MINUTES = int(os.getenv("ANCHOR_INTERVAL_MINUTES", "60"))  # Default: 1 hour
 BATCH_INTERVAL_SECONDS = int(os.getenv("ANCHOR_BATCH_INTERVAL", str(BATCH_INTERVAL_MINUTES * 60)))
 MAX_RETRIES = int(os.getenv("ANCHOR_MAX_RETRIES", "5"))
+# Exponential backoff between failed retries. retry N waits
+# RETRY_BACKOFF_BASE_SECONDS * 2^(N-1), capped at RETRY_BACKOFF_MAX_SECONDS.
+RETRY_BACKOFF_BASE_SECONDS = int(os.getenv("ANCHOR_RETRY_BACKOFF_BASE", "60"))
+RETRY_BACKOFF_MAX_SECONDS = int(os.getenv("ANCHOR_RETRY_BACKOFF_MAX", str(60 * 60)))
+
+
+def compute_retry_backoff(
+    retry_count: int,
+    base_seconds: int = RETRY_BACKOFF_BASE_SECONDS,
+    max_seconds: int = RETRY_BACKOFF_MAX_SECONDS,
+) -> timedelta:
+    """Return the delay before retry #(retry_count+1) after `retry_count` failures.
+
+    retry_count=0 is the delay before the *first* retry (i.e. after the
+    initial attempt failed). Caps at ``max_seconds`` so a long-lived
+    failure doesn't push next_retry_at out past the heat death of the
+    universe via int overflow (2**63 retries is still wild, but bounded).
+    """
+    if retry_count < 0:
+        raise ValueError("retry_count must be non-negative")
+    # Clamp the exponent to avoid huge left-shifts before the min().
+    exponent = min(retry_count, 30)
+    delay = base_seconds * (2 ** exponent)
+    return timedelta(seconds=min(delay, max_seconds))
 
 # Base L2 Chain ID
 BASE_CHAIN_ID = int(os.getenv("BLOCKCHAIN_CHAIN_ID", "8453"))
+
+# Phase 2B hardening — gas-price sanity cap (gwei).
+# Base mainnet typically runs well under 1 gwei. A cap catches a runaway
+# gas-price oracle (e.g. a malicious or broken RPC returning eth-mainnet
+# prices for what we believe is an L2 tx). Set conservatively high enough
+# that legitimate congestion does not trip it; operators can raise via env.
+# If the cap trips, the proof is recorded as ``failed`` with a descriptive
+# error, retried with exponential backoff, and dead-lettered if persistent.
+MAX_GAS_PRICE_GWEI = Decimal(os.getenv("ANCHOR_MAX_GAS_PRICE_GWEI", "50"))
 
 # AnchorRegistry ABI (minimal for anchoring)
 ANCHOR_REGISTRY_ABI = [
@@ -192,6 +225,7 @@ class BlockchainService:
         rpc_url: str,
         contract_address: str,
         private_key: str,
+        expected_chain_id: int = BASE_CHAIN_ID,
     ):
         self.w3 = Web3(Web3.HTTPProvider(rpc_url))
         self.contract_address = Web3.to_checksum_address(contract_address)
@@ -200,7 +234,25 @@ class BlockchainService:
             abi=ANCHOR_REGISTRY_ABI,
         )
         self.account: LocalAccount = Account.from_key(private_key)
+        self.expected_chain_id = expected_chain_id
         logger.info(f"Blockchain service initialized. Address: {self.account.address}")
+
+    def assert_chain_id(self) -> None:
+        """Phase 2B hardening — verify the RPC is serving the expected chain.
+
+        A misconfigured ``BLOCKCHAIN_PROVIDER_URL`` (or a compromised/upstream-
+        DNS-hijacked endpoint) could route our anchor transactions to a chain
+        we did not intend — mainnet ETH fees on what we thought was Base, or
+        worse, a chain where our private key controls a different account.
+        We call this before submitting each batch; failure raises so the
+        caller records the proof as ``failed`` and retries.
+        """
+        actual = self.w3.eth.chain_id
+        if actual != self.expected_chain_id:
+            raise RuntimeError(
+                f"RPC chain-id mismatch: expected {self.expected_chain_id} "
+                f"(BASE_CHAIN_ID), got {actual}. Refusing to submit."
+            )
 
     def is_connected(self) -> bool:
         try:
@@ -219,7 +271,11 @@ class BlockchainService:
         start_timestamp: datetime,
         end_timestamp: datetime,
     ) -> dict[str, Any]:
-        
+        # Phase 2B — verify the RPC still serves the chain we expect before
+        # spending gas. Cheap check (one eth_chainId call), huge blast-radius
+        # if it's ever wrong.
+        self.assert_chain_id()
+
         # Ensure 0x prefix for Web3, but input might be raw hex
         if not merkle_root.startswith("0x"):
             merkle_root_hex = "0x" + merkle_root
@@ -245,6 +301,18 @@ class BlockchainService:
             gas_estimate = 150000
 
         gas_price = self.w3.eth.gas_price
+        gas_price_gwei = Decimal(str(self.w3.from_wei(gas_price, "gwei")))
+
+        # Phase 2B hardening — reject suspiciously high gas prices.
+        # Trips on a broken gas oracle or an RPC silently serving mainnet.
+        # A tripped cap costs nothing except a retry; a burst of legitimate
+        # Base congestion above the cap also retries, so operators should
+        # raise ANCHOR_MAX_GAS_PRICE_GWEI rather than remove this check.
+        if gas_price_gwei > MAX_GAS_PRICE_GWEI:
+            raise RuntimeError(
+                f"Gas price {gas_price_gwei} gwei exceeds cap "
+                f"{MAX_GAS_PRICE_GWEI} gwei. Refusing to submit."
+            )
 
         tx = self.contract.functions.anchorBatch(
             root_bytes,
@@ -274,7 +342,7 @@ class BlockchainService:
             "transaction_hash": receipt["transactionHash"].hex(),
             "block_number": receipt["blockNumber"],
             "gas_used": receipt["gasUsed"],
-            "gas_price_gwei": Decimal(str(self.w3.from_wei(gas_price, "gwei"))),
+            "gas_price_gwei": gas_price_gwei,
             "status": "confirmed" if receipt["status"] == 1 else "failed",
         }
 
@@ -328,10 +396,26 @@ class DatabaseService:
         await self._pool.close()
 
     async def get_unanchored_logs(self, limit: int = 1000) -> list[dict[str, Any]]:
+        # Phase 2B: exclude test_request rows from real Merkle batches.
+        # /admin/test-verify writes audit rows with metadata.test_request=true
+        # and signature=b"TEST_REQUEST" as a sentinel. Those entries must
+        # never end up in a publicly-verifiable proof: they carry no real
+        # cryptographic attestation, and the api/main.py docstring has
+        # promised callers they will be excluded since the endpoint shipped.
+        # Before this query, the promise was documentation-only — the worker
+        # happily hashed the sentinel alongside real signed actions.
+        #
+        # Filter pattern: metadata ? 'test_request' is cheap (JSONB key test)
+        # and short-circuits before the cast; the COALESCE guards the empty-
+        # metadata case where ->>'test_request' returns NULL.
         query = """
             SELECT id, action_hash, timestamp
             FROM audit_logs
             WHERE merkle_root_id IS NULL
+              AND NOT COALESCE(
+                  (metadata->>'test_request')::boolean,
+                  false
+              )
             ORDER BY timestamp ASC
             LIMIT $1
         """
@@ -380,8 +464,14 @@ class DatabaseService:
         gas_used: Optional[int] = None,
         gas_price_gwei: Optional[Decimal] = None,
         error_message: Optional[str] = None,
+        next_retry_at: Optional[datetime] = None,
     ):
-        # FIX 3: Added type casts ($2::varchar) to prevent ambiguous type errors
+        # $2::varchar avoids asyncpg "could not determine data type" errors.
+        # When status='failed', the worker has already computed next_retry_at
+        # for the caller based on the *current* retry_count, so bump
+        # retry_count in the same statement without re-reading the row.
+        # When status='dead_letter', stamp dead_lettered_at and clear
+        # next_retry_at so the retry query cannot pick this row up again.
         query = """
             UPDATE merkle_proofs
             SET
@@ -391,8 +481,22 @@ class DatabaseService:
                 gas_used = COALESCE($5, gas_used),
                 gas_price_gwei = COALESCE($6, gas_price_gwei),
                 error_message = COALESCE($7, error_message),
+                next_retry_at = CASE
+                    WHEN $2::varchar = 'failed' THEN $8
+                    WHEN $2::varchar = 'dead_letter' THEN NULL
+                    WHEN $2::varchar = 'confirmed' THEN NULL
+                    ELSE next_retry_at
+                END,
+                dead_lettered_at = CASE
+                    WHEN $2::varchar = 'dead_letter' AND dead_lettered_at IS NULL
+                        THEN NOW()
+                    ELSE dead_lettered_at
+                END,
                 confirmed_at = CASE WHEN $2::varchar = 'confirmed' THEN NOW() ELSE confirmed_at END,
-                retry_count = CASE WHEN $2::varchar = 'failed' THEN retry_count + 1 ELSE retry_count END
+                retry_count = CASE
+                    WHEN $2::varchar IN ('failed', 'dead_letter') THEN retry_count + 1
+                    ELSE retry_count
+                END
             WHERE id = $1
         """
         async with self._pool.acquire() as conn:
@@ -405,6 +509,7 @@ class DatabaseService:
                 gas_used,
                 gas_price_gwei,
                 error_message,
+                next_retry_at,
             )
 
     async def mark_logs_as_anchored(
@@ -431,12 +536,17 @@ class DatabaseService:
         logger.info(f"Marked {len(log_ids)} logs as anchored")
 
     async def get_pending_proofs(self) -> list[dict[str, Any]]:
+        # Only rows whose backoff window has elapsed. 'dead_letter' is a
+        # terminal state and is never returned here — operators must
+        # requeue manually once the underlying problem (RPC, gas, key) is
+        # fixed.
         query = """
             SELECT id, root_hash, leaf_hashes, retry_count,
                    start_timestamp, end_timestamp
             FROM merkle_proofs
             WHERE status IN ('pending', 'failed')
               AND retry_count < $1
+              AND (next_retry_at IS NULL OR next_retry_at <= NOW())
             ORDER BY created_at ASC
         """
         async with self._pool.acquire() as conn:
@@ -535,16 +645,17 @@ class AnchorWorker:
         log_count: int,
         start_timestamp: datetime,
         end_timestamp: datetime,
+        current_retry_count: int = 0,
     ):
         try:
             # FIX 4: Lowered threshold to 0.0001 ETH
             balance = self.blockchain.get_balance()
             if balance < Decimal("0.0001"):
                 logger.error(f"Insufficient balance: {balance} ETH")
-                await self.db.update_merkle_proof_status(
+                await self._record_failure(
                     proof_id,
-                    status="failed",
-                    error_message=f"Insufficient balance: {balance} ETH",
+                    current_retry_count,
+                    f"Insufficient balance: {balance} ETH",
                 )
                 return
 
@@ -564,6 +675,15 @@ class AnchorWorker:
                 gas_price_gwei=result["gas_price_gwei"],
             )
 
+            # Phase 2C — count by actual receipt outcome, not by "we called
+            # the RPC". ``result["status"]`` comes from the on-chain receipt
+            # so a reverted tx counts as failed, not confirmed.
+            try:
+                from api.observability import anchor_submissions_total
+                anchor_submissions_total.labels(outcome=result["status"]).inc()
+            except ImportError:
+                pass  # worker can run without the API package in some deploys
+
             logger.info(
                 f"Batch anchored successfully! "
                 f"TX: {result['transaction_hash']}, "
@@ -572,11 +692,50 @@ class AnchorWorker:
 
         except Exception as e:
             logger.error(f"Blockchain submission failed: {e}")
+            await self._record_failure(proof_id, current_retry_count, str(e))
+
+    async def _record_failure(
+        self,
+        proof_id: UUID,
+        current_retry_count: int,
+        error_message: str,
+    ):
+        # After this attempt, retry_count becomes current_retry_count + 1
+        # (the SQL does the increment). Transition to dead_letter once we
+        # hit the cap so the retry query stops picking this row up.
+        next_retry_count = current_retry_count + 1
+        if next_retry_count >= MAX_RETRIES:
+            logger.error(
+                f"Proof {proof_id} exhausted {MAX_RETRIES} retries — "
+                f"transitioning to dead_letter. Last error: {error_message}"
+            )
             await self.db.update_merkle_proof_status(
                 proof_id,
-                status="failed",
-                error_message=str(e),
+                status="dead_letter",
+                error_message=error_message,
             )
+            # Phase 2C — dead-letter is the terminal failure. Alert on any
+            # non-zero rate of this: it means operator attention is needed
+            # (RPC broken, gas cap too tight, private key out of funds).
+            try:
+                from api.observability import anchor_submissions_total
+                anchor_submissions_total.labels(outcome="dead_letter").inc()
+            except ImportError:
+                pass
+            return
+
+        backoff = compute_retry_backoff(next_retry_count)
+        next_retry_at = datetime.now(timezone.utc) + backoff
+        logger.warning(
+            f"Proof {proof_id} failed (attempt {next_retry_count}/{MAX_RETRIES}). "
+            f"Next retry at {next_retry_at.isoformat()} ({backoff})."
+        )
+        await self.db.update_merkle_proof_status(
+            proof_id,
+            status="failed",
+            error_message=error_message,
+            next_retry_at=next_retry_at,
+        )
 
     async def _retry_pending_proofs(self):
         pending = await self.db.get_pending_proofs()
@@ -590,6 +749,7 @@ class AnchorWorker:
                 log_count=len(proof["leaf_hashes"]),
                 start_timestamp=proof["start_timestamp"],
                 end_timestamp=proof["end_timestamp"],
+                current_retry_count=proof["retry_count"],
             )
 
 

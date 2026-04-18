@@ -1,0 +1,116 @@
+# =============================================================================
+# CI — Python, frontend, and Solidity (Phase 2A)
+# =============================================================================
+# Three parallel jobs: the Python backend (pytest + ruff), the Next.js
+# frontend (jest + type-check + build), and the Solidity contract (forge
+# build + forge test). Each job fails independently so reviewers can see
+# where the breakage is.
+#
+# Intentionally NOT in this workflow:
+#   * Docker-backed integration tests (explicitly deferred in the plan).
+#   * Mainnet/testnet RPC calls — contract tests use a local EVM via
+#     forge's anvil-less in-process runner.
+#   * Security scanners (Semgrep/Trivy/etc.) — those land in Phase 5.3.
+
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Cancel outdated runs on the same PR branch so we do not queue N copies.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python:
+    name: python (pytest + ruff)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: install dev deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e '.[dev]'
+
+      - name: ruff
+        run: ruff check api workers mcp_server tests
+
+      - name: pytest
+        # Integration tests that need Postgres are gated on
+        # INNTRIS_DB_INTEGRATION=1 and skip cleanly without it, so the
+        # suite runs without spinning up a DB container in CI.
+        run: pytest -q
+
+  frontend:
+    name: frontend (jest + typecheck + build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: install
+        run: npm ci
+
+      - name: type-check
+        run: npm run type-check
+
+      - name: test
+        run: npm test -- --ci
+
+      - name: build
+        # Build fails fast on server-component / RSC misconfiguration that
+        # jest does not catch. Env vars are not required for the build
+        # itself; Next reads them at runtime.
+        run: npm run build
+
+  contracts:
+    name: contracts (forge)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: install foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: stable
+
+      - name: forge version
+        run: forge --version
+
+      # If OpenZeppelin and forge-std are not yet vendored as submodules,
+      # install them into lib/. This keeps the workflow green on a fresh
+      # clone where the submodule add has not been committed yet.
+      - name: ensure submodules
+        run: |
+          if [ ! -d lib/forge-std ]; then
+            forge install foundry-rs/forge-std --no-commit
+          fi
+          if [ ! -d lib/openzeppelin-contracts ]; then
+            forge install OpenZeppelin/openzeppelin-contracts --no-commit
+          fi
+
+      - name: forge build
+        run: forge build --sizes
+
+      - name: forge test
+        run: forge test -vvv
