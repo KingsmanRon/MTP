@@ -38,7 +38,7 @@ jobs:
     container:
       image: returntocorp/semgrep
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: semgrep scan
         # p/owasp-top-ten catches the canonical web-app vuln classes.
@@ -64,7 +64,7 @@ jobs:
     name: sca (pip-audit + npm audit)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - uses: actions/setup-python@v5
         with:
@@ -98,7 +98,7 @@ jobs:
     name: trivy (filesystem + secrets)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: trivy filesystem scan
         uses: aquasecurity/trivy-action@0.28.0
