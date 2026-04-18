@@ -63,11 +63,18 @@ from api.schemas.admin import (
     AuditProof,
 )
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-)
+# Configure logging. Phase 2C: switch to structured JSON output when
+# ``INNTRIS_JSON_LOGS=1`` so log aggregators can parse the stream directly.
+# Default stays as the legacy text format so local dev output is still
+# grep-friendly.
+if os.getenv("INNTRIS_JSON_LOGS") == "1":
+    from api.observability import configure_json_logging
+    configure_json_logging(level=logging.INFO)
+else:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    )
 logger = logging.getLogger(__name__)
 
 # =============================================================================
@@ -134,6 +141,16 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
+
+# Phase 2C: request ID correlation for log/trace joins.
+from api.observability import RequestIdMiddleware, metrics_endpoint  # noqa: E402
+app.add_middleware(RequestIdMiddleware)
+
+# Phase 2C: Prometheus scrape endpoint. Unauthenticated by design — the
+# operator is expected to expose /metrics only on an internal network or
+# scrape via kube-prometheus's ServiceMonitor. If you terminate TLS at a
+# reverse proxy, add a ``deny`` rule there for non-internal CIDRs.
+app.add_route("/metrics", metrics_endpoint, methods=["GET"])
 
 # Global Database Pool
 db_pool: Optional[Database] = None
@@ -869,6 +886,13 @@ async def verify_action(
             verdict = ActionVerdict.SIGNATURE_INVALID
             verdict_reason = "Ed25519 signature verification failed. Potential attack detected."
 
+            # Phase 2C: bump signature-failure counter before logging so the
+            # alerting rule (rate(inntris_signature_failures_total[5m]) > N)
+            # fires even if the audit insert later fails.
+            from api.observability import signature_failures_total, verify_requests_total
+            signature_failures_total.inc()
+            verify_requests_total.labels(verdict="invalid_signature").inc()
+
             logger.warning(f"SECURITY ALERT: Invalid signature from {agent.id}")
 
             # Log failure
@@ -921,6 +945,12 @@ async def verify_action(
         try:
             nonce_set = await redis_conn.set(nonce_key, "1", ex=600, nx=True)
             if not nonce_set:
+                # Phase 2C — count before raising. A replay attempt is a
+                # security-relevant event; we want the metric even if the
+                # raised HTTPException short-circuits the rest of the handler.
+                from api.observability import nonce_replays_total, verify_requests_total
+                nonce_replays_total.inc()
+                verify_requests_total.labels(verdict="replay").inc()
                 raise HTTPException(status_code=401, detail="Nonce already used - possible replay attack")
         except Exception as e:
             logger.error(f"SECURITY: Redis error during nonce check: {e} - blocking request")
@@ -963,6 +993,16 @@ async def verify_action(
 
         # STEP 5: Handle policy violations
         if not policy_result.allowed:
+            # Phase 2C metrics — count the block before audit/HTTP work, so
+            # dashboards reflect reality even if a downstream exception
+            # prevents us from reaching the raise.
+            from api.observability import rate_limit_trips_total, verify_requests_total
+            if verdict == ActionVerdict.RATE_LIMITED:
+                rate_limit_trips_total.labels(window="tenant_minute").inc()
+                verify_requests_total.labels(verdict="rate_limited").inc()
+            else:
+                verify_requests_total.labels(verdict="blocked").inc()
+
             logger.warning(
                 f"Policy violation for agent {agent.id}: {policy_result.violation} - {verdict_reason}"
             )
@@ -1046,6 +1086,13 @@ async def verify_action(
             verdict=verdict.value,
             server_secret=SERVER_SECRET
         )
+
+        # Phase 2C — successful verification. Observed after the audit insert
+        # and trust-score update so the counter reflects a fully-processed
+        # approval, not one that might have partially failed.
+        from api.observability import verify_latency_seconds, verify_requests_total
+        verify_requests_total.labels(verdict="approved").inc()
+        verify_latency_seconds.observe(time.time() - start_time)
 
         return VerifyActionResponse(
             verdict=verdict,

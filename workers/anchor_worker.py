@@ -675,6 +675,15 @@ class AnchorWorker:
                 gas_price_gwei=result["gas_price_gwei"],
             )
 
+            # Phase 2C — count by actual receipt outcome, not by "we called
+            # the RPC". ``result["status"]`` comes from the on-chain receipt
+            # so a reverted tx counts as failed, not confirmed.
+            try:
+                from api.observability import anchor_submissions_total
+                anchor_submissions_total.labels(outcome=result["status"]).inc()
+            except ImportError:
+                pass  # worker can run without the API package in some deploys
+
             logger.info(
                 f"Batch anchored successfully! "
                 f"TX: {result['transaction_hash']}, "
@@ -705,6 +714,14 @@ class AnchorWorker:
                 status="dead_letter",
                 error_message=error_message,
             )
+            # Phase 2C — dead-letter is the terminal failure. Alert on any
+            # non-zero rate of this: it means operator attention is needed
+            # (RPC broken, gas cap too tight, private key out of funds).
+            try:
+                from api.observability import anchor_submissions_total
+                anchor_submissions_total.labels(outcome="dead_letter").inc()
+            except ImportError:
+                pass
             return
 
         backoff = compute_retry_backoff(next_retry_count)

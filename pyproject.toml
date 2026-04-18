@@ -43,6 +43,10 @@ dependencies = [
     "mcp>=1.0.0,<2.0.0",
     "httpx>=0.26.0,<1.0.0",
     "python-dotenv>=1.0.0,<2.0.0",
+    # Phase 2C: Prometheus scrape endpoint (/metrics). The observability
+    # module has a no-op fallback if this is missing, so the dep is
+    # technically soft — but we want it installed in every real deploy.
+    "prometheus-client>=0.20.0,<1.0.0",
 ]
 
 [project.optional-dependencies]
