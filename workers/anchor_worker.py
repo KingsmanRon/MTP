@@ -82,6 +82,15 @@ def compute_retry_backoff(
 # Base L2 Chain ID
 BASE_CHAIN_ID = int(os.getenv("BLOCKCHAIN_CHAIN_ID", "8453"))
 
+# Phase 2B hardening — gas-price sanity cap (gwei).
+# Base mainnet typically runs well under 1 gwei. A cap catches a runaway
+# gas-price oracle (e.g. a malicious or broken RPC returning eth-mainnet
+# prices for what we believe is an L2 tx). Set conservatively high enough
+# that legitimate congestion does not trip it; operators can raise via env.
+# If the cap trips, the proof is recorded as ``failed`` with a descriptive
+# error, retried with exponential backoff, and dead-lettered if persistent.
+MAX_GAS_PRICE_GWEI = Decimal(os.getenv("ANCHOR_MAX_GAS_PRICE_GWEI", "50"))
+
 # AnchorRegistry ABI (minimal for anchoring)
 ANCHOR_REGISTRY_ABI = [
     {
@@ -216,6 +225,7 @@ class BlockchainService:
         rpc_url: str,
         contract_address: str,
         private_key: str,
+        expected_chain_id: int = BASE_CHAIN_ID,
     ):
         self.w3 = Web3(Web3.HTTPProvider(rpc_url))
         self.contract_address = Web3.to_checksum_address(contract_address)
@@ -224,7 +234,25 @@ class BlockchainService:
             abi=ANCHOR_REGISTRY_ABI,
         )
         self.account: LocalAccount = Account.from_key(private_key)
+        self.expected_chain_id = expected_chain_id
         logger.info(f"Blockchain service initialized. Address: {self.account.address}")
+
+    def assert_chain_id(self) -> None:
+        """Phase 2B hardening — verify the RPC is serving the expected chain.
+
+        A misconfigured ``BLOCKCHAIN_PROVIDER_URL`` (or a compromised/upstream-
+        DNS-hijacked endpoint) could route our anchor transactions to a chain
+        we did not intend — mainnet ETH fees on what we thought was Base, or
+        worse, a chain where our private key controls a different account.
+        We call this before submitting each batch; failure raises so the
+        caller records the proof as ``failed`` and retries.
+        """
+        actual = self.w3.eth.chain_id
+        if actual != self.expected_chain_id:
+            raise RuntimeError(
+                f"RPC chain-id mismatch: expected {self.expected_chain_id} "
+                f"(BASE_CHAIN_ID), got {actual}. Refusing to submit."
+            )
 
     def is_connected(self) -> bool:
         try:
@@ -243,7 +271,11 @@ class BlockchainService:
         start_timestamp: datetime,
         end_timestamp: datetime,
     ) -> dict[str, Any]:
-        
+        # Phase 2B — verify the RPC still serves the chain we expect before
+        # spending gas. Cheap check (one eth_chainId call), huge blast-radius
+        # if it's ever wrong.
+        self.assert_chain_id()
+
         # Ensure 0x prefix for Web3, but input might be raw hex
         if not merkle_root.startswith("0x"):
             merkle_root_hex = "0x" + merkle_root
@@ -269,6 +301,18 @@ class BlockchainService:
             gas_estimate = 150000
 
         gas_price = self.w3.eth.gas_price
+        gas_price_gwei = Decimal(str(self.w3.from_wei(gas_price, "gwei")))
+
+        # Phase 2B hardening — reject suspiciously high gas prices.
+        # Trips on a broken gas oracle or an RPC silently serving mainnet.
+        # A tripped cap costs nothing except a retry; a burst of legitimate
+        # Base congestion above the cap also retries, so operators should
+        # raise ANCHOR_MAX_GAS_PRICE_GWEI rather than remove this check.
+        if gas_price_gwei > MAX_GAS_PRICE_GWEI:
+            raise RuntimeError(
+                f"Gas price {gas_price_gwei} gwei exceeds cap "
+                f"{MAX_GAS_PRICE_GWEI} gwei. Refusing to submit."
+            )
 
         tx = self.contract.functions.anchorBatch(
             root_bytes,
@@ -298,7 +342,7 @@ class BlockchainService:
             "transaction_hash": receipt["transactionHash"].hex(),
             "block_number": receipt["blockNumber"],
             "gas_used": receipt["gasUsed"],
-            "gas_price_gwei": Decimal(str(self.w3.from_wei(gas_price, "gwei"))),
+            "gas_price_gwei": gas_price_gwei,
             "status": "confirmed" if receipt["status"] == 1 else "failed",
         }
 
@@ -352,10 +396,26 @@ class DatabaseService:
         await self._pool.close()
 
     async def get_unanchored_logs(self, limit: int = 1000) -> list[dict[str, Any]]:
+        # Phase 2B: exclude test_request rows from real Merkle batches.
+        # /admin/test-verify writes audit rows with metadata.test_request=true
+        # and signature=b"TEST_REQUEST" as a sentinel. Those entries must
+        # never end up in a publicly-verifiable proof: they carry no real
+        # cryptographic attestation, and the api/main.py docstring has
+        # promised callers they will be excluded since the endpoint shipped.
+        # Before this query, the promise was documentation-only — the worker
+        # happily hashed the sentinel alongside real signed actions.
+        #
+        # Filter pattern: metadata ? 'test_request' is cheap (JSONB key test)
+        # and short-circuits before the cast; the COALESCE guards the empty-
+        # metadata case where ->>'test_request' returns NULL.
         query = """
             SELECT id, action_hash, timestamp
             FROM audit_logs
             WHERE merkle_root_id IS NULL
+              AND NOT COALESCE(
+                  (metadata->>'test_request')::boolean,
+                  false
+              )
             ORDER BY timestamp ASC
             LIMIT $1
         """

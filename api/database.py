@@ -463,12 +463,20 @@ class Database:
         """
         Get audit logs that haven't been anchored to the blockchain yet.
 
-        These logs have merkle_root_id = NULL.
+        Excludes ``metadata.test_request = true`` rows (Phase 2B) — those come
+        from /admin/test-verify and carry a sentinel signature rather than a
+        real attestation. They must never appear in a Merkle batch that we
+        anchor publicly, because the leaf hash of a test row does not verify
+        against any agent public key.
         """
         query = """
             SELECT id, action_hash, timestamp
             FROM audit_logs
             WHERE merkle_root_id IS NULL
+              AND NOT COALESCE(
+                  (metadata->>'test_request')::boolean,
+                  false
+              )
             ORDER BY timestamp ASC
             LIMIT $1
         """
