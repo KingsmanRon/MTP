@@ -1,0 +1,62 @@
+# Phase 5.3 — automated dependency freshness.
+#
+# Weekly cadence matches the current release rhythm: bumping deps more
+# often than the project ships creates noise, less often lets CVEs
+# accumulate. We group patch + minor into one PR per ecosystem so
+# reviewers do not drown in diffs. Major bumps stay one-per-PR because
+# they tend to need code changes.
+
+version: 2
+
+updates:
+  # Python runtime + dev dependencies (declared in pyproject.toml).
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "05:00"
+      timezone: "Etc/UTC"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "python"
+    groups:
+      python-minor-and-patch:
+        update-types: ["minor", "patch"]
+    ignore:
+      # Major bumps for these move slowly and usually need code changes
+      # (pydantic v2 -> v3, web3.py v6 -> v7, etc). Open manually.
+      - dependency-name: "pydantic"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "web3"
+        update-types: ["version-update:semver-major"]
+
+  # Frontend (Next.js app).
+  - package-ecosystem: "npm"
+    directory: "/frontend"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "05:00"
+      timezone: "Etc/UTC"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "frontend"
+    groups:
+      frontend-minor-and-patch:
+        update-types: ["minor", "patch"]
+
+  # GitHub Actions versions (actions/checkout@v4, foundry-rs/..., etc).
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "05:00"
+      timezone: "Etc/UTC"
+    open-pull-requests-limit: 3
+    labels:
+      - "dependencies"
+      - "ci"

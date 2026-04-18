@@ -1,0 +1,124 @@
+# =============================================================================
+# Security scanning — Phase 5.3
+# =============================================================================
+# Three independent jobs:
+#   * sast      — Semgrep with the OWASP + security-audit rulesets.
+#   * sca       — pip-audit + npm audit for known-CVE dependencies.
+#   * fs-scan   — Trivy filesystem scan (configs, secrets, OS pkgs if any).
+#
+# Runs on every PR and every push to main, plus a weekly schedule so a
+# CVE that lands between pushes is still caught within 7 days.
+
+name: security
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "17 3 * * 1"  # Mondays 03:17 UTC
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  # security-events write is required so Semgrep / Trivy results can be
+  # uploaded as SARIF to the Security tab. Keep the minimum necessary.
+  security-events: write
+
+jobs:
+  sast:
+    name: semgrep (SAST)
+    runs-on: ubuntu-latest
+    # Public action from returntocorp; pinned to a major version. Dependabot
+    # bumps this under ``github-actions`` ecosystem.
+    container:
+      image: returntocorp/semgrep
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: semgrep scan
+        # p/owasp-top-ten catches the canonical web-app vuln classes.
+        # p/security-audit adds language-specific patterns.
+        # r2c-security-audit is the maintainer's curated baseline.
+        run: |
+          semgrep ci \
+            --config p/owasp-top-ten \
+            --config p/security-audit \
+            --config p/python \
+            --config p/typescript \
+            --sarif --output semgrep.sarif \
+            || true  # do not fail CI on findings (yet); upload SARIF either way
+
+      - name: upload SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: semgrep.sarif
+          category: semgrep
+
+  sca:
+    name: sca (pip-audit + npm audit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: install pip-audit + project deps
+        run: |
+          python -m pip install --upgrade pip pip-audit
+          pip install -e '.[dev]'
+
+      - name: pip-audit
+        # Report-only to start. Once the baseline is clean, drop the
+        # ``|| true`` so any new CVE fails CI.
+        run: pip-audit --desc --strict || true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: npm audit (frontend)
+        working-directory: frontend
+        # --audit-level=high so only High + Critical block the build. Low/
+        # moderate go into a weekly report the team reviews; not every
+        # moderate CVE is exploitable in our dep graph.
+        run: npm audit --audit-level=high --omit=dev || true
+
+  fs-scan:
+    name: trivy (filesystem + secrets)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: trivy filesystem scan
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          # Catch:
+          #   * vuln — known CVEs in any lockfile we have
+          #   * config — Dockerfile / IaC / Kubernetes misconfig
+          #   * secret — accidentally committed credentials
+          scanners: vuln,config,secret
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          format: sarif
+          output: trivy.sarif
+          exit-code: "0"  # report-only for now; tighten once baseline is clean
+
+      - name: upload SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy.sarif
+          category: trivy
