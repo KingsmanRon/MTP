@@ -1,0 +1,79 @@
+"""Phase 1D.1 — sanity checks on the Alembic baseline.
+
+We cannot run ``alembic upgrade head`` in CI without a Postgres instance,
+but we CAN verify the migration tree is structurally sound: revision IDs
+match, the baseline's referenced SQL files exist, the module imports, and
+``downgrade`` raises the expected guard rather than silently dropping
+tables. These checks catch accidental breakage (renamed SQL files, missing
+revision metadata) before they reach an operator.
+"""
+
+from __future__ import annotations
+
+import importlib.util
+from pathlib import Path
+
+import pytest
+
+# Alembic is a dev-only dependency. Environments that install only the
+# runtime requirements (``pip install .`` without ``[dev]``) cannot import
+# the baseline module because it does ``from alembic import op``. Skip the
+# whole file rather than hard-fail in that posture.
+pytest.importorskip("alembic")
+
+_REPO = Path(__file__).resolve().parents[1]
+_BASELINE = _REPO / "alembic" / "versions" / "0001_baseline.py"
+
+
+def _load_baseline():
+    spec = importlib.util.spec_from_file_location("alembic_0001_baseline", _BASELINE)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_baseline_file_exists() -> None:
+    assert _BASELINE.is_file(), "Alembic baseline revision is missing"
+
+
+def test_baseline_revision_metadata() -> None:
+    module = _load_baseline()
+    assert module.revision == "0001_baseline"
+    assert module.down_revision is None
+    assert callable(module.upgrade)
+    assert callable(module.downgrade)
+
+
+def test_baseline_sql_sources_exist() -> None:
+    """If an operator renames a SQL file, we want the failure loud & local."""
+    module = _load_baseline()
+    for sql_path in module._SQL_FILES:
+        assert sql_path.is_file(), f"baseline references missing SQL: {sql_path}"
+
+
+def test_downgrade_refuses_to_drop_forensic_data() -> None:
+    """Guard against accidental ``alembic downgrade base``.
+
+    The baseline creates audit_logs and merkle_proofs. Auto-downgrading
+    would destroy forensic evidence, so we require downgrade() to raise.
+    """
+    module = _load_baseline()
+    with pytest.raises(NotImplementedError):
+        module.downgrade()
+
+
+def test_alembic_ini_points_at_alembic_dir() -> None:
+    ini = (_REPO / "alembic.ini").read_text(encoding="utf-8")
+    assert "script_location = alembic" in ini
+    # DSN must stay blank — env.py pulls it from DATABASE_URL.
+    assert "sqlalchemy.url =" in ini
+    assert "sqlalchemy.url = postgres" not in ini
+
+
+def test_env_py_resolves_asyncpg_dsn_as_psycopg2() -> None:
+    """Operators reuse DATABASE_URL; asyncpg form must be translated for sync Alembic."""
+    env_src = (_REPO / "alembic" / "env.py").read_text(encoding="utf-8")
+    # The translation logic must be present; if someone removes it, Alembic
+    # will silently try to load the asyncpg driver synchronously and fail.
+    assert "postgresql+psycopg2://" in env_src
