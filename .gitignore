@@ -27,7 +27,6 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
 lib64/
 parts/
 sdist/
@@ -37,6 +36,10 @@ wheels/
 .installed.cfg
 *.egg
 MANIFEST
+# Note: we deliberately do NOT ignore top-level ``lib/`` here; Foundry keeps
+# its submodules (forge-std, openzeppelin-contracts) under lib/ per Phase 2A.
+# If you create a Python venv at the repo root, use ``.venv/`` (already
+# ignored above) instead of the legacy ``lib/`` layout.
 
 # Virtual environments
 venv/
@@ -97,6 +100,12 @@ contracts/artifacts/
 contracts/cache/
 node_modules/
 .openzeppelin/
+
+# Foundry build artifacts (Phase 2A). ``out/`` is already ignored for Next.js
+# below; ``cache/`` is Foundry's incremental cache. ``broadcast/`` holds the
+# full history of forge-script deployments — never commit RPC/tx secrets.
+cache/
+broadcast/
 
 # -----------------------------------------------------------------------------
 # Logs & Databases
