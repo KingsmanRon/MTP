@@ -127,12 +127,53 @@ app = FastAPI(
     version="1.0.0",
 )
 
-# CORS Configuration
-origins = ["*"] if ENVIRONMENT == "development" else [
-    origin.strip() for origin in os.getenv("ALLOWED_ORIGINS", "").split(",") if origin.strip()
-]
-if ENVIRONMENT != "development" and os.getenv("ALLOWED_ORIGINS", "").strip() == "*":
-    origins = ["*"]
+# Phase 2D.2: CORS lockdown.
+#
+# Wildcard origins in production are a cross-site request forgery vector:
+# any site can make credentialed (or credential-forwarding) calls against
+# our API. The previous code *honored* ALLOWED_ORIGINS=* even in production,
+# which silently defeated the defense. We now fail-closed at boot instead.
+#
+# Rules:
+#   * development  -> "*" is allowed (local tools, no creds).
+#   * non-development:
+#       - ALLOWED_ORIGINS must be a non-empty comma list of explicit
+#         scheme+host origins.
+#       - "*" anywhere in the list is a fatal misconfiguration.
+#       - Each origin must parse as http(s)://host[:port]; no wildcards,
+#         no "null", no path suffix (CORS origins have no path).
+
+def _resolve_cors_origins(environment: str, raw: str) -> list[str]:
+    raw = (raw or "").strip()
+    if environment == "development":
+        return ["*"] if not raw or raw == "*" else [
+            o.strip() for o in raw.split(",") if o.strip()
+        ]
+
+    if not raw:
+        raise SystemExit(
+            "FATAL: ALLOWED_ORIGINS is required when ENVIRONMENT != development"
+        )
+    origins = [o.strip() for o in raw.split(",") if o.strip()]
+    if any(o == "*" for o in origins):
+        raise SystemExit(
+            "FATAL: ALLOWED_ORIGINS=* is not permitted outside development"
+        )
+    from urllib.parse import urlparse
+    for o in origins:
+        u = urlparse(o)
+        if u.scheme not in ("http", "https") or not u.netloc or "*" in u.netloc:
+            raise SystemExit(
+                f"FATAL: invalid CORS origin {o!r} — expected scheme://host[:port]"
+            )
+        if u.path not in ("", "/") or u.query or u.fragment:
+            raise SystemExit(
+                f"FATAL: CORS origin {o!r} must not include a path/query/fragment"
+            )
+    return origins
+
+
+origins = _resolve_cors_origins(ENVIRONMENT, os.getenv("ALLOWED_ORIGINS", ""))
 
 app.add_middleware(
     CORSMiddleware,
