@@ -60,3 +60,72 @@ class TestRpcCircuitOpenError:
         err = RpcCircuitOpenError("circuit open", cooldown_remaining_seconds=12.5)
         assert err.cooldown_remaining_seconds == 12.5
         assert "circuit open" in str(err)
+
+
+from workers.circuit_breaker import RpcCircuitBreaker
+
+
+def _transport_exc() -> Exception:
+    return requests.exceptions.Timeout("slow")
+
+
+class FakeClock:
+    def __init__(self, start: float = 0.0) -> None:
+        self.now = start
+
+    def advance(self, seconds: float) -> None:
+        self.now += seconds
+
+    def __call__(self) -> float:
+        return self.now
+
+
+class TestBreakerClosed:
+    def _breaker(self, threshold: int = 3) -> RpcCircuitBreaker:
+        return RpcCircuitBreaker(
+            threshold=threshold,
+            open_duration_seconds=60,
+            clock=FakeClock(),
+        )
+
+    def test_closed_allows_calls(self) -> None:
+        breaker = self._breaker()
+        for _ in range(10):
+            assert breaker.call(lambda: 42) == 42
+        assert breaker.state is BreakerState.CLOSED
+
+    def test_transport_failures_increment_counter(self) -> None:
+        breaker = self._breaker(threshold=3)
+        # threshold - 1 failures: still CLOSED
+        for _ in range(2):
+            with pytest.raises(requests.exceptions.Timeout):
+                breaker.call(lambda: (_ for _ in ()).throw(_transport_exc()))
+        assert breaker.state is BreakerState.CLOSED
+
+    def test_trips_on_threshold(self) -> None:
+        breaker = self._breaker(threshold=3)
+        for _ in range(3):
+            with pytest.raises(requests.exceptions.Timeout):
+                breaker.call(lambda: (_ for _ in ()).throw(_transport_exc()))
+        assert breaker.state is BreakerState.OPEN
+
+    def test_non_transport_failure_does_not_count(self) -> None:
+        breaker = self._breaker(threshold=3)
+        for _ in range(5):
+            with pytest.raises(ValueError):
+                breaker.call(lambda: (_ for _ in ()).throw(ValueError("nope")))
+        assert breaker.state is BreakerState.CLOSED
+
+    def test_success_mid_streak_resets_counter(self) -> None:
+        breaker = self._breaker(threshold=3)
+        # 2 failures
+        for _ in range(2):
+            with pytest.raises(requests.exceptions.Timeout):
+                breaker.call(lambda: (_ for _ in ()).throw(_transport_exc()))
+        # 1 success — counter back to 0
+        assert breaker.call(lambda: "ok") == "ok"
+        # 2 more failures — still CLOSED, because counter restarted
+        for _ in range(2):
+            with pytest.raises(requests.exceptions.Timeout):
+                breaker.call(lambda: (_ for _ in ()).throw(_transport_exc()))
+        assert breaker.state is BreakerState.CLOSED

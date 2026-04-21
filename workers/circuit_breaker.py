@@ -68,3 +68,53 @@ def is_transport_error(exc: BaseException) -> bool:
         resp = getattr(exc, "response", None)
         return resp is not None and resp.status_code >= 500
     return False
+
+
+import time
+from typing import Callable, TypeVar
+
+T = TypeVar("T")
+
+
+class RpcCircuitBreaker:
+    """Consecutive-failure circuit breaker for RPC transport calls."""
+
+    def __init__(
+        self,
+        threshold: int,
+        open_duration_seconds: float,
+        enabled: bool = True,
+        clock: Callable[[], float] = time.monotonic,
+    ) -> None:
+        if threshold < 1:
+            raise ValueError("threshold must be >= 1")
+        if open_duration_seconds < 0:
+            raise ValueError("open_duration_seconds must be >= 0")
+        self._threshold = threshold
+        self._open_duration = open_duration_seconds
+        self._enabled = enabled
+        self._clock = clock
+        self._state: BreakerState = BreakerState.CLOSED
+        self._failure_count: int = 0
+        self._opened_at: Optional[float] = None
+
+    @property
+    def state(self) -> BreakerState:
+        return self._state
+
+    def call(self, fn: Callable[[], T]) -> T:
+        if not self._enabled:
+            return fn()
+
+        try:
+            result = fn()
+        except BaseException as exc:
+            if is_transport_error(exc):
+                self._failure_count += 1
+                if self._failure_count >= self._threshold:
+                    self._state = BreakerState.OPEN
+                    self._opened_at = self._clock()
+            raise
+        else:
+            self._failure_count = 0
+            return result
