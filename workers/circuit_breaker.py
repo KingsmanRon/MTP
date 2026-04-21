@@ -140,8 +140,8 @@ class RpcCircuitBreaker:
                 )
             # Cooldown elapsed — transition to HALF_OPEN for the probe.
             logger.info(
-                "rpc_breaker_probe | open_duration_s=%.1f",
-                self._open_duration,
+                "rpc_breaker_probe",
+                extra={"open_duration_s": self._open_duration},
             )
             self._set_state(BreakerState.HALF_OPEN)
 
@@ -154,7 +154,10 @@ class RpcCircuitBreaker:
                 if is_transport_error(exc):
                     # Probe found the RPC still broken. Re-open for a
                     # fresh cooldown window.
-                    logger.warning("rpc_breaker_probe_failed | error=%r", exc)
+                    logger.warning(
+                        "rpc_breaker_probe_failed",
+                        extra={"error": repr(exc)},
+                    )
                     self._set_state(BreakerState.OPEN)
                     self._opened_at = self._clock()
                 else:
@@ -168,8 +171,12 @@ class RpcCircuitBreaker:
                 self._failure_count += 1
                 if self._failure_count >= self._threshold:
                     logger.warning(
-                        "rpc_breaker_opened | failure_count=%d threshold=%d last_error=%r",
-                        self._failure_count, self._threshold, exc,
+                        "rpc_breaker_opened",
+                        extra={
+                            "failure_count": self._failure_count,
+                            "threshold": self._threshold,
+                            "last_error": repr(exc),
+                        },
                     )
                     self._set_state(BreakerState.OPEN)
                     self._opened_at = self._clock()

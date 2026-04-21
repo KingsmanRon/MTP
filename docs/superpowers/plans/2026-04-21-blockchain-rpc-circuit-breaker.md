@@ -846,18 +846,26 @@ logger = logging.getLogger(__name__)
 
 Find every call site of `self._set_state(...)` and also the OPEN-reject branch. Add the following log calls alongside the state changes:
 
+Pass fields via `extra={...}` (NOT `%`-format args) so `JsonFormatter` in
+`api/observability.py` exposes them as queryable JSON keys. Match the
+existing pattern at `api/erasure.py:79-88`.
+
 - When transitioning CLOSED → OPEN (inside `call()`, after threshold is hit):
   ```python
   logger.warning(
-      "rpc_breaker_opened | failure_count=%d threshold=%d last_error=%r",
-      self._failure_count, self._threshold, exc,
+      "rpc_breaker_opened",
+      extra={
+          "failure_count": self._failure_count,
+          "threshold": self._threshold,
+          "last_error": repr(exc),
+      },
   )
   ```
 - When transitioning OPEN → HALF_OPEN (inside `call()`, right before `self._set_state(BreakerState.HALF_OPEN)`):
   ```python
   logger.info(
-      "rpc_breaker_probe | open_duration_s=%.1f",
-      self._open_duration,
+      "rpc_breaker_probe",
+      extra={"open_duration_s": self._open_duration},
   )
   ```
 - When transitioning HALF_OPEN → CLOSED (both the probe-success and probe-non-transport paths):
@@ -866,7 +874,10 @@ Find every call site of `self._set_state(...)` and also the OPEN-reject branch. 
   ```
 - When transitioning HALF_OPEN → OPEN (probe-failure path):
   ```python
-  logger.warning("rpc_breaker_probe_failed | error=%r", exc)
+  logger.warning(
+      "rpc_breaker_probe_failed",
+      extra={"error": repr(exc)},
+  )
   ```
 
 - [ ] **Step 4: Run tests to verify they pass**
