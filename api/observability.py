@@ -31,6 +31,7 @@ try:
     from prometheus_client import (
         CONTENT_TYPE_LATEST,
         Counter,
+        Gauge,
         Histogram,
         generate_latest,
     )
@@ -138,6 +139,9 @@ class _NoopMetric:
     def observe(self, amount: float) -> None:
         return None
 
+    def set(self, value: float) -> None:
+        return None
+
 
 if _HAS_PROMETHEUS:
     verify_requests_total = Counter(
@@ -163,6 +167,19 @@ if _HAS_PROMETHEUS:
         "Total anchor transactions attempted by the worker.",
         ["outcome"],  # confirmed | failed | dead_letter
     )
+    rpc_breaker_trips_total = Counter(
+        "inntris_rpc_breaker_trips_total",
+        "Total times the RPC circuit breaker transitioned to OPEN.",
+    )
+    rpc_breaker_rejected_total = Counter(
+        "inntris_rpc_breaker_rejected_total",
+        "Total RPC calls rejected because the breaker was OPEN.",
+    )
+    rpc_breaker_state = Gauge(
+        "inntris_rpc_breaker_state",
+        "Current state of the RPC circuit breaker (1 for the current state).",
+        ["state"],  # closed | open | half_open
+    )
     verify_latency_seconds = Histogram(
         "inntris_verify_latency_seconds",
         "Wall time for /verify end-to-end, seconds.",
@@ -174,6 +191,9 @@ else:  # pragma: no cover — exercised in stub mode
     nonce_replays_total = _NoopMetric()
     rate_limit_trips_total = _NoopMetric()
     anchor_submissions_total = _NoopMetric()
+    rpc_breaker_trips_total = _NoopMetric()
+    rpc_breaker_rejected_total = _NoopMetric()
+    rpc_breaker_state = _NoopMetric()
     verify_latency_seconds = _NoopMetric()
 
 

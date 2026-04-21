@@ -230,3 +230,52 @@ class TestKillSwitch:
         assert breaker.state is BreakerState.CLOSED
         # Successes also work fine
         assert breaker.call(lambda: "ok") == "ok"
+
+
+class TestBreakerMetrics:
+    def test_trip_increments_trips_total(self) -> None:
+        from api import observability
+
+        before = _metric_value(observability.rpc_breaker_trips_total)
+        breaker = RpcCircuitBreaker(
+            threshold=3, open_duration_seconds=60, clock=FakeClock(),
+        )
+        for _ in range(3):
+            with pytest.raises(requests.exceptions.Timeout):
+                breaker.call(lambda: (_ for _ in ()).throw(_transport_exc()))
+        after = _metric_value(observability.rpc_breaker_trips_total)
+        assert after - before == 1
+
+    def test_reject_increments_rejected_total(self) -> None:
+        from api import observability
+
+        clock = FakeClock()
+        breaker = RpcCircuitBreaker(
+            threshold=3, open_duration_seconds=60, clock=clock,
+        )
+        for _ in range(3):
+            with pytest.raises(requests.exceptions.Timeout):
+                breaker.call(lambda: (_ for _ in ()).throw(_transport_exc()))
+        before = _metric_value(observability.rpc_breaker_rejected_total)
+        # 3 calls while OPEN → 3 rejections
+        for _ in range(3):
+            with pytest.raises(RpcCircuitOpenError):
+                breaker.call(lambda: "ok")
+        after = _metric_value(observability.rpc_breaker_rejected_total)
+        assert after - before == 3
+
+
+def _metric_value(counter) -> float:
+    """Return the current sample value for a prometheus_client Counter.
+
+    Uses the public `_value` API via collect() to stay compatible with
+    both the real prometheus_client and the repo's _NoopMetric fallback
+    (which returns 0.0).
+    """
+    try:
+        for sample in counter.collect()[0].samples:
+            if sample.name.endswith("_total"):
+                return sample.value
+    except AttributeError:
+        return 0.0
+    return 0.0

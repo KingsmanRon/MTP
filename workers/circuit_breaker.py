@@ -29,6 +29,12 @@ try:
 except ImportError:  # web3 not installed in this environment
     _WEB3_PROVIDER_CONNECTION_ERROR = None
 
+from api.observability import (
+    rpc_breaker_rejected_total,
+    rpc_breaker_state,
+    rpc_breaker_trips_total,
+)
+
 T = TypeVar("T")
 
 
@@ -94,10 +100,26 @@ class RpcCircuitBreaker:
         self._state: BreakerState = BreakerState.CLOSED
         self._failure_count: int = 0
         self._opened_at: Optional[float] = None
+        self._set_state(BreakerState.CLOSED)
 
     @property
     def state(self) -> BreakerState:
         return self._state
+
+    def _set_state(self, new_state: BreakerState) -> None:
+        old_state = self._state
+        self._state = new_state
+        if new_state is BreakerState.OPEN and old_state is not BreakerState.OPEN:
+            rpc_breaker_trips_total.inc()
+        rpc_breaker_state.labels(state="closed").set(
+            1.0 if new_state is BreakerState.CLOSED else 0.0
+        )
+        rpc_breaker_state.labels(state="open").set(
+            1.0 if new_state is BreakerState.OPEN else 0.0
+        )
+        rpc_breaker_state.labels(state="half_open").set(
+            1.0 if new_state is BreakerState.HALF_OPEN else 0.0
+        )
 
     def call(self, fn: Callable[[], T]) -> T:
         if not self._enabled:
@@ -108,12 +130,13 @@ class RpcCircuitBreaker:
             elapsed = now - (self._opened_at if self._opened_at is not None else now)
             if elapsed < self._open_duration:
                 remaining = self._open_duration - elapsed
+                rpc_breaker_rejected_total.inc()
                 raise RpcCircuitOpenError(
                     f"circuit open; retries in {remaining:.1f}s",
                     cooldown_remaining_seconds=remaining,
                 )
             # Cooldown elapsed — transition to HALF_OPEN for the probe.
-            self._state = BreakerState.HALF_OPEN
+            self._set_state(BreakerState.HALF_OPEN)
 
         is_probe = self._state is BreakerState.HALF_OPEN
 
@@ -124,23 +147,23 @@ class RpcCircuitBreaker:
                 if is_transport_error(exc):
                     # Probe found the RPC still broken. Re-open for a
                     # fresh cooldown window.
-                    self._state = BreakerState.OPEN
+                    self._set_state(BreakerState.OPEN)
                     self._opened_at = self._clock()
                 else:
                     # RPC responded with a proper (non-transport) error.
                     # That's "healthy enough" — close the breaker.
-                    self._state = BreakerState.CLOSED
+                    self._set_state(BreakerState.CLOSED)
                     self._failure_count = 0
                     self._opened_at = None
             elif is_transport_error(exc):
                 self._failure_count += 1
                 if self._failure_count >= self._threshold:
-                    self._state = BreakerState.OPEN
+                    self._set_state(BreakerState.OPEN)
                     self._opened_at = self._clock()
             raise
         else:
             if is_probe:
-                self._state = BreakerState.CLOSED
+                self._set_state(BreakerState.CLOSED)
                 self._opened_at = None
             self._failure_count = 0
             return result
