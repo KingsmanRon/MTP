@@ -279,3 +279,48 @@ def _metric_value(counter) -> float:
     except AttributeError:
         return 0.0
     return 0.0
+
+
+class TestBreakerLogging:
+    def test_trip_logs_opened(self, caplog) -> None:
+        caplog.set_level("WARNING", logger="workers.circuit_breaker")
+        breaker = RpcCircuitBreaker(
+            threshold=3, open_duration_seconds=60, clock=FakeClock(),
+        )
+        for _ in range(3):
+            with pytest.raises(requests.exceptions.Timeout):
+                breaker.call(lambda: (_ for _ in ()).throw(_transport_exc()))
+        events = [r.message for r in caplog.records]
+        assert any("rpc_breaker_opened" in m for m in events)
+
+    def test_probe_success_logs_closed(self, caplog) -> None:
+        caplog.set_level("INFO", logger="workers.circuit_breaker")
+        clock = FakeClock()
+        breaker = RpcCircuitBreaker(
+            threshold=3, open_duration_seconds=60, clock=clock,
+        )
+        for _ in range(3):
+            with pytest.raises(requests.exceptions.Timeout):
+                breaker.call(lambda: (_ for _ in ()).throw(_transport_exc()))
+        clock.advance(60)
+        caplog.clear()
+        breaker.call(lambda: "ok")
+        events = [r.message for r in caplog.records]
+        assert any("rpc_breaker_probe" in m for m in events)
+        assert any("rpc_breaker_closed" in m for m in events)
+
+    def test_probe_failure_logs_probe_failed(self, caplog) -> None:
+        caplog.set_level("WARNING", logger="workers.circuit_breaker")
+        clock = FakeClock()
+        breaker = RpcCircuitBreaker(
+            threshold=3, open_duration_seconds=60, clock=clock,
+        )
+        for _ in range(3):
+            with pytest.raises(requests.exceptions.Timeout):
+                breaker.call(lambda: (_ for _ in ()).throw(_transport_exc()))
+        clock.advance(60)
+        caplog.clear()
+        with pytest.raises(requests.exceptions.Timeout):
+            breaker.call(lambda: (_ for _ in ()).throw(_transport_exc()))
+        events = [r.message for r in caplog.records]
+        assert any("rpc_breaker_probe_failed" in m for m in events)

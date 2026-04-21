@@ -8,6 +8,7 @@ process.
 from __future__ import annotations
 
 import enum
+import logging
 import time
 from typing import Callable, Optional, TypeVar
 
@@ -34,6 +35,8 @@ from api.observability import (
     rpc_breaker_state,
     rpc_breaker_trips_total,
 )
+
+logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
 
@@ -136,6 +139,10 @@ class RpcCircuitBreaker:
                     cooldown_remaining_seconds=remaining,
                 )
             # Cooldown elapsed — transition to HALF_OPEN for the probe.
+            logger.info(
+                "rpc_breaker_probe | open_duration_s=%.1f",
+                self._open_duration,
+            )
             self._set_state(BreakerState.HALF_OPEN)
 
         is_probe = self._state is BreakerState.HALF_OPEN
@@ -147,22 +154,29 @@ class RpcCircuitBreaker:
                 if is_transport_error(exc):
                     # Probe found the RPC still broken. Re-open for a
                     # fresh cooldown window.
+                    logger.warning("rpc_breaker_probe_failed | error=%r", exc)
                     self._set_state(BreakerState.OPEN)
                     self._opened_at = self._clock()
                 else:
                     # RPC responded with a proper (non-transport) error.
                     # That's "healthy enough" — close the breaker.
+                    logger.info("rpc_breaker_closed")
                     self._set_state(BreakerState.CLOSED)
                     self._failure_count = 0
                     self._opened_at = None
             elif is_transport_error(exc):
                 self._failure_count += 1
                 if self._failure_count >= self._threshold:
+                    logger.warning(
+                        "rpc_breaker_opened | failure_count=%d threshold=%d last_error=%r",
+                        self._failure_count, self._threshold, exc,
+                    )
                     self._set_state(BreakerState.OPEN)
                     self._opened_at = self._clock()
             raise
         else:
             if is_probe:
+                logger.info("rpc_breaker_closed")
                 self._set_state(BreakerState.CLOSED)
                 self._opened_at = None
             self._failure_count = 0
