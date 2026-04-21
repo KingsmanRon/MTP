@@ -406,7 +406,7 @@ Edit `workers/circuit_breaker.py` — replace the `call` method with:
             if elapsed < self._open_duration:
                 remaining = self._open_duration - elapsed
                 raise RpcCircuitOpenError(
-                    f"circuit open; opens again in {remaining:.1f}s",
+                    f"circuit open; retries in {remaining:.1f}s",
                     cooldown_remaining_seconds=remaining,
                 )
             # Cooldown elapsed — transition to HALF_OPEN for the probe.
@@ -515,7 +515,7 @@ Edit `workers/circuit_breaker.py` — replace `call` with this version that trac
             if elapsed < self._open_duration:
                 remaining = self._open_duration - elapsed
                 raise RpcCircuitOpenError(
-                    f"circuit open; opens again in {remaining:.1f}s",
+                    f"circuit open; retries in {remaining:.1f}s",
                     cooldown_remaining_seconds=remaining,
                 )
             self._state = BreakerState.HALF_OPEN

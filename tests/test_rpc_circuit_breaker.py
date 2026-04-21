@@ -170,4 +170,4 @@ class TestBreakerOpen:
         clock.advance(60)
         # Next call runs as a probe — fn IS invoked
         assert breaker.call(lambda: "probe-ok") == "probe-ok"
-        # Probe success → CLOSED (covered fully in Task 4, we only check no-reject here)
+        # State remains HALF_OPEN here; HALF_OPEN→CLOSED is Task 4's responsibility.

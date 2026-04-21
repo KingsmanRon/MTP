@@ -109,7 +109,7 @@ class RpcCircuitBreaker:
             if elapsed < self._open_duration:
                 remaining = self._open_duration - elapsed
                 raise RpcCircuitOpenError(
-                    f"circuit open; opens again in {remaining:.1f}s",
+                    f"circuit open; retries in {remaining:.1f}s",
                     cooldown_remaining_seconds=remaining,
                 )
             # Cooldown elapsed — transition to HALF_OPEN for the probe.
