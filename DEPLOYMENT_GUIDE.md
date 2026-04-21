@@ -303,17 +303,17 @@ PORT=8000
 WORKERS=4
 ```
 
-### 4.4a RPC Circuit Breaker Observability
+#### RPC Circuit Breaker Observability
 
 The anchor worker exposes three Prometheus metrics for the circuit breaker. Scrape the worker's `/metrics` endpoint to observe breaker health:
 
 | Metric | Type | Meaning |
 |---|---|---|
-| `rpc_breaker_trips_total` | Counter | Incremented each time the breaker transitions to OPEN (including probe-failed re-opens). Alert on `increase(inntris_rpc_breaker_trips_total[5m]) > 0`. |
-| `rpc_breaker_rejected_total` | Counter | Incremented on each call rejected while the breaker is OPEN (no socket touched). |
-| `rpc_breaker_state{state="closed\|open\|half_open"}` | Gauge | 1 for the current breaker state, 0 otherwise. Useful for dashboards. |
+| `inntris_rpc_breaker_trips_total` | Counter | Incremented each time the breaker transitions to OPEN (including probe-failed re-opens). Alert on `increase(inntris_rpc_breaker_trips_total[5m]) > 0`. |
+| `inntris_rpc_breaker_rejected_total` | Counter | Incremented on each call rejected while the breaker is OPEN (no socket touched). A sustained rise means the RPC has been down longer than `ANCHOR_RPC_BREAKER_OPEN_SECONDS` — consider tuning the cooldown. |
+| `inntris_rpc_breaker_state{state="closed\|open\|half_open"}` | Gauge | 1 for the current breaker state, 0 otherwise. Useful for dashboards. |
 
-If the breaker misbehaves in production, set `ANCHOR_RPC_BREAKER_ENABLED=false` and restart the worker — no code change required.
+If the breaker misbehaves in production, set `ANCHOR_RPC_BREAKER_ENABLED=false` and restart the worker — no code change required. Note: with the breaker disabled, transient RPC outages cause unbounded per-call retries that can back-pressure the worker, so re-enable once the underlying RPC is healthy.
 
 ### 4.5 Deploy Services
 
