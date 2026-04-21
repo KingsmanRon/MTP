@@ -20,7 +20,7 @@ import socket
 import sys
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
-from typing import Any, Optional
+from typing import Any, Callable, Optional, TypeVar
 from urllib.parse import urlsplit, urlunsplit
 from uuid import UUID
 
@@ -30,6 +30,8 @@ from eth_account import Account
 from eth_account.signers.local import LocalAccount
 
 from workers.circuit_breaker import RpcCircuitBreaker, RpcCircuitOpenError
+
+_T = TypeVar("_T")
 
 # =============================================================================
 # CONFIGURATION
@@ -282,7 +284,7 @@ class BlockchainService:
             RPC_BREAKER_OPEN_SECONDS,
         )
 
-    def _rpc(self, fn):
+    def _rpc(self, fn: Callable[[], _T]) -> _T:
         """Route an RPC call through the circuit breaker."""
         return self._breaker.call(fn)
 
@@ -304,6 +306,10 @@ class BlockchainService:
             )
 
     def is_connected(self) -> bool:
+        # Swallows RpcCircuitOpenError by design — this is a health-check
+        # helper, and an OPEN breaker is correctly reported as "not
+        # connected" for readiness probes. Submit paths call _rpc(...)
+        # directly and will see the breaker error.
         try:
             return self._rpc(lambda: self.w3.is_connected())
         except Exception:

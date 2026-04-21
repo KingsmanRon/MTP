@@ -393,9 +393,11 @@ class TestBlockchainServiceIntegration:
     def test_revert_does_not_trip_breaker(self) -> None:
         import web3.exceptions as w3exc
         svc, _ = self._service()
-        # assert_chain_id succeeds so the breaker sees success for probes
-        type(svc.w3.eth).chain_id = property(lambda _self: 8453)
-        # send_raw_transaction raises a ContractLogicError (non-transport)
+        # send_raw_transaction raises a ContractLogicError (non-transport).
+        # 8 iterations with threshold=3: if classification were broken the
+        # breaker would trip on the 3rd, and the 4th call would raise
+        # RpcCircuitOpenError instead of ContractLogicError, failing the
+        # pytest.raises below.
         svc.w3.eth.send_raw_transaction.side_effect = w3exc.ContractLogicError("revert")
         for _ in range(8):
             with pytest.raises(w3exc.ContractLogicError):
