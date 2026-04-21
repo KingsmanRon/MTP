@@ -8,7 +8,8 @@ process.
 from __future__ import annotations
 
 import enum
-from typing import Optional
+import time
+from typing import Callable, Optional, TypeVar
 
 import requests
 
@@ -21,12 +22,14 @@ try:
     if _WEB3_PROVIDER_CONNECTION_ERROR is not None and not isinstance(
         _WEB3_PROVIDER_CONNECTION_ERROR, type
     ):
-        raise ImportError(
+        raise TypeError(
             "web3.exceptions.ProviderConnectionError is not a class; "
             "check your web3 version"
         )
 except ImportError:  # web3 not installed in this environment
     _WEB3_PROVIDER_CONNECTION_ERROR = None
+
+T = TypeVar("T")
 
 
 class BreakerState(enum.Enum):
@@ -68,12 +71,6 @@ def is_transport_error(exc: BaseException) -> bool:
         resp = getattr(exc, "response", None)
         return resp is not None and resp.status_code >= 500
     return False
-
-
-import time
-from typing import Callable, TypeVar
-
-T = TypeVar("T")
 
 
 class RpcCircuitBreaker:

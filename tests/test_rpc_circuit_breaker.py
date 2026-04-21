@@ -14,6 +14,7 @@ import requests
 
 from workers.circuit_breaker import (
     BreakerState,
+    RpcCircuitBreaker,
     RpcCircuitOpenError,
     is_transport_error,
 )
@@ -60,9 +61,6 @@ class TestRpcCircuitOpenError:
         err = RpcCircuitOpenError("circuit open", cooldown_remaining_seconds=12.5)
         assert err.cooldown_remaining_seconds == 12.5
         assert "circuit open" in str(err)
-
-
-from workers.circuit_breaker import RpcCircuitBreaker
 
 
 def _transport_exc() -> Exception:
