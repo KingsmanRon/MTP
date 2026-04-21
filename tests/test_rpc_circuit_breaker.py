@@ -215,3 +215,18 @@ class TestBreakerHalfOpen:
         with pytest.raises(ValueError):
             breaker.call(lambda: (_ for _ in ()).throw(ValueError("revert")))
         assert breaker.state is BreakerState.CLOSED
+
+
+class TestKillSwitch:
+    def test_disabled_breaker_is_passthrough(self) -> None:
+        breaker = RpcCircuitBreaker(
+            threshold=3, open_duration_seconds=60, enabled=False,
+            clock=FakeClock(),
+        )
+        # Many transport failures — state never changes
+        for _ in range(20):
+            with pytest.raises(requests.exceptions.Timeout):
+                breaker.call(lambda: (_ for _ in ()).throw(_transport_exc()))
+        assert breaker.state is BreakerState.CLOSED
+        # Successes also work fine
+        assert breaker.call(lambda: "ok") == "ok"
