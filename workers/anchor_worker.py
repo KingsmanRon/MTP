@@ -16,10 +16,12 @@ import asyncio
 import logging
 import os
 import signal
+import socket
 import sys
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any, Optional
+from urllib.parse import urlsplit, urlunsplit
 from uuid import UUID
 
 import asyncpg
@@ -41,7 +43,7 @@ logger = logging.getLogger(__name__)
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
     "postgresql://postgres:postgres@localhost:5432/inntris"
-)
+).strip()
 
 # Blockchain
 BLOCKCHAIN_PROVIDER_URL = os.getenv("BLOCKCHAIN_PROVIDER_URL", "https://base-rpc.publicnode.com")
@@ -90,6 +92,30 @@ BASE_CHAIN_ID = int(os.getenv("BLOCKCHAIN_CHAIN_ID", "8453"))
 # If the cap trips, the proof is recorded as ``failed`` with a descriptive
 # error, retried with exponential backoff, and dead-lettered if persistent.
 MAX_GAS_PRICE_GWEI = Decimal(os.getenv("ANCHOR_MAX_GAS_PRICE_GWEI", "50"))
+
+
+def _redacted_dsn(dsn: str) -> str:
+    """Return DSN with password hidden for safe logs."""
+    parts = urlsplit(dsn)
+    if not parts.netloc:
+        return dsn
+
+    netloc = parts.netloc
+    if "@" in netloc:
+        userinfo, hostpart = netloc.rsplit("@", 1)
+        if ":" in userinfo:
+            user = userinfo.split(":", 1)[0]
+            userinfo = f"{user}:***"
+        netloc = f"{userinfo}@{hostpart}"
+    return urlunsplit((parts.scheme, netloc, parts.path, parts.query, parts.fragment))
+
+
+def _database_host_from_dsn(dsn: str) -> str:
+    """Extract hostname from a DSN, empty string when parsing fails."""
+    try:
+        return urlsplit(dsn).hostname or ""
+    except Exception:
+        return ""
 
 # AnchorRegistry ABI (minimal for anchoring)
 ANCHOR_REGISTRY_ABI = [
@@ -770,9 +796,53 @@ async def main():
 
     # Initialize services
     logger.info("Initializing anchor worker...")
+    db_host = _database_host_from_dsn(DATABASE_URL)
+    if not db_host:
+        logger.critical(
+            "DATABASE_URL is invalid or missing hostname. Got: %s",
+            _redacted_dsn(DATABASE_URL),
+        )
+        sys.exit(1)
+    if any(token in db_host for token in ("<", ">", "xxx", "your_", "example")):
+        logger.critical(
+            "DATABASE_URL hostname looks like a template placeholder (%s). "
+            "Use the exact Supabase host from Project Settings > Database > Connection string.",
+            db_host,
+        )
+        sys.exit(1)
 
-    db_service = await DatabaseService.create(DATABASE_URL)
-    logger.info("Database connection established")
+    try:
+        db_service = await DatabaseService.create(DATABASE_URL)
+        logger.info("Database connection established")
+    except socket.gaierror as e:
+        logger.critical(
+            "Failed to resolve database hostname '%s' (repr=%r) from DATABASE_URL (%s): %s",
+            db_host,
+            db_host,
+            _redacted_dsn(DATABASE_URL),
+            e,
+        )
+        logger.critical(
+            "This is a DNS/host configuration issue, not a database password issue."
+        )
+        if ".pooler.supabase.com" in db_host:
+            logger.critical(
+                "For Supabase pooled connections, copy the host exactly from Supabase "
+                "(Project Settings -> Database -> Connection string). Do not guess aws-0/aws-1."
+            )
+        sys.exit(1)
+    except asyncpg.InvalidPasswordError as e:
+        logger.critical("Database authentication failed for host '%s': %s", db_host, e)
+        logger.critical(
+            "For Supabase role-based setup, set a password on inntris_worker and use that in DATABASE_URL."
+        )
+        sys.exit(1)
+    except asyncpg.InvalidAuthorizationSpecificationError as e:
+        logger.critical("Database role/auth configuration error for host '%s': %s", db_host, e)
+        logger.critical(
+            "If using inntris_api in DATABASE_URL, switch to inntris_worker (inntris_api is NOLOGIN)."
+        )
+        sys.exit(1)
 
     blockchain_service = BlockchainService(
         rpc_url=BLOCKCHAIN_PROVIDER_URL,
