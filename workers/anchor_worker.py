@@ -43,7 +43,7 @@ logger = logging.getLogger(__name__)
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
     "postgresql://postgres:postgres@localhost:5432/inntris"
-)
+).strip()
 
 # Blockchain
 BLOCKCHAIN_PROVIDER_URL = os.getenv("BLOCKCHAIN_PROVIDER_URL", "https://base-rpc.publicnode.com")
@@ -816,7 +816,7 @@ async def main():
         logger.info("Database connection established")
     except socket.gaierror as e:
         logger.critical(
-            "Failed to resolve database hostname '%s' from DATABASE_URL (%s): %s",
+            "Failed to resolve database hostname %r from DATABASE_URL (%s): %s",
             db_host,
             _redacted_dsn(DATABASE_URL),
             e,
@@ -824,6 +824,11 @@ async def main():
         logger.critical(
             "This is a DNS/host configuration issue, not a database password issue."
         )
+        if ".pooler.supabase.com" in db_host:
+            logger.critical(
+                "For Supabase pooled connections, copy the host exactly from Supabase "
+                "(Project Settings -> Database -> Connection string). Do not guess aws-0/aws-1."
+            )
         sys.exit(1)
     except asyncpg.InvalidPasswordError as e:
         logger.critical("Database authentication failed for host '%s': %s", db_host, e)
