@@ -558,6 +558,18 @@ SELECT * FROM security_alerts WHERE created_at > NOW() - INTERVAL '24 hours';
 2. Paste that value directly into Railway `DATABASE_URL` (replace only username/password if needed).
 3. Redeploy worker and API.
 
+### Issue: `permission denied for table merkle_proofs` on `/public/verify/...`
+**Symptom**: Public verify endpoint returns 500/503 and logs show `asyncpg.exceptions.InsufficientPrivilegeError`.
+
+**Why this happens**:
+1. Runtime DB role does not have table privileges expected by migration `005_rls_policies.sql`.
+2. Deployment is using a role other than `inntris_worker` (or migration grants were never applied).
+
+**Fix**:
+1. Ensure migration `database/migrations/005_rls_policies.sql` has been executed in Supabase.
+2. Use `DATABASE_URL` with `inntris_worker` as the login role.
+3. If you must keep a custom login role, grant equivalent privileges (including `SELECT` on `merkle_proofs`) to that role.
+
 ### Issue: Worker Not Anchoring
 **Symptom**: No transactions appearing on BaseScan
 
