@@ -105,14 +105,22 @@ openssl rand -base64 32
 1. Go to **Project Settings** → **Database**
 2. Find **Connection Pooling** section (NOT direct connection)
 3. Mode: **Transaction**
-4. Save these values:
+4. Save the pooled connection string and the project reference (``xxx``):
    ```
-   DATABASE_HOST: db.xxx.supabase.co
-   DATABASE_PORT: 6543
-   DATABASE_NAME: postgres
-   DATABASE_USER: postgres.xxx
-   DATABASE_PASSWORD: [your password from step 2.1]
+   postgresql://postgres.xxx:[PASSWORD]@aws-0-<region>.pooler.supabase.com:6543/postgres
    ```
+5. **Important (RLS role model):** Migration ``005_rls_policies.sql`` creates:
+   - ``inntris_api`` as **NOLOGIN** (cannot be used in DATABASE_URL)
+   - ``inntris_worker`` as **LOGIN BYPASSRLS** (recommended DATABASE_URL user)
+6. Set a password for ``inntris_worker`` in Supabase SQL Editor:
+   ```sql
+   ALTER ROLE inntris_worker WITH LOGIN PASSWORD 'YOUR_STRONG_PASSWORD';
+   ```
+7. Build your production app DSN with the worker role:
+   ```
+   postgresql://inntris_worker.xxx:YOUR_STRONG_PASSWORD@aws-0-<region>.pooler.supabase.com:6543/postgres
+   ```
+   > If your pooler host uses a different pattern in the dashboard, use exactly what Supabase shows.
 
 ---
 
@@ -241,12 +249,10 @@ Contact **sales@inntris.com** to request repository access. You will receive onb
 # ============================================================================
 # DATABASE CONFIGURATION (from Supabase)
 # ============================================================================
-DATABASE_HOST=db.xxx.supabase.co
-DATABASE_PORT=6543
-DATABASE_NAME=postgres
-DATABASE_USER=postgres.xxx
-DATABASE_PASSWORD=[from Supabase]
-DATABASE_POOL_SIZE=20
+DATABASE_URL=postgresql://inntris_worker.xxx:[inntris_worker_password]@aws-0-<region>.pooler.supabase.com:6543/postgres
+# Note:
+# - Do NOT set DATABASE_USER/HOST/PORT/NAME separately; the app reads DATABASE_URL.
+# - Do NOT use inntris_api in DATABASE_URL; that role is NOLOGIN by design.
 
 # ============================================================================
 # REDIS CONFIGURATION (Auto-configured by Railway)
@@ -520,6 +526,49 @@ SELECT * FROM security_alerts WHERE created_at > NOW() - INTERVAL '24 hours';
    "
    ```
 3. Check Redis connection: `railway run redis-cli ping`
+
+### Issue: `password authentication failed for user "inntris_api"` (or `inntris_worker`)
+**Symptom**: Railway logs show DB auth failures during API/worker startup.
+
+**Why this happens**:
+1. `inntris_api` is intentionally created as `NOLOGIN` in migration `005_rls_policies.sql`.
+2. `inntris_worker` is `LOGIN` but has no password until you set one.
+3. The app only reads `DATABASE_URL`; setting split DB vars in Railway won't be used.
+
+**Fix**:
+1. In Supabase SQL Editor:
+   ```sql
+   ALTER ROLE inntris_worker WITH LOGIN PASSWORD 'YOUR_STRONG_PASSWORD';
+   ```
+2. Set Railway `DATABASE_URL` to:
+   ```bash
+   postgresql://inntris_worker.<project_ref>:YOUR_STRONG_PASSWORD@<pooler-host>:6543/postgres
+   ```
+3. Redeploy API and worker services.
+
+### Issue: `socket.gaierror: [Errno -2] Name or service not known`
+**Symptom**: Worker crashes at startup before auth, stack trace includes `getaddrinfo` / `gaierror`.
+
+**Why this happens**:
+1. `DATABASE_URL` host is invalid/unresolvable (often a copied placeholder like `aws-0-<region>...`).
+2. Supabase project-ref/host was typed manually and contains a typo.
+
+**Fix**:
+1. In Supabase, copy the **exact** connection string from Project Settings → Database (do not hand-type hostnames).
+2. Paste that value directly into Railway `DATABASE_URL` (replace only username/password if needed).
+3. Redeploy worker and API.
+
+### Issue: `permission denied for table merkle_proofs` on `/public/verify/...`
+**Symptom**: Public verify endpoint returns 500/503 and logs show `asyncpg.exceptions.InsufficientPrivilegeError`.
+
+**Why this happens**:
+1. Runtime DB role does not have table privileges expected by migration `005_rls_policies.sql`.
+2. Deployment is using a role other than `inntris_worker` (or migration grants were never applied).
+
+**Fix**:
+1. Ensure migration `database/migrations/005_rls_policies.sql` has been executed in Supabase.
+2. Use `DATABASE_URL` with `inntris_worker` as the login role.
+3. If you must keep a custom login role, grant equivalent privileges (including `SELECT` on `merkle_proofs`) to that role.
 
 ### Issue: Worker Not Anchoring
 **Symptom**: No transactions appearing on BaseScan

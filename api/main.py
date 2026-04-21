@@ -22,6 +22,7 @@ from decimal import Decimal
 from typing import Optional
 from uuid import UUID, uuid4
 
+import asyncpg
 import redis.asyncio as redis
 from fastapi import FastAPI, Depends, HTTPException, Request, status, Header, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -628,49 +629,60 @@ async def get_public_verification_record(
     Accepts either an audit log UUID or a transaction hash (0x-prefixed).
     Returns the shareable verification record for the audit page.
     """
-    async with database.acquire() as conn:
-        # Determine lookup strategy: tx hash (0x...) or audit UUID
-        if record_id.startswith("0x") and len(record_id) == 66:
-            # Lookup by transaction hash via merkle_proofs
-            row = await conn.fetchrow(
-                """
-                SELECT al.*, a.name AS agent_name, a.org_id,
-                       mp.root_hash AS merkle_root,
-                       mp.transaction_hash AS tx_hash,
-                       mp.block_number,
-                       mp.chain_id,
-                       mp.confirmed_at AS anchored_at
-                FROM merkle_proofs mp
-                JOIN audit_logs al ON al.merkle_root_id = mp.id
-                JOIN agents a ON al.agent_id = a.id
-                WHERE mp.transaction_hash = $1
-                ORDER BY al.timestamp DESC
-                LIMIT 1
-                """,
-                record_id,
-            )
-        else:
-            # Lookup by audit log UUID
-            try:
-                log_uuid = UUID(record_id)
-            except ValueError:
-                raise HTTPException(status_code=400, detail="Invalid record ID format")
+    try:
+        async with database.acquire() as conn:
+            # Determine lookup strategy: tx hash (0x...) or audit UUID
+            if record_id.startswith("0x") and len(record_id) == 66:
+                # Lookup by transaction hash via merkle_proofs
+                row = await conn.fetchrow(
+                    """
+                    SELECT al.*, a.name AS agent_name, a.org_id,
+                           mp.root_hash AS merkle_root,
+                           mp.transaction_hash AS tx_hash,
+                           mp.block_number,
+                           mp.chain_id,
+                           mp.confirmed_at AS anchored_at
+                    FROM merkle_proofs mp
+                    JOIN audit_logs al ON al.merkle_root_id = mp.id
+                    JOIN agents a ON al.agent_id = a.id
+                    WHERE mp.transaction_hash = $1
+                    ORDER BY al.timestamp DESC
+                    LIMIT 1
+                    """,
+                    record_id,
+                )
+            else:
+                # Lookup by audit log UUID
+                try:
+                    log_uuid = UUID(record_id)
+                except ValueError:
+                    raise HTTPException(status_code=400, detail="Invalid record ID format")
 
-            row = await conn.fetchrow(
-                """
-                SELECT al.*, a.name AS agent_name, a.org_id,
-                       mp.root_hash AS merkle_root,
-                       mp.transaction_hash AS tx_hash,
-                       mp.block_number,
-                       mp.chain_id,
-                       mp.confirmed_at AS anchored_at
-                FROM audit_logs al
-                JOIN agents a ON al.agent_id = a.id
-                LEFT JOIN merkle_proofs mp ON al.merkle_root_id = mp.id
-                WHERE al.id = $1
-                """,
-                log_uuid,
-            )
+                row = await conn.fetchrow(
+                    """
+                    SELECT al.*, a.name AS agent_name, a.org_id,
+                           mp.root_hash AS merkle_root,
+                           mp.transaction_hash AS tx_hash,
+                           mp.block_number,
+                           mp.chain_id,
+                           mp.confirmed_at AS anchored_at
+                    FROM audit_logs al
+                    JOIN agents a ON al.agent_id = a.id
+                    LEFT JOIN merkle_proofs mp ON al.merkle_root_id = mp.id
+                    WHERE al.id = $1
+                    """,
+                    log_uuid,
+                )
+    except asyncpg.InsufficientPrivilegeError as e:
+        logger.error("Public verify DB privilege error: %s", e)
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Database role lacks required permissions for public verification. "
+                "Run migration 005 and ensure the runtime DATABASE_URL role can SELECT "
+                "from merkle_proofs (recommended: inntris_worker)."
+            ),
+        )
 
     if not row:
         raise HTTPException(status_code=404, detail="Verification record not found")
