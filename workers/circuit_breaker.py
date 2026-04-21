@@ -103,6 +103,18 @@ class RpcCircuitBreaker:
         if not self._enabled:
             return fn()
 
+        if self._state is BreakerState.OPEN:
+            now = self._clock()
+            elapsed = now - (self._opened_at if self._opened_at is not None else now)
+            if elapsed < self._open_duration:
+                remaining = self._open_duration - elapsed
+                raise RpcCircuitOpenError(
+                    f"circuit open; opens again in {remaining:.1f}s",
+                    cooldown_remaining_seconds=remaining,
+                )
+            # Cooldown elapsed — transition to HALF_OPEN for the probe.
+            self._state = BreakerState.HALF_OPEN
+
         try:
             result = fn()
         except BaseException as exc:

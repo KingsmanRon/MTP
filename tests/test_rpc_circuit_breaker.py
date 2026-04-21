@@ -127,3 +127,47 @@ class TestBreakerClosed:
             with pytest.raises(requests.exceptions.Timeout):
                 breaker.call(lambda: (_ for _ in ()).throw(_transport_exc()))
         assert breaker.state is BreakerState.CLOSED
+
+
+class TestBreakerOpen:
+    def _tripped_breaker(
+        self,
+        clock: FakeClock,
+        threshold: int = 3,
+        open_duration: float = 60,
+    ) -> RpcCircuitBreaker:
+        breaker = RpcCircuitBreaker(
+            threshold=threshold,
+            open_duration_seconds=open_duration,
+            clock=clock,
+        )
+        for _ in range(threshold):
+            with pytest.raises(requests.exceptions.Timeout):
+                breaker.call(lambda: (_ for _ in ()).throw(_transport_exc()))
+        assert breaker.state is BreakerState.OPEN
+        return breaker
+
+    def test_open_rejects_calls_without_invoking_fn(self) -> None:
+        clock = FakeClock()
+        breaker = self._tripped_breaker(clock)
+        calls = []
+        with pytest.raises(RpcCircuitOpenError):
+            breaker.call(lambda: (calls.append(1), "ok")[1])
+        assert calls == []  # fn was never invoked
+
+    def test_open_error_reports_cooldown_remaining(self) -> None:
+        clock = FakeClock()
+        breaker = self._tripped_breaker(clock, open_duration=60)
+        clock.advance(15)
+        with pytest.raises(RpcCircuitOpenError) as excinfo:
+            breaker.call(lambda: "ok")
+        # 60s cooldown, 15s elapsed → ~45s remaining
+        assert 44.9 <= excinfo.value.cooldown_remaining_seconds <= 45.1
+
+    def test_open_transitions_to_half_open_after_cooldown(self) -> None:
+        clock = FakeClock()
+        breaker = self._tripped_breaker(clock, open_duration=60)
+        clock.advance(60)
+        # Next call runs as a probe — fn IS invoked
+        assert breaker.call(lambda: "probe-ok") == "probe-ok"
+        # Probe success → CLOSED (covered fully in Task 4, we only check no-reject here)
