@@ -11,7 +11,6 @@ import enum
 from typing import Optional
 
 import requests
-import requests.exceptions
 
 try:
     import web3.exceptions as _web3_exc
@@ -19,6 +18,13 @@ try:
     _WEB3_PROVIDER_CONNECTION_ERROR: Optional[type[BaseException]] = getattr(
         _web3_exc, "ProviderConnectionError", None
     )
+    if _WEB3_PROVIDER_CONNECTION_ERROR is not None and not isinstance(
+        _WEB3_PROVIDER_CONNECTION_ERROR, type
+    ):
+        raise ImportError(
+            "web3.exceptions.ProviderConnectionError is not a class; "
+            "check your web3 version"
+        )
 except ImportError:  # web3 not installed in this environment
     _WEB3_PROVIDER_CONNECTION_ERROR = None
 

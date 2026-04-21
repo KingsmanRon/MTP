@@ -52,9 +52,7 @@ class TestTransportErrorPredicate:
 
 class TestBreakerStateEnum:
     def test_three_states_exist(self) -> None:
-        assert BreakerState.CLOSED != BreakerState.OPEN
-        assert BreakerState.OPEN != BreakerState.HALF_OPEN
-        assert BreakerState.CLOSED != BreakerState.HALF_OPEN
+        assert {s.value for s in BreakerState} == {"closed", "open", "half_open"}
 
 
 class TestRpcCircuitOpenError:
