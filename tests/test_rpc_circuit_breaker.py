@@ -171,3 +171,47 @@ class TestBreakerOpen:
         # Next call runs as a probe — fn IS invoked
         assert breaker.call(lambda: "probe-ok") == "probe-ok"
         # State remains HALF_OPEN here; HALF_OPEN→CLOSED is Task 4's responsibility.
+
+
+class TestBreakerHalfOpen:
+    def _half_open(self, clock: FakeClock) -> RpcCircuitBreaker:
+        breaker = RpcCircuitBreaker(
+            threshold=3, open_duration_seconds=60, clock=clock,
+        )
+        for _ in range(3):
+            with pytest.raises(requests.exceptions.Timeout):
+                breaker.call(lambda: (_ for _ in ()).throw(_transport_exc()))
+        clock.advance(60)
+        return breaker
+
+    def test_half_open_success_closes(self) -> None:
+        clock = FakeClock()
+        breaker = self._half_open(clock)
+        assert breaker.call(lambda: "ok") == "ok"
+        assert breaker.state is BreakerState.CLOSED
+        # Counter reset — one more failure should NOT trip immediately
+        with pytest.raises(requests.exceptions.Timeout):
+            breaker.call(lambda: (_ for _ in ()).throw(_transport_exc()))
+        assert breaker.state is BreakerState.CLOSED
+
+    def test_half_open_transport_failure_reopens(self) -> None:
+        clock = FakeClock()
+        breaker = self._half_open(clock)
+        clock.advance(1)  # move clock forward so we can assert opened_at reset
+        with pytest.raises(requests.exceptions.Timeout):
+            breaker.call(lambda: (_ for _ in ()).throw(_transport_exc()))
+        assert breaker.state is BreakerState.OPEN
+        # opened_at reset to new now — full cooldown applies again
+        clock.advance(30)  # 30s into the new 60s cooldown
+        with pytest.raises(RpcCircuitOpenError):
+            breaker.call(lambda: "ok")
+
+    def test_half_open_non_transport_closes(self) -> None:
+        """The probe succeeded enough to receive a proper error — the RPC
+        is responding. Treat that as healthy and close the breaker.
+        """
+        clock = FakeClock()
+        breaker = self._half_open(clock)
+        with pytest.raises(ValueError):
+            breaker.call(lambda: (_ for _ in ()).throw(ValueError("revert")))
+        assert breaker.state is BreakerState.CLOSED
