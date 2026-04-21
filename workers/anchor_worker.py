@@ -749,6 +749,16 @@ class AnchorWorker:
                 f"Block: {result['block_number']}"
             )
 
+        except RpcCircuitOpenError as e:
+            logger.info(
+                "Proof %s deferred — RPC circuit open (cooldown %.1fs)",
+                proof_id, e.cooldown_remaining_seconds,
+            )
+            await self._record_failure(
+                proof_id,
+                current_retry_count,
+                f"rpc_circuit_open: {e}",
+            )
         except Exception as e:
             logger.error(f"Blockchain submission failed: {e}")
             await self._record_failure(proof_id, current_retry_count, str(e))

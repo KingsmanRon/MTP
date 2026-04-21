@@ -403,3 +403,49 @@ class TestBlockchainServiceIntegration:
             with pytest.raises(w3exc.ContractLogicError):
                 svc._rpc(lambda: svc.w3.eth.send_raw_transaction(b"raw"))
         assert svc._breaker.state is BreakerState.CLOSED
+
+
+class TestWorkerHandlesCircuitOpen:
+    @pytest.mark.skipif(
+        not _ANCHOR_WORKER_IMPORTABLE,
+        reason="anchor_worker not importable in this environment",
+    )
+    @pytest.mark.asyncio
+    async def test_submit_records_failure_on_circuit_open(self) -> None:
+        from datetime import datetime, timezone
+        from unittest.mock import AsyncMock
+        from uuid import uuid4
+
+        worker = anchor_worker.AnchorWorker.__new__(anchor_worker.AnchorWorker)
+        worker.db = MagicMock()
+        worker.blockchain = MagicMock()
+        worker.blockchain.get_balance = MagicMock(return_value=1.0)
+
+        async def _raise_open(**kwargs):
+            raise RpcCircuitOpenError(
+                "circuit open; retries in 42.0s",
+                cooldown_remaining_seconds=42.0,
+            )
+
+        worker.blockchain.anchor_batch = _raise_open
+        worker._record_failure = AsyncMock()
+
+        proof_id = uuid4()
+        now = datetime.now(timezone.utc)
+        # _submit_to_blockchain must NOT let RpcCircuitOpenError propagate
+        await worker._submit_to_blockchain(
+            proof_id=proof_id,
+            merkle_root="ab" * 32,
+            log_count=1,
+            start_timestamp=now,
+            end_timestamp=now,
+            current_retry_count=0,
+        )
+        # Must have recorded the failure with a message that mentions
+        # the breaker, so operators can grep for it.
+        assert worker._record_failure.await_count == 1
+        args, kwargs = worker._record_failure.await_args
+        err_message = kwargs.get("error_message") or (args[2] if len(args) >= 3 else "")
+        assert "circuit" in err_message.lower()
+        # And prefix with a stable marker for log/DB grep.
+        assert "rpc_circuit_open" in err_message
