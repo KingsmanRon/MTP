@@ -29,6 +29,8 @@ from web3 import Web3
 from eth_account import Account
 from eth_account.signers.local import LocalAccount
 
+from workers.circuit_breaker import RpcCircuitBreaker, RpcCircuitOpenError
+
 # =============================================================================
 # CONFIGURATION
 # =============================================================================
@@ -92,6 +94,12 @@ BASE_CHAIN_ID = int(os.getenv("BLOCKCHAIN_CHAIN_ID", "8453"))
 # If the cap trips, the proof is recorded as ``failed`` with a descriptive
 # error, retried with exponential backoff, and dead-lettered if persistent.
 MAX_GAS_PRICE_GWEI = Decimal(os.getenv("ANCHOR_MAX_GAS_PRICE_GWEI", "50"))
+
+# Phase resilience — RPC circuit breaker config. See
+# docs/superpowers/specs/2026-04-21-blockchain-rpc-circuit-breaker-design.md
+RPC_BREAKER_ENABLED = os.getenv("ANCHOR_RPC_BREAKER_ENABLED", "true").lower() not in ("0", "false", "no")
+RPC_BREAKER_THRESHOLD = int(os.getenv("ANCHOR_RPC_BREAKER_THRESHOLD", "5"))
+RPC_BREAKER_OPEN_SECONDS = float(os.getenv("ANCHOR_RPC_BREAKER_OPEN_SECONDS", "60"))
 
 
 def _redacted_dsn(dsn: str) -> str:
@@ -260,8 +268,23 @@ class BlockchainService:
             abi=ANCHOR_REGISTRY_ABI,
         )
         self.account: LocalAccount = Account.from_key(private_key)
+        self._breaker = RpcCircuitBreaker(
+            threshold=RPC_BREAKER_THRESHOLD,
+            open_duration_seconds=RPC_BREAKER_OPEN_SECONDS,
+            enabled=RPC_BREAKER_ENABLED,
+        )
         self.expected_chain_id = expected_chain_id
         logger.info(f"Blockchain service initialized. Address: {self.account.address}")
+        logger.info(
+            "RPC circuit breaker: enabled=%s threshold=%d open_seconds=%.1f",
+            RPC_BREAKER_ENABLED,
+            RPC_BREAKER_THRESHOLD,
+            RPC_BREAKER_OPEN_SECONDS,
+        )
+
+    def _rpc(self, fn):
+        """Route an RPC call through the circuit breaker."""
+        return self._breaker.call(fn)
 
     def assert_chain_id(self) -> None:
         """Phase 2B hardening — verify the RPC is serving the expected chain.
@@ -273,7 +296,7 @@ class BlockchainService:
         We call this before submitting each batch; failure raises so the
         caller records the proof as ``failed`` and retries.
         """
-        actual = self.w3.eth.chain_id
+        actual = self._rpc(lambda: self.w3.eth.chain_id)
         if actual != self.expected_chain_id:
             raise RuntimeError(
                 f"RPC chain-id mismatch: expected {self.expected_chain_id} "
@@ -282,12 +305,12 @@ class BlockchainService:
 
     def is_connected(self) -> bool:
         try:
-            return self.w3.is_connected()
+            return self._rpc(lambda: self.w3.is_connected())
         except Exception:
             return False
 
     def get_balance(self) -> Decimal:
-        balance_wei = self.w3.eth.get_balance(self.account.address)
+        balance_wei = self._rpc(lambda: self.w3.eth.get_balance(self.account.address))
         return Decimal(str(self.w3.from_wei(balance_wei, "ether")))
 
     async def anchor_batch(
@@ -313,20 +336,22 @@ class BlockchainService:
         start_unix = int(start_timestamp.timestamp())
         end_unix = int(end_timestamp.timestamp())
 
-        nonce = self.w3.eth.get_transaction_count(self.account.address)
+        nonce = self._rpc(lambda: self.w3.eth.get_transaction_count(self.account.address))
 
         try:
-            gas_estimate = self.contract.functions.anchorBatch(
+            gas_estimate = self._rpc(lambda: self.contract.functions.anchorBatch(
                 root_bytes,
                 log_count,
                 start_unix,
                 end_unix,
-            ).estimate_gas({"from": self.account.address})
+            ).estimate_gas({"from": self.account.address}))
         except Exception as e:
+            if isinstance(e, RpcCircuitOpenError):
+                raise
             logger.warning(f"Gas estimation failed, using default: {e}")
             gas_estimate = 150000
 
-        gas_price = self.w3.eth.gas_price
+        gas_price = self._rpc(lambda: self.w3.eth.gas_price)
         gas_price_gwei = Decimal(str(self.w3.from_wei(gas_price, "gwei")))
 
         # Phase 2B hardening — reject suspiciously high gas prices.
@@ -356,12 +381,14 @@ class BlockchainService:
         signed_tx = self.w3.eth.account.sign_transaction(tx, self.account.key)
         # Compatibility: web3.py v6+ uses raw_transaction, older uses rawTransaction
         raw_tx = getattr(signed_tx, 'raw_transaction', None) or signed_tx.rawTransaction
-        tx_hash = self.w3.eth.send_raw_transaction(raw_tx)
+        tx_hash = self._rpc(lambda: self.w3.eth.send_raw_transaction(raw_tx))
         logger.info(f"Transaction submitted: {tx_hash.hex()}")
 
         receipt = await asyncio.get_event_loop().run_in_executor(
             None,
-            lambda: self.w3.eth.wait_for_transaction_receipt(tx_hash, timeout=120),
+            lambda: self._rpc(
+                lambda: self.w3.eth.wait_for_transaction_receipt(tx_hash, timeout=120)
+            ),
         )
 
         return {

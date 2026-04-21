@@ -324,3 +324,80 @@ class TestBreakerLogging:
             breaker.call(lambda: (_ for _ in ()).throw(_transport_exc()))
         events = [r.message for r in caplog.records]
         assert any("rpc_breaker_probe_failed" in m for m in events)
+
+
+try:  # web3 is optional in some Windows dev envs (lru-dict build failure)
+    import web3.exceptions as _web3_exc_probe  # noqa: F401
+
+    _WEB3_AVAILABLE = True
+except ImportError:
+    _WEB3_AVAILABLE = False
+
+
+try:
+    from unittest.mock import MagicMock
+
+    from workers import anchor_worker
+
+    _ANCHOR_WORKER_IMPORTABLE = True
+except ImportError:
+    _ANCHOR_WORKER_IMPORTABLE = False
+
+
+@pytest.mark.skipif(
+    not _ANCHOR_WORKER_IMPORTABLE,
+    reason="workers.anchor_worker requires web3 which is unavailable here",
+)
+class TestBlockchainServiceIntegration:
+    def _service(self, **breaker_kwargs):
+        """Build a BlockchainService with everything mocked.
+
+        We skip the real Web3/Account wiring by constructing the
+        service manually and injecting a breaker + fake w3.
+        """
+        svc = anchor_worker.BlockchainService.__new__(
+            anchor_worker.BlockchainService
+        )
+        svc.w3 = MagicMock()
+        svc.contract = MagicMock()
+        svc.contract_address = "0x" + "ab" * 20
+        svc.account = MagicMock()
+        svc.account.address = "0x" + "cd" * 20
+        svc.expected_chain_id = 8453
+        clock = FakeClock()
+        svc._breaker = RpcCircuitBreaker(
+            threshold=breaker_kwargs.get("threshold", 3),
+            open_duration_seconds=breaker_kwargs.get("open_duration_seconds", 60),
+            clock=clock,
+        )
+        return svc, clock
+
+    def test_assert_chain_id_wrapped_by_breaker(self) -> None:
+        svc, _clock = self._service()
+        # Make w3.eth.chain_id a property-like attr that raises on every access
+        type(svc.w3.eth).chain_id = property(
+            lambda _self: (_ for _ in ()).throw(_transport_exc())
+        )
+        for _ in range(3):
+            with pytest.raises(requests.exceptions.Timeout):
+                svc.assert_chain_id()
+        # Next call: breaker is OPEN, should short-circuit BEFORE touching w3
+        assert svc._breaker.state is BreakerState.OPEN
+        with pytest.raises(RpcCircuitOpenError):
+            svc.assert_chain_id()
+
+    @pytest.mark.skipif(
+        not _WEB3_AVAILABLE,
+        reason="web3 not installed in this environment",
+    )
+    def test_revert_does_not_trip_breaker(self) -> None:
+        import web3.exceptions as w3exc
+        svc, _ = self._service()
+        # assert_chain_id succeeds so the breaker sees success for probes
+        type(svc.w3.eth).chain_id = property(lambda _self: 8453)
+        # send_raw_transaction raises a ContractLogicError (non-transport)
+        svc.w3.eth.send_raw_transaction.side_effect = w3exc.ContractLogicError("revert")
+        for _ in range(8):
+            with pytest.raises(w3exc.ContractLogicError):
+                svc._rpc(lambda: svc.w3.eth.send_raw_transaction(b"raw"))
+        assert svc._breaker.state is BreakerState.CLOSED
