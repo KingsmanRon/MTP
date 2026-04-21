@@ -556,7 +556,8 @@ SELECT * FROM security_alerts WHERE created_at > NOW() - INTERVAL '24 hours';
 **Fix**:
 1. In Supabase, copy the **exact** connection string from Project Settings → Database (do not hand-type hostnames).
 2. Paste that value directly into Railway `DATABASE_URL` (replace only username/password if needed).
-3. Redeploy worker and API.
+3. Remove accidental whitespace/quotes around the Railway variable value.
+4. Redeploy worker and API.
 
 ### Issue: `permission denied for table merkle_proofs` on `/public/verify/...`
 **Symptom**: Public verify endpoint returns 500/503 and logs show `asyncpg.exceptions.InsufficientPrivilegeError`.
