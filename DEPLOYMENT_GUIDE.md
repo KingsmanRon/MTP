@@ -270,6 +270,13 @@ ANCHOR_INTERVAL_MINUTES=60
 BLOCKCHAIN_CHAIN_ID=8453  # Base Mainnet (use 84532 for Sepolia testnet)
 
 # ============================================================================
+# ANCHOR WORKER — RPC CIRCUIT BREAKER
+# ============================================================================
+ANCHOR_RPC_BREAKER_ENABLED=true     # Kill switch. Set false/0/no to disable the breaker entirely (emergency only).
+ANCHOR_RPC_BREAKER_THRESHOLD=5      # Consecutive transport failures required to trip the breaker to OPEN. Must be >= 1.
+ANCHOR_RPC_BREAKER_OPEN_SECONDS=60  # Cooldown (seconds) before the breaker transitions to HALF_OPEN for a probe call.
+
+# ============================================================================
 # API SECURITY (from Step 1)
 # ============================================================================
 SERVER_SECRET=[from Step 1]
@@ -295,6 +302,18 @@ LOG_LEVEL=INFO
 PORT=8000
 WORKERS=4
 ```
+
+#### RPC Circuit Breaker Observability
+
+The anchor worker exposes three Prometheus metrics for the circuit breaker. Scrape the worker's `/metrics` endpoint to observe breaker health:
+
+| Metric | Type | Meaning |
+|---|---|---|
+| `inntris_rpc_breaker_trips_total` | Counter | Incremented each time the breaker transitions to OPEN (including probe-failed re-opens). Alert on `increase(inntris_rpc_breaker_trips_total[5m]) > 0`. |
+| `inntris_rpc_breaker_rejected_total` | Counter | Incremented on each call rejected while the breaker is OPEN (no socket touched). A sustained rise means the RPC has been down longer than `ANCHOR_RPC_BREAKER_OPEN_SECONDS` — consider tuning the cooldown. |
+| `inntris_rpc_breaker_state{state="closed\|open\|half_open"}` | Gauge | 1 for the current breaker state, 0 otherwise. Useful for dashboards. |
+
+If the breaker misbehaves in production, set `ANCHOR_RPC_BREAKER_ENABLED=false` and restart the worker — no code change required. Note: with the breaker disabled, transient RPC outages cause unbounded per-call retries that can back-pressure the worker, so re-enable once the underlying RPC is healthy.
 
 ### 4.5 Deploy Services
 
