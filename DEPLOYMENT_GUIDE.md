@@ -546,6 +546,18 @@ SELECT * FROM security_alerts WHERE created_at > NOW() - INTERVAL '24 hours';
    ```
 3. Redeploy API and worker services.
 
+### Issue: `socket.gaierror: [Errno -2] Name or service not known`
+**Symptom**: Worker crashes at startup before auth, stack trace includes `getaddrinfo` / `gaierror`.
+
+**Why this happens**:
+1. `DATABASE_URL` host is invalid/unresolvable (often a copied placeholder like `aws-0-<region>...`).
+2. Supabase project-ref/host was typed manually and contains a typo.
+
+**Fix**:
+1. In Supabase, copy the **exact** connection string from Project Settings → Database (do not hand-type hostnames).
+2. Paste that value directly into Railway `DATABASE_URL` (replace only username/password if needed).
+3. Redeploy worker and API.
+
 ### Issue: Worker Not Anchoring
 **Symptom**: No transactions appearing on BaseScan
 
