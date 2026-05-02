@@ -1516,9 +1516,12 @@ async def register_agent(
             "public_key_fingerprint": fingerprint,
             "status": "pending_verification",
         }
-    except Exception as e:
-        logger.error(f"Failed to register agent: {e}")
-        raise HTTPException(status_code=400, detail=str(e))
+    except Exception:
+        logger.exception("Admin agent registration failed")
+        raise HTTPException(
+            status_code=400,
+            detail="Agent registration failed. Check input and retry.",
+        )
 
 @app.patch("/admin/agents/{agent_id}", tags=["Admin - Agents"])
 async def update_agent(
