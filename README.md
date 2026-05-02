@@ -227,6 +227,27 @@ The dashboard will be available at `http://localhost:3000` with four interfaces:
 
 ---
 
+## Try it in 30 seconds
+
+Returns a live, Base-mainnet-anchored receipt. No auth required.
+
+```bash
+curl -s https://api.inntris.com/public/verify/3030c27c-87c4-4464-b4af-605fbe638e0e | jq
+```
+
+Fetch the Merkle proof for the same receipt:
+
+```bash
+curl -s https://api.inntris.com/public/verify/3030c27c-87c4-4464-b4af-605fbe638e0e/proof | jq
+```
+
+- The first call returns the public verification receipt.
+- The second call returns the Merkle proof.
+- `chain_id` must be `8453` (Base mainnet).
+- `integrity_status` should be `verified`.
+
+---
+
 ## API Reference
 
 ### POST `/verify`
