@@ -674,14 +674,14 @@ async def get_public_verification_record(
                     log_uuid,
                 )
     except asyncpg.InsufficientPrivilegeError as e:
-        logger.error("Public verify DB privilege error: %s", e)
+        logger.exception(
+            "Public verify DB privilege error — runtime DATABASE_URL role "
+            "lacks SELECT on merkle_proofs (see migration 005). Detail: %s",
+            e,
+        )
         raise HTTPException(
             status_code=503,
-            detail=(
-                "Database role lacks required permissions for public verification. "
-                "Run migration 005 and ensure the runtime DATABASE_URL role can SELECT "
-                "from merkle_proofs (recommended: inntris_worker)."
-            ),
+            detail="Verification temporarily unavailable. Please retry.",
         )
 
     if not row:
@@ -1516,9 +1516,12 @@ async def register_agent(
             "public_key_fingerprint": fingerprint,
             "status": "pending_verification",
         }
-    except Exception as e:
-        logger.error(f"Failed to register agent: {e}")
-        raise HTTPException(status_code=400, detail=str(e))
+    except Exception:
+        logger.exception("Admin agent registration failed")
+        raise HTTPException(
+            status_code=400,
+            detail="Agent registration failed. Check input and retry.",
+        )
 
 @app.patch("/admin/agents/{agent_id}", tags=["Admin - Agents"])
 async def update_agent(

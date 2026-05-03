@@ -28,12 +28,6 @@ CONTRACTS = {
         "address": "0x0600eA15802c8d2EA429371b2EB0aacCFe321480",
         "explorer": "https://basescan.org"
     },
-    # Internal dev only — not a valid public verification path.
-    # Public verify endpoint rejects chain_id != 8453 with HTTP 410.
-    "_base_sepolia_dev_only": {
-        "address": "0x0600ea15802c8d2ea429371b2eb0aaccfe321480",
-        "explorer": "https://sepolia.basescan.org"
-    }
 }
 
 # Default to mainnet — the only valid public chain
@@ -126,9 +120,6 @@ Option C: Check merkle_proofs table for any confirmed anchors:
 Navigate to the AnchorRegistry contract on Basescan:
 
     {explorer_url}/address/{contract_address}#readContract
-
-For Base Sepolia (testnet):
-    https://sepolia.basescan.org/address/0x0600ea15802c8d2ea429371b2eb0aaccfe321480#readContract
 
 For Base Mainnet:
     https://basescan.org/address/YOUR_CONTRACT_ADDRESS#readContract
