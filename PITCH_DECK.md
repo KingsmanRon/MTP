@@ -77,7 +77,7 @@ A single `inntris_guard` tool drops into any MCP-compatible agent (Claude, Curso
 
 - **Backend:** FastAPI · Python 3.12 · Postgres + TimescaleDB · Redis
 - **Frontend:** Next.js 18 · Tailwind · Trust Badge (React)
-- **Crypto:** Ed25519 signatures · SHA-256 Merkle proofs · HMAC approval tokens
+- **Crypto:** Ed25519 signatures · SHA-256 canonical leaf hashes · keccak256 Merkle tree (Solidity-native) · HMAC approval tokens
 - **Chain:** Base L2 mainnet (chain 8453) · `AnchorRegistry` at `0x0600eA15…321480` · ~1,000 logs / hourly batch
 - **Deploy:** Docker Compose · Railway · Render · K8s-compatible (12-factor)
 
