@@ -15,6 +15,12 @@ export default function sitemap(): MetadataRoute.Sitemap {
       priority: 0.8,
     },
     {
+      url: "https://www.inntris.com/ai-pr-protection",
+      lastModified: new Date(),
+      changeFrequency: "weekly",
+      priority: 0.9,
+    },
+    {
       url: "https://www.inntris.com/verify",
       lastModified: new Date(),
       changeFrequency: "weekly",
