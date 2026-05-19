@@ -1,4 +1,4 @@
-# Inntris Core
+#Inntris Core
 
 > **Cryptographic verification and policy enforcement for AI agent actions.** 
 
