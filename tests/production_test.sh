@@ -108,7 +108,7 @@ echo -e "${BLUE}[2/8] Creating Test Organization...${NC}"
 
 CREATE_ORG_RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "$API_URL/admin/organizations" \
     -H "Content-Type: application/json" \
-    -H "X-Admin-Key: $MASTER_ADMIN_KEY" \
+    -H "X-Master-Key: $MASTER_ADMIN_KEY" \
     -d '{
         "name": "Test Organization - '"$(date +%s)"'",
         "contact_email": "test@mtp-testing.local",

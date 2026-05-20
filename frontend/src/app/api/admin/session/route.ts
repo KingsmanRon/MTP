@@ -35,7 +35,10 @@ export async function POST(request: NextRequest) {
           "Login rejected: Redis unavailable, cannot enforce rate limit (fail closed)"
         );
         return NextResponse.json(
-          { error: "Authentication service temporarily unavailable" },
+          {
+            error: "Authentication service temporarily unavailable",
+            hint: "Operator: REDIS_URL is not configured or unreachable. Set INNTRIS_DISABLE_LOGIN_RATE_LIMIT=1 to bypass (dev only).",
+          },
           { status: 503 }
         );
       }
@@ -105,19 +108,41 @@ export async function POST(request: NextRequest) {
     }
 
     // Key is valid — create session
-    await createSession(apiKey);
+    try {
+      await createSession(apiKey);
+    } catch (sessionErr) {
+      // The only realistic failure here is a misconfigured encryption secret.
+      // Surface the actual cause in logs and the response so operators can
+      // diagnose without reading source.
+      const detail = sessionErr instanceof Error ? sessionErr.message : "Unknown";
+      console.error("Session creation failed:", detail);
+      if (detail.includes("ADMIN_SESSION_SECRET")) {
+        return NextResponse.json(
+          {
+            error: "Server misconfiguration: ADMIN_SESSION_SECRET is missing or too short",
+            hint: "Set ADMIN_SESSION_SECRET to a base64-encoded value of at least 32 bytes and redeploy.",
+          },
+          { status: 500 }
+        );
+      }
+      return NextResponse.json(
+        { error: "Session creation failed", detail },
+        { status: 500 }
+      );
+    }
 
     return NextResponse.json({ ok: true });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
+    console.error("Admin login handler error:", message);
     if (message.includes("fetch") || message.includes("ECONNREFUSED")) {
       return NextResponse.json(
-        { error: "Cannot connect to backend API" },
+        { error: "Cannot connect to backend API", detail: message },
         { status: 502 }
       );
     }
     return NextResponse.json(
-      { error: "Internal error" },
+      { error: "Internal error", detail: message },
       { status: 500 }
     );
   }

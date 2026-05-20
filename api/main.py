@@ -87,14 +87,111 @@ DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:password@db:5432
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379")
 SERVER_SECRET_RAW = os.getenv("SERVER_SECRET")
 
+# Master admin key — gates org provisioning. Unset means the feature is
+# disabled (operator must bootstrap orgs by direct DB insert or seed script).
+# When set in production, MUST be at least 32 chars to resist guessing.
+MASTER_ADMIN_KEY = os.getenv("MASTER_ADMIN_KEY")
+
 # SECURITY: Validate secrets in production
 if ENVIRONMENT != "development":
     if not SERVER_SECRET_RAW:
         raise SystemExit("FATAL: SERVER_SECRET environment variable is required in production")
     if len(SERVER_SECRET_RAW) < 32:
         raise SystemExit("FATAL: SERVER_SECRET must be at least 32 characters")
+    if MASTER_ADMIN_KEY is not None and len(MASTER_ADMIN_KEY) < 32:
+        raise SystemExit("FATAL: MASTER_ADMIN_KEY must be at least 32 characters when set")
 
 SERVER_SECRET = (SERVER_SECRET_RAW or "dev-secret-do-not-use-in-production").encode("utf-8")
+
+
+async def _deliver_webhook(
+    webhook_url: str,
+    event: str,
+    payload: dict,
+    org_id: UUID,
+) -> None:
+    """
+    Fire-and-forget webhook delivery.
+
+    Signs the payload with SERVER_SECRET (HMAC-SHA256) so receivers can verify
+    the request originated from Inntris. Failures are logged but never raised
+    — the audit log is already persisted, the webhook is a notification.
+    """
+    import httpx
+    import hmac
+
+    body = {
+        "event": event,
+        "org_id": str(org_id),
+        "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "data": payload,
+    }
+    canonical = json.dumps(body, sort_keys=True, separators=(",", ":"))
+    signature = hmac.new(SERVER_SECRET, canonical.encode("utf-8"), hashlib.sha256).hexdigest()
+
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            response = await client.post(
+                webhook_url,
+                content=canonical,
+                headers={
+                    "Content-Type": "application/json",
+                    "X-Inntris-Signature": signature,
+                    "X-Inntris-Event": event,
+                    "User-Agent": "Inntris-Webhook/1.0",
+                },
+            )
+            if response.status_code >= 400:
+                logger.warning(
+                    "Webhook delivery returned %s for org %s event %s",
+                    response.status_code, org_id, event,
+                )
+    except Exception as e:
+        logger.warning("Webhook delivery failed for org %s event %s: %s", org_id, event, e)
+
+
+async def _dispatch_verdict_webhook(
+    database: "Database",
+    org_id: UUID,
+    event: str,
+    agent_id: UUID,
+    audit_id: Optional[UUID],
+    action_type: str,
+    verdict: str,
+    verdict_reason: Optional[str],
+) -> None:
+    """
+    Look up the org's webhook_url and schedule a fire-and-forget delivery.
+
+    Returns immediately if the org has no webhook configured. The actual HTTP
+    request is dispatched via ``asyncio.create_task`` so /verify's response
+    time is unaffected.
+    """
+    try:
+        async with database.acquire() as conn:
+            webhook_url = await conn.fetchval(
+                "SELECT webhook_url FROM organizations WHERE id = $1",
+                org_id,
+            )
+        if not webhook_url:
+            return
+        import asyncio
+        asyncio.create_task(
+            _deliver_webhook(
+                webhook_url=webhook_url,
+                event=event,
+                payload={
+                    "agent_id": str(agent_id),
+                    "audit_id": str(audit_id) if audit_id else None,
+                    "action_type": action_type,
+                    "verdict": verdict,
+                    "verdict_reason": verdict_reason,
+                },
+                org_id=org_id,
+            )
+        )
+    except Exception as e:
+        logger.warning("Failed to schedule webhook for org %s: %s", org_id, e)
 
 
 def canonical_wire_timestamp(dt: datetime) -> str:
@@ -212,6 +309,28 @@ async def get_db() -> Database:
 async def get_redis() -> Optional[redis.Redis]:
     """Return the global Redis connection pool."""
     return redis_pool
+
+
+async def verify_master_admin_key(
+    x_master_key: Optional[str] = Header(None, alias="X-Master-Key"),
+) -> None:
+    """
+    Gate for operator-level endpoints that provision new organizations.
+
+    Compares the inbound ``X-Master-Key`` header against the ``MASTER_ADMIN_KEY``
+    env var with constant-time equality. If the env var is unset the endpoint
+    is administratively disabled and always returns 503 — this avoids accidentally
+    leaving the bootstrap endpoint open after the first org has been created
+    if the operator forgot to remove the env var.
+    """
+    if not MASTER_ADMIN_KEY:
+        raise HTTPException(
+            status_code=503,
+            detail="Organization provisioning disabled. Set MASTER_ADMIN_KEY env var to enable.",
+        )
+    if not x_master_key or not secrets.compare_digest(x_master_key, MASTER_ADMIN_KEY):
+        raise HTTPException(status_code=401, detail="Invalid or missing X-Master-Key")
+
 
 async def verify_api_key(
     x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
@@ -968,6 +1087,17 @@ async def verify_action(
             )
             audit_id = await database.insert_audit_log(audit_entry)
 
+            await _dispatch_verdict_webhook(
+                database=database,
+                org_id=agent.org_id,
+                event="verification.signature_invalid",
+                agent_id=agent.id,
+                audit_id=audit_id,
+                action_type=request_data.action_type,
+                verdict=verdict.value,
+                verdict_reason=verdict_reason,
+            )
+
             # Create security alert for invalid signature
             await database.create_security_alert(
                 alert_type="signature_invalid",
@@ -1080,6 +1210,17 @@ async def verify_action(
             )
             audit_id = await database.insert_audit_log(audit_entry)
 
+            await _dispatch_verdict_webhook(
+                database=database,
+                org_id=agent.org_id,
+                event="verification.blocked" if verdict == ActionVerdict.BLOCKED else "verification.rate_limited",
+                agent_id=agent.id,
+                audit_id=audit_id,
+                action_type=request_data.action_type,
+                verdict=verdict.value,
+                verdict_reason=verdict_reason,
+            )
+
             # Update trust score and counters for blocked action
             new_trust_score = TrustScorer.calculate_adjustment(
                 current_score=agent.trust_score,
@@ -1118,6 +1259,17 @@ async def verify_action(
             metadata={},
         )
         audit_id = await database.insert_audit_log(audit_entry)
+
+        await _dispatch_verdict_webhook(
+            database=database,
+            org_id=agent.org_id,
+            event="verification.approved",
+            agent_id=agent.id,
+            audit_id=audit_id,
+            action_type=request_data.action_type,
+            verdict=verdict.value,
+            verdict_reason=verdict_reason,
+        )
 
         # STEP 7: Update rate limit counters
         amount = policy_engine._extract_amount(request_data.payload) or Decimal("0")
@@ -2319,3 +2471,156 @@ async def get_organization(
     except Exception as e:
         logger.error(f"Error fetching organization {org_id}: {type(e).__name__}: {e}")
         raise HTTPException(status_code=500, detail=f"Error fetching organization: {type(e).__name__}")
+
+
+@app.patch("/admin/organization", tags=["Admin - Organization"])
+async def update_organization(
+    body: dict,
+    auth: dict = Depends(verify_api_key),
+    database: Database = Depends(get_db),
+):
+    """
+    Update mutable fields on the authenticated caller's organization.
+
+    Accepted fields: ``name``, ``contact_email``, ``webhook_url``. Other fields
+    are ignored. Pass ``webhook_url: null`` (or empty string) to clear an
+    existing webhook.
+    """
+    org_id = auth["org_id"]
+
+    updates: list[tuple[str, object]] = []
+    if "name" in body:
+        name = (body.get("name") or "").strip()
+        if not name or len(name) > 255:
+            raise HTTPException(status_code=400, detail="name must be 1–255 chars")
+        updates.append(("name", name))
+    if "contact_email" in body:
+        email = (body.get("contact_email") or "").strip()
+        if not email or len(email) > 255 or "@" not in email:
+            raise HTTPException(status_code=400, detail="contact_email must be a valid email")
+        updates.append(("contact_email", email))
+    if "webhook_url" in body:
+        raw = body.get("webhook_url")
+        if raw is None or raw == "":
+            updates.append(("webhook_url", None))
+        else:
+            url = str(raw).strip()
+            if not url.startswith(("http://", "https://")) or len(url) > 2048:
+                raise HTTPException(
+                    status_code=400,
+                    detail="webhook_url must be an http(s) URL under 2048 chars",
+                )
+            updates.append(("webhook_url", url))
+
+    if not updates:
+        raise HTTPException(status_code=400, detail="No updatable fields provided")
+
+    set_clause = ", ".join(f"{col} = ${i+2}" for i, (col, _) in enumerate(updates))
+    values = [v for _, v in updates]
+
+    async with database.acquire() as conn:
+        result = await conn.execute(
+            f"UPDATE organizations SET {set_clause}, updated_at = NOW() WHERE id = $1",
+            org_id, *values,
+        )
+
+    if result == "UPDATE 0":
+        raise HTTPException(status_code=404, detail="Organization not found")
+
+    return {"updated": [col for col, _ in updates]}
+
+
+# =============================================================================
+# OPERATOR ENDPOINTS - ORGANIZATION PROVISIONING
+# =============================================================================
+# Gated behind ``MASTER_ADMIN_KEY``. The first admin key for a brand-new org
+# is returned plaintext exactly once — operators must capture it on the
+# response. There is no way to retrieve it later.
+
+@app.post("/admin/organizations", tags=["Operator"], status_code=201)
+async def create_organization_endpoint(
+    body: dict,
+    database: Database = Depends(get_db),
+    _: None = Depends(verify_master_admin_key),
+):
+    """
+    Provision a new organization plus its first admin API key.
+
+    Requires the ``X-Master-Key`` header to match the ``MASTER_ADMIN_KEY``
+    environment variable. Intended for operator tooling — not for partner
+    self-signup.
+
+    Request body:
+        name           (str, required) — organization display name
+        contact_email  (str, required) — primary contact email
+        billing_tier   (str, optional) — "free" | "starter" | "professional" | "enterprise", default "free"
+        webhook_url    (str, optional) — http(s) URL for verdict callbacks
+
+    Returns:
+        organization_id, api_key (PLAINTEXT, shown once), key_id, key_prefix
+    """
+    name = (body.get("name") or "").strip()
+    contact_email = (body.get("contact_email") or "").strip()
+    billing_tier = body.get("billing_tier") or "free"
+    webhook_url = body.get("webhook_url") or None
+
+    if not name or len(name) > 255:
+        raise HTTPException(status_code=400, detail="name is required (1–255 chars)")
+    if not contact_email or "@" not in contact_email or len(contact_email) > 255:
+        raise HTTPException(status_code=400, detail="contact_email must be a valid email")
+    if billing_tier not in ("free", "starter", "professional", "enterprise"):
+        raise HTTPException(
+            status_code=400,
+            detail="billing_tier must be one of: free, starter, professional, enterprise",
+        )
+    if webhook_url is not None:
+        webhook_url = str(webhook_url).strip()
+        if webhook_url and (
+            not webhook_url.startswith(("http://", "https://")) or len(webhook_url) > 2048
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail="webhook_url must be an http(s) URL under 2048 chars",
+            )
+        webhook_url = webhook_url or None
+
+    raw_key = f"inntris_live_sk_{secrets.token_urlsafe(32)}"
+    key_hash = hashlib.sha256(raw_key.encode()).digest()
+    key_prefix = raw_key[16:24]
+
+    async with database.acquire() as conn:
+        async with conn.transaction():
+            org_id = await conn.fetchval(
+                """
+                INSERT INTO organizations (
+                    name, contact_email, billing_tier, api_key_hash, webhook_url
+                )
+                VALUES ($1, $2, $3, $4, $5)
+                RETURNING id
+                """,
+                name, contact_email, billing_tier, key_hash, webhook_url,
+            )
+            key_id = await conn.fetchval(
+                """
+                INSERT INTO api_keys (
+                    org_id, key_hash, key_prefix, name, scopes, is_active
+                )
+                VALUES ($1, $2, $3, $4, $5, true)
+                RETURNING id
+                """,
+                org_id,
+                key_hash,
+                key_prefix,
+                "Bootstrap Admin Key",
+                ["admin", "read", "write", "verify"],
+            )
+
+    logger.info("Provisioned organization %s with bootstrap key %s", org_id, key_id)
+
+    return {
+        "organization_id": str(org_id),
+        "key_id": str(key_id),
+        "key_prefix": key_prefix,
+        "api_key": raw_key,
+        "message": "Save this api_key now — it will never be shown again.",
+    }

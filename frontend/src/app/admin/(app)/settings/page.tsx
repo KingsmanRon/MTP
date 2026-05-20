@@ -8,8 +8,8 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { LoadingState } from "@/components/loading-state";
 import { formatCurrency } from "@/lib/utils";
-import { useOrganization } from "@/lib/hooks";
-import { Building2, CreditCard, Bell, Shield, AlertCircle } from "lucide-react";
+import { useOrganization, useUpdateOrganization } from "@/lib/hooks";
+import { Building2, CreditCard, Bell, Shield, AlertCircle, Check } from "lucide-react";
 
 const tierFeatures = {
   free: { agents: 2, verifications: "1K/month", support: "Community" },
@@ -20,10 +20,15 @@ const tierFeatures = {
 
 export default function SettingsPage() {
   const { data: organization, isLoading, error } = useOrganization();
+  const updateOrg = useUpdateOrganization();
 
   const [orgName, setOrgName] = useState("");
   const [contactEmail, setContactEmail] = useState("");
   const [webhookUrl, setWebhookUrl] = useState("");
+  const [generalSaveStatus, setGeneralSaveStatus] = useState<"idle" | "success" | "error">("idle");
+  const [webhookSaveStatus, setWebhookSaveStatus] = useState<"idle" | "success" | "error">("idle");
+  const [generalError, setGeneralError] = useState<string | null>(null);
+  const [webhookError, setWebhookError] = useState<string | null>(null);
 
   useEffect(() => {
     if (organization) {
@@ -32,6 +37,32 @@ export default function SettingsPage() {
       setWebhookUrl(organization.webhook_url || "");
     }
   }, [organization]);
+
+  const handleSaveGeneral = async () => {
+    setGeneralSaveStatus("idle");
+    setGeneralError(null);
+    try {
+      await updateOrg.mutateAsync({ name: orgName, contact_email: contactEmail });
+      setGeneralSaveStatus("success");
+      setTimeout(() => setGeneralSaveStatus("idle"), 2500);
+    } catch (e) {
+      setGeneralSaveStatus("error");
+      setGeneralError(e instanceof Error ? e.message : "Failed to save");
+    }
+  };
+
+  const handleSaveWebhook = async () => {
+    setWebhookSaveStatus("idle");
+    setWebhookError(null);
+    try {
+      await updateOrg.mutateAsync({ webhook_url: webhookUrl.trim() || null });
+      setWebhookSaveStatus("success");
+      setTimeout(() => setWebhookSaveStatus("idle"), 2500);
+    } catch (e) {
+      setWebhookSaveStatus("error");
+      setWebhookError(e instanceof Error ? e.message : "Failed to save");
+    }
+  };
 
   if (isLoading) {
     return <LoadingState message="Loading settings..." />;
@@ -106,8 +137,18 @@ export default function SettingsPage() {
                   onChange={(e) => setContactEmail(e.target.value)}
                 />
               </div>
-              <div className="flex justify-end">
-                <Button>Save Changes</Button>
+              <div className="flex items-center justify-end gap-3">
+                {generalSaveStatus === "success" && (
+                  <span className="flex items-center gap-1 text-sm text-green-500">
+                    <Check className="h-4 w-4" /> Saved
+                  </span>
+                )}
+                {generalSaveStatus === "error" && generalError && (
+                  <span className="text-sm text-destructive">{generalError}</span>
+                )}
+                <Button onClick={handleSaveGeneral} disabled={updateOrg.isPending}>
+                  {updateOrg.isPending ? "Saving..." : "Save Changes"}
+                </Button>
               </div>
             </CardContent>
           </Card>
@@ -220,9 +261,18 @@ export default function SettingsPage() {
                   ))}
                 </div>
               </div>
-              <div className="flex justify-end gap-2">
-                <Button variant="outline">Test Webhook</Button>
-                <Button>Save Configuration</Button>
+              <div className="flex items-center justify-end gap-3">
+                {webhookSaveStatus === "success" && (
+                  <span className="flex items-center gap-1 text-sm text-green-500">
+                    <Check className="h-4 w-4" /> Saved
+                  </span>
+                )}
+                {webhookSaveStatus === "error" && webhookError && (
+                  <span className="text-sm text-destructive">{webhookError}</span>
+                )}
+                <Button onClick={handleSaveWebhook} disabled={updateOrg.isPending}>
+                  {updateOrg.isPending ? "Saving..." : "Save Configuration"}
+                </Button>
               </div>
             </CardContent>
           </Card>
