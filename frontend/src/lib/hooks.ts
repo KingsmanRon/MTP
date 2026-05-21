@@ -113,6 +113,35 @@ export function useUpdateAgentStatus() {
   });
 }
 
+export interface RegisterAgentInput {
+  name: string;
+  public_key: string;
+  daily_limit_usd?: number;
+  per_action_limit_usd?: number;
+  allowed_actions?: string[];
+  metadata?: Record<string, unknown>;
+}
+
+export interface RegisterAgentResult {
+  agent_id: string;
+  public_key_fingerprint: string;
+  status: string;
+}
+
+export function useRegisterAgent() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: RegisterAgentInput) =>
+      apiJson<RegisterAgentResult>("/api/admin/agents", {
+        method: "POST",
+        body: JSON.stringify(input),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["agents"] });
+    },
+  });
+}
+
 // =============================================================================
 // AUDIT LOG HOOKS
 // =============================================================================
@@ -248,6 +277,26 @@ export function useOrganization() {
   return useQuery({
     queryKey: ["organization"],
     queryFn: () => apiJson<OrganizationRecord>("/api/admin/organization"),
+  });
+}
+
+export interface UpdateOrganizationInput {
+  name?: string;
+  contact_email?: string;
+  webhook_url?: string | null;
+}
+
+export function useUpdateOrganization() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: UpdateOrganizationInput) =>
+      apiJson<{ updated: string[] }>("/api/admin/organization", {
+        method: "PATCH",
+        body: JSON.stringify(input),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["organization"] });
+    },
   });
 }
 

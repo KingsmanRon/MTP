@@ -381,24 +381,30 @@ cd ./tests
 ./production_test.sh
 ```
 
-Or manually:
+Manually (requires `MASTER_ADMIN_KEY` set on the backend):
 ```bash
 curl -X POST https://YOUR_RAILWAY_URL.up.railway.app/admin/organizations \
   -H "Content-Type: application/json" \
-  -H "X-Admin-Key: YOUR_MASTER_ADMIN_KEY" \
+  -H "X-Master-Key: YOUR_MASTER_ADMIN_KEY" \
   -d '{
     "name": "Test Organization",
     "contact_email": "admin@example.com",
-    "billing_tier": "professional"
+    "billing_tier": "professional",
+    "webhook_url": "https://your-server.com/webhooks/inntris"
   }'
 
-# RESPONSE - SAVE THIS!
+# RESPONSE (201) - SAVE THE api_key!
 {
   "organization_id": "uuid-here",
-  "api_key": "inntris_live_...",  # SAVE THIS - SHOWN ONLY ONCE!
-  "message": "Store this API key securely..."
+  "key_id": "uuid-here",
+  "key_prefix": "abc12345",
+  "api_key": "inntris_live_sk_...",   # SHOWN ONLY ONCE
+  "message": "Save this api_key now — it will never be shown again."
 }
 ```
+
+If you see `503 Organization provisioning disabled`, set the
+`MASTER_ADMIN_KEY` env var on the backend and redeploy.
 
 ### 5.3 Register First Agent
 ```bash
@@ -431,18 +437,24 @@ curl -X POST https://YOUR_RAILWAY_URL.up.railway.app/admin/agents \
 # RESPONSE - SAVE AGENT ID!
 {
   "agent_id": "agent-uuid-here",
-  "message": "Agent registered successfully",
-  ...
+  "public_key_fingerprint": "sha256-hex-fingerprint",
+  "status": "pending_verification"
 }
 ```
 
+Or skip the curl and use the admin console: log in to `/admin/login`,
+go to **Agents → Register Agent**, and paste the public key.
+
 ### 5.4 Test Action Verification
 ```bash
-# This requires the MCP server setup - see MCP_SETUP.md
-# Or test directly with the API:
-
-# See production_test.sh script for full example
+# Run the demo script with your agent's private key + agent_id:
+python scripts/demo_verification.py \
+  --api-url https://YOUR_RAILWAY_URL.up.railway.app \
+  --agent-id YOUR_AGENT_UUID \
+  --private-key YOUR_BASE64_PRIVATE_KEY
 ```
+The script signs and submits a /verify call. A successful run returns
+verdict `approved` and a populated `audit_id` — that's a receipt.
 
 ---
 
