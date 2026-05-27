@@ -90,7 +90,39 @@ SERVER_SECRET_RAW = os.getenv("SERVER_SECRET")
 # Master admin key — gates org provisioning. Unset means the feature is
 # disabled (operator must bootstrap orgs by direct DB insert or seed script).
 # When set in production, MUST be at least 32 chars to resist guessing.
-MASTER_ADMIN_KEY = os.getenv("MASTER_ADMIN_KEY")
+MASTER_ADMIN_KEY_RAW = os.getenv("MASTER_ADMIN_KEY")
+
+
+def _resolve_master_admin_key(raw: Optional[str]) -> Optional[str]:
+    """Normalize ``MASTER_ADMIN_KEY`` and fail closed on weak values.
+
+    Behavior:
+    - unset / empty / whitespace-only -> ``None`` (feature disabled)
+    - length < 32 -> ``None`` with an explicit warning (feature disabled)
+    - otherwise return the trimmed key
+
+    This avoids crash-loop deployments when operators accidentally set a short
+    key while preserving security: org provisioning remains unavailable until
+    a strong key is configured.
+    """
+    if raw is None:
+        return None
+
+    candidate = raw.strip()
+    if not candidate:
+        return None
+
+    if len(candidate) < 32:
+        logger.warning(
+            "MASTER_ADMIN_KEY is set but shorter than 32 characters; "
+            "organization provisioning is disabled until a strong key is configured"
+        )
+        return None
+
+    return candidate
+
+
+MASTER_ADMIN_KEY = _resolve_master_admin_key(MASTER_ADMIN_KEY_RAW)
 
 # SECURITY: Validate secrets in production
 if ENVIRONMENT != "development":
@@ -98,8 +130,6 @@ if ENVIRONMENT != "development":
         raise SystemExit("FATAL: SERVER_SECRET environment variable is required in production")
     if len(SERVER_SECRET_RAW) < 32:
         raise SystemExit("FATAL: SERVER_SECRET must be at least 32 characters")
-    if MASTER_ADMIN_KEY is not None and len(MASTER_ADMIN_KEY) < 32:
-        raise SystemExit("FATAL: MASTER_ADMIN_KEY must be at least 32 characters when set")
 
 SERVER_SECRET = (SERVER_SECRET_RAW or "dev-secret-do-not-use-in-production").encode("utf-8")
 
