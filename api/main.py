@@ -1550,7 +1550,7 @@ async def _get_or_create_events_agent(
     placeholder_pubkey = hashlib.sha256(
         f"events-v1-ingest:{org_id}".encode()
     ).digest()
-    return await database.create_agent(
+    agent_id = await database.create_agent(
         org_id=org_id,
         name="events-v1-ingest",
         public_key=placeholder_pubkey,
@@ -1560,6 +1560,16 @@ async def _get_or_create_events_agent(
             "non_cryptographic": True,
         },
     )
+    # Ingestion agents skip the Ed25519 /verify path that activates normal
+    # agents, so they would stay at the DB default 'pending_verification' and
+    # never count toward the admin dashboard's Active Agents tally. Mark them
+    # active on creation.
+    async with database.acquire() as conn:
+        await conn.execute(
+            "UPDATE agents SET status = 'active' WHERE id = $1",
+            agent_id,
+        )
+    return agent_id
 
 
 @app.post("/v1/events", status_code=201, tags=["Partner Ingestion"])
@@ -1613,6 +1623,23 @@ async def ingest_event_v1(
         metadata={"source": "events_v1", "key_id": str(key_id)},
     )
     audit_id = await database.insert_audit_log(audit_entry)
+
+    # Keep the agent's activity counters current so the admin dashboard
+    # reflects ingested events. /verify does this via
+    # update_agent_after_verification; this bearer path has no equivalent, so
+    # update directly here (updated_at is set explicitly because prod agents
+    # carry no updated_at trigger — see PR #84).
+    async with database.acquire() as conn:
+        await conn.execute(
+            """
+            UPDATE agents
+            SET last_action_at = NOW(),
+                total_actions_count = total_actions_count + 1,
+                updated_at = NOW()
+            WHERE id = $1
+            """,
+            agent_id,
+        )
 
     return {
         "status": "accepted",
