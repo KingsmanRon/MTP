@@ -12,8 +12,8 @@ models reject:
   into an ``ipaddress.IPv4Address`` object, but ``AuditLogSummary.request_ip``
   expects a ``str``.
 """
-from ipaddress import IPv4Address
 from datetime import datetime, timezone
+from ipaddress import IPv4Address
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
