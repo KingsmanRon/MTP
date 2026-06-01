@@ -1471,6 +1471,159 @@ async def test_verify_action(
 
 
 # =============================================================================
+# PARTNER INGESTION ENDPOINTS (V1)
+# =============================================================================
+# Bearer-authenticated event ingestion for partner integrations that do not
+# sign per-event with Ed25519. Each event becomes a single audit_logs row
+# attributed to the org's synthetic ``events-v1-ingest`` agent and tagged
+# ``source: "events_v1"`` so it is distinguishable from cryptographically
+# signed /verify traffic. Ingested events flow through the same Merkle
+# anchoring pipeline as /verify entries.
+
+async def _verify_bearer_token(
+    authorization: Optional[str],
+    database: "Database",
+) -> dict:
+    """Validate ``Authorization: Bearer <token>`` against ``api_keys.key_hash``.
+
+    The hashing scheme matches ``verify_api_key`` so a single issued key works
+    interchangeably with the ``X-API-Key`` admin path and the bearer events
+    path.
+    """
+    if not authorization or not authorization.lower().startswith("bearer "):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing or malformed Authorization header (expected: Bearer <token>)",
+        )
+    token = authorization[7:].strip()
+    if not token:
+        raise HTTPException(status_code=401, detail="Empty bearer token")
+
+    key_hash = hashlib.sha256(token.encode()).digest()
+    async with database.acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            SELECT ak.id, ak.org_id, ak.is_active, ak.expires_at
+            FROM api_keys ak
+            WHERE ak.key_hash = $1
+            """,
+            key_hash,
+        )
+    if not row:
+        raise HTTPException(status_code=401, detail="Invalid bearer token")
+    if not row["is_active"]:
+        raise HTTPException(status_code=401, detail="Bearer token is inactive")
+    if row["expires_at"] and row["expires_at"] < datetime.now(timezone.utc):
+        raise HTTPException(status_code=401, detail="Bearer token has expired")
+
+    async with database.acquire() as conn:
+        await conn.execute(
+            "UPDATE api_keys SET last_used_at = NOW() WHERE id = $1",
+            row["id"],
+        )
+
+    return {"key_id": row["id"], "org_id": row["org_id"]}
+
+
+async def _get_or_create_events_agent(
+    database: "Database",
+    org_id: UUID,
+) -> UUID:
+    """Return the events-v1 ingestion agent for ``org_id``, creating it if missing.
+
+    The synthetic agent has a deterministic 32-byte ``public_key`` derived from
+    ``org_id`` so repeated calls return the same agent. The key is never used
+    for signature verification — the /v1/events path skips that check.
+    """
+    async with database.acquire() as conn:
+        agent_id = await conn.fetchval(
+            """
+            SELECT id FROM agents
+            WHERE org_id = $1 AND name = 'events-v1-ingest'
+            LIMIT 1
+            """,
+            org_id,
+        )
+    if agent_id:
+        return agent_id
+
+    placeholder_pubkey = hashlib.sha256(
+        f"events-v1-ingest:{org_id}".encode()
+    ).digest()
+    return await database.create_agent(
+        org_id=org_id,
+        name="events-v1-ingest",
+        public_key=placeholder_pubkey,
+        allowed_actions=["events_v1_ingest"],
+        metadata={
+            "source": "events_v1_bootstrap",
+            "non_cryptographic": True,
+        },
+    )
+
+
+@app.post("/v1/events", status_code=201, tags=["Partner Ingestion"])
+async def ingest_event_v1(
+    body: dict,
+    request: Request,
+    authorization: Optional[str] = Header(None, alias="Authorization"),
+    database: Database = Depends(get_db),
+):
+    """Bearer-authenticated event ingestion for partner integrations.
+
+    Accepts a free-form JSON event body and persists it as a single audit_logs
+    row attributed to the org's synthetic events-v1 agent. Returns 201 with
+    the assigned ``audit_id`` so partners can correlate their WAL entries with
+    server-side records.
+    """
+    auth_info = await _verify_bearer_token(authorization, database)
+    org_id = auth_info["org_id"]
+    key_id = auth_info["key_id"]
+
+    agent_id = await _get_or_create_events_agent(database, org_id)
+
+    event_payload = body if isinstance(body, dict) else {"raw": body}
+    action_type = (
+        str(
+            event_payload.get("event_type")
+            or event_payload.get("type")
+            or "events_v1"
+        )[:100]
+        or "events_v1"
+    )
+
+    canonical = json.dumps(event_payload, sort_keys=True, separators=(",", ":"))
+    action_hash = hashlib.sha256(canonical.encode()).hexdigest()
+
+    audit_entry = AuditLogEntry(
+        agent_id=agent_id,
+        action_type=action_type,
+        action_hash=action_hash,
+        payload=event_payload,
+        verdict=ActionVerdict.APPROVED,
+        verdict_reason="events_v1 ingestion",
+        signature=b"V1_EVENTS_INGEST",
+        signature_valid=True,
+        request_ip=request.client.host if request.client else None,
+        request_user_agent=request.headers.get("User-Agent"),
+        response_time_ms=0,
+        trust_score_at_time=100,
+        chain_previous_hash=await database.get_last_audit_hash(agent_id),
+        policy_hash=None,
+        metadata={"source": "events_v1", "key_id": str(key_id)},
+    )
+    audit_id = await database.insert_audit_log(audit_entry)
+
+    return {
+        "status": "accepted",
+        "audit_id": str(audit_id),
+        "org_id": str(org_id),
+        "agent_id": str(agent_id),
+        "ingested_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+    }
+
+
+# =============================================================================
 # ADMIN ENDPOINTS - AGENTS
 # =============================================================================
 
