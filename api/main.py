@@ -1670,7 +1670,7 @@ async def list_agents(
             "total_blocked_count": row["total_blocked_count"],
             "metadata": row["metadata"] if row["metadata"] else {},
             "created_at": row["created_at"].isoformat(),
-            "updated_at": row["updated_at"].isoformat(),
+            "updated_at": row["updated_at"].isoformat() if row["updated_at"] else None,
         })
 
     return agents
@@ -1706,7 +1706,7 @@ async def get_agent(
             "total_blocked_count": agent.total_blocked_count,
             "metadata": agent.metadata,
             "created_at": agent.created_at.isoformat(),
-            "updated_at": agent.updated_at.isoformat(),
+            "updated_at": agent.updated_at.isoformat() if agent.updated_at else None,
         }
     except AgentNotFoundError:
         raise HTTPException(status_code=404, detail="Agent not found")
@@ -1927,7 +1927,7 @@ async def update_agent(
             "total_blocked_count": row["total_blocked_count"],
             "metadata": row["metadata"] if row["metadata"] else {},
             "created_at": row["created_at"].isoformat(),
-            "updated_at": row["updated_at"].isoformat(),
+            "updated_at": row["updated_at"].isoformat() if row["updated_at"] else None,
         }
     except AgentNotFoundError:
         raise HTTPException(status_code=404, detail="Agent not found")
