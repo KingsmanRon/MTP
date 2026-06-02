@@ -49,7 +49,7 @@ const statusLabel: Record<AgentStatus, string> = {
 function AgentsContent() {
   const { data: agents, loading, error, refetch } = useAdminFetch<MappedAgent[]>(
     "/api/admin/agents",
-    { transform: mapAgents }
+    { transform: mapAgents, refetchInterval: 15_000 }
   );
   const [showRegisterDialog, setShowRegisterDialog] = useState(false);
 

@@ -40,6 +40,7 @@ function AgentDetailContent({ id }: { id: string }) {
   const { data: agent, loading: agentLoading, error: agentError, refetch: refetchAgent } =
     useAdminFetch<MappedAgent>(`/api/admin/agents/${id}`, {
       transform: (raw) => mapAgent(raw) ?? { id },
+      refetchInterval: 15_000,
     });
 
   const { data: auditData, loading: auditLoading, error: auditError, refetch: refetchAudit } =
