@@ -52,6 +52,7 @@ function AuditContent() {
   const { data: auditData, loading, error, refetch } =
     useAdminFetch<MappedAuditSearchResult>(queryUrl, {
       transform: mapAuditSearchResult,
+      refetchInterval: 30_000,
     });
 
   // Fetch agent list for filter dropdown

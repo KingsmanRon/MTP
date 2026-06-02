@@ -46,7 +46,7 @@ function AgentDetailContent({ id }: { id: string }) {
   const { data: auditData, loading: auditLoading, error: auditError, refetch: refetchAudit } =
     useAdminFetch<MappedAuditSearchResult>(
       `/api/admin/audit/search?agent_id=${id}&limit=${PAGE_SIZE}&offset=${offset}`,
-      { transform: mapAuditSearchResult }
+      { transform: mapAuditSearchResult, refetchInterval: 30_000 }
     );
 
   if (agentError) {
