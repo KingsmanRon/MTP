@@ -118,3 +118,60 @@ def test_search_audit_logs_serializes_inet_request_ip():
     body = response.json()
     assert body["total"] == 1
     assert body["logs"][0]["request_ip"] == "100.64.0.10"
+    # Unanchored row (no joined merkle_proofs match): on-chain fields are null,
+    # so the admin UI correctly shows "Pending".
+    assert body["logs"][0]["transaction_hash"] is None
+    assert body["logs"][0]["tx_hash"] is None
+
+
+def test_search_audit_logs_surfaces_transaction_hash_when_anchored():
+    """Anchored rows must expose the on-chain tx hash so the UI shows 'Anchored'.
+
+    Regression: GET /admin/audit/search previously returned only merkle_root_id,
+    so the dashboard/audit list badge (which keys on transaction_hash) was stuck
+    on "Pending" even after a batch was confirmed on Base. The LEFT JOIN to
+    merkle_proofs surfaces transaction_hash / chain_id / block_number per row.
+    """
+    now = datetime.now(timezone.utc)
+    tx_hash = "0x" + "ab" * 32  # 66-char Base L2 tx hash
+    log_row = {
+        "id": uuid4(),
+        "agent_id": uuid4(),
+        "agent_name": "events-bootstrap",
+        "timestamp": now,
+        "action_type": "events_v1",
+        "action_hash": "deadbeef",
+        "payload": {"k": "v"},
+        "verdict": "approved",
+        "verdict_reason": None,
+        "signature_valid": True,
+        "request_ip": None,
+        "request_user_agent": None,
+        "response_time_ms": 0,
+        "trust_score_at_time": 100,
+        "merkle_root_id": uuid4(),
+        "merkle_leaf_index": 0,
+        # Columns produced by the LEFT JOIN merkle_proofs in the query.
+        "transaction_hash": tx_hash,
+        "chain_id": 8453,
+        "block_number": 46764053,
+    }
+
+    conn = AsyncMock()
+    conn.fetchval = AsyncMock(return_value=1)
+    conn.fetch = AsyncMock(return_value=[log_row])
+    db_mock = _acquire_returning(conn)
+
+    app.dependency_overrides[get_db] = lambda: db_mock
+    app.dependency_overrides[verify_api_key] = lambda: {"org_id": ORG_ID}
+    try:
+        response = client.get("/admin/audit/search?limit=10&offset=0")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200, response.text
+    log = response.json()["logs"][0]
+    assert log["transaction_hash"] == tx_hash
+    assert log["tx_hash"] == tx_hash
+    assert log["chain_id"] == 8453
+    assert log["block_number"] == 46764053

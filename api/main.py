@@ -2041,15 +2041,23 @@ async def search_audit_logs(
         WHERE {where_sql}
     """
 
-    # Fetch logs
+    # Fetch logs.
+    # LEFT JOIN merkle_proofs so each row carries its on-chain anchor state.
+    # Without this join the response only had merkle_root_id (a FK), so the
+    # admin dashboard/audit list — whose "On-chain" badge keys on
+    # transaction_hash — showed every row as "Pending" even after the batch
+    # was successfully anchored on Base. The per-row detail still has its own
+    # /admin/audit/{id}/proof call; this just surfaces the same fact in lists.
     query = f"""
         SELECT al.id, al.agent_id, a.name as agent_name, al.timestamp,
                al.action_type, al.action_hash, al.payload, al.verdict,
                al.verdict_reason, al.signature_valid, al.request_ip,
                al.request_user_agent, al.response_time_ms, al.trust_score_at_time,
-               al.merkle_root_id, al.merkle_leaf_index
+               al.merkle_root_id, al.merkle_leaf_index,
+               mp.transaction_hash, mp.chain_id, mp.block_number
         FROM audit_logs al
         JOIN agents a ON al.agent_id = a.id
+        LEFT JOIN merkle_proofs mp ON al.merkle_root_id = mp.id
         WHERE {where_sql}
         ORDER BY al.timestamp DESC
         LIMIT ${param_idx} OFFSET ${param_idx + 1}
@@ -2079,6 +2087,13 @@ async def search_audit_logs(
             "trust_score_at_time": row["trust_score_at_time"],
             "merkle_root_id": str(row["merkle_root_id"]) if row["merkle_root_id"] else None,
             "merkle_leaf_index": row["merkle_leaf_index"],
+            # On-chain anchor info from the joined merkle_proofs row (NULL until
+            # the batch is anchored). ``transaction_hash`` is the key the admin
+            # UI reads; ``tx_hash`` is kept as a legacy alias for the same value.
+            "transaction_hash": row.get("transaction_hash"),
+            "tx_hash": row.get("transaction_hash"),
+            "chain_id": row.get("chain_id"),
+            "block_number": row.get("block_number"),
         })
 
     return {"logs": logs, "total": total, "limit": limit, "offset": offset}
