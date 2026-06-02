@@ -116,7 +116,13 @@ class AuditLogSummary(BaseModel):
     violations: Optional[list[str]] = None
     merkle_root_id: Optional[str] = None
     merkle_leaf_index: Optional[int] = None
+    # On-chain anchor fields, joined from merkle_proofs. ``transaction_hash`` is
+    # what the admin UI keys its "Anchored / Pending" badge on; ``tx_hash`` is a
+    # legacy alias carrying the same value. NULL until the batch is anchored.
+    transaction_hash: Optional[str] = None
     tx_hash: Optional[str] = None
+    chain_id: Optional[int] = None
+    block_number: Optional[int] = None
     policy_hash: Optional[str] = None
     metadata: Optional[dict[str, Any]] = None
 
