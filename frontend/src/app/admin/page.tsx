@@ -13,11 +13,12 @@ import Link from "next/link";
 function DashboardContent() {
   const agents = useAdminFetch<MappedAgent[]>("/api/admin/agents", {
     transform: mapAgents,
+    refetchInterval: 30_000,
   });
 
   const audit = useAdminFetch<MappedAuditSearchResult>(
     "/api/admin/audit/search?limit=10&offset=0",
-    { transform: mapAuditSearchResult }
+    { transform: mapAuditSearchResult, refetchInterval: 30_000 }
   );
 
   const agentList = agents.data ?? [];
