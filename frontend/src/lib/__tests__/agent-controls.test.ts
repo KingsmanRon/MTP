@@ -29,6 +29,14 @@ describe("agent controls", () => {
     const result = buildActionPolicyLists([], [], []);
 
     expect(result.allowed_actions).toEqual([]);
-    expect(result.blocked_actions).toHaveLength(6);
+    expect(result.blocked_actions).toHaveLength(10);
+  });
+
+  it("ships a code and release preset that blocks merge and deployment", () => {
+    const preset = AGENT_CONTROL_PRESETS.find((candidate) => candidate.id === "code_release_guard");
+
+    expect(preset?.allowed).toContain("repo_change");
+    expect(preset?.allowed).not.toContain("protected_branch_merge");
+    expect(preset?.allowed).not.toContain("production_deployment");
   });
 });

@@ -36,6 +36,7 @@ describe("AgentControlPanel", () => {
     expect(screen.getByLabelText("Rate limit")).toHaveValue(30);
     expect(screen.getByLabelText("Financial transactions decision")).toHaveValue("allow");
     expect(screen.getByLabelText("Administrative actions decision")).toHaveValue("block");
+    expect(screen.getByLabelText("Protected branch merges decision")).toHaveValue("block");
 
     fireEvent.click(screen.getByRole("button", { name: "Save controls" }));
 
@@ -51,6 +52,8 @@ describe("AgentControlPanel", () => {
     ]);
     expect(body.blocked_actions).toContain("repo_change");
     expect(body.blocked_actions).toContain("admin_action");
+    expect(body.blocked_actions).toContain("protected_branch_merge");
+    expect(body.blocked_actions).toContain("production_deployment");
     expect(body.daily_limit_usd).toBe(1000);
     expect(body.per_action_limit_usd).toBe(100);
     await waitFor(() => expect(onSaved).toHaveBeenCalled());

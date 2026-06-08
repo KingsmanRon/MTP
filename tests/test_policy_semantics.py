@@ -21,7 +21,8 @@ def _agent(allowed_actions=None, trust_score=50, status=AgentStatus.ACTIVE):
         allowed_actions=allowed_actions or [
             "tool_call", "promptfoo_eval", "repo_change",
             "data_export", "admin_action", "financial_transaction",
-            "email_send", "api_call",
+            "email_send", "api_call", "ci_workflow_change",
+            "protected_branch_merge", "production_deployment",
         ],
         blocked_actions=[],
         rate_limit_per_minute=60,
@@ -112,6 +113,34 @@ class TestRuntimeActions:
             agent=agent,
             action_type="data_export",
             payload={},
+            timestamp=datetime.now(timezone.utc),
+        )
+        assert result.verdict == ActionVerdict.BLOCKED
+
+    def test_protected_branch_merge_threshold_is_80(self):
+        engine = PolicyEngine()
+        result = engine.evaluate(
+            agent=_agent(trust_score=79),
+            action_type="protected_branch_merge",
+            payload={"base_branch": "main"},
+            timestamp=datetime.now(timezone.utc),
+        )
+        assert result.verdict == ActionVerdict.BLOCKED
+
+        result = engine.evaluate(
+            agent=_agent(trust_score=80),
+            action_type="protected_branch_merge",
+            payload={"base_branch": "main"},
+            timestamp=datetime.now(timezone.utc),
+        )
+        assert result.verdict == ActionVerdict.APPROVED
+
+    def test_production_deployment_threshold_is_80(self):
+        engine = PolicyEngine()
+        result = engine.evaluate(
+            agent=_agent(trust_score=79),
+            action_type="production_deployment",
+            payload={"environment": "production"},
             timestamp=datetime.now(timezone.utc),
         )
         assert result.verdict == ActionVerdict.BLOCKED

@@ -120,8 +120,8 @@ risk tag (see §4 if relevant).
 
 **T2. Retroactive receipt fingerprint forgery.** An attacker controls a frontend display but wants to render a receipt with a different verdict/policy.
 - `receipt_fingerprint` is recomputed from the canonical wire fields (`api/main.py:658-674`). Frontend recomputes the same fingerprint from the wire JSON and compares (`frontend/src/lib/proof-state.ts` and `verify-record-client.tsx`).
-- `policy_hash` is inside the signed action hash envelope, not a sidecar (`api/main.py:849-856`, verified via the Ed25519 signature).
-- Schema version v2 requires `policy_hash` to be bound (`api/main.py:676-688`).
+- `policy_hash` is stored on the immutable audit row and included in the canonical v2 receipt fingerprint (`api/main.py:889-922`, `frontend/src/lib/proof-state.ts`).
+- **Residual**: the current agent Ed25519 signing envelope does not include `policy_hash` (`api/crypto.py:157-232`). A future signing-envelope version must bind the active server-owned policy hash before Inntris can claim the agent signature covered it.
 
 **T3. Merkle-root overwrite on-chain.** Attacker tries to re-anchor a root with different metadata.
 - Contract reverts `RootAlreadyAnchored` (`contracts/AnchorRegistry.sol:177-179`).
@@ -147,8 +147,8 @@ risk tag (see §4 if relevant).
 - Batch anchoring commits to the entire day's decisions via Merkle root on Base L2 — the anchored root cryptographically commits to the set of decisions, including blocks.
 
 **R3. Inntris denies a specific policy was in force.** "The rule wasn't there when my agent was denied."
-- `policy_hash` is part of the signed envelope and the canonical receipt fingerprint (`api/main.py:664-674`, Phase 0 PR1 receipt v2).
-- Policy rules live in `policy_rules` table; hash binds the receipt to the exact policy document at the time of decision.
+- `policy_hash` is part of the canonical v2 receipt fingerprint and preserved with the immutable audit record.
+- **Residual**: the hash is adapter-supplied, is not derived from the current agent controls, and is not included in the agent-signed envelope. Server-owned policy versions and a new signing-envelope version are required for a strong active-policy claim.
 
 ### I — Information disclosure
 

@@ -65,6 +65,9 @@ class PolicyEngine:
         "tool_call": 10,
         "data_export": 40,
         "admin_action": 70,
+        "ci_workflow_change": 80,
+        "protected_branch_merge": 80,
+        "production_deployment": 80,
     }
 
     # Maximum clock skew allowed (seconds)

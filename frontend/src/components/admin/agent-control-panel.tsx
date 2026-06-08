@@ -14,6 +14,7 @@ import type { AgentStatus, MappedAgent } from "@/lib/admin/types";
 import {
   AGENT_CONTROL_PRESETS,
   buildActionPolicyLists,
+  CONTROLLED_ACTION_GROUPS,
   CONTROLLED_ACTIONS,
   ControlledActionId,
 } from "@/lib/agent-controls";
@@ -209,7 +210,7 @@ export function AgentControlPanel({
           <SlidersHorizontal className="h-4 w-4 text-[#8FB8FF]" />
           <h3 className="text-sm font-medium text-[#C4CFDE]">Control presets</h3>
         </div>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
           {AGENT_CONTROL_PRESETS.map((preset) => (
             <button
               key={preset.id}
@@ -262,41 +263,55 @@ export function AgentControlPanel({
             Blocked actions receive no approval token and cannot proceed through the protected path.
           </p>
         </div>
-        <div className="grid gap-3 md:grid-cols-2">
-          {CONTROLLED_ACTIONS.map((action) => {
-            const isAllowed = allowedActions.has(action.id);
-            return (
-              <div
-                key={action.id}
-                className={`rounded-xl border p-4 ${
-                  isAllowed
-                    ? "border-[#28C281]/30 bg-[#28C281]/5"
-                    : "border-red-500/25 bg-red-500/5"
-                }`}
-              >
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <p className="text-sm font-medium text-[#F5F7FB]">{action.label}</p>
-                    <p className="mt-1 text-xs leading-5 text-[#7F8CA3]">{action.description}</p>
-                    <code className="mt-2 inline-block text-[11px] text-[#8FB8FF]">
-                      {action.id}
-                    </code>
-                  </div>
-                  <Select
-                    aria-label={`${action.label} decision`}
-                    value={isAllowed ? "allow" : "block"}
-                    onChange={(event) =>
-                      setActionDecision(action.id, event.target.value as "allow" | "block")
-                    }
-                    className="w-24 border-[#22314D] bg-[#0D1728] text-xs"
-                  >
-                    <option value="allow">Allow</option>
-                    <option value="block">Block</option>
-                  </Select>
-                </div>
+        <div className="space-y-5">
+          {CONTROLLED_ACTION_GROUPS.map((group) => (
+            <div key={group.id}>
+              <div className="mb-3">
+                <h4 className="text-xs font-medium uppercase tracking-wide text-[#AAB7CC]">
+                  {group.label}
+                </h4>
+                <p className="mt-1 text-xs leading-5 text-[#7F8CA3]">{group.description}</p>
               </div>
-            );
-          })}
+              <div className="grid gap-3 md:grid-cols-2">
+                {CONTROLLED_ACTIONS.filter((action) => action.group === group.id).map((action) => {
+                  const isAllowed = allowedActions.has(action.id);
+                  return (
+                    <div
+                      key={action.id}
+                      className={`rounded-xl border p-4 ${
+                        isAllowed
+                          ? "border-[#28C281]/30 bg-[#28C281]/5"
+                          : "border-red-500/25 bg-red-500/5"
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-4">
+                        <div>
+                          <p className="text-sm font-medium text-[#F5F7FB]">{action.label}</p>
+                          <p className="mt-1 text-xs leading-5 text-[#7F8CA3]">
+                            {action.description}
+                          </p>
+                          <code className="mt-2 inline-block text-[11px] text-[#8FB8FF]">
+                            {action.id}
+                          </code>
+                        </div>
+                        <Select
+                          aria-label={`${action.label} decision`}
+                          value={isAllowed ? "allow" : "block"}
+                          onChange={(event) =>
+                            setActionDecision(action.id, event.target.value as "allow" | "block")
+                          }
+                          className="w-24 border-[#22314D] bg-[#0D1728] text-xs"
+                        >
+                          <option value="allow">Allow</option>
+                          <option value="block">Block</option>
+                        </Select>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
         </div>
       </section>
 
