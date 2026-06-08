@@ -10,7 +10,7 @@ from enum import Enum
 from typing import Any, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_validator, ConfigDict
+from pydantic import BaseModel, Field, field_validator, ConfigDict, model_validator
 
 
 class BillingTier(str, Enum):
@@ -210,6 +210,67 @@ class RegisterAgentRequest(BaseModel):
         description="List of allowed action types"
     )
     metadata: dict[str, Any] = Field(default_factory=dict, description="Additional metadata")
+
+
+class UpdateAgentRequest(BaseModel):
+    """Validated mutable policy controls for an existing agent."""
+
+    model_config = ConfigDict(strict=False)
+
+    name: Optional[str] = Field(None, min_length=1, max_length=255)
+    daily_limit_usd: Optional[Decimal] = Field(None, ge=0, le=1000000)
+    per_action_limit_usd: Optional[Decimal] = Field(None, ge=0, le=100000)
+    allowed_actions: Optional[list[str]] = Field(None, max_length=100)
+    blocked_actions: Optional[list[str]] = Field(None, max_length=100)
+    rate_limit_per_minute: Optional[int] = Field(None, ge=1, le=10000)
+    metadata: Optional[dict[str, Any]] = None
+
+    @field_validator("allowed_actions", "blocked_actions")
+    @classmethod
+    def validate_action_lists(cls, values: Optional[list[str]]) -> Optional[list[str]]:
+        if values is None:
+            return None
+
+        normalized: list[str] = []
+        for value in values:
+            action = value.strip().lower()
+            if not action or len(action) > 100 or not action.replace("_", "").isalnum():
+                raise ValueError(
+                    "action types must be 1-100 characters using letters, numbers, and underscores"
+                )
+            if action not in normalized:
+                normalized.append(action)
+        return normalized
+
+    @model_validator(mode="after")
+    def validate_policy_consistency(self) -> "UpdateAgentRequest":
+        for field_name in (
+            "name",
+            "daily_limit_usd",
+            "per_action_limit_usd",
+            "allowed_actions",
+            "blocked_actions",
+            "rate_limit_per_minute",
+            "metadata",
+        ):
+            if field_name in self.model_fields_set and getattr(self, field_name) is None:
+                raise ValueError(f"{field_name} cannot be null")
+
+        if (
+            self.daily_limit_usd is not None
+            and self.per_action_limit_usd is not None
+            and self.per_action_limit_usd > self.daily_limit_usd
+        ):
+            raise ValueError("per_action_limit_usd cannot exceed daily_limit_usd")
+
+        if self.allowed_actions is not None and self.blocked_actions is not None:
+            overlap = sorted(set(self.allowed_actions) & set(self.blocked_actions))
+            if overlap:
+                raise ValueError(
+                    f"actions cannot be both allowed and blocked: {', '.join(overlap)}"
+                )
+
+        return self
 
 
 class PublicRegisterAgentRequest(BaseModel):

@@ -16,9 +16,9 @@ const ibmPlexMono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Inntris — Cryptographic Verification for AI Agents",
+  title: "Inntris - Control and Proof for High-Risk AI Agent Actions",
   description:
-    "Inntris is the governance layer for AI agents in production. Cryptographic identity, pre-execution policy enforcement, and tamper-evident audit trails anchored on Base L2. Independently verifiable by anyone.",
+    "Inntris enforces policy before high-risk AI agent actions execute and creates tamper-evident receipts for every decision.",
   icons: {
     icon: [
       { url: "/favicon.ico" },

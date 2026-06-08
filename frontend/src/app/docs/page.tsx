@@ -389,25 +389,23 @@ POST /admin/agents
           <div className="text-center mb-10">
             <h2 className="text-3xl font-semibold tracking-tight">Start Here</h2>
             <p className="mt-3 text-lg text-[#AAB7CC]">
-              The fastest path to verification coverage is pull request verification.
+              The fastest path to production coverage is one high-risk workflow.
             </p>
           </div>
 
           <div className="rounded-[24px] border border-[#22314D] bg-[#0D1728] p-8">
             <p className="text-lg leading-relaxed text-[#C4CFDE] mb-5">
-              Add <code className="font-mono text-[#8FB8FF]">inntris-verify</code> to any GitHub repo.
-              Every agent-generated PR gets a cryptographic receipt — signed by agent identity and
-              anchored to Base L2.
+              Pick the action that would create the most loss or exposure if it ran without
+              authorization. Inntris instruments that decision boundary, enforces PASS/BLOCK
+              policy, and creates a verifiable receipt for every outcome.
             </p>
             <div className="flex flex-wrap gap-3 mb-4">
-              <a
-                href="https://github.com/Inntris/agent-orchestrator-guardrails"
-                target="_blank"
-                rel="noopener noreferrer"
+              <Link
+                href="/pilot"
                 className="rounded-lg bg-[#28C281] px-6 py-3 text-sm font-medium text-white transition-opacity hover:opacity-90"
               >
-                Install GitHub Action
-              </a>
+                Scope a 14-day pilot
+              </Link>
               <Link
                 href="/verify"
                 className="rounded-lg border border-[#22314D] bg-[#0D1728] px-6 py-3 text-sm font-medium text-[#F5F7FB] transition hover:bg-[#101C31]"
@@ -416,8 +414,8 @@ POST /admin/agents
               </Link>
             </div>
             <p className="text-sm text-[#7F8CA3]">
-              Works with GitHub PR workflows, MCP-compatible agent systems, and custom agent stacks
-              via direct API integration.
+              Common starting points include agent spend, production changes, sensitive data
+              export, and external tool execution.
             </p>
           </div>
         </section>

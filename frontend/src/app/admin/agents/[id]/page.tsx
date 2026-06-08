@@ -6,14 +6,14 @@ import { useAdminFetch } from "@/lib/admin/use-admin-fetch";
 import { mapAgent, mapAuditSearchResult } from "@/lib/admin/mappers";
 import type { MappedAgent, MappedAuditSearchResult, AgentStatus } from "@/lib/admin/types";
 import { AdminErrorState } from "@/components/admin/error-state";
-import { AdminEmptyState } from "@/components/admin/empty-state";
 import { AuditTable } from "@/components/admin/audit-table";
 import { CopyableMonoValue } from "@/components/admin/copyable-mono-value";
+import { AgentControlPanel } from "@/components/admin/agent-control-panel";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Bot, FileText, ChevronLeft, ChevronRight } from "lucide-react";
+import { ArrowLeft, Bot, ChevronLeft, ChevronRight } from "lucide-react";
 import Link from "next/link";
 import { formatDateTime, formatRelative } from "@/lib/utils";
 import { useState } from "react";
@@ -225,47 +225,16 @@ function AgentDetailContent({ id }: { id: string }) {
 
         <TabsContent value="policy">
           <Card className="border-[#22314D] bg-[#0D1728]">
+            <CardHeader>
+              <CardTitle className="text-[#F5F7FB]">Action Controls</CardTitle>
+            </CardHeader>
             <CardContent className="p-6">
-              {/* Only render policy data if agent has policy-related fields */}
-              {agent?.allowed_actions && agent.allowed_actions.length > 0 ? (
-                <div className="space-y-4">
-                  <div>
-                    <h3 className="mb-2 text-sm font-medium text-[#C4CFDE]">
-                      Allowed Actions
-                    </h3>
-                    <div className="flex flex-wrap gap-2">
-                      {agent.allowed_actions.map((action) => (
-                        <span
-                          key={action}
-                          className="rounded-md border border-[#22314D] bg-[#101C31] px-2 py-1 font-mono text-xs text-[#AAB7CC]"
-                        >
-                          {action}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                  {agent.blocked_actions && agent.blocked_actions.length > 0 && (
-                    <div>
-                      <h3 className="mb-2 text-sm font-medium text-[#C4CFDE]">
-                        Blocked Actions
-                      </h3>
-                      <div className="flex flex-wrap gap-2">
-                        {agent.blocked_actions.map((action) => (
-                          <span
-                            key={action}
-                            className="rounded-md border border-red-500/20 bg-red-500/5 px-2 py-1 font-mono text-xs text-red-400"
-                          >
-                            {action}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
+              {agent ? (
+                <AgentControlPanel agent={agent} onSaved={refetchAgent} />
               ) : (
                 <AdminErrorState
-                  message="No policy configured for this agent"
-                  detail="Without a policy, verdicts cannot be attributed to a rule. Assign a policy before relying on audit records for compliance purposes."
+                  message="Agent controls unavailable"
+                  detail="The agent record has not loaded yet. Retry after the current request completes."
                 />
               )}
             </CardContent>

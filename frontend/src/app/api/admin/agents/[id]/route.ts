@@ -15,3 +15,21 @@ export async function GET(
   const result = await adminFetch(`/admin/agents/${id}`, apiKey);
   return NextResponse.json(result.data, { status: result.status });
 }
+
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const apiKey = await getSessionApiKey();
+  if (!apiKey) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const { id } = await params;
+  const body = await request.json().catch(() => ({}));
+  const result = await adminFetch(`/admin/agents/${id}`, apiKey, {
+    method: "PATCH",
+    body,
+  });
+  return NextResponse.json(result.data, { status: result.status });
+}

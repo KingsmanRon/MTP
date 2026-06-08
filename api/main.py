@@ -40,6 +40,7 @@ from api.models import (
     VerifyActionResponse,
     TestVerifyRequest,
     RegisterAgentRequest,
+    UpdateAgentRequest,
     HealthResponse,
     ErrorResponse,
     ActionVerdict,
@@ -1888,7 +1889,7 @@ async def register_agent(
 @app.patch("/admin/agents/{agent_id}", tags=["Admin - Agents"])
 async def update_agent(
     agent_id: UUID,
-    updates: dict,
+    update_request: UpdateAgentRequest,
     auth: dict = Depends(verify_api_key),
     database: Database = Depends(get_db),
 ):
@@ -1898,6 +1899,27 @@ async def update_agent(
 
         if agent.org_id != auth["org_id"]:
             raise HTTPException(status_code=403, detail="Access denied")
+
+        updates = update_request.model_dump(exclude_unset=True)
+
+        resulting_daily_limit = updates.get("daily_limit_usd", agent.daily_limit_usd)
+        resulting_per_action_limit = updates.get(
+            "per_action_limit_usd", agent.per_action_limit_usd
+        )
+        if resulting_per_action_limit > resulting_daily_limit:
+            raise HTTPException(
+                status_code=400,
+                detail="per_action_limit_usd cannot exceed daily_limit_usd",
+            )
+
+        resulting_allowed = set(updates.get("allowed_actions", agent.allowed_actions))
+        resulting_blocked = set(updates.get("blocked_actions", agent.blocked_actions))
+        overlap = sorted(resulting_allowed & resulting_blocked)
+        if overlap:
+            raise HTTPException(
+                status_code=400,
+                detail=f"actions cannot be both allowed and blocked: {', '.join(overlap)}",
+            )
 
         # Build update query dynamically
         allowed_fields = [

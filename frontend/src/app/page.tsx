@@ -102,7 +102,7 @@ export default async function InntrisCoreDarkPreview() {
     "url": "https://www.inntris.com",
     "logo": "https://www.inntris.com/logo.svg",
     "description":
-      "Cryptographic verification and governance layer for AI agents. Identity, policy enforcement, and tamper-evident audit trails anchored on Base L2.",
+      "Pre-execution policy enforcement and verifiable evidence for high-risk AI agent actions.",
     "foundingDate": "2025",
     "sameAs": ["https://github.com/Inntris"],
   };
@@ -123,22 +123,23 @@ export default async function InntrisCoreDarkPreview() {
             </div>
             <div>
               <div className="text-lg font-semibold tracking-tight">Inntris</div>
-              <div className="text-xs text-[#7F8CA3]">Core control plane</div>
+              <div className="text-xs text-[#7F8CA3]">Agent action proof</div>
             </div>
           </div>
           <nav className="hidden items-center gap-5 text-[15px] text-[#C4CFDE] md:flex lg:gap-7">
             <a className="transition hover:text-white" href="/#overview">Overview</a>
             <a className="transition hover:text-white" href="/#modules">Modules</a>
+            <Link className="transition hover:text-white" href="/pilot">14-day Pilot</Link>
             <Link className="transition hover:text-white" href="/docs">Docs</Link>
             <Link className="transition hover:text-white" href="/verify">Verify</Link>
           </nav>
           <div className="flex items-center gap-3">
-            <a
-              href="#contact"
+            <Link
+              href="/pilot"
               className="hidden rounded-md bg-[#28C281] px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90 md:inline-flex"
             >
-              Request Access
-            </a>
+              Scope a Pilot
+            </Link>
           </div>
         </div>
       </header>
@@ -150,14 +151,16 @@ export default async function InntrisCoreDarkPreview() {
               Verification API live
             </div>
             <h1 className="max-w-3xl text-4xl font-semibold leading-[1.12] tracking-tight md:text-6xl mb-5">
-              Your AI agents act.{" "}
-              <span className="text-[#28C281]">We prove every decision.</span>
+              Control high-risk agent actions.{" "}
+              <span className="text-[#28C281]">Prove every decision.</span>
             </h1>
             <p className="text-lg text-[#7F8CA3] mb-5 max-w-2xl leading-relaxed">
-              AI agent governance with cryptographic verification — identity, policy enforcement, and on-chain proof for every decision.
+              Inntris sits in the execution path before agents spend money, change production,
+              export data, or call external tools.
             </p>
             <p className="text-base text-[#AAB7CC] mb-3 max-w-lg leading-relaxed">
-              The governance layer for AI agents in production. Verify what was allowed and what actually happened — independently.
+              Enforce the policy before execution, bind the decision to agent identity, and
+              produce evidence others can independently verify.
             </p>
             <ul className="flex flex-col gap-2 mb-8 max-w-lg">
               {[
@@ -175,20 +178,21 @@ export default async function InntrisCoreDarkPreview() {
               ))}
             </ul>
             <p className="text-sm text-[#AAB7CC] mb-8 max-w-lg leading-relaxed">
-              When your agents handle money, data, and code in regulated environments, you need cryptographic proof of every decision. Inntris is that proof layer.
+              Start with one risky workflow. In 14 days, Inntris instruments its control
+              boundary and produces receipts for every allowed and blocked action.
             </p>
             <div className="flex flex-wrap gap-3 mb-10">
-              <a
-                href="https://www.inntris.com/verify/d8dd0902-4750-42d2-9516-92bf6362e815"
+              <Link
+                href="/pilot"
                 className="rounded-md bg-[#28C281] px-5 py-3 text-sm font-medium text-white transition-opacity hover:opacity-90"
               >
-                See live verification →
-              </a>
+                Scope a 14-day pilot
+              </Link>
               <a
-                href="#contact"
+                href="https://www.inntris.com/verify/d8dd0902-4750-42d2-9516-92bf6362e815"
                 className="rounded-md border border-[#22314D] bg-[#0D1728] px-5 py-3 text-sm font-medium text-[#F5F7FB] transition-colors hover:bg-[#101C31]"
               >
-                Request Access
+                See live verification
               </a>
             </div>
             <div className="grid grid-cols-2 md:grid-cols-4 divide-x divide-[#22314D] border-t border-[#22314D] pt-7">
@@ -543,7 +547,7 @@ export default async function InntrisCoreDarkPreview() {
               <span className="text-sm font-semibold tracking-tight text-[#F5F7FB]">Inntris</span>
             </div>
             <p className="text-sm text-[#7F8CA3] text-center">
-              Cryptographic proof for every AI agent decision.
+              Control and proof for high-risk AI agent actions.
             </p>
             <div className="flex items-center gap-6 text-[#7F8CA3]">
               <a href="/docs" className="text-sm transition-colors hover:text-white">Docs</a>
