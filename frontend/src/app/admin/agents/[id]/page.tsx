@@ -164,10 +164,10 @@ function AgentDetailContent({ id }: { id: string }) {
       ) : null}
 
       {/* Tabs */}
-      <Tabs defaultValue="activity">
+      <Tabs defaultValue="policy">
         <TabsList className="bg-[#0D1728]">
-          <TabsTrigger value="activity">Activity</TabsTrigger>
           <TabsTrigger value="policy">Policy</TabsTrigger>
+          <TabsTrigger value="activity">Activity</TabsTrigger>
         </TabsList>
 
         <TabsContent value="activity">
