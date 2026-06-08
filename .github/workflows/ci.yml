@@ -16,9 +16,9 @@ name: ci
 
 on:
   push:
-    branches: [main]
+    branches: [master]
   pull_request:
-    branches: [main]
+    branches: [master]
 
 # Cancel outdated runs on the same PR branch so we do not queue N copies.
 concurrency:

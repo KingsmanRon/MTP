@@ -6,16 +6,16 @@
 #   * sca       — pip-audit + npm audit for known-CVE dependencies.
 #   * fs-scan   — Trivy filesystem scan (configs, secrets, OS pkgs if any).
 #
-# Runs on every PR and every push to main, plus a weekly schedule so a
+# Runs on every PR and every push to master, plus a weekly schedule so a
 # CVE that lands between pushes is still caught within 7 days.
 
 name: security
 
 on:
   push:
-    branches: [main]
+    branches: [master]
   pull_request:
-    branches: [main]
+    branches: [master]
   schedule:
     - cron: "17 3 * * 1"  # Mondays 03:17 UTC
 

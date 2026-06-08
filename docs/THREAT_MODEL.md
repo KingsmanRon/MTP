@@ -69,7 +69,7 @@ Admin (C) --login--> Next.js BFF (D) --[encrypted cookie]--> adminFetch --> Fast
 1. **Internet → Next.js BFF** — unauthenticated surface for `/api/admin/session` login POST, the public verify/register endpoints served via the backend, and the static site. Rate-limited at boundaries §3.D1 and §3.D2.
 2. **Next.js BFF → FastAPI** — server-to-server, `X-API-Key` header carries the org's key (read from the encrypted cookie, never from the browser). See `frontend/src/lib/admin/api-client.ts` and proxies under `frontend/src/app/api/admin/*`.
 3. **Agent runtime → FastAPI `/verify`** — the only external identity check is the Ed25519 signature over the action hash. §3.S1.
-4. **FastAPI → Postgres** — trusted channel today. RLS is enabled at the table level (`database/schemas.sql:436-440`) but tenant-scoping policies are **not yet defined** (deferred to Phase 1C.1).
+4. **FastAPI → Postgres** — trusted channel. Tenant-scoping policies and an `acquire_as_tenant` role-downgrade path exist (`database/migrations/005_rls_policies.sql`, `api/database.py`). Production enforcement still depends on the applied migrations and runtime DSN, so it must be verified per deployment.
 5. **Anchor worker → Base L2 RPC** — funded hot wallet; submission is idempotent via `RootAlreadyAnchored`.
 6. **Anchor worker → AnchorRegistry** — contract enforces `SUBMITTER_ROLE` (`contracts/AnchorRegistry.sol:166`).
 
@@ -161,7 +161,8 @@ risk tag (see §4 if relevant).
 **I2. Cross-tenant leakage in admin endpoints.** Org A reads org B's agents or audit logs.
 - FastAPI `verify_api_key` resolves the caller's `org_id` and scopes (`api/main.py:157-224`).
 - Handlers gate on `agent.org_id == auth["org_id"]` for single-agent reads (`api/main.py:1103-1107` on the test-verify path, same check pattern elsewhere in admin handlers).
-- **Residual**: tenant isolation is application-layer today; a SQL injection or a missed org-check in a new endpoint defeats it. RLS is declared (`database/schemas.sql:436-440`) but **policies are not yet defined** — deferred to Phase 1C.1.
+- Tenant RLS policies and integration tests exist (`database/migrations/005_rls_policies.sql`, `tests/test_rls_policies.py`).
+- **Residual**: production RLS activation and use of the tenant-scoped connection path must be verified. A deployment using the wrong role or unapplied migrations falls back to handler-layer checks.
 
 **I3. Testnet receipt leak through the public verifier.** Pre-launch the public path could surface Sepolia-anchored receipts, giving an attacker a confident-looking but non-canonical receipt URL.
 - Public verify endpoint returns 410 for any `chain_id != 8453` (`api/main.py:620-635`).
@@ -169,7 +170,8 @@ risk tag (see §4 if relevant).
 **I4. Audit-log PII in verdict reasons.** Raw payloads in `audit_logs.payload` may contain PII the customer shipped; verdict reasons may echo portions of it.
 - `payload` is JSONB stored alongside the verdict (`database/schemas.sql:134`). Access is gated by the admin auth/org checks (§I2).
 - Public verify only exposes a fixed safe field set (`api/main.py:690-713`, `PublicVerificationRecord` in `api/models.py:313-351`), never the raw payload.
-- **Residual**: GDPR erasure workflow is deferred to Phase 4B. Customers cannot today request a forensic-integrity-preserving redaction; see §4.R4.
+- A forensic-integrity-preserving erasure function and operator wrapper exist (`database/migrations/006_gdpr_erasure.sql`, `api/erasure.py`).
+- **Residual**: production activation, backup erasure, external logs, and caches remain deployment and operator responsibilities; see §4.R4.
 
 **I5. Server-secret exposure in config.** Leaked `SERVER_SECRET` forges approval tokens.
 - Production startup hard-fails if missing or <32 chars (`api/main.py:83-87`).
@@ -210,7 +212,8 @@ risk tag (see §4 if relevant).
 
 **E1. Cross-org action via admin API.** Attacker with a low-tier org key tries to operate on another org's agent.
 - API key → org binding at `api/main.py:157-224`; org-scope check at every handler that takes an `agent_id` (pattern seen at `api/main.py:1103-1107`).
-- **Residual**: same as §I2 — app-layer only; RLS enforcement (Phase 1C.1) would add defense-in-depth.
+- Tenant RLS policies provide defense-in-depth when the deployment uses the required role and tenant-scoped connection path.
+- **Residual**: same as §I2 — production RLS activation requires live verification.
 
 **E2. Dev-mode bypass reaching production.** The dev path at `api/main.py:171-179` accepts any key starting with `dev_` or `test_` as an enterprise-tier Organization Zero.
 - Gated on `ENVIRONMENT != "development"` — production deployments must set `ENVIRONMENT=production` or similar.
@@ -218,7 +221,8 @@ risk tag (see §4 if relevant).
 
 **E3. Playground endpoint fabricating proof-eligible audit rows.** `/admin/test-verify` writes audit rows.
 - Rows are tagged `test_request: true` in metadata, signature set to the sentinel `b"TEST_REQUEST"` (`api/main.py:1153-1160`).
-- The anchor worker anchors every unanchored audit row today — test rows currently land in Merkle batches unless explicitly filtered. **Residual**: worker-side filter by `metadata->>'test_request'` is deferred to Phase 2B (anchor-worker hardening).
+- Both unanchored-log query paths exclude `metadata.test_request=true` rows (`api/database.py`, `workers/anchor_worker.py`).
+- Regression coverage exists in `tests/test_anchor_worker_hardening.py`.
 
 **E4. Hot-wallet key theft.** Attacker exfiltrates `BLOCKCHAIN_PRIVATE_KEY` from the worker environment.
 - Key is loaded from env into `eth_account.LocalAccount` at worker start (`workers/anchor_worker.py:214-227`).
@@ -245,16 +249,15 @@ in-repo control exists yet. Each should map to a queued or backlog phase.
 | # | Risk | Scope | Planned remediation |
 |---|------|-------|---------------------|
 | R1 | Hot-wallet key theft (Phase 2 roadmap: KMS/Vault) allows arbitrary Merkle-root submission until the submitter role is revoked. | D → E | **Deferred**: KMS/Vault custody. Paging workflow on anomalous submission batches to compensate meanwhile. |
-| R2 | Tenant isolation is app-layer only; no defined RLS policies. A missed org-check in a future endpoint leaks cross-tenant data. | D | **Phase 1C.1** — write tenant RLS policies. |
+| R2 | Tenant RLS policies exist, but a production deployment using the wrong runtime role or missing migrations can fall back to handler-layer isolation. | D | Require production role, migration, and cross-tenant readback evidence before claiming RLS enforcement. |
 | R3 | Smart-contract admin is a single EOA. A compromised admin can grant `SUBMITTER_ROLE` to attacker, or unpause after an emergency. | E | **Phase 3.3** — migrate admin to a Gnosis Safe + timelock. |
-| R4 | No GDPR erasure flow for PII inside `audit_logs.payload`. Immutability trigger (§T1) conflicts with the right-to-erasure; current posture is "don't log PII." | D → B | **Phase 4B** — erasure with forensic-integrity-preserving redaction (payload field-level nulling, original hash retained). |
+| R4 | Forensic-preserving erasure exists, but production activation, backups, external logs, and caches may retain pre-erasure data. | D → B | Verify the erasure procedure per deployment and document backup/cache handling. |
 | R5 | Chain reorg handling: a deep Base reorg could invalidate `block_number`/`tx_hash` already surfaced to users as "verified." | D → E | **Deferred** (roadmap) — worker confirmation-depth wait + receipt `integrity_status=pending_anchor` until depth threshold. |
 | R6 | Public-register rate limit is fail-open on Redis outage. | B | Backlog — evaluate severity; current model is availability > correctness here. |
 | R7 | Dev-key bypass depends entirely on `ENVIRONMENT != "development"`. | D → E | Backlog — add second gate `INNTRIS_ALLOW_DEV_KEYS=1` required to reach the dev path. |
-| R8 | Test-verify audit rows are not filtered out of the anchor worker's Merkle batches. | D | **Phase 2B** — anchor-worker hardening. |
 | R9 | CORS still accepts wildcard in non-dev (with credentials forced off). | D | **Phase 2D.2** — lock to explicit allow-list, reject `*` in prod. |
 | R10 | `SERVER_SECRET` / `ADMIN_SESSION_SECRET` have no rotation story. | D | Backlog — dual-key verifier window for rotation. |
-| R11 | Supply-chain risk (transitive deps, SAST, container scanning) is not in CI yet. | D | **Phase 5.3** — Dependabot/Semgrep/Trivy/cosign/`SECURITY.md`. |
+| R11 | SAST, SCA, and filesystem scanning exist, but several findings are report-only and do not block release. | D | Review current findings and tighten release gates after the baseline is clean. |
 | R12 | No load-test evidence for pool exhaustion or burst behaviour. | D | **Phase 5.1** — k6. |
 
 ---
@@ -265,7 +268,7 @@ Per the current roadmap, the following are **out of scope** for the
 enterprise-readiness track and do not block the phase queue:
 
 - **KMS / Vault for the hot wallet** (relates to R1). Production anchoring still uses a plain env-var private key; acceptance relies on compensating monitoring and the contract-side revoke/pause controls at `contracts/AnchorRegistry.sol:238-262`.
-- **Postgres Row-Level Security policies** (relates to R2). RLS is *enabled* on five tables (`database/schemas.sql:436-440`), but no `CREATE POLICY` statements exist; tenant isolation relies on handler-layer checks. Closing this gap is **Phase 1C.1**.
+- **Production RLS activation evidence** (relates to R2). Policies and integration tests exist, but each deployment must prove the required migrations, runtime role, and tenant-scoped connection path are active.
 - **Base L2 reorg protection** (relates to R5). No confirmation-depth queue; a receipt is marked `verified` as soon as the anchor tx is mined. Base's reorg depth is empirically ~1 block but this is not a guarantee.
 - **Docker-backed integration tests, Helm/Terraform, paid vendor items** — not in this repo, not in scope.
 

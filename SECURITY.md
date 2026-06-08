@@ -9,7 +9,7 @@ and we commit to timelines and transparency with every reporter.
 
 | Version | Security updates |
 |---------|-----------------|
-| `main` | Yes |
+| `master` | Yes |
 | Latest tagged release | Yes |
 | Prior tagged releases | Best-effort for 90 days after the next tag |
 
@@ -82,9 +82,10 @@ Current hardening in this repo, for context when prioritizing a report:
 
 * **Ed25519 signature verification** on every `/verify` call, with
   nonce replay prevention and fail-closed rate limiting.
-* **Row-level security** on all tenant-scoped Postgres tables
-  (`database/migrations/005_rls_policies.sql`). App connects under a
-  non-BYPASSRLS role.
+* **Row-level security** policies and a tenant-role downgrade path for
+  tenant-scoped Postgres tables (`database/migrations/005_rls_policies.sql`).
+  Production activation depends on the applied migrations and runtime DSN and
+  must be verified per deployment.
 * **TimelockController** gates `AnchorRegistry` admin; 48h delay on
   every admin op. See `docs/runbooks/timelock_admin.md`.
 * **Chain-ID verification** at worker startup and a gas-price cap on

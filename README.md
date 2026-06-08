@@ -405,7 +405,7 @@ function verifyProof(
 ### Database Security
 
 - **Append-Only Audit Logs**: Triggers prevent UPDATE/DELETE on `audit_logs`
-- **Row-Level Security**: PostgreSQL RLS enabled on all tables
+- **Row-Level Security**: Tenant RLS migrations and integration tests are included; confirm the production runtime role and applied migrations before relying on RLS
 - **API Key Hashing**: Keys stored as SHA-256 hashes only
 
 ### Operational Security
@@ -413,6 +413,9 @@ function verifyProof(
 - **Rate Limiting**: Per-minute, per-day limits per agent
 - **Security Alerts**: Automatic alerts on signature failures
 - **Trust Score Decay**: Scores decay toward baseline over time
+
+For buyer-facing security material, deployment-evidence boundaries, and the
+14-day pilot SOW, start with the [Inntris Trust Pack](docs/trust/README.md).
 
 ---
 
