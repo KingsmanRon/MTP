@@ -17,6 +17,15 @@ from api.models import AgentRecord, AgentStatus, ActionVerdict
 logger = logging.getLogger(__name__)
 
 
+class AmountError(ValueError):
+    """Raised when a payload amount field is present but malformed.
+
+    Distinct from "no amount field at all": a malformed amount (non-numeric,
+    boolean, NaN, infinite, or negative) is a fail-closed signal, whereas an
+    absent amount is only fatal for action types that require one.
+    """
+
+
 class PolicyViolation(Enum):
     """Types of policy violations."""
     AGENT_NOT_ACTIVE = "agent_not_active"
@@ -27,6 +36,7 @@ class PolicyViolation(Enum):
     RATE_LIMIT_EXCEEDED = "rate_limit_exceeded"
     TRUST_SCORE_TOO_LOW = "trust_score_too_low"
     TIMESTAMP_INVALID = "timestamp_invalid"
+    AMOUNT_INVALID = "amount_invalid"
 
 
 @dataclass
@@ -55,6 +65,19 @@ class PolicyEngine:
         "promptfoo_eval",
         "repo_change",
     })
+
+    # Action types that MUST carry a parseable spend amount. A financial
+    # action with no recognized amount field fails closed (BLOCKED) rather
+    # than being silently treated as a $0 transaction that bypasses the
+    # daily/per-action caps entirely.
+    AMOUNT_REQUIRED_ACTIONS: frozenset = frozenset({
+        "financial_transaction",
+    })
+
+    # Payload fields that may carry a transaction amount, in priority order.
+    # The first field present wins; if it is malformed the request is blocked
+    # rather than falling through to a later field.
+    AMOUNT_FIELDS: tuple = ("amount", "amount_usd", "value", "total")
 
     # Runtime actions: PASS/BLOCK/ESCALATE semantics.
     # The caller is asking the system to authorize a live operation.
@@ -135,8 +158,30 @@ class PolicyEngine:
         if not rate_result.allowed:
             return rate_result
 
-        # 6. Check spending limits (for financial transactions)
-        amount = self._extract_amount(payload)
+        # 6. Check spending limits (for amount-bearing actions). Fail closed:
+        # a malformed amount, or a missing amount on an action type that
+        # requires one, is blocked rather than treated as $0.
+        try:
+            amount = self._extract_amount(payload)
+        except AmountError as exc:
+            return PolicyResult(
+                allowed=False,
+                verdict=ActionVerdict.BLOCKED,
+                violation=PolicyViolation.AMOUNT_INVALID,
+                reason=str(exc),
+            )
+
+        if amount is None and action_type in self.AMOUNT_REQUIRED_ACTIONS:
+            return PolicyResult(
+                allowed=False,
+                verdict=ActionVerdict.BLOCKED,
+                violation=PolicyViolation.AMOUNT_INVALID,
+                reason=(
+                    f"Action '{action_type}' requires a numeric spend amount "
+                    f"(one of: {', '.join(self.AMOUNT_FIELDS)})."
+                ),
+            )
+
         if amount is not None:
             spend_result = self._check_spending_limits(agent, amount)
             if not spend_result.allowed:
@@ -271,14 +316,36 @@ class PolicyEngine:
         return PolicyResult(allowed=True, verdict=ActionVerdict.APPROVED)
 
     def _extract_amount(self, payload: dict[str, Any]) -> Optional[Decimal]:
-        """Extract transaction amount from payload if present."""
-        # Look for common amount field names
-        for field in ["amount", "amount_usd", "value", "total"]:
-            if field in payload:
-                try:
-                    return Decimal(str(payload[field]))
-                except (ValueError, TypeError):
-                    continue
+        """Extract and validate a transaction amount from the payload.
+
+        Returns the amount from the first recognized field (priority order in
+        ``AMOUNT_FIELDS``), or ``None`` when no amount field is present.
+
+        Raises ``AmountError`` when an amount field is present but malformed —
+        non-numeric, boolean, NaN, infinite, or negative. The previous
+        implementation silently skipped unparseable values, which let a
+        compromised agent bypass spend limits two ways: send ``{"amount":
+        "NaN"}`` (NaN compares False against every limit, so the check passes)
+        or omit the recognized field so ``None`` short-circuits the check
+        entirely. Both now fail closed.
+        """
+        for field in self.AMOUNT_FIELDS:
+            if field not in payload:
+                continue
+            raw = payload[field]
+            # bool is an int subclass; reject it explicitly so True/False
+            # cannot be coerced into 1/0 spend.
+            if isinstance(raw, bool):
+                raise AmountError(f"Field '{field}' must be a number, not a boolean.")
+            try:
+                value = Decimal(str(raw))
+            except (ValueError, TypeError, ArithmeticError):
+                raise AmountError(f"Field '{field}' is not a valid decimal amount.")
+            if not value.is_finite():
+                raise AmountError(f"Field '{field}' must be a finite amount (got {raw!r}).")
+            if value < 0:
+                raise AmountError(f"Field '{field}' must not be negative (got {value}).")
+            return value
         return None
 
     def _compute_limits_remaining(
@@ -312,11 +379,18 @@ class TrustScorer:
     # Base score for new agents
     BASE_SCORE = 50
 
-    # Score adjustments for different events
+    # Score adjustments for different events.
+    #
+    # These MUST be integers: ``trust_score`` is an INTEGER column and
+    # ``calculate_adjustment`` clamps via ``int()``. The previous values used
+    # +0.1 for an approval, so ``int(50 + 0.1) == 50`` — scores could never
+    # rise, which made the 70/80 trust thresholds for admin/CI/deploy actions
+    # unreachable for any real agent. Integer accrual lets an agent climb from
+    # the 50 baseline toward those thresholds through consistent good behavior.
     ADJUSTMENTS = {
-        "action_approved": +0.1,
-        "action_blocked_policy": -1,
-        "action_blocked_rate_limit": -0.5,
+        "action_approved": +1,
+        "action_blocked_policy": -2,
+        "action_blocked_rate_limit": -1,
         "signature_invalid": -20,  # Severe penalty
         "consecutive_successes_10": +2,
         "consecutive_successes_100": +5,
@@ -361,14 +435,25 @@ class TrustScorer:
         """
         Apply daily decay to move score toward baseline.
 
-        Scores above BASE_SCORE decay down, scores below decay up.
+        Scores above BASE_SCORE decay down, scores below decay up. The decay
+        steps by at least one point per day so scores just off the baseline are
+        not frozen by integer truncation — the prior ``int(40.1) == 40`` left
+        below-baseline scores stuck forever. The step never overshoots
+        BASE_SCORE.
         """
         if current_score == TrustScorer.BASE_SCORE:
             return current_score
 
         direction = 1 if current_score < TrustScorer.BASE_SCORE else -1
-        decay = abs(current_score - TrustScorer.BASE_SCORE) * TrustScorer.DAILY_DECAY_RATE
+        distance = abs(current_score - TrustScorer.BASE_SCORE)
+        step = max(1, round(distance * TrustScorer.DAILY_DECAY_RATE))
 
-        new_score = current_score + (direction * decay)
+        new_score = current_score + (direction * step)
+
+        # Do not cross the baseline in a single decay step.
+        if direction == 1:
+            new_score = min(new_score, TrustScorer.BASE_SCORE)
+        else:
+            new_score = max(new_score, TrustScorer.BASE_SCORE)
 
         return max(0, min(100, int(new_score)))

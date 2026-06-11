@@ -5,6 +5,7 @@ import {
   AlertTriangle,
   CheckCircle2,
   DollarSign,
+  Gauge,
   Power,
   Save,
   ShieldCheck,
@@ -12,6 +13,7 @@ import {
 } from "lucide-react";
 import type { AgentStatus, MappedAgent } from "@/lib/admin/types";
 import {
+  ACTION_TRUST_THRESHOLDS,
   AGENT_CONTROL_PRESETS,
   buildActionPolicyLists,
   CONTROLLED_ACTION_GROUPS,
@@ -47,6 +49,12 @@ export function AgentControlPanel({
   const [dailyLimit, setDailyLimit] = useState(String(agent.daily_limit_usd ?? 0));
   const [perActionLimit, setPerActionLimit] = useState(String(agent.per_action_limit_usd ?? 0));
   const [rateLimit, setRateLimit] = useState(String(agent.rate_limit_per_minute ?? 60));
+  // Trust score is normally earned automatically (+1 per approval). This input
+  // is the operator override. We track the score the page loaded with so a
+  // routine limits/permissions save does not clobber accrual that happened
+  // server-side since mount — trust_score is only sent when actually changed.
+  const initialTrustScore = agent.trust_score ?? 50;
+  const [trustScore, setTrustScore] = useState(String(initialTrustScore));
   const [currentStatus, setCurrentStatus] = useState<AgentStatus | undefined>(agent.status);
   const [saving, setSaving] = useState(false);
   const [changingStatus, setChangingStatus] = useState(false);
@@ -95,6 +103,11 @@ export function AgentControlPanel({
       setMessage({ kind: "error", text: "Rate limit must be an integer from 1 to 10,000." });
       return;
     }
+    const trust = Number(trustScore);
+    if (!Number.isInteger(trust) || trust < 0 || trust > 100) {
+      setMessage({ kind: "error", text: "Trust score must be an integer from 0 to 100." });
+      return;
+    }
 
     const actionPolicy = buildActionPolicyLists(
       agent.allowed_actions,
@@ -112,6 +125,9 @@ export function AgentControlPanel({
           per_action_limit_usd: perAction,
           rate_limit_per_minute: rate,
           ...actionPolicy,
+          // Only override trust when the operator actually changed it, so a
+          // routine save does not reset a score that rose via accrual.
+          ...(trust !== initialTrustScore ? { trust_score: trust } : {}),
         }),
       });
       const body: unknown = await response.json().catch(() => ({}));
@@ -256,6 +272,34 @@ export function AgentControlPanel({
         />
       </section>
 
+      <section className="rounded-xl border border-[#22314D] bg-[#101C31]/60 p-5">
+        <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_220px] md:items-center">
+          <div>
+            <div className="flex items-center gap-2">
+              <Gauge className="h-4 w-4 text-[#8FB8FF]" />
+              <h3 className="text-sm font-medium text-[#F5F7FB]">Trust score override</h3>
+            </div>
+            <p className="mt-2 text-xs leading-5 text-[#7F8CA3]">
+              Trust is earned automatically (+1 per approved action) and decays toward 50 over
+              time. Set it directly to promote a vetted agent to a higher-trust action, or to
+              demote a suspicious one immediately. Runtime and code actions each require a
+              minimum trust score in addition to being allowed below.
+            </p>
+          </div>
+          <ControlInput
+            icon={Gauge}
+            label="Trust score"
+            description="Advisory reputation lever, 0–100."
+            value={trustScore}
+            onChange={setTrustScore}
+            suffix="/ 100"
+            integer
+            min={0}
+            max={100}
+          />
+        </div>
+      </section>
+
       <section>
         <div className="mb-3">
           <h3 className="text-sm font-medium text-[#C4CFDE]">Action permissions</h3>
@@ -293,6 +337,7 @@ export function AgentControlPanel({
                           <code className="mt-2 inline-block text-[11px] text-[#8FB8FF]">
                             {action.id}
                           </code>
+                          <TrustGateHint actionId={action.id} isAllowed={isAllowed} trust={Number(trustScore)} />
                         </div>
                         <Select
                           aria-label={`${action.label} decision`}
@@ -368,6 +413,8 @@ function ControlInput({
   onChange,
   suffix,
   integer = false,
+  min,
+  max,
 }: {
   icon: typeof DollarSign;
   label: string;
@@ -376,7 +423,11 @@ function ControlInput({
   onChange: (value: string) => void;
   suffix: string;
   integer?: boolean;
+  min?: number;
+  max?: number;
 }) {
+  const resolvedMin = min ?? (integer ? 1 : 0);
+  const resolvedMax = max ?? (integer ? 10000 : undefined);
   return (
     <div className="rounded-xl border border-[#22314D] bg-[#101C31]/60 p-4">
       <div className="flex items-center gap-2">
@@ -388,8 +439,8 @@ function ControlInput({
         <Input
           aria-label={label}
           type="number"
-          min={integer ? "1" : "0"}
-          max={integer ? "10000" : undefined}
+          min={String(resolvedMin)}
+          max={resolvedMax !== undefined ? String(resolvedMax) : undefined}
           step={integer ? "1" : "0.01"}
           value={value}
           onChange={(event) => onChange(event.target.value)}
@@ -398,5 +449,30 @@ function ControlInput({
         <span className="shrink-0 text-xs text-[#7F8CA3]">{suffix}</span>
       </div>
     </div>
+  );
+}
+
+// Advisory hint tying the trust-score override to each action's gate. Shows the
+// required minimum, and warns when an action is allowed but the staged trust
+// score is still below the threshold (so it would block at decision time).
+function TrustGateHint({
+  actionId,
+  isAllowed,
+  trust,
+}: {
+  actionId: ControlledActionId;
+  isAllowed: boolean;
+  trust: number;
+}) {
+  const threshold = ACTION_TRUST_THRESHOLDS[actionId];
+  if (threshold === null) {
+    return <p className="mt-2 text-[11px] text-[#7F8CA3]">Pass-through · no trust gate</p>;
+  }
+  const blockedByTrust = isAllowed && Number.isFinite(trust) && trust < threshold;
+  return (
+    <p className={`mt-2 text-[11px] ${blockedByTrust ? "text-[#E0A100]" : "text-[#7F8CA3]"}`}>
+      Requires trust ≥ {threshold}
+      {blockedByTrust ? ` · blocks at ${trust}` : ""}
+    </p>
   );
 }

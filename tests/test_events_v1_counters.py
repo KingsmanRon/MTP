@@ -40,7 +40,11 @@ def _make_db_mock(existing_agent_id=None):
             "expires_at": None,
         }
     )
-    conn.fetchval = AsyncMock(return_value=existing_agent_id)
+    # fetchval is called twice per request: (1) the events-agent lookup in
+    # _get_or_create_events_agent, and (2) the counter UPDATE ... RETURNING
+    # trust_score in the handler. The second must be an int trust score, not a
+    # UUID, so the AuditLogEntry validates.
+    conn.fetchval = AsyncMock(side_effect=[existing_agent_id, 73])
     conn.execute = AsyncMock(return_value="UPDATE 1")
 
     # acquire() must be a sync callable returning an async context manager.
@@ -58,9 +62,12 @@ def _make_db_mock(existing_agent_id=None):
 
 
 def _executed_sql(conn):
-    """Flatten every conn.execute(...) call into one searchable string."""
+    """Flatten every conn.execute(...) and conn.fetchval(...) call into one
+    searchable string. The counter UPDATE moved to fetchval (... RETURNING
+    trust_score), so both call sinks must be inspected."""
+    calls = list(conn.execute.call_args_list) + list(conn.fetchval.call_args_list)
     return " ".join(
-        " ".join(str(arg) for arg in call.args) for call in conn.execute.call_args_list
+        " ".join(str(arg) for arg in call.args) for call in calls
     )
 
 
@@ -110,3 +117,42 @@ class TestEventsV1Counters:
         sql = _executed_sql(conn)
         assert "status = 'active'" not in sql
         assert "total_actions_count = total_actions_count + 1" in sql
+
+
+class TestEventsV1Truthfulness:
+    """Ingested events must not masquerade as cryptographically verified.
+
+    Regression for the forensic-integrity bug where /v1/events wrote rows with
+    ``signature_valid=True`` and a fabricated ``trust_score_at_time=100`` while
+    still flowing into the publicly-anchored Merkle batches.
+    """
+
+    def _ingested_entry(self, existing_agent_id):
+        db_mock, _conn = _make_db_mock(existing_agent_id=existing_agent_id)
+        resp = _post_event(db_mock)
+        assert resp.status_code == 201, resp.text
+        db_mock.insert_audit_log.assert_awaited_once()
+        call = db_mock.insert_audit_log.call_args
+        return call.args[0], call
+
+    def test_signature_not_marked_valid(self):
+        entry, _call = self._ingested_entry(existing_agent_id=uuid4())
+        assert entry.signature_valid is False
+
+    def test_trust_score_is_real_not_fabricated(self):
+        # The mocked counter UPDATE returns 73 (the agent's real score), never
+        # the old hard-coded 100.
+        entry, _call = self._ingested_entry(existing_agent_id=uuid4())
+        assert entry.trust_score_at_time == 73
+
+    def test_metadata_marks_unsigned_attestation(self):
+        entry, _call = self._ingested_entry(existing_agent_id=uuid4())
+        assert entry.metadata.get("attestation_type") == "unsigned_ingestion"
+        assert entry.metadata.get("non_cryptographic") is True
+        assert entry.metadata.get("source") == "events_v1"
+
+    def test_chain_hash_derived_atomically(self):
+        # derive_chain_hash=True routes the insert through the per-agent
+        # advisory-locked path so concurrent partner posts can't fork the chain.
+        _entry, call = self._ingested_entry(existing_agent_id=uuid4())
+        assert call.kwargs.get("derive_chain_hash") is True

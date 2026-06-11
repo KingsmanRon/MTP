@@ -64,6 +64,25 @@ export const CONTROLLED_ACTIONS = [
 export type ControlledActionId = (typeof CONTROLLED_ACTIONS)[number]["id"];
 export type ControlledActionGroupId = (typeof CONTROLLED_ACTIONS)[number]["group"];
 
+// Minimum trust score required to run each controlled action. Mirrors
+// api/policy.py :: PolicyEngine.TRUST_THRESHOLDS and ATTESTATION_ACTIONS.
+// `null` marks an attestation / pass-through action that is not gated on the
+// trust score (it records that something happened, rather than authorizing a
+// live operation). Keep this in sync with the backend — it is advisory UI
+// context, the backend remains the source of truth at decision time.
+export const ACTION_TRUST_THRESHOLDS: Record<ControlledActionId, number | null> = {
+  financial_transaction: 30,
+  tool_call: 10,
+  api_call: 10,
+  data_export: 40,
+  email_send: 20,
+  admin_action: 70,
+  repo_change: null,
+  ci_workflow_change: 80,
+  protected_branch_merge: 80,
+  production_deployment: 80,
+};
+
 export const CONTROLLED_ACTION_GROUPS: Array<{
   id: ControlledActionGroupId;
   label: string;

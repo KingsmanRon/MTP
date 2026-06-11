@@ -180,6 +180,50 @@ class TestVerifyRequest(BaseModel):
         return v.lower()
 
 
+class VerifyTokenRequest(BaseModel):
+    """Request to verify an HMAC approval token issued by ``/verify``.
+
+    This is the downstream-enforcement primitive: a system about to execute a
+    guarded action can hand its approval token (and, optionally, the action
+    parameters) to ``/verify-token`` and refuse to proceed unless the token is
+    cryptographically valid, unexpired, and bound to *this* action.
+    """
+    model_config = ConfigDict(strict=False)
+
+    approval_token: str = Field(
+        ...,
+        min_length=1,
+        description="Base64 approval token returned by POST /verify",
+    )
+    agent_id: Optional[UUID] = Field(
+        None,
+        description="If provided, must match the agent_id embedded in the token",
+    )
+    # Optional action parameters. When all are provided, the server recomputes
+    # the action hash and confirms the token authorizes exactly this action.
+    action_type: Optional[str] = Field(None, max_length=100)
+    payload: Optional[dict[str, Any]] = None
+    nonce: Optional[str] = Field(None, max_length=64)
+    timestamp: Optional[str] = None
+    sig_version: int = Field(2, ge=1, le=3)
+
+
+class VerifyTokenResponse(BaseModel):
+    """Result of verifying an approval token."""
+    model_config = ConfigDict(strict=False)
+
+    valid: bool = Field(..., description="True only if the token is authentic, unexpired, and (if action params supplied) action-bound")
+    reason: Optional[str] = Field(None, description="Why the token was rejected, when invalid")
+    verdict: Optional[str] = Field(None, description="Verdict embedded in the token (e.g. 'approved')")
+    agent_id: Optional[str] = Field(None, description="Agent the token was issued to")
+    action_hash: Optional[str] = Field(None, description="Action hash the token authorizes")
+    expires_at: Optional[datetime] = Field(None, description="Token expiry (UTC)")
+    action_hash_matches: Optional[bool] = Field(
+        None,
+        description="Whether supplied action params recompute to the token's action hash (null if params not supplied)",
+    )
+
+
 class RegisterAgentRequest(BaseModel):
     """Request to register a new agent with the platform."""
     # UPDATED: strict=False allows JSON strings to be parsed into Types (UUID, Decimal)
@@ -223,6 +267,12 @@ class UpdateAgentRequest(BaseModel):
     allowed_actions: Optional[list[str]] = Field(None, max_length=100)
     blocked_actions: Optional[list[str]] = Field(None, max_length=100)
     rate_limit_per_minute: Optional[int] = Field(None, ge=1, le=10000)
+    # Operator override for the agent's trust score. The runtime accrues trust
+    # automatically (+1 per approval), but operators need a direct lever to
+    # promote a vetted agent to a high-trust action (e.g. raise to 80 so it can
+    # run protected_branch_merge) or to demote a suspicious one without waiting
+    # for behavioral decay.
+    trust_score: Optional[int] = Field(None, ge=0, le=100)
     metadata: Optional[dict[str, Any]] = None
 
     @field_validator("allowed_actions", "blocked_actions")
@@ -251,6 +301,7 @@ class UpdateAgentRequest(BaseModel):
             "allowed_actions",
             "blocked_actions",
             "rate_limit_per_minute",
+            "trust_score",
             "metadata",
         ):
             if field_name in self.model_fields_set and getattr(self, field_name) is None:
