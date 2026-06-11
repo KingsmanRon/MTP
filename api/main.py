@@ -34,10 +34,13 @@ from api.database import (
     Database,
     AgentNotFoundError,
     OrganizationNotFoundError,
+    LimitReservationError,
 )
 from api.models import (
     VerifyActionRequest,
     VerifyActionResponse,
+    VerifyTokenRequest,
+    VerifyTokenResponse,
     TestVerifyRequest,
     RegisterAgentRequest,
     UpdateAgentRequest,
@@ -1112,11 +1115,11 @@ async def verify_action(
                 request_user_agent=request.headers.get("User-Agent"),
                 response_time_ms=int((time.time() - start_time) * 1000),
                 trust_score_at_time=agent.trust_score,
-                chain_previous_hash=await database.get_last_audit_hash(agent.id),
+                chain_previous_hash=None,
                 policy_hash=request_data.policy_hash,
                 metadata={},
             )
-            audit_id = await database.insert_audit_log(audit_entry)
+            audit_id = await database.insert_audit_log(audit_entry, derive_chain_hash=True)
 
             await _dispatch_verdict_webhook(
                 database=database,
@@ -1235,11 +1238,11 @@ async def verify_action(
                 request_user_agent=request.headers.get("User-Agent"),
                 response_time_ms=int((time.time() - start_time) * 1000),
                 trust_score_at_time=agent.trust_score,
-                chain_previous_hash=await database.get_last_audit_hash(agent.id),
+                chain_previous_hash=None,
                 policy_hash=request_data.policy_hash,
                 metadata={"violation": policy_result.violation.value if policy_result.violation else None},
             )
-            audit_id = await database.insert_audit_log(audit_entry)
+            audit_id = await database.insert_audit_log(audit_entry, derive_chain_hash=True)
 
             await _dispatch_verdict_webhook(
                 database=database,
@@ -1271,6 +1274,114 @@ async def verify_action(
                     detail=verdict_reason,
                 )
 
+        # STEP 5b: Atomically reserve rate + spend BEFORE approving. The
+        # snapshot checks in evaluate() fail fast, but this increment-and-test
+        # is the authoritative gate: it closes the check-then-act race where N
+        # concurrent requests all observe the same headroom and all pass. A
+        # reservation that trips a limit is logged as a block/rate-limit and
+        # rolls back, leaving no counter consumed.
+        day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        reserve_amount = policy_engine._extract_amount(request_data.payload) or Decimal("0")
+        try:
+            _minute_count, new_daily_spend = await database.reserve_rate_and_spend(
+                agent_id=agent.id,
+                minute_start=minute_start,
+                day_start=day_start,
+                amount=reserve_amount,
+                rate_limit_per_minute=agent.rate_limit_per_minute,
+                daily_limit_usd=agent.daily_limit_usd,
+            )
+        except LimitReservationError as exc:
+            reserve_verdict = (
+                ActionVerdict.RATE_LIMITED if exc.kind == "rate" else ActionVerdict.BLOCKED
+            )
+            if exc.kind == "rate":
+                reserve_reason = (
+                    f"Rate limit of {agent.rate_limit_per_minute} requests/minute exceeded."
+                )
+            else:
+                reserve_reason = (
+                    f"Amount ${reserve_amount} would exceed daily limit "
+                    f"${agent.daily_limit_usd}."
+                )
+
+            from api.observability import rate_limit_trips_total, verify_requests_total
+            if exc.kind == "rate":
+                rate_limit_trips_total.labels(window="tenant_minute").inc()
+                verify_requests_total.labels(verdict="rate_limited").inc()
+            else:
+                verify_requests_total.labels(verdict="blocked").inc()
+
+            logger.warning(
+                "Reservation rejected for agent %s: %s limit (%s)",
+                agent.id, exc.kind, exc.observed,
+            )
+
+            audit_entry = AuditLogEntry(
+                agent_id=agent.id,
+                action_type=request_data.action_type,
+                action_hash=action_hash,
+                payload=request_data.payload,
+                verdict=reserve_verdict,
+                verdict_reason=reserve_reason,
+                signature=base64.b64decode(request_data.signature),
+                signature_valid=True,
+                request_ip=request.client.host if request.client else None,
+                request_user_agent=request.headers.get("User-Agent"),
+                response_time_ms=int((time.time() - start_time) * 1000),
+                trust_score_at_time=agent.trust_score,
+                chain_previous_hash=None,
+                policy_hash=request_data.policy_hash,
+                metadata={
+                    "violation": (
+                        "rate_limit_exceeded" if exc.kind == "rate"
+                        else "daily_limit_exceeded"
+                    )
+                },
+            )
+            audit_id = await database.insert_audit_log(audit_entry, derive_chain_hash=True)
+
+            await _dispatch_verdict_webhook(
+                database=database,
+                org_id=agent.org_id,
+                event=(
+                    "verification.rate_limited" if exc.kind == "rate"
+                    else "verification.blocked"
+                ),
+                agent_id=agent.id,
+                audit_id=audit_id,
+                action_type=request_data.action_type,
+                verdict=reserve_verdict.value,
+                verdict_reason=reserve_reason,
+            )
+
+            new_trust_score = TrustScorer.calculate_adjustment(
+                current_score=agent.trust_score,
+                event_type=(
+                    "action_blocked_rate_limit" if exc.kind == "rate"
+                    else "action_blocked_policy"
+                ),
+            )
+            await database.update_agent_after_verification(
+                agent.id, new_trust_score, was_approved=False
+            )
+
+            raise HTTPException(
+                status_code=(
+                    status.HTTP_429_TOO_MANY_REQUESTS if exc.kind == "rate"
+                    else status.HTTP_403_FORBIDDEN
+                ),
+                detail=reserve_reason,
+            )
+
+        # Reservation succeeded — surface the authoritative post-reservation
+        # daily spend in the limits echoed back to the caller.
+        limits_remaining = {
+            **(limits_remaining or {}),
+            "daily_spent_usd": str(new_daily_spend),
+            "daily_remaining_usd": str(agent.daily_limit_usd - new_daily_spend),
+        }
+
         # STEP 6: Audit Log for approved action
         audit_entry = AuditLogEntry(
             agent_id=agent.id,
@@ -1285,11 +1396,11 @@ async def verify_action(
             request_user_agent=request.headers.get("User-Agent"),
             response_time_ms=int((time.time() - start_time) * 1000),
             trust_score_at_time=agent.trust_score,
-            chain_previous_hash=await database.get_last_audit_hash(agent.id),
+            chain_previous_hash=None,
             policy_hash=request_data.policy_hash,
             metadata={},
         )
-        audit_id = await database.insert_audit_log(audit_entry)
+        audit_id = await database.insert_audit_log(audit_entry, derive_chain_hash=True)
 
         await _dispatch_verdict_webhook(
             database=database,
@@ -1302,13 +1413,8 @@ async def verify_action(
             verdict_reason=verdict_reason,
         )
 
-        # STEP 7: Update rate limit counters
-        amount = policy_engine._extract_amount(request_data.payload) or Decimal("0")
-        day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-        await database.increment_rate_limit(agent.id, "minute", minute_start, Decimal("0"))
-        await database.increment_rate_limit(agent.id, "day", day_start, amount)
-
-        # STEP 8: Update trust score and counters for approved action
+        # STEP 7: Update trust score and counters for approved action. Rate and
+        # spend counters were already advanced atomically in STEP 5b.
         new_trust_score = TrustScorer.calculate_adjustment(
             current_score=agent.trust_score,
             event_type="action_approved",
@@ -1345,6 +1451,106 @@ async def verify_action(
     except Exception as e:
         logger.exception(f"Unexpected error: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@app.post(
+    "/verify-token",
+    response_model=VerifyTokenResponse,
+    tags=["Verification"],
+)
+async def verify_token(request_data: VerifyTokenRequest):
+    """Verify an approval token issued by ``/verify``.
+
+    This is the downstream enforcement primitive: a system about to execute a
+    guarded action presents the approval token it received and proceeds only if
+    this endpoint returns ``valid: true``. The token is an HMAC over
+    ``SERVER_SECRET`` with an absolute expiry, so verification needs no DB
+    lookup and cannot be forged without the server secret — which is why this
+    surface is safe to expose unauthenticated, like the public verify routes.
+
+    If the action parameters (``action_type``, ``payload``, ``nonce``,
+    ``timestamp``) are supplied, the server recomputes the action hash and
+    confirms the token authorizes *this* action and not merely *some* action —
+    binding the approval to the work actually being executed.
+    """
+    claims = CryptoService.verify_approval_token(
+        request_data.approval_token, SERVER_SECRET
+    )
+    if claims is None:
+        return VerifyTokenResponse(
+            valid=False,
+            reason="Token is invalid, tampered, or expired.",
+        )
+
+    token_agent_id = claims.get("agent_id")
+    token_action_hash = claims.get("action_hash")
+    verdict = claims.get("verdict")
+    exp = claims.get("exp")
+    expires_at = (
+        datetime.fromtimestamp(exp, tz=timezone.utc) if isinstance(exp, (int, float)) else None
+    )
+
+    # Optional agent_id cross-check.
+    if request_data.agent_id is not None and str(request_data.agent_id) != token_agent_id:
+        return VerifyTokenResponse(
+            valid=False,
+            reason="Token agent_id does not match the supplied agent_id.",
+            verdict=verdict,
+            agent_id=token_agent_id,
+            action_hash=token_action_hash,
+            expires_at=expires_at,
+        )
+
+    # Optional action-binding check: recompute the action hash and confirm the
+    # token authorizes exactly this action.
+    action_hash_matches: Optional[bool] = None
+    action_fields = (
+        request_data.action_type,
+        request_data.payload,
+        request_data.nonce,
+        request_data.timestamp,
+    )
+    if all(field is not None for field in action_fields):
+        try:
+            recomputed = CryptoService.compute_action_hash(
+                agent_id=token_agent_id,
+                action_type=request_data.action_type,
+                payload=request_data.payload,
+                nonce=request_data.nonce,
+                timestamp=request_data.timestamp,
+                sig_version=request_data.sig_version,
+            )
+        except Exception:
+            return VerifyTokenResponse(
+                valid=False,
+                reason="Could not recompute action hash from supplied parameters.",
+                verdict=verdict,
+                agent_id=token_agent_id,
+                action_hash=token_action_hash,
+                expires_at=expires_at,
+            )
+        action_hash_matches = secrets.compare_digest(
+            recomputed, token_action_hash or ""
+        )
+        if not action_hash_matches:
+            return VerifyTokenResponse(
+                valid=False,
+                reason="Token does not authorize this action (action hash mismatch).",
+                verdict=verdict,
+                agent_id=token_agent_id,
+                action_hash=token_action_hash,
+                expires_at=expires_at,
+                action_hash_matches=False,
+            )
+
+    return VerifyTokenResponse(
+        valid=True,
+        verdict=verdict,
+        agent_id=token_agent_id,
+        action_hash=token_action_hash,
+        expires_at=expires_at,
+        action_hash_matches=action_hash_matches,
+    )
 
 
 @app.post(
@@ -1606,41 +1812,56 @@ async def ingest_event_v1(
     canonical = json.dumps(event_payload, sort_keys=True, separators=(",", ":"))
     action_hash = hashlib.sha256(canonical.encode()).hexdigest()
 
-    audit_entry = AuditLogEntry(
-        agent_id=agent_id,
-        action_type=action_type,
-        action_hash=action_hash,
-        payload=event_payload,
-        verdict=ActionVerdict.APPROVED,
-        verdict_reason="events_v1 ingestion",
-        signature=b"V1_EVENTS_INGEST",
-        signature_valid=True,
-        request_ip=request.client.host if request.client else None,
-        request_user_agent=request.headers.get("User-Agent"),
-        response_time_ms=0,
-        trust_score_at_time=100,
-        chain_previous_hash=await database.get_last_audit_hash(agent_id),
-        policy_hash=None,
-        metadata={"source": "events_v1", "key_id": str(key_id)},
-    )
-    audit_id = await database.insert_audit_log(audit_entry)
-
-    # Keep the agent's activity counters current so the admin dashboard
-    # reflects ingested events. /verify does this via
-    # update_agent_after_verification; this bearer path has no equivalent, so
-    # update directly here (updated_at is set explicitly because prod agents
-    # carry no updated_at trigger — see PR #84).
+    # Bump the synthetic agent's activity counters first and read back its real
+    # trust score, so the audit row records a truthful value instead of a
+    # fabricated 100. /verify does this via update_agent_after_verification;
+    # this bearer path has no equivalent. (updated_at is set explicitly because
+    # prod agents carry no updated_at trigger — see PR #84.)
     async with database.acquire() as conn:
-        await conn.execute(
+        agent_trust_score = await conn.fetchval(
             """
             UPDATE agents
             SET last_action_at = NOW(),
                 total_actions_count = total_actions_count + 1,
                 updated_at = NOW()
             WHERE id = $1
+            RETURNING trust_score
             """,
             agent_id,
         )
+    if agent_trust_score is None:
+        agent_trust_score = 0
+
+    # These events are NOT cryptographically signed: they are partner-reported
+    # facts ingested over a bearer-authenticated channel. Record them honestly.
+    # signature_valid=False (there is no Ed25519 signature to validate) and an
+    # explicit attestation_type so the forensic record can never be mistaken
+    # for a verified, agent-signed action. The action_hash is a SHA-256 content
+    # commitment over the event body, so anchoring it still proves the event was
+    # recorded at batch time — it just does not assert agent authentication.
+    audit_entry = AuditLogEntry(
+        agent_id=agent_id,
+        action_type=action_type,
+        action_hash=action_hash,
+        payload=event_payload,
+        verdict=ActionVerdict.APPROVED,
+        verdict_reason="events_v1 ingestion (unsigned partner attestation)",
+        signature=b"V1_EVENTS_INGEST",
+        signature_valid=False,
+        request_ip=request.client.host if request.client else None,
+        request_user_agent=request.headers.get("User-Agent"),
+        response_time_ms=0,
+        trust_score_at_time=agent_trust_score,
+        chain_previous_hash=None,
+        policy_hash=None,
+        metadata={
+            "source": "events_v1",
+            "key_id": str(key_id),
+            "attestation_type": "unsigned_ingestion",
+            "non_cryptographic": True,
+        },
+    )
+    audit_id = await database.insert_audit_log(audit_entry, derive_chain_hash=True)
 
     return {
         "status": "accepted",
@@ -1924,7 +2145,8 @@ async def update_agent(
         # Build update query dynamically
         allowed_fields = [
             "name", "daily_limit_usd", "per_action_limit_usd",
-            "allowed_actions", "blocked_actions", "rate_limit_per_minute", "metadata"
+            "allowed_actions", "blocked_actions", "rate_limit_per_minute",
+            "trust_score", "metadata"
         ]
 
         set_clauses = []

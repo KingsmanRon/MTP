@@ -42,6 +42,20 @@ class OrganizationNotFoundError(DatabaseError):
     pass
 
 
+class LimitReservationError(DatabaseError):
+    """Raised when an atomic rate/spend reservation would exceed a limit.
+
+    The reservation runs inside a transaction; raising this rolls the
+    transaction back so a rejected request leaves no counter incremented.
+    ``kind`` is ``"rate"`` or ``"daily"``.
+    """
+
+    def __init__(self, kind: str, observed: Any):
+        self.kind = kind
+        self.observed = observed
+        super().__init__(f"{kind} limit exceeded (observed {observed})")
+
+
 class Database:
     """
     Async database interface for Inntris operations.
@@ -405,16 +419,74 @@ class Database:
     # AUDIT LOG OPERATIONS
     # =========================================================================
 
-    async def insert_audit_log(self, entry: AuditLogEntry) -> UUID:
+    async def insert_audit_log(
+        self, entry: AuditLogEntry, *, derive_chain_hash: bool = False
+    ) -> UUID:
         """
         Insert a new audit log entry.
 
         This operation is append-only. The database triggers will prevent
         any modification or deletion.
 
+        When ``derive_chain_hash`` is True, ``chain_previous_hash`` is computed
+        inside the INSERT under a per-agent advisory lock, so concurrent
+        /verify calls for the same agent cannot both read the same "previous"
+        row and fork the local hash chain. When False (e.g. partner ingestion
+        or callers that already hold the previous hash), the caller-supplied
+        ``entry.chain_previous_hash`` is written as-is.
+
         Returns:
             The UUID of the created audit log entry.
         """
+        if derive_chain_hash:
+            # The previous-hash subquery and this INSERT run in one transaction
+            # gated by a per-agent advisory lock, so the read-then-write that
+            # builds the local chain is serialized per agent without
+            # serializing unrelated agents.
+            query = """
+                INSERT INTO audit_logs (
+                    agent_id, action_type, action_hash, payload, verdict,
+                    verdict_reason, signature, signature_valid, request_ip,
+                    request_user_agent, response_time_ms, trust_score_at_time,
+                    chain_previous_hash, policy_hash, metadata
+                )
+                VALUES (
+                    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
+                    (
+                        SELECT action_hash FROM audit_logs
+                        WHERE agent_id = $1
+                        ORDER BY timestamp DESC
+                        LIMIT 1
+                    ),
+                    $13, $14
+                )
+                RETURNING id
+            """
+            async with self.acquire() as conn:
+                async with conn.transaction():
+                    await conn.execute(
+                        "SELECT pg_advisory_xact_lock(hashtext($1)::bigint)",
+                        str(entry.agent_id),
+                    )
+                    log_id = await conn.fetchval(
+                        query,
+                        entry.agent_id,
+                        entry.action_type,
+                        entry.action_hash,
+                        json.dumps(entry.payload),
+                        entry.verdict.value,
+                        entry.verdict_reason,
+                        entry.signature,
+                        entry.signature_valid,
+                        entry.request_ip,
+                        entry.request_user_agent,
+                        entry.response_time_ms,
+                        entry.trust_score_at_time,
+                        entry.policy_hash,
+                        json.dumps(entry.metadata),
+                    )
+            return log_id
+
         query = """
             INSERT INTO audit_logs (
                 agent_id, action_type, action_hash, payload, verdict,
@@ -565,6 +637,68 @@ class Database:
         """
         async with self.acquire() as conn:
             return await conn.fetchval(query, agent_id, day_start) or Decimal("0")
+
+    async def reserve_rate_and_spend(
+        self,
+        agent_id: UUID,
+        minute_start: datetime,
+        day_start: datetime,
+        amount: Decimal,
+        rate_limit_per_minute: int,
+        daily_limit_usd: Decimal,
+    ) -> tuple[int, Decimal]:
+        """Atomically reserve one request in the minute window and ``amount`` in
+        the day window, enforcing both limits inside a single transaction.
+
+        This closes the check-then-act race in /verify. Previously the handler
+        read the current spend/rate, evaluated the policy, then incremented in
+        separate statements — so N concurrent requests could each observe the
+        same remaining headroom and all pass. Here the increment *is* the
+        check: an atomic upsert returns the post-increment value, and a value
+        over the limit raises :class:`LimitReservationError`, rolling the
+        transaction back so nothing is reserved for a rejected request.
+
+        Returns ``(minute_count, daily_spend)`` reflecting the counters after
+        this request is included.
+        """
+        async with self.acquire() as conn:
+            async with conn.transaction():
+                minute_count = await conn.fetchval(
+                    """
+                    INSERT INTO rate_limit_windows (
+                        agent_id, window_type, window_start, request_count, amount_usd
+                    )
+                    VALUES ($1, 'minute', $2, 1, 0)
+                    ON CONFLICT (agent_id, window_type, window_start)
+                    DO UPDATE SET request_count = rate_limit_windows.request_count + 1
+                    RETURNING request_count
+                    """,
+                    agent_id,
+                    minute_start,
+                )
+                if minute_count > rate_limit_per_minute:
+                    raise LimitReservationError("rate", minute_count)
+
+                daily_spend = await conn.fetchval(
+                    """
+                    INSERT INTO rate_limit_windows (
+                        agent_id, window_type, window_start, request_count, amount_usd
+                    )
+                    VALUES ($1, 'day', $2, 1, $3)
+                    ON CONFLICT (agent_id, window_type, window_start)
+                    DO UPDATE SET
+                        request_count = rate_limit_windows.request_count + 1,
+                        amount_usd = rate_limit_windows.amount_usd + $3
+                    RETURNING amount_usd
+                    """,
+                    agent_id,
+                    day_start,
+                    amount,
+                )
+                if daily_spend > daily_limit_usd:
+                    raise LimitReservationError("daily", daily_spend)
+
+                return minute_count, daily_spend
 
     # =========================================================================
     # MERKLE PROOF OPERATIONS
