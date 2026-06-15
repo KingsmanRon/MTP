@@ -25,7 +25,10 @@ import logging
 import uuid
 from contextvars import ContextVar
 from datetime import datetime, timezone
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from fastapi import Response
 
 try:
     from prometheus_client import (
@@ -197,7 +200,7 @@ else:  # pragma: no cover — exercised in stub mode
     verify_latency_seconds = _NoopMetric()
 
 
-async def metrics_endpoint() -> "Response":  # type: ignore[name-defined]
+async def metrics_endpoint() -> Response:
     """FastAPI handler that returns the Prometheus exposition payload.
 
     Deliberately a free function (not a class) so ``api/main.py`` can wire

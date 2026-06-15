@@ -33,9 +33,10 @@ cryptography>=42.0.0,<43.0.0
 # -----------------------------------------------------------------------------
 # Blockchain (Web3)
 # -----------------------------------------------------------------------------
-# Note: v7+ removes ExtraDataToPOAMiddleware (not needed for Base L2)
-web3==6.20.0
-eth-account>=0.11.0,<1.0.0
+# Web3 v7 supports the project's required Python 3.12 runtime without
+# requiring the legacy lru-dict C extension used by Web3 v6.
+web3>=7.0.0,<8.0.0
+eth-account>=0.13.0,<1.0.0
 
 # -----------------------------------------------------------------------------
 # MCP (Model Context Protocol)

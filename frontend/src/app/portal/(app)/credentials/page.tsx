@@ -100,8 +100,9 @@ ${agent.public_key_fingerprint}
 import json
 import base64
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from nacl.signing import SigningKey
+import requests
 
 # Your private key (keep this secure!)
 private_key_b64 = "your-private-key-base64"
@@ -119,28 +120,37 @@ payload = {
 
 # Compute the action hash
 nonce = str(uuid.uuid4())
-timestamp = datetime.utcnow().isoformat() + "Z"
+timestamp = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 signing_data = {
     "agent_id": "${agent.id}",
     "action_type": "financial_transaction",
     "payload_hash": hashlib.sha256(
-        json.dumps(payload, sort_keys=True).encode()
+        json.dumps(
+            payload,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+        ).encode("utf-8")
     ).hexdigest(),
     "nonce": nonce,
     "timestamp": timestamp,
 }
 
 message_hash = hashlib.sha256(
-    json.dumps(signing_data, sort_keys=True).encode()
+    json.dumps(
+        signing_data,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    ).encode("utf-8")
 ).hexdigest()
 
 # Sign the hash
-signature = signing_key.sign(message_hash.encode())
+signature = signing_key.sign(bytes.fromhex(message_hash))
 signature_b64 = base64.b64encode(signature.signature).decode()
 
 # Send to Inntris API
-import requests
 response = requests.post(
     "https://api.inntris.com/verify",
     json={
@@ -150,6 +160,7 @@ response = requests.post(
         "signature": signature_b64,
         "nonce": nonce,
         "timestamp": timestamp,
+        "sig_version": 2,
     }
 )`;
 

@@ -677,6 +677,9 @@ async def public_register_agent(
         allowed_actions=allowed_actions,
         metadata={"source": "public_registration", **adapter_meta},
     )
+    # Public bootstrap promises an immediately usable agent. Persist that
+    # promise instead of returning "active" while the row remains pending.
+    await database.update_agent_status(agent_id, AgentStatus.ACTIVE)
 
     return PublicRegisterAgentResponse(
         agent_id=str(agent_id),
@@ -755,6 +758,7 @@ async def public_register_promptfoo_agent(
         allowed_actions=allowed_actions,
         metadata={"source": "public_registration_promptfoo", **meta},
     )
+    await database.update_agent_status(agent_id, AgentStatus.ACTIVE)
 
     return PublicRegisterAgentResponse(
         agent_id=str(agent_id),

@@ -38,6 +38,7 @@ def _make_db_mock():
     db = MagicMock()
     db.acquire = MagicMock(return_value=acm)
     db.create_agent = AsyncMock(return_value=agent_id)
+    db.update_agent_status = AsyncMock()
     return db
 
 
@@ -58,6 +59,8 @@ class TestPublicRegisterAgent:
         assert "public_key_fingerprint" in body
         assert "org_id" in body
         assert body["status"] == "active"
+        db_mock.update_agent_status.assert_awaited_once()
+        assert db_mock.update_agent_status.await_args.args[1].value == "active"
 
     def test_register_rate_limited_after_5_requests(self):
         redis_mock = AsyncMock()
@@ -93,6 +96,8 @@ class TestPublicRegisterAgent:
         body = response.json()
         assert "agent_id" in body
         assert "promptfoo" in body.get("message", "").lower()
+        db_mock.update_agent_status.assert_awaited_once()
+        assert db_mock.update_agent_status.await_args.args[1].value == "active"
 
     def test_invalid_base64_public_key_returns_400(self):
         # Valid base64 format but decodes to 37 bytes — fails our 32-byte check

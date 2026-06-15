@@ -38,8 +38,8 @@ dependencies = [
     "asyncpg>=0.29.0,<1.0.0",
     "redis>=5.0.0,<6.0.0",
     "pynacl>=1.5.0,<2.0.0",
-    "web3>=6.15.0,<7.0.0",
-    "eth-account>=0.11.0,<1.0.0",
+    "web3>=7.0.0,<8.0.0",
+    "eth-account>=0.13.0,<1.0.0",
     "mcp>=1.0.0,<2.0.0",
     "httpx>=0.26.0,<1.0.0",
     "python-dotenv>=1.0.0,<2.0.0",
@@ -104,6 +104,15 @@ exclude = '''
 [tool.ruff]
 line-length = 100
 target-version = "py312"
+exclude = [
+    ".git",
+    ".venv",
+    "venv",
+    "__pycache__",
+    "contracts",
+]
+
+[tool.ruff.lint]
 select = [
     "E",   # pycodestyle errors
     "W",   # pycodestyle warnings
@@ -120,15 +129,8 @@ ignore = [
     "B008",  # do not perform function calls in argument defaults
     "B904",  # raise from within except
 ]
-exclude = [
-    ".git",
-    ".venv",
-    "venv",
-    "__pycache__",
-    "contracts",
-]
 
-[tool.ruff.per-file-ignores]
+[tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401"]
 
 [tool.mypy]
