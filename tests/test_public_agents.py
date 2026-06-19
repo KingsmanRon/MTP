@@ -62,6 +62,26 @@ class TestPublicRegisterAgent:
         db_mock.update_agent_status.assert_awaited_once()
         assert db_mock.update_agent_status.await_args.args[1].value == "active"
 
+    def test_public_registration_ignores_allowed_actions_metadata(self):
+        payload = dict(VALID_PAYLOAD)
+        payload["adapter_metadata"] = {
+            "platform": "custom",
+            "allowed_actions": ["production_deployment", "admin_action"],
+        }
+        db_mock = _make_db_mock()
+
+        app.dependency_overrides[get_db] = lambda: db_mock
+        app.dependency_overrides[get_redis] = lambda: None
+        try:
+            response = client.post("/public/agents/register", json=payload)
+        finally:
+            app.dependency_overrides.clear()
+
+        assert response.status_code == 201
+        create_kwargs = db_mock.create_agent.await_args.kwargs
+        assert create_kwargs["allowed_actions"] == ["tool_call", "api_call"]
+        assert "allowed_actions" not in create_kwargs["metadata"]
+
     def test_register_rate_limited_after_5_requests(self):
         redis_mock = AsyncMock()
         redis_mock.incr = AsyncMock(return_value=6)  # over limit
@@ -98,6 +118,7 @@ class TestPublicRegisterAgent:
         assert "promptfoo" in body.get("message", "").lower()
         db_mock.update_agent_status.assert_awaited_once()
         assert db_mock.update_agent_status.await_args.args[1].value == "active"
+        assert db_mock.create_agent.await_args.kwargs["allowed_actions"] == ["promptfoo_eval"]
 
     def test_invalid_base64_public_key_returns_400(self):
         # Valid base64 format but decodes to 37 bytes — fails our 32-byte check

@@ -1,10 +1,10 @@
-"""Tests for /v1/events synthetic-agent activation and activity counters.
+"""Tests for /v1/events synthetic-agent activation and activity ownership.
 
 Regression coverage for the admin dashboard reporting ``Active Agents: 0/N``
 despite ingested events: the synthetic ``events-v1-ingest`` agent must be
 created with ``status = 'active'`` (it never goes through /verify's activation
-path) and must have ``last_action_at`` / ``total_actions_count`` bumped on each
-ingested event.
+path). Activity counters are owned by the audit insert trigger, not by a
+manual pre-insert UPDATE in the handler.
 """
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
@@ -36,6 +36,7 @@ def _make_db_mock(existing_agent_id=None):
         return_value={
             "id": key_id,
             "org_id": org_id,
+            "scopes": ["verify"],
             "is_active": True,
             "expires_at": None,
         }
@@ -95,15 +96,16 @@ class TestEventsV1Counters:
         db_mock.create_agent.assert_awaited_once()
         assert "status = 'active'" in _executed_sql(conn)
 
-    def test_counters_bumped_on_ingest(self):
+    def test_activity_is_recorded_by_audit_insert_not_manual_counter_update(self):
         db_mock, conn = _make_db_mock(existing_agent_id=None)
 
         resp = _post_event(db_mock)
 
         assert resp.status_code == 201, resp.text
         sql = _executed_sql(conn)
-        assert "total_actions_count = total_actions_count + 1" in sql
-        assert "last_action_at = NOW()" in sql
+        assert "total_actions_count = total_actions_count + 1" not in sql
+        assert "last_action_at = NOW()" not in sql
+        db_mock.insert_audit_log.assert_awaited_once()
 
     def test_existing_agent_not_recreated_but_counters_bump(self):
         db_mock, conn = _make_db_mock(existing_agent_id=uuid4())
@@ -116,7 +118,8 @@ class TestEventsV1Counters:
         db_mock.create_agent.assert_not_awaited()
         sql = _executed_sql(conn)
         assert "status = 'active'" not in sql
-        assert "total_actions_count = total_actions_count + 1" in sql
+        assert "total_actions_count = total_actions_count + 1" not in sql
+        db_mock.insert_audit_log.assert_awaited_once()
 
 
 class TestEventsV1Truthfulness:

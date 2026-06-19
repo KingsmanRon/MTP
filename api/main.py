@@ -17,9 +17,10 @@ import secrets
 import time
 import json
 import base64
+import binascii
 from datetime import datetime, timezone, timedelta
 from decimal import Decimal
-from typing import Optional
+from typing import Any, Optional
 from uuid import UUID, uuid4
 
 import asyncpg
@@ -127,6 +128,16 @@ def _resolve_master_admin_key(raw: Optional[str]) -> Optional[str]:
 
 
 MASTER_ADMIN_KEY = _resolve_master_admin_key(MASTER_ADMIN_KEY_RAW)
+API_KEY_PREFIX_LENGTH = 8
+PUBLIC_REGISTRATION_METADATA_BLOCKLIST = {
+    "allowed_actions",
+    "blocked_actions",
+    "daily_limit_usd",
+    "per_action_limit_usd",
+    "rate_limit_per_minute",
+    "status",
+    "trust_score",
+}
 
 # SECURITY: Validate secrets in production
 if ENVIRONMENT != "development":
@@ -244,13 +255,20 @@ def canonical_wire_timestamp(dt: datetime) -> str:
     return s
 
 
-def _compute_integrity_status(tx_hash: "Optional[str]") -> str:
+def _compute_integrity_status(
+    tx_hash: "Optional[str]",
+    proof_status: "Optional[str]" = None,
+) -> str:
     """Return integrity_status reflecting whether the receipt has been anchored.
 
     - ``"verified"``       — receipt exists and is anchored on-chain
     - ``"pending_anchor"`` — receipt exists but anchor batch not yet submitted
     """
-    return "verified" if tx_hash else "pending_anchor"
+    if proof_status in {"failed", "dead_letter"}:
+        return "failed"
+    if tx_hash and proof_status in {None, "confirmed"}:
+        return "verified"
+    return "pending_anchor"
 
 
 app = FastAPI(
@@ -387,7 +405,7 @@ async def verify_api_key(
             "org_id": UUID("00000000-0000-0000-0000-000000000001"),
             "org_name": "Development Organization",
             "billing_tier": "enterprise",
-            "scopes": ["admin", "read", "write"],
+            "scopes": ["admin", "read", "write", "verify"],
         }
 
     # Production: verify against database
@@ -434,6 +452,83 @@ async def verify_api_key(
     except Exception as e:
         logger.error(f"API key verification error: {e}")
         raise HTTPException(status_code=401, detail="Invalid API key")
+
+
+def _normalise_scopes(scopes: Any) -> set[str]:
+    if not scopes:
+        return {"read"}
+    if isinstance(scopes, (list, tuple, set)):
+        return {str(scope).strip().lower() for scope in scopes if str(scope).strip()}
+    return {str(scopes).strip().lower()} if str(scopes).strip() else {"read"}
+
+
+def require_api_scope(scope: str):
+    required = scope.strip().lower()
+
+    async def _dependency(auth: dict = Depends(verify_api_key)) -> dict:
+        scopes = _normalise_scopes(auth.get("scopes"))
+        if "admin" in scopes or required in scopes:
+            return auth
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"API key requires '{required}' scope",
+        )
+
+    return _dependency
+
+
+def _api_key_prefix(raw_key: str) -> str:
+    for marker in ("inntris_live_sk_", "inntris_"):
+        if raw_key.startswith(marker):
+            return raw_key[len(marker):len(marker) + API_KEY_PREFIX_LENGTH]
+    return raw_key[:API_KEY_PREFIX_LENGTH]
+
+
+def _decode_signature_for_audit(signature_b64: str) -> bytes:
+    try:
+        decoded = base64.b64decode(signature_b64, validate=True)
+    except (binascii.Error, ValueError):
+        digest = hashlib.sha256(signature_b64.encode("utf-8")).hexdigest()[:16]
+        return f"INVALID_SIGNATURE:{digest}".encode("ascii")
+    if decoded:
+        return decoded
+    digest = hashlib.sha256(signature_b64.encode("utf-8")).hexdigest()[:16]
+    return f"EMPTY_SIGNATURE:{digest}".encode("ascii")
+
+
+def _effective_policy_hash(agent: Any) -> str:
+    policy_payload = {
+        "version": "effective_agent_policy_v1",
+        "agent_id": str(agent.id),
+        "status": agent.status.value if hasattr(agent.status, "value") else str(agent.status),
+        "allowed_actions": sorted(agent.allowed_actions or []),
+        "blocked_actions": sorted(agent.blocked_actions or []),
+        "daily_limit_usd": str(agent.daily_limit_usd),
+        "per_action_limit_usd": str(agent.per_action_limit_usd),
+        "rate_limit_per_minute": int(agent.rate_limit_per_minute),
+        "trust_score": int(agent.trust_score),
+    }
+    canonical = json.dumps(policy_payload, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def _audit_metadata(
+    *,
+    client_policy_hash: Optional[str],
+    extra: Optional[dict[str, Any]] = None,
+) -> dict[str, Any]:
+    metadata = dict(extra or {})
+    if client_policy_hash:
+        metadata["client_policy_hash"] = client_policy_hash
+    return metadata
+
+
+def _public_registration_metadata(raw_metadata: Optional[dict[str, Any]]) -> dict[str, Any]:
+    return {
+        str(key): value
+        for key, value in dict(raw_metadata or {}).items()
+        if str(key) not in PUBLIC_REGISTRATION_METADATA_BLOCKLIST
+    }
 
 
 async def _check_public_rate_limit(
@@ -636,7 +731,7 @@ async def public_register_agent(
 
     # Decode and validate the public key
     try:
-        public_key_bytes = base64.b64decode(request_data.public_key)
+        public_key_bytes = base64.b64decode(request_data.public_key, validate=True)
     except Exception:
         raise HTTPException(status_code=400, detail="public_key must be valid base64")
     if len(public_key_bytes) != 32:
@@ -647,7 +742,16 @@ async def public_register_agent(
     # Find or create a default public organization for this email
     async with database.acquire() as conn:
         org_row = await conn.fetchrow(
-            "SELECT id FROM organizations WHERE contact_email = $1 LIMIT 1",
+            """
+            SELECT id FROM organizations
+            WHERE contact_email = $1
+              AND metadata->>'source' IN (
+                  'public_registration',
+                  'public_registration_promptfoo'
+              )
+            ORDER BY created_at ASC
+            LIMIT 1
+            """,
             request_data.email,
         )
         if org_row:
@@ -658,23 +762,23 @@ async def public_register_agent(
             placeholder_key_hash = hashlib.sha256(os.urandom(32)).digest()
             org_id = await conn.fetchval(
                 """
-                INSERT INTO organizations (name, contact_email, billing_tier, api_key_hash)
-                VALUES ($1, $2, 'free', $3)
+                INSERT INTO organizations (name, contact_email, billing_tier, api_key_hash, metadata)
+                VALUES ($1, $2, 'free', $3, $4::jsonb)
                 RETURNING id
                 """,
                 f"Public Org — {request_data.email}",
                 request_data.email,
                 placeholder_key_hash,
+                json.dumps({"source": "public_registration"}),
             )
 
     # Register the agent
-    adapter_meta = dict(request_data.adapter_metadata or {})
-    allowed_actions = adapter_meta.pop("allowed_actions", ["tool_call", "api_call", "data_export"])
+    adapter_meta = _public_registration_metadata(request_data.adapter_metadata)
     agent_id = await database.create_agent(
         org_id=org_id,
         name=f"agent-{fingerprint[:8]}",
         public_key=public_key_bytes,
-        allowed_actions=allowed_actions,
+        allowed_actions=["tool_call", "api_call"],
         metadata={"source": "public_registration", **adapter_meta},
     )
     # Public bootstrap promises an immediately usable agent. Persist that
@@ -716,7 +820,7 @@ async def public_register_promptfoo_agent(
 
     # Decode and validate the public key
     try:
-        public_key_bytes = base64.b64decode(request_data.public_key)
+        public_key_bytes = base64.b64decode(request_data.public_key, validate=True)
     except Exception:
         raise HTTPException(status_code=400, detail="public_key must be valid base64")
     if len(public_key_bytes) != 32:
@@ -725,15 +829,23 @@ async def public_register_promptfoo_agent(
     fingerprint = CryptoService.compute_public_key_fingerprint(public_key_bytes)
 
     # Inject Promptfoo defaults
-    meta = dict(request_data.adapter_metadata or {})
+    meta = _public_registration_metadata(request_data.adapter_metadata)
     meta.setdefault("platform", "promptfoo")
     meta.setdefault("version", "unknown")
-    allowed_actions = meta.pop("allowed_actions", ["promptfoo_eval", "tool_call", "api_call"])
 
     # Find or create organization
     async with database.acquire() as conn:
         org_row = await conn.fetchrow(
-            "SELECT id FROM organizations WHERE contact_email = $1 LIMIT 1",
+            """
+            SELECT id FROM organizations
+            WHERE contact_email = $1
+              AND metadata->>'source' IN (
+                  'public_registration',
+                  'public_registration_promptfoo'
+              )
+            ORDER BY created_at ASC
+            LIMIT 1
+            """,
             request_data.email,
         )
         if org_row:
@@ -742,20 +854,21 @@ async def public_register_promptfoo_agent(
             placeholder_key_hash = hashlib.sha256(os.urandom(32)).digest()
             org_id = await conn.fetchval(
                 """
-                INSERT INTO organizations (name, contact_email, billing_tier, api_key_hash)
-                VALUES ($1, $2, 'free', $3)
+                INSERT INTO organizations (name, contact_email, billing_tier, api_key_hash, metadata)
+                VALUES ($1, $2, 'free', $3, $4::jsonb)
                 RETURNING id
                 """,
                 f"Promptfoo Org — {request_data.email}",
                 request_data.email,
                 placeholder_key_hash,
+                json.dumps({"source": "public_registration_promptfoo"}),
             )
 
     agent_id = await database.create_agent(
         org_id=org_id,
         name=f"promptfoo-{fingerprint[:8]}",
         public_key=public_key_bytes,
-        allowed_actions=allowed_actions,
+        allowed_actions=["promptfoo_eval"],
         metadata={"source": "public_registration_promptfoo", **meta},
     )
     await database.update_agent_status(agent_id, AgentStatus.ACTIVE)
@@ -798,6 +911,7 @@ async def get_public_verification_record(
                            mp.transaction_hash AS tx_hash,
                            mp.block_number,
                            mp.chain_id,
+                           mp.status AS proof_status,
                            mp.confirmed_at AS anchored_at
                     FROM merkle_proofs mp
                     JOIN audit_logs al ON al.merkle_root_id = mp.id
@@ -822,6 +936,7 @@ async def get_public_verification_record(
                            mp.transaction_hash AS tx_hash,
                            mp.block_number,
                            mp.chain_id,
+                           mp.status AS proof_status,
                            mp.confirmed_at AS anchored_at
                     FROM audit_logs al
                     JOIN agents a ON al.agent_id = a.id
@@ -936,7 +1051,10 @@ async def get_public_verification_record(
         anchored_at=row.get("anchored_at"),
         schema_version=schema_version,
         receipt_fingerprint=receipt_fingerprint,
-        integrity_status=_compute_integrity_status(row.get("tx_hash")),
+        integrity_status=_compute_integrity_status(
+            row.get("tx_hash"),
+            row.get("proof_status"),
+        ),
     )
 
 
@@ -1002,6 +1120,43 @@ async def get_public_proof(
 
     if not proof_row:
         raise HTTPException(status_code=404, detail="Merkle proof record not found")
+
+    proof_status = proof_row.get("status")
+    if proof_status in {"failed", "dead_letter"}:
+        return PublicProofResponse(
+            audit_id=str(log_row["id"]),
+            status="failed",
+            action_hash=log_row["action_hash"],
+            proof=[],
+            positions=[],
+            merkle_root=proof_row["root_hash"],
+            tx_hash=proof_row.get("transaction_hash"),
+            chain_id=proof_row.get("chain_id") or 8453,
+            block_number=proof_row.get("block_number"),
+            anchored_at=None,
+            submitter=proof_row.get("submitted_by"),
+            receipt_fingerprint=None,
+            policy_hash=log_row["policy_hash"],
+            timestamp=canonical_wire_timestamp(log_row["timestamp"]) if log_row["timestamp"] else None,
+        )
+
+    if proof_status != "confirmed" or not proof_row.get("transaction_hash"):
+        return PublicProofResponse(
+            audit_id=str(log_row["id"]),
+            status="pending_anchor",
+            action_hash=log_row["action_hash"],
+            proof=[],
+            positions=[],
+            merkle_root=None,
+            tx_hash=None,
+            chain_id=None,
+            block_number=None,
+            anchored_at=None,
+            submitter=None,
+            receipt_fingerprint=None,
+            policy_hash=log_row["policy_hash"],
+            timestamp=canonical_wire_timestamp(log_row["timestamp"]) if log_row["timestamp"] else None,
+        )
 
     leaf_hashes = proof_row["leaf_hashes"]
     leaf_index = log_row["merkle_leaf_index"]
@@ -1081,6 +1236,8 @@ async def verify_action(
             timestamp=request_data.timestamp,
             sig_version=request_data.sig_version,
         )
+        effective_policy_hash = _effective_policy_hash(agent)
+        audit_signature = _decode_signature_for_audit(request_data.signature)
 
         try:
             signature_valid = CryptoService.verify_ed25519_signature(
@@ -1113,15 +1270,15 @@ async def verify_action(
                 payload=request_data.payload,
                 verdict=verdict,
                 verdict_reason=verdict_reason,
-                signature=base64.b64decode(request_data.signature),
+                signature=audit_signature,
                 signature_valid=False,
                 request_ip=request.client.host if request.client else None,
                 request_user_agent=request.headers.get("User-Agent"),
                 response_time_ms=int((time.time() - start_time) * 1000),
                 trust_score_at_time=agent.trust_score,
                 chain_previous_hash=None,
-                policy_hash=request_data.policy_hash,
-                metadata={},
+                policy_hash=effective_policy_hash,
+                metadata=_audit_metadata(client_policy_hash=request_data.policy_hash),
             )
             audit_id = await database.insert_audit_log(audit_entry, derive_chain_hash=True)
 
@@ -1136,16 +1293,14 @@ async def verify_action(
                 verdict_reason=verdict_reason,
             )
 
-            # Create security alert for invalid signature
-            await database.create_security_alert(
-                alert_type="signature_invalid",
-                severity="high",
-                title=f"Invalid signature from agent {agent.name}",
-                description=f"Agent {agent.id} submitted an action with invalid Ed25519 signature.",
-                agent_id=agent.id,
-                org_id=agent.org_id,
-                evidence={"action_type": request_data.action_type, "action_hash": action_hash},
-                audit_log_ids=[audit_id],
+            new_trust_score = TrustScorer.calculate_adjustment(
+                current_score=agent.trust_score,
+                event_type="signature_invalid",
+            )
+            await database.update_agent_after_verification(
+                agent.id,
+                new_trust_score,
+                was_approved=False,
             )
 
             raise HTTPException(
@@ -1236,15 +1391,24 @@ async def verify_action(
                 payload=request_data.payload,
                 verdict=verdict,
                 verdict_reason=verdict_reason,
-                signature=base64.b64decode(request_data.signature),
+                signature=audit_signature,
                 signature_valid=True,
                 request_ip=request.client.host if request.client else None,
                 request_user_agent=request.headers.get("User-Agent"),
                 response_time_ms=int((time.time() - start_time) * 1000),
                 trust_score_at_time=agent.trust_score,
                 chain_previous_hash=None,
-                policy_hash=request_data.policy_hash,
-                metadata={"violation": policy_result.violation.value if policy_result.violation else None},
+                policy_hash=effective_policy_hash,
+                metadata=_audit_metadata(
+                    client_policy_hash=request_data.policy_hash,
+                    extra={
+                        "violation": (
+                            policy_result.violation.value
+                            if policy_result.violation
+                            else None
+                        )
+                    },
+                ),
             )
             audit_id = await database.insert_audit_log(audit_entry, derive_chain_hash=True)
 
@@ -1328,20 +1492,23 @@ async def verify_action(
                 payload=request_data.payload,
                 verdict=reserve_verdict,
                 verdict_reason=reserve_reason,
-                signature=base64.b64decode(request_data.signature),
+                signature=audit_signature,
                 signature_valid=True,
                 request_ip=request.client.host if request.client else None,
                 request_user_agent=request.headers.get("User-Agent"),
                 response_time_ms=int((time.time() - start_time) * 1000),
                 trust_score_at_time=agent.trust_score,
                 chain_previous_hash=None,
-                policy_hash=request_data.policy_hash,
-                metadata={
-                    "violation": (
-                        "rate_limit_exceeded" if exc.kind == "rate"
-                        else "daily_limit_exceeded"
-                    )
-                },
+                policy_hash=effective_policy_hash,
+                metadata=_audit_metadata(
+                    client_policy_hash=request_data.policy_hash,
+                    extra={
+                        "violation": (
+                            "rate_limit_exceeded" if exc.kind == "rate"
+                            else "daily_limit_exceeded"
+                        )
+                    },
+                ),
             )
             audit_id = await database.insert_audit_log(audit_entry, derive_chain_hash=True)
 
@@ -1394,15 +1561,15 @@ async def verify_action(
             payload=request_data.payload,
             verdict=verdict,
             verdict_reason=verdict_reason,
-            signature=base64.b64decode(request_data.signature),
+            signature=audit_signature,
             signature_valid=True,
             request_ip=request.client.host if request.client else None,
             request_user_agent=request.headers.get("User-Agent"),
             response_time_ms=int((time.time() - start_time) * 1000),
             trust_score_at_time=agent.trust_score,
             chain_previous_hash=None,
-            policy_hash=request_data.policy_hash,
-            metadata={},
+            policy_hash=effective_policy_hash,
+            metadata=_audit_metadata(client_policy_hash=request_data.policy_hash),
         )
         audit_id = await database.insert_audit_log(audit_entry, derive_chain_hash=True)
 
@@ -1565,7 +1732,7 @@ async def verify_token(request_data: VerifyTokenRequest):
 async def test_verify_action(
     request_data: TestVerifyRequest,
     request: Request,
-    auth: dict = Depends(verify_api_key),
+    auth: dict = Depends(require_api_scope("write")),
     database: Database = Depends(get_db),
 ):
     """
@@ -1714,7 +1881,7 @@ async def _verify_bearer_token(
     async with database.acquire() as conn:
         row = await conn.fetchrow(
             """
-            SELECT ak.id, ak.org_id, ak.is_active, ak.expires_at
+            SELECT ak.id, ak.org_id, ak.scopes, ak.is_active, ak.expires_at
             FROM api_keys ak
             WHERE ak.key_hash = $1
             """,
@@ -1726,6 +1893,12 @@ async def _verify_bearer_token(
         raise HTTPException(status_code=401, detail="Bearer token is inactive")
     if row["expires_at"] and row["expires_at"] < datetime.now(timezone.utc):
         raise HTTPException(status_code=401, detail="Bearer token has expired")
+    scopes = _normalise_scopes(row.get("scopes") if hasattr(row, "get") else None)
+    if "admin" not in scopes and "verify" not in scopes:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Bearer token requires 'verify' scope",
+        )
 
     async with database.acquire() as conn:
         await conn.execute(
@@ -1816,20 +1989,15 @@ async def ingest_event_v1(
     canonical = json.dumps(event_payload, sort_keys=True, separators=(",", ":"))
     action_hash = hashlib.sha256(canonical.encode()).hexdigest()
 
-    # Bump the synthetic agent's activity counters first and read back its real
-    # trust score, so the audit row records a truthful value instead of a
-    # fabricated 100. /verify does this via update_agent_after_verification;
-    # this bearer path has no equivalent. (updated_at is set explicitly because
-    # prod agents carry no updated_at trigger — see PR #84.)
+    # Read the synthetic agent's real trust score so the audit row records a
+    # truthful value instead of a fabricated 100. The audit insert trigger owns
+    # activity counters and last_action_at.
     async with database.acquire() as conn:
         agent_trust_score = await conn.fetchval(
             """
-            UPDATE agents
-            SET last_action_at = NOW(),
-                total_actions_count = total_actions_count + 1,
-                updated_at = NOW()
+            SELECT trust_score
+            FROM agents
             WHERE id = $1
-            RETURNING trust_score
             """,
             agent_id,
         )
@@ -1882,7 +2050,7 @@ async def ingest_event_v1(
 
 @app.get("/admin/agents", tags=["Admin - Agents"], response_model=list[AgentSummary])
 async def list_agents(
-    auth: dict = Depends(verify_api_key),
+    auth: dict = Depends(require_api_scope("read")),
     database: Database = Depends(get_db),
 ):
     """List all agents for the organization."""
@@ -1931,7 +2099,7 @@ async def list_agents(
 @app.get("/admin/agents/{agent_id}", tags=["Admin - Agents"], response_model=AgentDetail)
 async def get_agent(
     agent_id: UUID,
-    auth: dict = Depends(verify_api_key),
+    auth: dict = Depends(require_api_scope("read")),
     database: Database = Depends(get_db),
 ):
     """Get a specific agent."""
@@ -1967,7 +2135,7 @@ async def get_agent(
 @app.get("/admin/agents/{agent_id}/dashboard", tags=["Admin - Agents"])
 async def get_agent_dashboard(
     agent_id: UUID,
-    auth: dict = Depends(verify_api_key),
+    auth: dict = Depends(require_api_scope("read")),
     database: Database = Depends(get_db),
 ):
     """Get dashboard data for an agent (for portal view)."""
@@ -2074,7 +2242,7 @@ async def get_agent_dashboard(
 @app.post("/admin/agents", tags=["Admin - Agents"])
 async def register_agent(
     request_data: RegisterAgentRequest,
-    auth: dict = Depends(verify_api_key),
+    auth: dict = Depends(require_api_scope("write")),
     database: Database = Depends(get_db),
 ):
     """Register a new agent."""
@@ -2115,7 +2283,7 @@ async def register_agent(
 async def update_agent(
     agent_id: UUID,
     update_request: UpdateAgentRequest,
-    auth: dict = Depends(verify_api_key),
+    auth: dict = Depends(require_api_scope("write")),
     database: Database = Depends(get_db),
 ):
     """Update agent configuration."""
@@ -2211,7 +2379,7 @@ async def update_agent(
 async def update_agent_status(
     agent_id: UUID,
     new_status: AgentStatus = Query(...),
-    auth: dict = Depends(verify_api_key),
+    auth: dict = Depends(require_api_scope("write")),
     database: Database = Depends(get_db),
 ):
     """Update agent status."""
@@ -2243,7 +2411,7 @@ async def search_audit_logs(
     end: Optional[str] = None,
     limit: int = Query(default=50, le=1000),
     offset: int = Query(default=0, ge=0),
-    auth: dict = Depends(verify_api_key),
+    auth: dict = Depends(require_api_scope("read")),
     database: Database = Depends(get_db),
 ):
     """Search audit logs with filters."""
@@ -2349,7 +2517,7 @@ async def search_audit_logs(
 @app.get("/admin/audit/{log_id}", tags=["Admin - Audit"], response_model=AuditLogDetail)
 async def get_audit_log(
     log_id: UUID,
-    auth: dict = Depends(verify_api_key),
+    auth: dict = Depends(require_api_scope("read")),
     database: Database = Depends(get_db),
 ):
     """Get a specific audit log."""
@@ -2394,7 +2562,7 @@ async def get_audit_log(
 @app.get("/admin/audit/{log_id}/proof", tags=["Admin - Audit"], response_model=AuditProof)
 async def get_merkle_proof(
     log_id: UUID,
-    auth: dict = Depends(verify_api_key),
+    auth: dict = Depends(require_api_scope("read")),
     database: Database = Depends(get_db),
 ):
     """Get Merkle proof for an audit log."""
@@ -2460,7 +2628,7 @@ async def export_audit_logs(
     start: Optional[str] = None,
     end: Optional[str] = None,
     agent_id: Optional[UUID] = None,
-    auth: dict = Depends(verify_api_key),
+    auth: dict = Depends(require_api_scope("read")),
     database: Database = Depends(get_db),
 ):
     """Export audit logs as CSV or JSON."""
@@ -2560,7 +2728,7 @@ async def list_alerts(
     severity: Optional[str] = None,
     limit: int = Query(default=50, le=1000),
     offset: int = Query(default=0, ge=0),
-    auth: dict = Depends(verify_api_key),
+    auth: dict = Depends(require_api_scope("read")),
     database: Database = Depends(get_db),
 ):
     """List security alerts."""
@@ -2624,7 +2792,7 @@ async def list_alerts(
 @app.post("/admin/alerts/{alert_id}/acknowledge", tags=["Admin - Alerts"])
 async def acknowledge_alert(
     alert_id: UUID,
-    auth: dict = Depends(verify_api_key),
+    auth: dict = Depends(require_api_scope("write")),
     database: Database = Depends(get_db),
 ):
     """Acknowledge a security alert."""
@@ -2649,7 +2817,7 @@ async def acknowledge_alert(
 async def resolve_alert(
     alert_id: UUID,
     body: dict,
-    auth: dict = Depends(verify_api_key),
+    auth: dict = Depends(require_api_scope("write")),
     database: Database = Depends(get_db),
 ):
     """Resolve a security alert."""
@@ -2677,7 +2845,7 @@ async def resolve_alert(
 
 @app.get("/admin/api-keys", tags=["Admin - API Keys"])
 async def list_api_keys(
-    auth: dict = Depends(verify_api_key),
+    auth: dict = Depends(require_api_scope("admin")),
     database: Database = Depends(get_db),
 ):
     """List API keys for the organization."""
@@ -2714,7 +2882,7 @@ async def list_api_keys(
 @app.post("/admin/api-keys", tags=["Admin - API Keys"])
 async def create_api_key(
     body: dict,
-    auth: dict = Depends(verify_api_key),
+    auth: dict = Depends(require_api_scope("admin")),
     database: Database = Depends(get_db),
 ):
     """Create a new API key."""
@@ -2726,7 +2894,7 @@ async def create_api_key(
     # Generate secure API key
     raw_key = f"inntris_{secrets.token_urlsafe(32)}"
     key_hash = hashlib.sha256(raw_key.encode()).digest()
-    key_prefix = raw_key[:12]
+    key_prefix = _api_key_prefix(raw_key)
 
     async with database.acquire() as conn:
         key_id = await conn.fetchval(
@@ -2742,12 +2910,13 @@ async def create_api_key(
     return {
         "api_key": raw_key,  # Only returned once!
         "key_id": str(key_id),
+        "key_prefix": key_prefix,
     }
 
 @app.delete("/admin/api-keys/{key_prefix}", tags=["Admin - API Keys"])
 async def revoke_api_key(
     key_prefix: str,
-    auth: dict = Depends(verify_api_key),
+    auth: dict = Depends(require_api_scope("admin")),
     database: Database = Depends(get_db),
 ):
     """Revoke an API key."""
@@ -2770,7 +2939,7 @@ async def revoke_api_key(
 
 @app.post("/admin/api-keys/rotate", tags=["Admin - API Keys"])
 async def rotate_api_key(
-    auth: dict = Depends(verify_api_key),
+    auth: dict = Depends(require_api_scope("admin")),
     database: Database = Depends(get_db),
 ):
     """Rotate all API keys - creates new key and revokes old ones."""
@@ -2779,7 +2948,7 @@ async def rotate_api_key(
     # Generate new key
     raw_key = f"inntris_{secrets.token_urlsafe(32)}"
     key_hash = hashlib.sha256(raw_key.encode()).digest()
-    key_prefix = raw_key[:12]
+    key_prefix = _api_key_prefix(raw_key)
 
     async with database.acquire() as conn:
         # Revoke all existing keys
@@ -2799,6 +2968,7 @@ async def rotate_api_key(
 
     return {
         "api_key": raw_key,
+        "key_prefix": key_prefix,
         "message": "All previous keys revoked. Use this new key.",
     }
 
@@ -2810,7 +2980,7 @@ async def rotate_api_key(
 async def get_usage_metrics(
     start: str = Query(...),
     end: str = Query(...),
-    auth: dict = Depends(verify_api_key),
+    auth: dict = Depends(require_api_scope("read")),
     database: Database = Depends(get_db),
 ):
     """Get usage metrics for the organization."""
@@ -2918,7 +3088,7 @@ async def get_usage_metrics(
 
 @app.get("/admin/organization", tags=["Admin - Organization"], response_model=OrganizationResponse)
 async def get_organization(
-    auth: dict = Depends(verify_api_key),
+    auth: dict = Depends(require_api_scope("read")),
     database: Database = Depends(get_db),
 ):
     """Get organization information."""
@@ -2949,7 +3119,7 @@ async def get_organization(
 @app.patch("/admin/organization", tags=["Admin - Organization"])
 async def update_organization(
     body: dict,
-    auth: dict = Depends(verify_api_key),
+    auth: dict = Depends(require_api_scope("write")),
     database: Database = Depends(get_db),
 ):
     """
@@ -3059,7 +3229,7 @@ async def create_organization_endpoint(
 
     raw_key = f"inntris_live_sk_{secrets.token_urlsafe(32)}"
     key_hash = hashlib.sha256(raw_key.encode()).digest()
-    key_prefix = raw_key[16:24]
+    key_prefix = _api_key_prefix(raw_key)
 
     async with database.acquire() as conn:
         async with conn.transaction():

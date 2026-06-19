@@ -6,6 +6,7 @@ SECURITY: This module is critical for the integrity of the entire system.
 """
 
 import base64
+import binascii
 import hashlib
 import hmac
 import json
@@ -262,7 +263,7 @@ class CryptoService:
 
         try:
             # Decode signature
-            signature = base64.b64decode(signature_b64)
+            signature = base64.b64decode(signature_b64, validate=True)
             if len(signature) != 64:
                 logger.warning(
                     f"Invalid signature length: expected 64 bytes, got {len(signature)}"
@@ -282,6 +283,9 @@ class CryptoService:
 
         except BadSignatureError:
             logger.warning("Ed25519 signature verification failed: invalid signature")
+            return False
+        except binascii.Error as e:
+            logger.warning(f"Ed25519 signature verification failed: malformed base64: {e}")
             return False
         except ValueError as e:
             logger.warning(f"Ed25519 signature verification failed: {e}")

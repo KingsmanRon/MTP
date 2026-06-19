@@ -78,7 +78,10 @@ def test_update_agent_policy_controls_are_validated_and_saved():
     db_mock.get_agent_by_id = AsyncMock(return_value=agent)
 
     app.dependency_overrides[get_db] = lambda: db_mock
-    app.dependency_overrides[verify_api_key] = lambda: {"org_id": org_id}
+    app.dependency_overrides[verify_api_key] = lambda: {
+        "org_id": org_id,
+        "scopes": ["write"],
+    }
     try:
         response = client.patch(
             f"/admin/agents/{agent_id}",
@@ -109,7 +112,10 @@ def test_update_agent_rejects_per_action_limit_above_resulting_daily_limit():
     db_mock.get_agent_by_id = AsyncMock(return_value=agent)
 
     app.dependency_overrides[get_db] = lambda: db_mock
-    app.dependency_overrides[verify_api_key] = lambda: {"org_id": org_id}
+    app.dependency_overrides[verify_api_key] = lambda: {
+        "org_id": org_id,
+        "scopes": ["write"],
+    }
     try:
         response = client.patch(
             f"/admin/agents/{agent_id}",
@@ -129,7 +135,10 @@ def test_update_agent_rejects_action_overlap_against_existing_policy():
     db_mock.get_agent_by_id = AsyncMock(return_value=agent)
 
     app.dependency_overrides[get_db] = lambda: db_mock
-    app.dependency_overrides[verify_api_key] = lambda: {"org_id": org_id}
+    app.dependency_overrides[verify_api_key] = lambda: {
+        "org_id": org_id,
+        "scopes": ["write"],
+    }
     try:
         response = client.patch(
             f"/admin/agents/{agent_id}",
@@ -149,7 +158,10 @@ def test_update_agent_rejects_explicit_null_controls():
     db_mock.get_agent_by_id = AsyncMock(return_value=_agent_record(id=agent_id, org_id=org_id))
 
     app.dependency_overrides[get_db] = lambda: db_mock
-    app.dependency_overrides[verify_api_key] = lambda: {"org_id": org_id}
+    app.dependency_overrides[verify_api_key] = lambda: {
+        "org_id": org_id,
+        "scopes": ["write"],
+    }
     try:
         response = client.patch(
             f"/admin/agents/{agent_id}",

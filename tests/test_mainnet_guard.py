@@ -61,3 +61,15 @@ class TestComputeIntegrityStatus:
 
     def test_tx_hash_present_returns_verified(self):
         assert _compute_integrity_status(tx_hash="0x" + "a" * 64) == "verified"
+
+    def test_failed_proof_status_returns_failed(self):
+        assert _compute_integrity_status(tx_hash=None, proof_status="failed") == "failed"
+
+    def test_unconfirmed_tx_hash_stays_pending(self):
+        assert (
+            _compute_integrity_status(
+                tx_hash="0x" + "a" * 64,
+                proof_status="submitted",
+            )
+            == "pending_anchor"
+        )

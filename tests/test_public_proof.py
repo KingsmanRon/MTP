@@ -29,13 +29,14 @@ def _log_row(anchored: bool):
     return m
 
 
-def _proof_row():
+def _proof_row(status="confirmed", transaction_hash="0x" + "d" * 64):
     row = {
         "id": FAKE_PROOF_ID,
         "root_hash": "c" * 64,
-        "transaction_hash": "0x" + "d" * 64,
+        "transaction_hash": transaction_hash,
         "block_number": 12345,
         "chain_id": 8453,
+        "status": status,
         "confirmed_at": datetime(2026, 4, 13, 13, 0, 0, tzinfo=timezone.utc),
         "leaf_hashes": ["b" * 64, "e" * 64],
         "submitted_by": None,
@@ -79,6 +80,24 @@ class TestPublicProofEndpoint:
         assert body["status"] == "pending_anchor"
         assert body["tx_hash"] is None
         assert body["merkle_root"] is None
+        assert body["proof"] == []
+
+    def test_failed_proof_row_returns_failed_not_anchored(self):
+        with patch("api.main.db_pool") as mock_pool:
+            conn = AsyncMock()
+            conn.fetchrow = AsyncMock(
+                side_effect=[
+                    _log_row(anchored=True),
+                    _proof_row(status="dead_letter", transaction_hash=None),
+                ]
+            )
+            mock_pool.acquire.return_value.__aenter__ = AsyncMock(return_value=conn)
+            mock_pool.acquire.return_value.__aexit__ = AsyncMock(return_value=False)
+            response = client.get(f"/public/verify/{FAKE_AUDIT_ID}/proof")
+        assert response.status_code == 200
+        body = response.json()
+        assert body["status"] == "failed"
+        assert body["tx_hash"] is None
         assert body["proof"] == []
 
     def test_missing_audit_log_returns_404(self):
