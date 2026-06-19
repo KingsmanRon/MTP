@@ -146,7 +146,7 @@ export default async function InntrisCoreDarkPreview() {
         </div>
       </header>
       <main className="relative">
-        <section id="overview" className="mx-auto grid max-w-7xl gap-12 px-6 pb-20 pt-16 lg:grid-cols-[1.15fr_0.85fr] lg:px-8 lg:pb-28 lg:pt-20">
+        <section id="overview" className="scroll-mt-24 mx-auto grid max-w-7xl gap-12 px-6 pb-20 pt-6 lg:grid-cols-[1.15fr_0.85fr] lg:px-8 lg:pb-28">
           <div className="max-w-3xl">
             <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-[#28C281]/25 bg-[#28C281]/10 px-3 py-1.5 font-mono text-xs text-[#28C281]">
               <span className="h-1.5 w-1.5 rounded-full bg-[#28C281] animate-pulse" />
@@ -251,7 +251,7 @@ export default async function InntrisCoreDarkPreview() {
             </div>
           </div>
         </section>
-        <section id="modules" className="mx-auto max-w-7xl px-6 py-4 lg:px-8">
+        <section id="modules" className="scroll-mt-24 mx-auto max-w-7xl px-6 py-4 lg:px-8">
           <div className="mb-8">
             <div className="text-sm font-medium uppercase tracking-[0.18em] text-[#8FB8FF]">
               Product surface
@@ -302,7 +302,7 @@ export default async function InntrisCoreDarkPreview() {
             })}
           </div>
         </section>
-        <section id="use-cases" className="mx-auto max-w-7xl px-6 py-8 lg:px-8">
+        <section id="use-cases" className="scroll-mt-24 mx-auto max-w-7xl px-6 py-8 lg:px-8">
           <div className="mb-5">
             <div className="text-sm font-medium uppercase tracking-[0.18em] text-[#8FB8FF]">
               Use cases
@@ -482,7 +482,7 @@ export default async function InntrisCoreDarkPreview() {
         <section
           id="what-a-receipt-proves"
           aria-labelledby="what-a-receipt-proves-heading"
-          className="mx-auto max-w-7xl px-6 pb-4 lg:px-8"
+          className="scroll-mt-24 mx-auto max-w-7xl px-6 pb-4 lg:px-8"
         >
           <div className="rounded-[24px] border border-[#22314D] bg-[#0D1728] p-6 md:p-8">
             <h2
@@ -513,7 +513,7 @@ export default async function InntrisCoreDarkPreview() {
           </div>
         </section>
 
-        <section id="product" className="mx-auto max-w-7xl px-6 pb-16 lg:px-8 lg:pb-24">
+        <section id="product" className="scroll-mt-24 mx-auto max-w-7xl px-6 pb-16 lg:px-8 lg:pb-24">
           <div className="rounded-[28px] border border-[#22314D] bg-[#0D1728] p-7 lg:p-10">
             <div className="text-sm font-medium uppercase tracking-[0.18em] text-[#8FB8FF]">Core capability</div>
             <h2 className="mt-3 text-2xl font-semibold tracking-tight md:text-3xl">
