@@ -81,6 +81,22 @@ jobs:
         # itself; Next reads them at runtime.
         run: npm run build
 
+  action:
+    name: action (github-action unit tests)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      # The Inntris CI Guard action is a zero-dependency node20 script. Its
+      # pure functions (policy parsing, glob matching, risk mapping) are
+      # covered by node:test — no install step, no network.
+      - name: action unit tests
+        run: node --test 'github-action/*.test.js'
+
   contracts:
     name: contracts (forge)
     runs-on: ubuntu-latest

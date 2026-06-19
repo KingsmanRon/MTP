@@ -1,0 +1,52 @@
+version: 1
+
+# Inntris AI PR Guard policy.
+#
+# The Inntris CI Guard action reads this file, inspects the files changed by a
+# pull request (or push), maps them to Inntris action types, and verifies the
+# strongest risk category (or each high-risk category separately) with Inntris
+# Core. The required GitHub check passes only if every Inntris verification
+# approves.
+#
+# Priority order (strongest wins): production_deployment >
+# protected_branch_merge > ci_workflow_change > repo_change.
+
+protected_paths:
+  - src/auth/**
+  - src/session/**
+  - src/tenant/**
+  - src/phi/**
+  - src/patient/**
+  - src/middleware.ts
+  - database/migrations/**
+  - supabase/migrations/**
+  - .github/workflows/**
+  - infra/**
+  - "**/.env*"
+
+low_risk_paths:
+  - docs/**
+  - README.md
+  - src/components/**
+
+mapping:
+  ci_workflow_change:
+    - .github/workflows/**
+  production_deployment:
+    - infra/**
+    - deploy/**
+    - terraform/**
+    - k8s/**
+  protected_branch_merge:
+    - src/auth/**
+    - src/session/**
+    - src/tenant/**
+    - src/phi/**
+    - src/patient/**
+    - src/middleware.ts
+    - database/migrations/**
+    - supabase/migrations/**
+  repo_change:
+    - docs/**
+    - README.md
+    - src/components/**

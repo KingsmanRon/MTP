@@ -1,5 +1,5 @@
 name: "Inntris CI Guard"
-description: "Verify GitHub workflow actions with Inntris before protected CI or release work proceeds."
+description: "Detect changed files, map them to Inntris action types via .inntris.yml, and verify the strongest risk category before protected CI or release work proceeds."
 author: "Inntris"
 
 inputs:
@@ -12,32 +12,48 @@ inputs:
   private-key-b64:
     description: "Base64 encoded Ed25519 private key seed. Store this in GitHub Secrets."
     required: true
+  mode:
+    description: "Verification mode. 'ai-pr-guard' (default) detects changed files, maps them to action types via the policy file, and verifies each high-risk category. Any other value runs the legacy single 'action-type' call."
+    required: false
+    default: "ai-pr-guard"
+  policy-file:
+    description: "Path to the Inntris policy file used to map changed paths to action types and to send as client policy evidence."
+    required: false
+    default: ".inntris.yml"
+  policy-path:
+    description: "Deprecated alias for policy-file."
+    required: false
+    default: ""
+  github-token:
+    description: "Token used to read changed files via the GitHub API (PR files / compare). Needs 'pull-requests: read' (and 'contents: read')."
+    required: false
+    default: ${{ github.token }}
   action-type:
-    description: "Inntris action type to verify."
+    description: "Fallback Inntris action type used in legacy mode, or when no policy/changed files can be resolved in ai-pr-guard mode."
     required: false
     default: "repo_change"
   payload:
-    description: "Optional JSON object merged into the generated GitHub payload."
+    description: "Optional JSON object merged into the generated payload of every /verify call."
     required: false
-  policy-path:
-    description: "Optional policy file to hash and send as client policy evidence."
-    required: false
-    default: ".inntris.yml"
   receipt-url-base:
     description: "Optional public receipt base URL. Defaults to API /public/verify."
     required: false
   fail-on-block:
-    description: "Fail the workflow when Inntris returns a non approved verdict."
+    description: "Fail the workflow when any Inntris verification returns a non approved verdict."
     required: false
     default: "true"
 
 outputs:
   verdict:
-    description: "Inntris verdict."
+    description: "Aggregate Inntris verdict: 'approved' only if every verified category approved, otherwise 'blocked'."
   audit-id:
-    description: "Inntris audit log ID."
+    description: "Inntris audit log ID of the blocking (or strongest) verification."
   receipt-url:
-    description: "Public receipt URL."
+    description: "Public receipt URL of the blocking (or strongest) verification."
+  action-types:
+    description: "Comma-separated list of action types that were verified."
+  verdicts:
+    description: "JSON array of per-category results: action_type, verdict, audit_id, receipt_url."
 
 runs:
   using: "node20"
