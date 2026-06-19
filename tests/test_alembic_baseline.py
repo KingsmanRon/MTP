@@ -37,8 +37,8 @@ _WRAPPER_REVISIONS = [
         "008_supabase_compat.sql",
     ),
     (
-        _REPO / "alembic" / "versions" / "0005_ci_guard_security_invariants.py",
-        "0005_ci_guard_security_invariants",
+        _REPO / "alembic" / "versions" / "0005_ci_guard_invariants.py",
+        "0005_ci_guard_invariants",
         "0004_supabase_compat",
         "009_ci_guard_security_invariants.sql",
     ),
@@ -87,6 +87,21 @@ def test_raw_sql_wrapper_revisions_are_wired() -> None:
         assert module.down_revision == down_revision
         assert module._SQL_FILE.name == sql_name
         assert module._SQL_FILE.is_file()
+
+
+def test_revision_ids_fit_alembic_version_column() -> None:
+    """Alembic stores revision ids in alembic_version.version_num VARCHAR(32).
+
+    A longer slug overflows that column and breaks ``alembic upgrade head``
+    against a real Postgres (CI never catches it without a live DB).
+    """
+    versions_dir = _REPO / "alembic" / "versions"
+    for path in versions_dir.glob("0*.py"):
+        module = _load_revision(path)
+        assert len(module.revision) <= 32, (
+            f"{path.name}: revision id '{module.revision}' "
+            f"is {len(module.revision)} chars (max 32)"
+        )
 
 
 def test_downgrade_refuses_to_drop_forensic_data() -> None:

@@ -1,8 +1,12 @@
 """ci guard security invariants.
 
-Revision ID: 0005_ci_guard_security_invariants
+Revision ID: 0005_ci_guard_invariants
 Revises: 0004_supabase_compat
 Create Date: 2026-06-16
+
+NOTE: the revision id is kept <= 32 chars because Alembic stores it in
+alembic_version.version_num VARCHAR(32). A longer slug overflows that
+column and breaks ``alembic upgrade head`` on a real Postgres.
 """
 
 from __future__ import annotations
@@ -12,7 +16,7 @@ from typing import Sequence, Union
 
 from alembic import op
 
-revision: str = "0005_ci_guard_security_invariants"
+revision: str = "0005_ci_guard_invariants"
 down_revision: Union[str, None] = "0004_supabase_compat"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
