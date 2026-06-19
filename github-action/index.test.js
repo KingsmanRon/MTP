@@ -7,6 +7,8 @@ const {
   parseYaml,
   globToRegExp,
   matchFilesToActionTypes,
+  matchProtectedBranch,
+  classifyChange,
   plannedCalls,
   computeRiskFlags,
   resolveFailClosed,
@@ -33,8 +35,14 @@ test("parseYaml reads scalars, sequences, and nested mapping", () => {
   assert.ok(Array.isArray(policy.low_risk_paths));
   assert.deepEqual(policy.mapping.ci_workflow_change, [".github/workflows/**"]);
   assert.ok(policy.mapping.production_deployment.includes("infra/**"));
-  assert.ok(policy.mapping.protected_branch_merge.includes("src/middleware.ts"));
   assert.deepEqual(policy.mapping.repo_change, ["docs/**", "README.md", "src/components/**"]);
+  // protected_branch_merge is branch-driven, not a path mapping.
+  assert.equal(policy.mapping.protected_branch_merge, undefined);
+  assert.ok(Array.isArray(policy.protected_branches));
+  assert.ok(policy.protected_branches.includes("main"));
+  assert.ok(policy.protected_branches.includes("release/*"));
+  // sensitive paths remain in protected_paths for the audit flag.
+  assert.ok(policy.protected_paths.includes("src/middleware.ts"));
 });
 
 test("parseYaml ignores comments and blank lines", () => {
@@ -84,20 +92,6 @@ test("docs + workflow change maps to ci_workflow_change only (drops repo_change)
   assert.deepEqual(plannedCalls(byType), ["ci_workflow_change"]);
 });
 
-test("mixed high-risk PR fans out to one call per category, strongest first", () => {
-  const files = [
-    ".github/workflows/deploy.yml",
-    "supabase/migrations/0012_rls.sql",
-    "infra/main.tf",
-  ];
-  const { byType } = matchFilesToActionTypes(files, policy.mapping);
-  assert.deepEqual(plannedCalls(byType), [
-    "production_deployment",
-    "protected_branch_merge",
-    "ci_workflow_change",
-  ]);
-});
-
 test("low-risk-only PR makes a single repo_change attestation", () => {
   const files = ["docs/readme-notes.md", "src/components/Button.tsx", "README.md"];
   const { byType } = matchFilesToActionTypes(files, policy.mapping);
@@ -110,24 +104,90 @@ test("unmatched files degrade to repo_change", () => {
   assert.deepEqual(plannedCalls(byType), ["repo_change"]);
 });
 
-test("matched_rules carry path, action_type, glob, and reason", () => {
-  const { matchedRules } = matchFilesToActionTypes(["src/auth/session.ts"], policy.mapping);
-  const rule = matchedRules.find((r) => r.action_type === "protected_branch_merge");
+// ---------------------------------------------------------------------------
+// Branch-driven protected_branch_merge (#3)
+// ---------------------------------------------------------------------------
+test("matchProtectedBranch matches exact and glob branch patterns", () => {
+  const patterns = policy.protected_branches; // [main, release/*, production]
+  assert.equal(matchProtectedBranch("main", patterns), "main");
+  assert.equal(matchProtectedBranch("release/1.2", patterns), "release/*");
+  assert.equal(matchProtectedBranch("production", patterns), "production");
+  assert.equal(matchProtectedBranch("feature/x", patterns), null);
+  // a star does not cross a slash
+  assert.equal(matchProtectedBranch("release/1/2", patterns), null);
+});
+
+test("protected_branch_merge is branch-driven, not path-driven", () => {
+  // Sensitive auth path alone, targeting a NON-protected branch, is not a merge.
+  const onFeature = classifyChange({
+    files: ["src/auth/session.ts"],
+    mapping: policy.mapping,
+    branch: "feature/login",
+    protectedBranches: policy.protected_branches,
+  });
+  assert.ok(!onFeature.byType.protected_branch_merge);
+  assert.deepEqual(plannedCalls(onFeature.byType), ["repo_change"]);
+
+  // The same change targeting main IS a protected_branch_merge.
+  const onMain = classifyChange({
+    files: ["src/auth/session.ts"],
+    mapping: policy.mapping,
+    branch: "main",
+    protectedBranches: policy.protected_branches,
+  });
+  assert.ok(onMain.byType.protected_branch_merge);
+  assert.equal(onMain.protectedBranch, "main");
+  assert.deepEqual(plannedCalls(onMain.byType), ["protected_branch_merge"]);
+
+  const rule = onMain.matchedRules.find((r) => r.action_type === "protected_branch_merge");
   assert.ok(rule);
-  assert.equal(rule.path, "src/auth/session.ts");
-  assert.equal(rule.glob, "src/auth/**");
-  assert.match(rule.reason, /protected_branch_merge/);
+  assert.match(rule.reason, /protected branch 'main'/);
+});
+
+test("a docs-only PR into main is a truthful protected_branch_merge", () => {
+  const { byType } = classifyChange({
+    files: ["docs/setup.md"],
+    mapping: policy.mapping,
+    branch: "main",
+    protectedBranches: policy.protected_branches,
+  });
+  // repo_change is dropped because the merge target is protected.
+  assert.deepEqual(plannedCalls(byType), ["protected_branch_merge"]);
+});
+
+test("mixed change into main fans out to one call per category, strongest first", () => {
+  const { byType } = classifyChange({
+    files: [
+      ".github/workflows/deploy.yml",
+      "supabase/migrations/0012_rls.sql", // protected_path, but no longer a path category
+      "infra/main.tf",
+    ],
+    mapping: policy.mapping,
+    branch: "main",
+    protectedBranches: policy.protected_branches,
+  });
+  assert.deepEqual(plannedCalls(byType), [
+    "production_deployment",
+    "protected_branch_merge",
+    "ci_workflow_change",
+  ]);
 });
 
 // ---------------------------------------------------------------------------
 // Risk flags
 // ---------------------------------------------------------------------------
 test("computeRiskFlags reflects matched categories and protected paths", () => {
-  const files = ["src/auth/session.ts", ".github/workflows/deploy.yml"];
-  const { byType } = matchFilesToActionTypes(files, policy.mapping);
+  const files = ["infra/main.tf", ".github/workflows/deploy.yml"];
+  const { byType } = classifyChange({
+    files,
+    mapping: policy.mapping,
+    branch: "main",
+    protectedBranches: policy.protected_branches,
+  });
   const flags = computeRiskFlags(byType, files, policy);
-  assert.ok(flags.includes("protected_branch_merge_path_changed"));
+  assert.ok(flags.includes("production_deployment_changed"));
   assert.ok(flags.includes("ci_workflow_changed"));
+  assert.ok(flags.includes("protected_branch_target"));
   assert.ok(flags.includes("protected_path_changed"));
   assert.ok(!flags.includes("low_risk_only"));
 });

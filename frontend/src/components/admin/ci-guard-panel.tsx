@@ -36,6 +36,10 @@ const CI_ACTION_TYPES = CODE_RELEASE_ACTIONS.map((action) => action.id) as strin
 // source of truth.
 const POLICY_YAML = `version: 1
 
+# Block (do not silently attest) when a change cannot be classified.
+enforcement:
+  fail_closed: true
+
 protected_paths:
   - src/auth/**
   - src/session/**
@@ -54,6 +58,14 @@ low_risk_paths:
   - README.md
   - src/components/**
 
+# Merges into these branches are gated as protected_branch_merge (trust >= 80).
+protected_branches:
+  - main
+  - "release/*"
+  - production
+
+# Path -> action type. protected_branch_merge is branch-driven (see above),
+# not a path mapping.
 mapping:
   ci_workflow_change:
     - .github/workflows/**
@@ -62,15 +74,6 @@ mapping:
     - deploy/**
     - terraform/**
     - k8s/**
-  protected_branch_merge:
-    - src/auth/**
-    - src/session/**
-    - src/tenant/**
-    - src/phi/**
-    - src/patient/**
-    - src/middleware.ts
-    - database/migrations/**
-    - supabase/migrations/**
   repo_change:
     - docs/**
     - README.md

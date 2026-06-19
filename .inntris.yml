@@ -37,6 +37,20 @@ low_risk_paths:
   - README.md
   - src/components/**
 
+# Branches whose merges are gated as protected_branch_merge. This is a BRANCH
+# condition, not a path condition: any change whose target branch matches one
+# of these patterns is a protected-branch merge (trust >= 80), so the receipt
+# is truthful. Sensitive code paths (auth, migrations, ...) live in
+# protected_paths above for the protected_path_changed audit flag; they gate
+# at the high bar when, and only when, they actually merge to a protected
+# branch.
+protected_branches:
+  - main
+  - "release/*"
+  - production
+
+# Path -> action type. protected_branch_merge is intentionally absent here: it
+# is derived from protected_branches, not from file paths.
 mapping:
   ci_workflow_change:
     - .github/workflows/**
@@ -45,15 +59,6 @@ mapping:
     - deploy/**
     - terraform/**
     - k8s/**
-  protected_branch_merge:
-    - src/auth/**
-    - src/session/**
-    - src/tenant/**
-    - src/phi/**
-    - src/patient/**
-    - src/middleware.ts
-    - database/migrations/**
-    - supabase/migrations/**
   repo_change:
     - docs/**
     - README.md

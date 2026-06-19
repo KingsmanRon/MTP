@@ -84,7 +84,12 @@ _check_policy_binding(agent, action_type, payload):
         return APPROVED  # advisory: log, do not block (until rollout completes)
     if payload.policy_hash != registered.hash:
         return BLOCKED(POLICY_HASH_MISMATCH)
-    derived = strongest_action_type(payload.changed_files, registered.mapping)
+    derived = strongest_action_type(
+        payload.changed_files,           # path mapping
+        payload.base_ref,                # branch dimension (#3)
+        registered.mapping,
+        registered.protected_branches,
+    )
     if RISK_RANK[action_type] < RISK_RANK[derived]:
         return BLOCKED(ACTION_TYPE_DOWNGRADE,
                        reason=f"change requires {derived}, asserted {action_type}")
@@ -93,18 +98,23 @@ _check_policy_binding(agent, action_type, payload):
 
 `RISK_RANK`: `repo_change < ci_workflow_change < protected_branch_merge <
 production_deployment`. `strongest_action_type` mirrors the action's
-`plannedCalls`/priority so client and server agree.
+classification so client and server agree: path globs map to
+`ci_workflow_change` / `production_deployment` / `repo_change`, and a
+`base_ref` matching a registered protected branch adds `protected_branch_merge`
+(branch-driven, per #3). The registered policy must therefore store both
+`mapping` and `protected_branches`.
 
 ### Storage
 New `agent_policies` (or columns on `agents`):
 
-| column        | type        | note                                  |
-|---------------|-------------|---------------------------------------|
-| agent_id      | uuid FK     | owner                                 |
-| policy_hash   | varchar(64) | SHA-256 of the canonical `.inntris.yml` |
-| mapping       | jsonb       | `{action_type: [globs]}` for re-derivation |
-| version       | int         | bump on each registration             |
-| active        | bool        |                                       |
+| column             | type        | note                                  |
+|--------------------|-------------|---------------------------------------|
+| agent_id           | uuid FK     | owner                                 |
+| policy_hash        | varchar(64) | SHA-256 of the canonical `.inntris.yml` |
+| mapping            | jsonb       | `{action_type: [globs]}` for re-derivation |
+| protected_branches | jsonb       | branch patterns for the branch dimension (#3) |
+| version            | int         | bump on each registration             |
+| active             | bool        |                                       |
 
 RLS: same org-scoping as `agents`. Registration is an admin/API action
 (reuses the existing agent-control write path).
@@ -123,10 +133,16 @@ RLS: same org-scoping as `agents`. Registration is an admin/API action
   `.inntris.yml` it generates is what gets registered (hash + mapping), so the
   repo file and the server's expectation are derived from one source.
 
+## Decisions
+- **Scope: Tier A now**, advisory-first rollout. Tier B (GitHub App) is the
+  regulated-tier ceiling, sequenced after.
+- **Registration trigger: explicit admin action.** TOFU has a window where the
+  first-seen `policy_hash` is trusted; an explicit registration is the
+  auditable default for a compliance product. The admin "AI PR Guard" tab is
+  the registration surface.
+
 ## Open questions for review
-1. Registration trigger — explicit admin action, or auto-register the first
-   `policy_hash` the agent presents (TOFU) with admin confirmation?
-2. Re-derivation parity — share one canonical mapping spec so the JS action and
+1. Re-derivation parity — share one canonical mapping spec so the JS action and
    the Python server cannot drift (golden test vectors in
    `tests/fixtures`)?
 3. Tier B timing — is the GitHub App in scope for the regulated tier launch, or

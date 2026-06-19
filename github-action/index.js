@@ -264,6 +264,52 @@ function matchFilesToActionTypes(files, mapping) {
   return { matchedRules, byType };
 }
 
+// The branch a change targets: a PR's base branch, or the pushed branch.
+function targetBranch(event) {
+  if (event.prNumber) {
+    return event.baseRef || null;
+  }
+  const ref = process.env.GITHUB_REF || "";
+  if (ref.startsWith("refs/heads/")) {
+    return ref.slice("refs/heads/".length);
+  }
+  return process.env.GITHUB_REF_NAME || null;
+}
+
+// Returns the matching protected-branch pattern (e.g. "release/*"), or null.
+function matchProtectedBranch(branch, patterns) {
+  if (!branch || !Array.isArray(patterns)) {
+    return null;
+  }
+  for (const pattern of patterns) {
+    if (globToRegExp(pattern).test(branch)) {
+      return pattern;
+    }
+  }
+  return null;
+}
+
+// Combines path-based and branch-based classification. protected_branch_merge
+// is added when the target branch is protected -- a branch condition, not a
+// file condition -- so the asserted action type is truthful. The two
+// dimensions are orthogonal and both flow through the same multi-verify.
+function classifyChange({ files, mapping, branch, protectedBranches }) {
+  const { matchedRules, byType } = matchFilesToActionTypes(files, mapping);
+  const protectedPattern = matchProtectedBranch(branch, protectedBranches);
+  if (protectedPattern) {
+    // Branch-triggered: no specific files own this category; changed_files in
+    // the payload carries what is being merged.
+    byType.protected_branch_merge = byType.protected_branch_merge || [];
+    matchedRules.push({
+      path: `base:${branch}`,
+      action_type: "protected_branch_merge",
+      glob: protectedPattern,
+      reason: `Target branch '${branch}' matches protected branch '${protectedPattern}'`,
+    });
+  }
+  return { matchedRules, byType, branch: branch || null, protectedBranch: protectedPattern };
+}
+
 // Reduces the set of matched action types to the list of /verify calls to make.
 // If any high-risk category matched, verify each high-risk category separately
 // (strongest first) and DROP repo_change. Otherwise make a single low-risk
@@ -283,7 +329,7 @@ function computeRiskFlags(byType, files, policy) {
     flags.push("production_deployment_changed");
   }
   if (byType.protected_branch_merge) {
-    flags.push("protected_branch_merge_path_changed");
+    flags.push("protected_branch_target");
   }
   if (byType.ci_workflow_change) {
     flags.push("ci_workflow_changed");
@@ -719,12 +765,20 @@ async function main() {
 
   // plan === "classify"
   const files = detection.files;
-  const { matchedRules, byType } = matchFilesToActionTypes(files, policy.mapping);
+  const branch = targetBranch(event);
+  const { matchedRules, byType, protectedBranch } = classifyChange({
+    files,
+    mapping: policy.mapping,
+    branch,
+    protectedBranches: policy.protected_branches,
+  });
   const riskFlags = computeRiskFlags(byType, files, policy);
   const calls = plannedCalls(byType);
 
   console.log(
-    `Inntris: risk flags [${riskFlags.join(", ") || "none"}]; ` +
+    `Inntris: target branch '${branch || "unknown"}'` +
+      `${protectedBranch ? ` (protected: ${protectedBranch})` : ""}; ` +
+      `risk flags [${riskFlags.join(", ") || "none"}]; ` +
       `verifying ${calls.length} categor${calls.length === 1 ? "y" : "ies"}: ${calls.join(", ")}.`,
   );
 
@@ -743,6 +797,7 @@ async function main() {
     workflow: process.env.GITHUB_WORKFLOW || null,
     run_id: process.env.GITHUB_RUN_ID || null,
     changed_files: files,
+    protected_branch: protectedBranch || null,
     risk_flags: riskFlags,
     policy_file: policyFile,
     policy_hash: policyHashHex,
@@ -837,6 +892,8 @@ module.exports = {
   parseYaml,
   globToRegExp,
   matchFilesToActionTypes,
+  matchProtectedBranch,
+  classifyChange,
   plannedCalls,
   computeRiskFlags,
   resolveFailClosed,
