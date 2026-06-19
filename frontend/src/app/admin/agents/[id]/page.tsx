@@ -168,7 +168,7 @@ function AgentDetailContent({ id }: { id: string }) {
       <Tabs defaultValue="policy">
         <TabsList className="bg-[#0D1728]">
           <TabsTrigger value="policy">Policy</TabsTrigger>
-          <TabsTrigger value="ci-guard">CI Guard</TabsTrigger>
+          <TabsTrigger value="ci-guard">AI PR Guard</TabsTrigger>
           <TabsTrigger value="activity">Activity</TabsTrigger>
         </TabsList>
 
@@ -228,14 +228,14 @@ function AgentDetailContent({ id }: { id: string }) {
         <TabsContent value="ci-guard">
           <Card className="border-[#22314D] bg-[#0D1728]">
             <CardHeader>
-              <CardTitle className="text-[#F5F7FB]">CI Guard</CardTitle>
+              <CardTitle className="text-[#F5F7FB]">AI PR Guard</CardTitle>
             </CardHeader>
             <CardContent className="p-6">
               {agent ? (
                 <CiGuardPanel agent={agent} auditLogs={auditData?.logs ?? []} />
               ) : (
                 <AdminErrorState
-                  message="CI Guard unavailable"
+                  message="AI PR Guard unavailable"
                   detail="The agent record has not loaded yet. Retry after the current request completes."
                 />
               )}
