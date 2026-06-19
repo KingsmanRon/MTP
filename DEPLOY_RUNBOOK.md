@@ -32,16 +32,34 @@ command and builder.
   but a *future* migration could fail the worker deploy on a concurrent run.
 
 ### Migrations need a non-transaction-pooler connection
-The pre-deploy `alembic upgrade head` uses the service's `DATABASE_URL`
-(`alembic/env.py` rewrites `postgresql://` → `postgresql+psycopg2://`). Point it at
-the Supabase **direct connection** or **session pooler (port 5432)** — **not** the
-transaction pooler on **6543**, which breaks DDL / multi-statement migrations.
+The pre-deploy `alembic upgrade head` uses `ALEMBIC_DATABASE_URL` if set, else the
+service's `DATABASE_URL` (`alembic/env.py` rewrites `postgresql://` →
+`postgresql+psycopg2://`). Point it at the Supabase **direct connection** or
+**session pooler (port 5432)** — **not** the transaction pooler on **6543**, which
+breaks DDL / multi-statement migrations.
+
+### Migrations need a privileged role — not the RLS app role
+The runtime app connects as **`inntris_worker`** (locked-down, `NOSUPERUSER`, RLS-
+enforced — see `database/migrations/005_rls_policies.sql` and `api/database.py`).
+That role **cannot** run DDL or even read `alembic_version` (owned by the Supabase
+`postgres` role from the manual bootstrap below). If the pre-deploy migration uses
+the same `DATABASE_URL`, it fails with `permission denied for table alembic_version`.
+
+Fix: set **`ALEMBIC_DATABASE_URL`** on the `web` service to the Supabase **`postgres`**
+direct/session-pooler URI (5432), and keep `DATABASE_URL` pointed at `inntris_worker`.
+`alembic/env.py` prefers `ALEMBIC_DATABASE_URL` for migrations only. One-time unblock
+for an already-deployed DB (run as `postgres` in the Supabase SQL editor):
+
+```sql
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.alembic_version TO inntris_worker;
+```
 
 ## Environment variables (Railway `web`)
 
 | Var | Value |
 |-----|-------|
-| `DATABASE_URL` | Supabase direct / session-pooler URI (5432), not 6543 |
+| `DATABASE_URL` | Supabase direct / session-pooler URI (5432), not 6543 — `inntris_worker` role (RLS-enforced runtime) |
+| `ALEMBIC_DATABASE_URL` | Same host (5432, not 6543) but the `postgres` (owner) role — used **only** by the pre-deploy `alembic upgrade head` |
 | `REDIS_URL` | Railway Redis URL |
 | `SERVER_SECRET` | HMAC secret for approval tokens (required in prod) |
 | `ALLOWED_ORIGINS` | `https://inntris.com,https://www.inntris.com` — exact-match, no `*`, no trailing slash. Add your `*.vercel.app` preview if you test from it. |

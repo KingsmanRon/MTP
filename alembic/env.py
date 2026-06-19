@@ -7,8 +7,13 @@ to autogenerate against.
 
 DSN resolution order:
     1. ``sqlalchemy.url`` in ``alembic.ini`` (empty by default).
-    2. ``DATABASE_URL`` environment variable.
-    3. Fail with a clear error — we refuse to run against an accidental
+    2. ``ALEMBIC_DATABASE_URL`` environment variable. Migrations need an
+       owner/privileged role (DDL + access to ``alembic_version``), whereas the
+       runtime app connects as the locked-down ``inntris_worker`` role for RLS
+       (see database/migrations/005_rls_policies.sql). Set this so the two never
+       share a DSN; without it we fall back to ``DATABASE_URL``.
+    3. ``DATABASE_URL`` environment variable.
+    4. Fail with a clear error — we refuse to run against an accidental
        default like localhost.
 
 Note: asyncpg-style DSNs (``postgresql://``) need to be rewritten to
@@ -34,10 +39,15 @@ target_metadata = None
 
 
 def _resolve_dsn() -> str:
-    dsn = config.get_main_option("sqlalchemy.url") or os.getenv("DATABASE_URL", "")
+    dsn = (
+        config.get_main_option("sqlalchemy.url")
+        or os.getenv("ALEMBIC_DATABASE_URL")
+        or os.getenv("DATABASE_URL", "")
+    )
     if not dsn:
         raise RuntimeError(
-            "Alembic requires a database DSN. Set DATABASE_URL in the environment "
+            "Alembic requires a database DSN. Set ALEMBIC_DATABASE_URL (preferred "
+            "for a privileged migration role) or DATABASE_URL in the environment, "
             "or sqlalchemy.url in alembic.ini."
         )
     # asyncpg DSN -> psycopg2 DSN for Alembic's sync engine.
