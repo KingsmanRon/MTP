@@ -41,11 +41,11 @@ docker compose ps
 ### 3. Initialize Database
 
 ```bash
-# Run schema
-docker compose exec postgres psql -U postgres -d inntris -f /docker-entrypoint-initdb.d/schemas.sql
+# Run migrations
+docker compose run --rm migrate
 
-# Or connect manually and run schemas.sql
-psql postgresql://postgres:postgres@localhost:5432/inntris < database/schemas.sql
+# Or run Alembic directly
+DATABASE_URL=postgresql://inntris:inntris_secure_password@localhost:5432/inntris alembic upgrade head
 ```
 
 ### 4. Configure Environment
@@ -237,7 +237,7 @@ Trust Score: 50
 # Drop and recreate
 docker compose exec postgres psql -U postgres -c "DROP DATABASE IF EXISTS inntris;"
 docker compose exec postgres psql -U postgres -c "CREATE DATABASE inntris;"
-docker compose exec postgres psql -U postgres -d inntris -f /docker-entrypoint-initdb.d/schemas.sql
+docker compose run --rm migrate
 ```
 
 ### View Database

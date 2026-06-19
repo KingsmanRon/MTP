@@ -267,7 +267,7 @@ CREATE TABLE api_keys (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     org_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
     key_hash BYTEA NOT NULL UNIQUE,  -- SHA-256 hash of the API key
-    key_prefix VARCHAR(8) NOT NULL,  -- First 8 chars for identification
+    key_prefix VARCHAR(8) NOT NULL,  -- 8 random key chars for identification
     name VARCHAR(255) NOT NULL,
     scopes TEXT[] NOT NULL DEFAULT ARRAY['read', 'verify'],
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
@@ -391,7 +391,9 @@ CREATE TRIGGER update_agent_stats_on_audit
 CREATE OR REPLACE FUNCTION create_signature_failure_alert()
 RETURNS TRIGGER AS $$
 BEGIN
-    IF NEW.signature_valid = FALSE THEN
+    IF NEW.signature_valid = FALSE
+       AND NEW.verdict = 'signature_invalid'
+       AND NOT COALESCE((NEW.metadata->>'non_cryptographic')::boolean, false) THEN
         INSERT INTO security_alerts (
             agent_id,
             org_id,
@@ -426,7 +428,11 @@ $$ LANGUAGE plpgsql;
 CREATE TRIGGER alert_on_signature_failure
     AFTER INSERT ON audit_logs
     FOR EACH ROW
-    WHEN (NEW.signature_valid = FALSE)
+    WHEN (
+        NEW.signature_valid = FALSE
+        AND NEW.verdict = 'signature_invalid'
+        AND NOT COALESCE((NEW.metadata->>'non_cryptographic')::boolean, false)
+    )
     EXECUTE FUNCTION create_signature_failure_alert();
 
 -- =============================================================================

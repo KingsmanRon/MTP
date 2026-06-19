@@ -63,6 +63,9 @@ WORKDIR /app
 COPY --chown=inntris:inntris api/ ./api/
 COPY --chown=inntris:inntris mcp_server/ ./mcp_server/
 COPY --chown=inntris:inntris workers/ ./workers/
+COPY --chown=inntris:inntris alembic/ ./alembic/
+COPY --chown=inntris:inntris database/ ./database/
+COPY --chown=inntris:inntris alembic.ini ./alembic.ini
 
 # -----------------------------------------------------------------------------
 # Stage 3: Core API Service

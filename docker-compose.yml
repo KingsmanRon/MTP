@@ -23,7 +23,6 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-inntris}
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./database/schemas.sql:/docker-entrypoint-initdb.d/01-schemas.sql:ro
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     healthcheck:
@@ -55,6 +54,25 @@ services:
       - inntris-network
 
   # ===========================================================================
+  # DATABASE MIGRATIONS: Alembic source of truth
+  # ===========================================================================
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: api
+    container_name: inntris-migrate
+    restart: "no"
+    command: ["alembic", "upgrade", "head"]
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-inntris}:${POSTGRES_PASSWORD:-inntris_secure_password}@postgres:5432/${POSTGRES_DB:-inntris}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - inntris-network
+
+  # ===========================================================================
   # CORE API: The Central Bank
   # ===========================================================================
   api:
@@ -69,7 +87,7 @@ services:
       - DATABASE_URL=postgresql://${POSTGRES_USER:-inntris}:${POSTGRES_PASSWORD:-inntris_secure_password}@postgres:5432/${POSTGRES_DB:-inntris}
       - REDIS_URL=redis://redis:6379
       - SERVER_SECRET=${SERVER_SECRET}
-      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-*}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
       - PORT=8000
     ports:
       - "${API_PORT:-8000}:8000"
@@ -78,6 +96,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
@@ -112,6 +132,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     networks:
       - inntris-network
 

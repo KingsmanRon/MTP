@@ -23,10 +23,38 @@ pytest.importorskip("alembic")
 
 _REPO = Path(__file__).resolve().parents[1]
 _BASELINE = _REPO / "alembic" / "versions" / "0001_baseline.py"
+_WRAPPER_REVISIONS = [
+    (
+        _REPO / "alembic" / "versions" / "0003_audit_log_grant_tightening.py",
+        "0003_audit_log_grant_tightening",
+        "0002_gdpr_erasure",
+        "007_audit_log_grant_tightening.sql",
+    ),
+    (
+        _REPO / "alembic" / "versions" / "0004_supabase_compat.py",
+        "0004_supabase_compat",
+        "0003_audit_log_grant_tightening",
+        "008_supabase_compat.sql",
+    ),
+    (
+        _REPO / "alembic" / "versions" / "0005_ci_guard_security_invariants.py",
+        "0005_ci_guard_security_invariants",
+        "0004_supabase_compat",
+        "009_ci_guard_security_invariants.sql",
+    ),
+]
 
 
 def _load_baseline():
     spec = importlib.util.spec_from_file_location("alembic_0001_baseline", _BASELINE)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _load_revision(path: Path):
+    spec = importlib.util.spec_from_file_location(path.stem, path)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -50,6 +78,15 @@ def test_baseline_sql_sources_exist() -> None:
     module = _load_baseline()
     for sql_path in module._SQL_FILES:
         assert sql_path.is_file(), f"baseline references missing SQL: {sql_path}"
+
+
+def test_raw_sql_wrapper_revisions_are_wired() -> None:
+    for path, revision, down_revision, sql_name in _WRAPPER_REVISIONS:
+        module = _load_revision(path)
+        assert module.revision == revision
+        assert module.down_revision == down_revision
+        assert module._SQL_FILE.name == sql_name
+        assert module._SQL_FILE.is_file()
 
 
 def test_downgrade_refuses_to_drop_forensic_data() -> None:

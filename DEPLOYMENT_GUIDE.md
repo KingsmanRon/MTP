@@ -78,14 +78,14 @@ openssl rand -base64 32
    - ✅ **`pg_stat_statements`** (for query monitoring)
    - ✅ **`pgcrypto`** (for UUID generation)
 
-### 2.3 Apply Database Schema
-1. In Supabase dashboard, go to **SQL Editor**
-2. Click **"New query"**
-3. Copy the ENTIRE contents of `./database/schemas.sql`
-4. Paste into the SQL editor
-5. Click **"Run"** (bottom right)
-6. **Verify**: You should see "Success. No rows returned" and no errors
-7. **Confirm tables created**:
+### 2.3 Apply Database Migrations
+1. Set `DATABASE_URL` to the Supabase direct connection string for the migration role.
+2. From the repository root, run:
+   ```bash
+   alembic upgrade head
+   ```
+3. **Verify**: You should see Alembic apply revisions through `0005_ci_guard_security_invariants`.
+4. **Confirm tables created**:
    ```sql
    SELECT table_name FROM information_schema.tables
    WHERE table_schema = 'public'
@@ -177,13 +177,13 @@ forge install OpenZeppelin/openzeppelin-contracts
 forge create contracts/AnchorRegistry.sol:AnchorRegistry \
   --rpc-url https://base-sepolia-rpc.publicnode.com \
   --private-key YOUR_PRIVATE_KEY_HERE \
-  --constructor-args YOUR_DEPLOYMENT_WALLET_ADDRESS
+  --constructor-args YOUR_ADMIN_WALLET_ADDRESS YOUR_SUBMITTER_WALLET_ADDRESS
 
 # If successful, deploy to Base Mainnet
 forge create contracts/AnchorRegistry.sol:AnchorRegistry \
   --rpc-url https://base-rpc.publicnode.com \
   --private-key YOUR_PRIVATE_KEY_HERE \
-  --constructor-args YOUR_DEPLOYMENT_WALLET_ADDRESS \
+  --constructor-args YOUR_ADMIN_WALLET_ADDRESS YOUR_SUBMITTER_WALLET_ADDRESS \
   --verify
 
 # SAVE THE CONTRACT ADDRESS! Format: 0x...
