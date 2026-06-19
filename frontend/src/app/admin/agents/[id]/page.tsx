@@ -9,6 +9,7 @@ import { AdminErrorState } from "@/components/admin/error-state";
 import { AuditTable } from "@/components/admin/audit-table";
 import { CopyableMonoValue } from "@/components/admin/copyable-mono-value";
 import { AgentControlPanel } from "@/components/admin/agent-control-panel";
+import { CiGuardPanel } from "@/components/admin/ci-guard-panel";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
@@ -167,6 +168,7 @@ function AgentDetailContent({ id }: { id: string }) {
       <Tabs defaultValue="policy">
         <TabsList className="bg-[#0D1728]">
           <TabsTrigger value="policy">Policy</TabsTrigger>
+          <TabsTrigger value="ci-guard">CI Guard</TabsTrigger>
           <TabsTrigger value="activity">Activity</TabsTrigger>
         </TabsList>
 
@@ -218,6 +220,24 @@ function AgentDetailContent({ id }: { id: string }) {
                     </div>
                   )}
                 </>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="ci-guard">
+          <Card className="border-[#22314D] bg-[#0D1728]">
+            <CardHeader>
+              <CardTitle className="text-[#F5F7FB]">CI Guard</CardTitle>
+            </CardHeader>
+            <CardContent className="p-6">
+              {agent ? (
+                <CiGuardPanel agent={agent} auditLogs={auditData?.logs ?? []} />
+              ) : (
+                <AdminErrorState
+                  message="CI Guard unavailable"
+                  detail="The agent record has not loaded yet. Retry after the current request completes."
+                />
               )}
             </CardContent>
           </Card>

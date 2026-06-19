@@ -1,0 +1,48 @@
+name: "Inntris CI Guard"
+description: "Verify GitHub workflow actions with Inntris before protected CI or release work proceeds."
+author: "Inntris"
+
+inputs:
+  api-url:
+    description: "Inntris Core API base URL."
+    required: true
+  agent-id:
+    description: "Inntris agent UUID registered for this repository or CI workflow."
+    required: true
+  private-key-b64:
+    description: "Base64 encoded Ed25519 private key seed. Store this in GitHub Secrets."
+    required: true
+  action-type:
+    description: "Inntris action type to verify."
+    required: false
+    default: "repo_change"
+  payload:
+    description: "Optional JSON object merged into the generated GitHub payload."
+    required: false
+  policy-path:
+    description: "Optional policy file to hash and send as client policy evidence."
+    required: false
+    default: ".inntris.yml"
+  receipt-url-base:
+    description: "Optional public receipt base URL. Defaults to API /public/verify."
+    required: false
+  fail-on-block:
+    description: "Fail the workflow when Inntris returns a non approved verdict."
+    required: false
+    default: "true"
+
+outputs:
+  verdict:
+    description: "Inntris verdict."
+  audit-id:
+    description: "Inntris audit log ID."
+  receipt-url:
+    description: "Public receipt URL."
+
+runs:
+  using: "node20"
+  main: "github-action/index.js"
+
+branding:
+  icon: "shield"
+  color: "blue"
