@@ -5,6 +5,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { InntrisLogo } from "@/components/inntris-logo";
 import ContactSection from "@/components/contact-section";
 import { ReceiptIdCopy } from "@/components/receipt-id-copy";
+import { LandingHash } from "@/components/landing-hash";
 import { publicApi } from "@/lib/api";
 import { verdictLabel, isPassVerdict, isEscalateVerdict } from "@/lib/verdict";
 const modules = [
@@ -113,6 +114,7 @@ export default async function InntrisCoreDarkPreview() {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
       />
+    <LandingHash />
     <div className="min-h-screen bg-[#07111F] text-[#F5F7FB]">
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(76,141,255,0.14),transparent_32%),radial-gradient(circle_at_80%_30%,rgba(143,184,255,0.08),transparent_24%)] pointer-events-none" />
       <header className="sticky top-0 z-20 border-b border-white/8 bg-[#07111F]/85 backdrop-blur">
