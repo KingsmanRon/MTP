@@ -149,6 +149,23 @@ export const AGENT_CONTROL_PRESETS: AgentControlPreset[] = [
     allowed: ["repo_change", "tool_call", "api_call"],
   },
   {
+    id: "regulated_ai_pr_gate",
+    label: "Regulated AI PR Gate",
+    description:
+      "For regulated teams. Allow code proposals (attested), and gate CI/workflow changes, protected-branch merges, and deployments behind high trust (≥80) so they BLOCK until the agent is vetted. Data export and admin actions are blocked outright.",
+    dailyLimit: 0,
+    perActionLimit: 0,
+    rateLimit: 30,
+    allowed: [
+      "repo_change",
+      "ci_workflow_change",
+      "protected_branch_merge",
+      "production_deployment",
+      "tool_call",
+      "api_call",
+    ],
+  },
+  {
     id: "lockdown",
     label: "Lock down",
     description: "Block every standard high-risk action while the agent remains online.",

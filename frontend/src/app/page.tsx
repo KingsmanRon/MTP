@@ -151,16 +151,17 @@ export default async function InntrisCoreDarkPreview() {
               Verification API live
             </div>
             <h1 className="max-w-3xl text-4xl font-semibold leading-[1.12] tracking-tight md:text-6xl mb-5">
-              Control high-risk agent actions.{" "}
-              <span className="text-[#28C281]">Prove every decision.</span>
+              Stop unchecked AI-generated PRs from reaching{" "}
+              <span className="text-[#28C281]">protected branches.</span>
             </h1>
             <p className="text-lg text-[#7F8CA3] mb-5 max-w-2xl leading-relaxed">
-              Inntris sits in the execution path before agents spend money, change production,
-              export data, or call external tools.
+              Inntris adds a required policy check for AI coding agents and creates a
+              verification receipt for every PASS or BLOCK decision.
             </p>
             <p className="text-base text-[#AAB7CC] mb-3 max-w-lg leading-relaxed">
-              Enforce the policy before execution, bind the decision to agent identity, and
-              produce evidence others can independently verify.
+              CI tells you whether code builds. Inntris tells you whether an AI agent was
+              allowed to make repo changes, edit CI/CD workflows, merge protected branches,
+              or deploy.
             </p>
             <ul className="flex flex-col gap-2 mb-8 max-w-lg">
               {[

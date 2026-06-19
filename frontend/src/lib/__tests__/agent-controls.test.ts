@@ -39,4 +39,29 @@ describe("agent controls", () => {
     expect(preset?.allowed).not.toContain("protected_branch_merge");
     expect(preset?.allowed).not.toContain("production_deployment");
   });
+
+  it("ships a regulated AI PR gate preset that gates release actions and blocks data/admin", () => {
+    const preset = AGENT_CONTROL_PRESETS.find((candidate) => candidate.id === "regulated_ai_pr_gate");
+    expect(preset).toBeDefined();
+
+    const { allowed_actions, blocked_actions } = buildActionPolicyLists(
+      [],
+      [],
+      preset?.allowed ?? [],
+    );
+
+    // Release actions are allowed so the backend gates them on trust (>=80).
+    expect(allowed_actions).toEqual(
+      expect.arrayContaining([
+        "repo_change",
+        "ci_workflow_change",
+        "protected_branch_merge",
+        "production_deployment",
+      ]),
+    );
+    // Sensitive runtime actions hard-block.
+    expect(blocked_actions).toContain("data_export");
+    expect(blocked_actions).toContain("admin_action");
+    expect(blocked_actions).toContain("financial_transaction");
+  });
 });
