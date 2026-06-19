@@ -299,6 +299,39 @@ function computeRiskFlags(byType, files, policy) {
   return flags;
 }
 
+// Whether to fail closed when a change cannot be classified. Precedence:
+// the `fail-closed` action input (true/false), then `enforcement.fail_closed`
+// in the policy file, then the secure default (true).
+function resolveFailClosed(policy, inputValue) {
+  if (inputValue === "true") {
+    return true;
+  }
+  if (inputValue === "false") {
+    return false;
+  }
+  const enforcement = policy && typeof policy.enforcement === "object" ? policy.enforcement : null;
+  if (enforcement && enforcement.fail_closed != null) {
+    return String(enforcement.fail_closed).toLowerCase() !== "false";
+  }
+  return true;
+}
+
+// Decide the outcome once detection has been attempted:
+//   "block"    -- cannot classify safely (no policy, or unreliable detection)
+//                 and fail-closed is on. Does NOT downgrade to attestation.
+//   "attest"   -- genuinely low-risk: a reliable, empty change set, or an
+//                 unclassifiable change with fail-closed explicitly disabled.
+//   "classify" -- a policy is present and the change set is reliable + non-empty.
+function decidePlan({ hasPolicy, reliable, fileCount, failClosed }) {
+  if (!hasPolicy || !reliable) {
+    return failClosed ? "block" : "attest";
+  }
+  if (fileCount === 0) {
+    return "attest";
+  }
+  return "classify";
+}
+
 // ---------------------------------------------------------------------------
 // GitHub event + changed-file detection
 // ---------------------------------------------------------------------------
@@ -377,28 +410,60 @@ function localGitDiff(baseSha, headSha) {
   }
 }
 
+// Detection returns { files, reliable, method, error }. `reliable` is the
+// pivot for fail-closed enforcement: the GitHub APIs (PR files / compare) are
+// authoritative, while a local `git diff` is NOT trusted because CI clones are
+// frequently shallow and silently truncate the diff -- the exact fail-open
+// condition we are closing. An unreliable result blocks (by default) rather
+// than downgrading a high-risk change to an ungated attestation.
 async function changedFilesForPush(token, repo, baseSha, headSha) {
   if (token && !isNullSha(baseSha) && headSha) {
     try {
       const response = await githubApi(token, `/repos/${repo}/compare/${baseSha}...${headSha}`);
       const data = await response.json();
-      return (data.files || []).map((f) => f.filename).filter(Boolean);
+      const files = (data.files || []).map((f) => f.filename).filter(Boolean);
+      return { files, reliable: true, method: "compare" };
     } catch (error) {
-      // Fall through to a local diff (e.g. forks without compare access).
+      return {
+        files: localGitDiff(baseSha, headSha),
+        reliable: false,
+        method: "local_git_diff",
+        error: String(error.message || error),
+      };
     }
   }
-  return localGitDiff(baseSha, headSha);
+  return {
+    files: localGitDiff(baseSha, headSha),
+    reliable: false,
+    method: "local_git_diff",
+    error: token ? "missing base sha" : "missing github-token",
+  };
 }
 
 async function detectChangedFiles(token, event) {
   const { eventName, repo, prNumber, baseSha, headSha } = event;
   if (prNumber) {
-    return changedFilesForPullRequest(token, repo, prNumber);
+    try {
+      const files = await changedFilesForPullRequest(token, repo, prNumber);
+      return { files, reliable: true, method: "pull_request_files" };
+    } catch (error) {
+      return {
+        files: [],
+        reliable: false,
+        method: "pull_request_files",
+        error: String(error.message || error),
+      };
+    }
   }
   if (eventName === "push" || baseSha || headSha) {
     return changedFilesForPush(token, repo, baseSha, headSha);
   }
-  return localGitDiff(baseSha, headSha);
+  return {
+    files: localGitDiff(baseSha, headSha),
+    reliable: false,
+    method: "local_git_diff",
+    error: "no pull request or push context",
+  };
 }
 
 function resolveEventContext() {
@@ -608,14 +673,43 @@ async function main() {
 
   // --- AI PR Guard mode ---------------------------------------------------
   const event = resolveEventContext();
-  const policy = policyHashHex && fs.existsSync(policyFile)
+  const policy = fs.existsSync(policyFile)
     ? parseYaml(fs.readFileSync(policyFile, "utf8"))
     : null;
+  const hasPolicy = !!(policy && policy.mapping);
+  const failClosed = resolveFailClosed(policy, input("fail-closed").toLowerCase());
 
-  if (!policy || !policy.mapping) {
+  const detection = hasPolicy
+    ? await detectChangedFiles(githubToken, event)
+    : { files: [], reliable: false, method: "no_policy" };
+  if (hasPolicy) {
     console.log(
-      `Inntris: no usable policy at '${policyFile}' (need a 'mapping:' block); ` +
-        `falling back to a single '${fallbackActionType}' attestation.`,
+      `Inntris: detection method=${detection.method} reliable=${detection.reliable} ` +
+        `files=${detection.files.length} fail_closed=${failClosed}.`,
+    );
+  }
+
+  const plan = decidePlan({
+    hasPolicy,
+    reliable: detection.reliable,
+    fileCount: detection.files.length,
+    failClosed,
+  });
+
+  if (plan === "block") {
+    const reason = !hasPolicy
+      ? `no usable policy at '${policyFile}' (need a 'mapping:' block)`
+      : `could not reliably determine changed files (method=${detection.method}` +
+        `${detection.error ? `: ${detection.error}` : ""}). Ensure 'permissions: pull-requests: read' ` +
+        `and a github-token are set, or set enforcement.fail_closed=false to attest instead`;
+    finishFailClosed(reason, failOnBlock);
+    return;
+  }
+
+  if (plan === "attest") {
+    console.log(
+      `Inntris: ${hasPolicy ? "reliable empty change set" : "no policy and fail-closed disabled"}; ` +
+        `recording a single '${fallbackActionType}' attestation.`,
     );
     const payload = buildLegacyPayload(fallbackActionType, extraPayload);
     const result = await verifyOne({ ...sharedVerifyArgs, actionType: fallbackActionType, payload });
@@ -623,20 +717,8 @@ async function main() {
     return;
   }
 
-  const files = await detectChangedFiles(githubToken, event);
-  console.log(`Inntris: ${files.length} changed file(s) detected for ${event.eventName || "event"}.`);
-
-  if (files.length === 0) {
-    console.log(
-      `Inntris: no changed files resolved (missing token or history?); ` +
-        `falling back to a single '${fallbackActionType}' attestation.`,
-    );
-    const payload = buildLegacyPayload(fallbackActionType, extraPayload);
-    const result = await verifyOne({ ...sharedVerifyArgs, actionType: fallbackActionType, payload });
-    finishSingle(result, failOnBlock);
-    return;
-  }
-
+  // plan === "classify"
+  const files = detection.files;
   const { matchedRules, byType } = matchFilesToActionTypes(files, policy.mapping);
   const riskFlags = computeRiskFlags(byType, files, policy);
   const calls = plannedCalls(byType);
@@ -706,6 +788,21 @@ async function main() {
   }
 }
 
+// Records a fail-closed block: no /verify call (there is nothing trustworthy
+// to verify), an explicit "blocked" verdict on the outputs, and -- unless
+// fail-on-block is disabled -- a non-zero exit so the required check fails.
+function finishFailClosed(reason, failOnBlock) {
+  console.error(`Inntris CI Guard failing closed: ${reason}`);
+  setOutput("verdict", "blocked");
+  setOutput("audit-id", "");
+  setOutput("receipt-url", "");
+  setOutput("action-types", "");
+  setOutput("verdicts", JSON.stringify([{ action_type: null, verdict: "blocked", reason }]));
+  if (failOnBlock) {
+    throw new Error(`Inntris CI Guard failed closed: ${reason}`);
+  }
+}
+
 function finishSingle(result, failOnBlock) {
   reportResults([result]);
   setOutput("verdict", result.verdict);
@@ -742,6 +839,8 @@ module.exports = {
   matchFilesToActionTypes,
   plannedCalls,
   computeRiskFlags,
+  resolveFailClosed,
+  decidePlan,
   compileMapping,
   normalise,
   stableStringify,

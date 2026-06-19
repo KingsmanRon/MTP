@@ -42,6 +42,10 @@ inputs:
     description: "Fail the workflow when any Inntris verification returns a non approved verdict."
     required: false
     default: "true"
+  fail-closed:
+    description: "Override enforcement.fail_closed from the policy file. When the action cannot classify a change (no usable policy, or changed files cannot be reliably determined), 'true' blocks and 'false' records a low-risk attestation. Default: the policy value, else true."
+    required: false
+    default: ""
 
 outputs:
   verdict:

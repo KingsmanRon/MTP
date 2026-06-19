@@ -9,6 +9,8 @@ const {
   matchFilesToActionTypes,
   plannedCalls,
   computeRiskFlags,
+  resolveFailClosed,
+  decidePlan,
 } = require("./index.js");
 
 const POLICY_PATH = path.join(__dirname, "..", ".inntris.yml");
@@ -17,6 +19,11 @@ const policy = parseYaml(fs.readFileSync(POLICY_PATH, "utf8"));
 // ---------------------------------------------------------------------------
 // YAML subset parser
 // ---------------------------------------------------------------------------
+test("parseYaml reads the enforcement block", () => {
+  assert.ok(policy.enforcement);
+  assert.equal(policy.enforcement.fail_closed, "true");
+});
+
 test("parseYaml reads scalars, sequences, and nested mapping", () => {
   assert.equal(policy.version, "1");
   assert.ok(Array.isArray(policy.protected_paths));
@@ -130,4 +137,59 @@ test("computeRiskFlags marks low_risk_only when nothing high-risk changed", () =
   const { byType } = matchFilesToActionTypes(files, policy.mapping);
   const flags = computeRiskFlags(byType, files, policy);
   assert.ok(flags.includes("low_risk_only"));
+});
+
+// ---------------------------------------------------------------------------
+// Fail-closed enforcement
+// ---------------------------------------------------------------------------
+test("resolveFailClosed: input override beats policy, default is closed", () => {
+  // Input override wins over a permissive policy.
+  assert.equal(resolveFailClosed({ enforcement: { fail_closed: "false" } }, "true"), true);
+  // Input override wins over a strict policy.
+  assert.equal(resolveFailClosed({ enforcement: { fail_closed: "true" } }, "false"), false);
+  // No input -> policy value is honoured.
+  assert.equal(resolveFailClosed({ enforcement: { fail_closed: "false" } }, ""), false);
+  assert.equal(resolveFailClosed({ enforcement: { fail_closed: "true" } }, ""), true);
+  // No input and no enforcement block -> secure default.
+  assert.equal(resolveFailClosed({}, ""), true);
+  assert.equal(resolveFailClosed(null, ""), true);
+  // The shipped policy is fail-closed.
+  assert.equal(resolveFailClosed(policy, ""), true);
+});
+
+test("decidePlan blocks when it cannot classify and fail-closed is on", () => {
+  // No policy -> block (do not silently attest).
+  assert.equal(
+    decidePlan({ hasPolicy: false, reliable: false, fileCount: 0, failClosed: true }),
+    "block",
+  );
+  // Unreliable detection on a real change -> block, NOT a repo_change downgrade.
+  assert.equal(
+    decidePlan({ hasPolicy: true, reliable: false, fileCount: 7, failClosed: true }),
+    "block",
+  );
+});
+
+test("decidePlan attests on a reliable empty change set or an explicit opt-out", () => {
+  // Reliable + zero files = genuinely low-risk.
+  assert.equal(
+    decidePlan({ hasPolicy: true, reliable: true, fileCount: 0, failClosed: true }),
+    "attest",
+  );
+  // Opt-out: unclassifiable but fail-closed disabled.
+  assert.equal(
+    decidePlan({ hasPolicy: false, reliable: false, fileCount: 0, failClosed: false }),
+    "attest",
+  );
+  assert.equal(
+    decidePlan({ hasPolicy: true, reliable: false, fileCount: 4, failClosed: false }),
+    "attest",
+  );
+});
+
+test("decidePlan classifies a reliable, non-empty change set", () => {
+  assert.equal(
+    decidePlan({ hasPolicy: true, reliable: true, fileCount: 3, failClosed: true }),
+    "classify",
+  );
 });

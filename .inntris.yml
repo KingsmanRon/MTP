@@ -11,6 +11,14 @@ version: 1
 # Priority order (strongest wins): production_deployment >
 # protected_branch_merge > ci_workflow_change > repo_change.
 
+# Enforcement behaviour when the guard cannot classify a change -- a missing
+# policy, or changed files that cannot be reliably determined (no token, a
+# shallow clone, a GitHub API failure). fail_closed: true BLOCKS rather than
+# silently downgrading a high-risk change to an ungated attestation. This is
+# the secure default; set it to false only for non-regulated repositories.
+enforcement:
+  fail_closed: true
+
 protected_paths:
   - src/auth/**
   - src/session/**
