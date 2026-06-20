@@ -4,7 +4,6 @@ Pydantic models for request/response validation.
 All models are strictly typed and validated for forensic-grade operations.
 """
 
-import re
 from datetime import datetime
 from decimal import Decimal
 from enum import Enum
@@ -549,14 +548,13 @@ class RegisteredPolicy(BaseModel):
 
 
 class RegisterPolicyRequest(BaseModel):
-    """Register (or re-register) an agent's governing policy."""
+    """Register (or re-register) an agent's governing policy.
 
-    policy_hash: str = Field(
-        ...,
-        min_length=64,
-        max_length=64,
-        description="SHA-256 hash of the canonical .inntris.yml the agent runs.",
-    )
+    The caller submits only the enforced content (mapping + protected
+    branches); the server derives the canonical policy hash from it, so it
+    always matches what the action computes and cannot be spoofed.
+    """
+
     mapping: dict[str, list[str]] = Field(
         default_factory=dict,
         description="action_type -> path globs, for server-side re-derivation.",
@@ -565,13 +563,6 @@ class RegisterPolicyRequest(BaseModel):
         default_factory=list,
         description="Branch patterns that gate as protected_branch_merge.",
     )
-
-    @field_validator("policy_hash")
-    @classmethod
-    def validate_policy_hash(cls, v: str) -> str:
-        if not re.fullmatch(r"[a-f0-9]{64}", v):
-            raise ValueError("policy_hash must be a lowercase hex SHA-256 digest")
-        return v
 
 
 class OrganizationRecord(BaseModel):

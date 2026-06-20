@@ -5,6 +5,8 @@ Evaluates agent actions against configured rules and limits.
 "Zero Trust" - Every action is verified against all applicable policies.
 """
 
+import hashlib
+import json
 import logging
 import re
 from dataclasses import dataclass
@@ -39,6 +41,29 @@ RISK_RANK = {
 # The action types governed by .inntris.yml. Other action types (financial,
 # email, ...) are not classified from changed files and skip policy binding.
 CI_GUARD_ACTIONS = frozenset(RISK_RANK.keys())
+
+def canonical_policy_hash(
+    mapping: Optional[dict[str, list[str]]],
+    protected_branches: Any,
+) -> str:
+    """Canonical hash of a policy's enforced content (mapping + branches).
+
+    Formatting-independent: comments, whitespace, and line endings in the
+    source ``.inntris.yml`` do not change it, so a cosmetic edit does not cause
+    a spurious POLICY_HASH_MISMATCH. Must match ``canonicalPolicyHash`` in
+    github-action/index.js, which hashes the same two fields.
+    """
+    canonical = json.dumps(
+        {
+            "mapping": mapping or {},
+            "protected_branches": list(protected_branches or []),
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    )
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
 
 _GLOB_SPECIAL = set(".+^${}()|[]\\/")
 

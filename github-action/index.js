@@ -618,6 +618,24 @@ function policyHash(policyPath) {
   return crypto.createHash("sha256").update(fs.readFileSync(policyPath)).digest("hex");
 }
 
+// Canonical, formatting-independent hash of the policy's *enforced* content:
+// the path mapping plus protected branches. The server registers and re-derives
+// from exactly these two fields, so hashing only them means a comment or
+// whitespace change (or a CRLF checkout) in .inntris.yml does not flip the hash
+// and trigger a spurious POLICY_HASH_MISMATCH. Must match
+// canonical_policy_hash() in api/policy.py.
+function canonicalPolicyHash(policy) {
+  if (!policy) {
+    return null;
+  }
+  return sha256Hex(
+    stableStringify({
+      mapping: policy.mapping || {},
+      protected_branches: policy.protected_branches || [],
+    }),
+  );
+}
+
 function loadExtraPayload(raw) {
   if (!raw) {
     return {};
@@ -704,10 +722,19 @@ async function main() {
   const githubToken = input("github-token") || process.env.GITHUB_TOKEN || "";
   const policyFile = input("policy-file") || input("policy-path") || ".inntris.yml";
   const extraPayload = loadExtraPayload(input("payload"));
-  const policyHashHex = policyHash(policyFile);
+  // Legacy/attestation paths keep the raw-file hash. The ai-pr-guard classify
+  // path uses the canonical hash (computed once the policy is parsed) so it
+  // matches what the server registered.
+  const rawPolicyHashHex = policyHash(policyFile);
   const receiptBase = (input("receipt-url-base") || `${apiUrl}/public/verify`).replace(/\/+$/, "");
 
-  const sharedVerifyArgs = { apiUrl, agentId, privateKeyB64, policyHashHex, receiptBase };
+  const sharedVerifyArgs = {
+    apiUrl,
+    agentId,
+    privateKeyB64,
+    policyHashHex: rawPolicyHashHex,
+    receiptBase,
+  };
 
   // --- Legacy single-call mode -------------------------------------------
   if (mode !== "ai-pr-guard") {
@@ -782,6 +809,9 @@ async function main() {
       `verifying ${calls.length} categor${calls.length === 1 ? "y" : "ies"}: ${calls.join(", ")}.`,
   );
 
+  // The hash the server registered is canonical over {mapping, protected_branches}.
+  const policyHashHex = canonicalPolicyHash(policy);
+
   const basePayload = {
     platform: "github_actions",
     resource: "repository",
@@ -813,7 +843,7 @@ async function main() {
       matched_rules: rulesForType.length > 0 ? rulesForType : matchedRules,
       ...extraPayload,
     };
-    results.push(await verifyOne({ ...sharedVerifyArgs, actionType, payload }));
+    results.push(await verifyOne({ ...sharedVerifyArgs, policyHashHex, actionType, payload }));
   }
 
   reportResults(results);
@@ -891,6 +921,7 @@ if (require.main === module) {
 module.exports = {
   parseYaml,
   globToRegExp,
+  canonicalPolicyHash,
   matchFilesToActionTypes,
   matchProtectedBranch,
   classifyChange,

@@ -1,8 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
+  BadgeCheck,
   Check,
   CheckCircle2,
   Copy,
@@ -12,6 +13,7 @@ import {
   KeyRound,
   ShieldCheck,
   TriangleAlert,
+  UploadCloud,
 } from "lucide-react";
 import type { MappedAgent, MappedAuditLog } from "@/lib/admin/types";
 import { AdminVerdictBadge } from "@/components/admin/verdict-badge";
@@ -78,6 +80,24 @@ mapping:
     - docs/**
     - README.md
     - src/components/**`;
+
+// The enforced content of the policy above, sent to the server on registration.
+// The server derives the canonical hash from exactly these two fields (matching
+// the action's canonicalPolicyHash), then binds /verify against it.
+const PR_GUARD_POLICY = {
+  mapping: {
+    ci_workflow_change: [".github/workflows/**"],
+    production_deployment: ["infra/**", "deploy/**", "terraform/**", "k8s/**"],
+    repo_change: ["docs/**", "README.md", "src/components/**"],
+  },
+  protected_branches: ["main", "release/*", "production"],
+};
+
+type RegistrationState =
+  | { status: "loading" }
+  | { status: "error"; message: string }
+  | { status: "unregistered" }
+  | { status: "registered"; version: number; policyHash: string };
 
 function buildWorkflowYaml(agentId: string) {
   return `name: Inntris AI PR Guard
@@ -153,6 +173,60 @@ export function CiGuardPanel({
     }
   };
 
+  // Server-side policy binding (Tier A) status + registration.
+  const [registration, setRegistration] = useState<RegistrationState>({ status: "loading" });
+  const [registering, setRegistering] = useState(false);
+  const [regError, setRegError] = useState<string | null>(null);
+
+  const loadRegistration = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/admin/agents/${agent.id}/policy`);
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(body?.detail || body?.error || `Failed (${res.status})`);
+      }
+      setRegistration(
+        body?.registered
+          ? { status: "registered", version: body.version, policyHash: body.policy_hash }
+          : { status: "unregistered" },
+      );
+    } catch (error) {
+      setRegistration({
+        status: "error",
+        message: error instanceof Error ? error.message : "Failed to load policy status",
+      });
+    }
+  }, [agent.id]);
+
+  useEffect(() => {
+    loadRegistration();
+  }, [loadRegistration]);
+
+  const registerPolicy = async () => {
+    setRegError(null);
+    setRegistering(true);
+    try {
+      const res = await fetch(`/api/admin/agents/${agent.id}/policy`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(PR_GUARD_POLICY),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(body?.detail || body?.error || `Registration failed (${res.status})`);
+      }
+      setRegistration({
+        status: "registered",
+        version: body.version,
+        policyHash: body.policy_hash,
+      });
+    } catch (error) {
+      setRegError(error instanceof Error ? error.message : "Registration failed");
+    } finally {
+      setRegistering(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Four product-specific statuses */}
@@ -197,6 +271,62 @@ export function CiGuardPanel({
           </span>
         </div>
       )}
+
+      {/* Server-side policy binding (Tier A) */}
+      <div className="rounded-lg border border-[#22314D] bg-[#101C31] p-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="flex items-start gap-2">
+            <BadgeCheck className="mt-0.5 h-4 w-4 text-[#8FB8FF]" />
+            <div>
+              <h2 className="text-sm font-semibold text-[#F5F7FB]">Server-side enforcement</h2>
+              <p className="mt-1 max-w-xl text-xs leading-5 text-[#7F8CA3]">
+                Registering binds <span className="font-mono">/verify</span> to this policy: the
+                server rejects a mismatched policy hash and re-derives the required action type
+                from the changed files, so a caller cannot downgrade a code/release change. Until
+                registered, binding is advisory (logged, not enforced).
+              </p>
+            </div>
+          </div>
+          <RegistrationBadge registration={registration} />
+        </div>
+
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+          <div className="min-w-0 text-xs text-[#7F8CA3]">
+            {registration.status === "registered" ? (
+              <span className="font-mono text-[#AAB7CC]">
+                hash {registration.policyHash.slice(0, 12)}… · v{registration.version}
+              </span>
+            ) : registration.status === "error" ? (
+              <span className="text-amber-300">{registration.message}</span>
+            ) : registration.status === "unregistered" ? (
+              <span>No policy registered — verifications are not yet bound server-side.</span>
+            ) : (
+              <span>Checking registration…</span>
+            )}
+          </div>
+          <Button
+            type="button"
+            size="sm"
+            onClick={registerPolicy}
+            disabled={registering || registration.status === "loading"}
+            className="bg-[#4C8DFF] text-white hover:bg-[#4C8DFF]/90"
+          >
+            <UploadCloud className="mr-2 h-3.5 w-3.5" />
+            {registering
+              ? "Registering…"
+              : registration.status === "registered"
+                ? "Re-register policy"
+                : "Register policy"}
+          </Button>
+        </div>
+
+        {regError && (
+          <div className="mt-3 flex items-start gap-2 rounded-md border border-red-500/30 bg-red-500/10 p-2.5 text-xs text-red-300">
+            <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            {regError}
+          </div>
+        )}
+      </div>
 
       {/* Workflow */}
       <CodeBlock
@@ -339,6 +469,31 @@ function CodeBlock({
         <code>{code}</code>
       </pre>
     </div>
+  );
+}
+
+function RegistrationBadge({ registration }: { registration: RegistrationState }) {
+  if (registration.status === "registered") {
+    return (
+      <Badge variant="success" className="shrink-0">
+        Enforcing · v{registration.version}
+      </Badge>
+    );
+  }
+  if (registration.status === "loading") {
+    return (
+      <Badge variant="secondary" className="shrink-0">
+        Checking…
+      </Badge>
+    );
+  }
+  return (
+    <Badge
+      variant="secondary"
+      className="shrink-0 border-amber-500/30 bg-amber-500/10 text-amber-300"
+    >
+      Advisory
+    </Badge>
   );
 }
 

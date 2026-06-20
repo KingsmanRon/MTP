@@ -8,6 +8,7 @@
     },
     "protected_branches": ["main", "release/*", "production"]
   },
+  "policy_hash": "f1c2747d521276b4af4b3b48c95dcf8f9b279849405796425dd7897d332ce7c2",
   "cases": [
     {
       "name": "docs into a feature branch is a low-risk attestation",

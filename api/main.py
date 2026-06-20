@@ -60,7 +60,7 @@ from api.crypto import (
     CryptoService,
     SignatureVerificationError,
 )
-from api.policy import PolicyEngine, TrustScorer
+from api.policy import PolicyEngine, TrustScorer, canonical_policy_hash
 from api.schemas.admin import (
     OrganizationResponse,
     AgentSummary,
@@ -2437,10 +2437,15 @@ async def register_agent_policy(
     if agent.org_id != auth["org_id"]:
         raise HTTPException(status_code=403, detail="Access denied")
 
+    # Derive the canonical hash server-side from the enforced content so it
+    # always matches what the action computes (canonicalPolicyHash).
+    policy_hash = canonical_policy_hash(
+        policy_request.mapping, policy_request.protected_branches
+    )
     policy = await database.register_agent_policy(
         agent_id=agent_id,
         org_id=agent.org_id,
-        policy_hash=policy_request.policy_hash,
+        policy_hash=policy_hash,
         mapping=policy_request.mapping,
         protected_branches=policy_request.protected_branches,
         registered_by=f"admin:{auth['org_id']}",

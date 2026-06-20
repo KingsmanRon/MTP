@@ -15,6 +15,7 @@ from api.models import ActionVerdict, AgentRecord, AgentStatus, RegisteredPolicy
 from api.policy import (
     PolicyEngine,
     PolicyViolation,
+    canonical_policy_hash,
     glob_to_regex,
     strongest_required_action_type,
 )
@@ -77,6 +78,15 @@ def test_strongest_required_matches_golden_vectors(case):
         _POLICY["protected_branches"],
     )
     assert result == case["expected"]
+
+
+def test_canonical_policy_hash_matches_golden_vector():
+    # The server-derived hash must equal what the JS action sends; the JS side
+    # asserts the same constant (github-action/index.test.js).
+    computed = canonical_policy_hash(
+        _POLICY["mapping"], _POLICY["protected_branches"]
+    )
+    assert computed == _VECTORS["policy_hash"]
 
 
 def test_glob_to_regex_semantics():

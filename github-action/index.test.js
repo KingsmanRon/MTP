@@ -6,6 +6,7 @@ const path = require("node:path");
 const {
   parseYaml,
   globToRegExp,
+  canonicalPolicyHash,
   matchFilesToActionTypes,
   matchProtectedBranch,
   classifyChange,
@@ -158,6 +159,17 @@ test("a docs-only PR into main is a truthful protected_branch_merge", () => {
 // Shared golden vectors: the JS action and the Python server (api/policy.py,
 // tests/test_policy_binding.py) must agree on the strongest required action
 // type. `expected` is plannedCalls()[0] -- ACTION_PRIORITY is strongest-first.
+test("canonical policy hash matches the shared golden vector", () => {
+  const vectors = JSON.parse(
+    fs.readFileSync(
+      path.join(__dirname, "..", "tests", "fixtures", "classification", "vectors.json"),
+      "utf8",
+    ),
+  );
+  // The hash the action sends must equal what the server registers/derives.
+  assert.equal(canonicalPolicyHash(vectors.policy), vectors.policy_hash);
+});
+
 test("classification matches the shared golden vectors", () => {
   const vectors = JSON.parse(
     fs.readFileSync(
