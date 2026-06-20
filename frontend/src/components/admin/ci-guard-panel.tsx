@@ -24,6 +24,7 @@ import {
   CONTROLLED_ACTIONS,
   type ControlledActionId,
 } from "@/lib/agent-controls";
+import { SigningKeyPanel } from "@/components/admin/signing-key-panel";
 import { copyToClipboard, formatDateTime } from "@/lib/utils";
 
 // The four code/release action types the AI PR Guard verifies. Ordered
@@ -345,12 +346,15 @@ export function CiGuardPanel({
       />
 
       <div className="grid gap-4 lg:grid-cols-[1fr_1.4fr]">
-        <div className="rounded-lg border border-[#22314D] bg-[#101C31] p-4">
-          <h2 className="text-sm font-semibold text-[#F5F7FB]">Secrets</h2>
-          <div className="mt-4 space-y-3">
-            <SecretRow name="INNTRIS_API_URL" value="Core API base URL" />
-            <SecretRow name="INNTRIS_PRIVATE_KEY_B64" value="Agent Ed25519 private key seed" />
+        <div className="space-y-4">
+          <div className="rounded-lg border border-[#22314D] bg-[#101C31] p-4">
+            <h2 className="text-sm font-semibold text-[#F5F7FB]">Secrets</h2>
+            <div className="mt-4 space-y-3">
+              <SecretRow name="INNTRIS_API_URL" value="Core API base URL" />
+              <SecretRow name="INNTRIS_PRIVATE_KEY_B64" value="Agent Ed25519 private key seed" />
+            </div>
           </div>
+          <SigningKeyPanel agent={agent} />
         </div>
 
         <div className="rounded-lg border border-[#22314D] bg-[#101C31] p-4">

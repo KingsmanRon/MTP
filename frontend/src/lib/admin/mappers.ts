@@ -102,6 +102,8 @@ export function mapAgent(raw: unknown): MappedAgent | null {
     allowed_actions: strArr(raw.allowed_actions),
     blocked_actions: strArr(raw.blocked_actions),
     metadata: isRecord(raw.metadata) ? raw.metadata : undefined,
+    key_version: num(raw.key_version),
+    key_rotated_at: strOrNull(raw.key_rotated_at),
   };
 }
 

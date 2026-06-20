@@ -256,6 +256,29 @@ class RegisterAgentRequest(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict, description="Additional metadata")
 
 
+class RotateAgentKeyRequest(BaseModel):
+    """Rotate an agent's Ed25519 signing key (leak response / hygiene).
+
+    Replaces the public key in place, preserving trust, history, and policy.
+    The old key stops verifying immediately. The caller submits only the new
+    public key; the private seed is generated client-side and never sent.
+    """
+
+    model_config = ConfigDict(strict=False)
+
+    public_key: str = Field(
+        ...,
+        min_length=44,
+        max_length=64,
+        description="Base64-encoded new Ed25519 public key (32 bytes).",
+    )
+    reason: Optional[str] = Field(
+        None,
+        max_length=500,
+        description="Why the key is being rotated (recorded for audit).",
+    )
+
+
 class UpdateAgentRequest(BaseModel):
     """Validated mutable policy controls for an existing agent."""
 
@@ -530,6 +553,10 @@ class AgentRecord(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime
     updated_at: datetime
+    # Signing-key rotation (migration 011). Defaults keep older callers and
+    # test fixtures that construct AgentRecord without these fields valid.
+    key_version: int = 1
+    key_rotated_at: Optional[datetime] = None
 
 
 class RegisteredPolicy(BaseModel):

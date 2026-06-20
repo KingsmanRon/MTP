@@ -46,6 +46,7 @@ from api.models import (
     RegisterAgentRequest,
     UpdateAgentRequest,
     RegisterPolicyRequest,
+    RotateAgentKeyRequest,
     HealthResponse,
     ErrorResponse,
     ActionVerdict,
@@ -516,11 +517,17 @@ def _effective_policy_hash(agent: Any) -> str:
 def _audit_metadata(
     *,
     client_policy_hash: Optional[str],
+    key_fingerprint: Optional[str] = None,
     extra: Optional[dict[str, Any]] = None,
 ) -> dict[str, Any]:
     metadata = dict(extra or {})
     if client_policy_hash:
         metadata["client_policy_hash"] = client_policy_hash
+    # Pin each verification to the signing key. After a key leak, rotate and
+    # then scope the blast radius: query audits where key_fingerprint matches
+    # the retired key.
+    if key_fingerprint:
+        metadata["key_fingerprint"] = key_fingerprint
     return metadata
 
 
@@ -1279,7 +1286,10 @@ async def verify_action(
                 trust_score_at_time=agent.trust_score,
                 chain_previous_hash=None,
                 policy_hash=effective_policy_hash,
-                metadata=_audit_metadata(client_policy_hash=request_data.policy_hash),
+                metadata=_audit_metadata(
+                    client_policy_hash=request_data.policy_hash,
+                    key_fingerprint=agent.public_key_fingerprint,
+                ),
             )
             audit_id = await database.insert_audit_log(audit_entry, derive_chain_hash=True)
 
@@ -1411,6 +1421,7 @@ async def verify_action(
                 policy_hash=effective_policy_hash,
                 metadata=_audit_metadata(
                     client_policy_hash=request_data.policy_hash,
+                    key_fingerprint=agent.public_key_fingerprint,
                     extra={
                         "violation": (
                             policy_result.violation.value
@@ -1513,6 +1524,7 @@ async def verify_action(
                 policy_hash=effective_policy_hash,
                 metadata=_audit_metadata(
                     client_policy_hash=request_data.policy_hash,
+                    key_fingerprint=agent.public_key_fingerprint,
                     extra={
                         "violation": (
                             "rate_limit_exceeded" if exc.kind == "rate"
@@ -1582,6 +1594,7 @@ async def verify_action(
             policy_hash=effective_policy_hash,
             metadata=_audit_metadata(
                 client_policy_hash=request_data.policy_hash,
+                key_fingerprint=agent.public_key_fingerprint,
                 extra={"policy_binding": policy_binding_state},
             ),
         )
@@ -2142,6 +2155,8 @@ async def get_agent(
             "metadata": agent.metadata,
             "created_at": agent.created_at.isoformat(),
             "updated_at": agent.updated_at.isoformat() if agent.updated_at else None,
+            "key_version": agent.key_version,
+            "key_rotated_at": agent.key_rotated_at.isoformat() if agent.key_rotated_at else None,
         }
     except AgentNotFoundError:
         raise HTTPException(status_code=404, detail="Agent not found")
@@ -2457,6 +2472,57 @@ async def register_agent_policy(
         "mapping": policy.mapping,
         "protected_branches": policy.protected_branches,
         "version": policy.version,
+    }
+
+
+@app.post("/admin/agents/{agent_id}/rotate-key", tags=["Admin - Agents"])
+async def rotate_agent_key(
+    agent_id: UUID,
+    request_data: RotateAgentKeyRequest,
+    auth: dict = Depends(require_api_scope("write")),
+    database: Database = Depends(get_db),
+):
+    """Rotate an agent's Ed25519 signing key (leak response / hygiene).
+
+    The old key stops verifying immediately; trust score, registered policy, and
+    audit history are preserved. Submit only the new public key (the private
+    seed is generated client-side and never sent here).
+    """
+    try:
+        agent = await database.get_agent_by_id(agent_id)
+    except AgentNotFoundError:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    if agent.org_id != auth["org_id"]:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    try:
+        new_public_key = base64.b64decode(request_data.public_key, validate=True)
+    except (binascii.Error, ValueError):
+        raise HTTPException(status_code=400, detail="public_key must be valid base64")
+    if len(new_public_key) != 32:
+        raise HTTPException(status_code=400, detail="Public key must be 32 bytes (Ed25519)")
+
+    new_fingerprint = hashlib.sha256(new_public_key).hexdigest()
+    if new_fingerprint == agent.public_key_fingerprint:
+        raise HTTPException(
+            status_code=400, detail="New key must differ from the current key"
+        )
+
+    result = await database.rotate_agent_key(
+        agent_id=agent_id,
+        org_id=agent.org_id,
+        new_public_key=new_public_key,
+        new_fingerprint=new_fingerprint,
+        retired_by=f"admin:{auth['org_id']}",
+        reason=request_data.reason,
+    )
+    return {
+        "agent_id": str(agent_id),
+        "key_version": result["key_version"],
+        "public_key_fingerprint": result["public_key_fingerprint"],
+        "key_rotated_at": (
+            result["key_rotated_at"].isoformat() if result["key_rotated_at"] else None
+        ),
     }
 
 

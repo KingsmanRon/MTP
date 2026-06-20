@@ -162,7 +162,7 @@ class Database:
                 trust_score, status, daily_limit_usd, per_action_limit_usd,
                 allowed_actions, blocked_actions, rate_limit_per_minute,
                 last_action_at, total_actions_count, total_blocked_count,
-                metadata, created_at, updated_at
+                metadata, created_at, updated_at, key_version, key_rotated_at
             FROM agents
             WHERE id = $1
         """
@@ -191,6 +191,8 @@ class Database:
             metadata=json.loads(row["metadata"]) if isinstance(row["metadata"], str) else (row["metadata"] or {}),
             created_at=row["created_at"],
             updated_at=row["updated_at"],
+            key_version=row["key_version"],
+            key_rotated_at=row["key_rotated_at"],
         )
 
     async def get_agent_by_fingerprint(self, fingerprint: str) -> AgentRecord:
@@ -201,7 +203,7 @@ class Database:
                 trust_score, status, daily_limit_usd, per_action_limit_usd,
                 allowed_actions, blocked_actions, rate_limit_per_minute,
                 last_action_at, total_actions_count, total_blocked_count,
-                metadata, created_at, updated_at
+                metadata, created_at, updated_at, key_version, key_rotated_at
             FROM agents
             WHERE public_key_fingerprint = $1
         """
@@ -230,6 +232,8 @@ class Database:
             metadata=json.loads(row["metadata"]) if isinstance(row["metadata"], str) else (row["metadata"] or {}),
             created_at=row["created_at"],
             updated_at=row["updated_at"],
+            key_version=row["key_version"],
+            key_rotated_at=row["key_rotated_at"],
         )
 
     # =========================================================================
@@ -321,6 +325,72 @@ class Database:
             ),
             version=row["version"],
         )
+
+    async def rotate_agent_key(
+        self,
+        agent_id: UUID,
+        org_id: UUID,
+        new_public_key: bytes,
+        new_fingerprint: str,
+        retired_by: Optional[str] = None,
+        reason: Optional[str] = None,
+    ) -> dict[str, Any]:
+        """Rotate an agent's Ed25519 signing key in place.
+
+        Records the current key in ``agent_key_history`` and swaps in the new
+        one (new fingerprint, bumped ``key_version``, ``key_rotated_at`` now) in
+        one tenant-scoped transaction. Trust score, policy, and audit history are
+        untouched; the old key stops verifying immediately.
+
+        Returns the new ``key_version``, ``public_key_fingerprint``, and
+        ``key_rotated_at``.
+        """
+        async with self.acquire_as_tenant(org_id) as conn:
+            current = await conn.fetchrow(
+                "SELECT public_key_fingerprint, key_version FROM agents WHERE id = $1",
+                agent_id,
+            )
+            if current is None:
+                raise AgentNotFoundError(f"Agent {agent_id} not found")
+
+            await conn.execute(
+                """
+                INSERT INTO agent_key_history (
+                    agent_id, public_key_fingerprint, key_version, retired_by, reason
+                )
+                VALUES ($1, $2, $3, $4, $5)
+                """,
+                agent_id,
+                current["public_key_fingerprint"],
+                current["key_version"],
+                retired_by,
+                reason,
+            )
+
+            row = await conn.fetchrow(
+                """
+                UPDATE agents
+                SET public_key = $2,
+                    public_key_fingerprint = $3,
+                    key_version = key_version + 1,
+                    key_rotated_at = NOW(),
+                    updated_at = NOW()
+                WHERE id = $1
+                RETURNING key_version, public_key_fingerprint, key_rotated_at
+                """,
+                agent_id,
+                new_public_key,
+                new_fingerprint,
+            )
+
+        logger.info(
+            f"Rotated signing key for agent {agent_id} to v{row['key_version']}"
+        )
+        return {
+            "key_version": row["key_version"],
+            "public_key_fingerprint": row["public_key_fingerprint"],
+            "key_rotated_at": row["key_rotated_at"],
+        }
 
     async def create_agent(
         self,

@@ -95,6 +95,8 @@ class AgentDetail(BaseModel):
     metadata: Optional[dict[str, Any]] = None
     created_at: str
     updated_at: Optional[str] = None
+    key_version: int = 1
+    key_rotated_at: Optional[str] = None
 
 
 class AuditLogSummary(BaseModel):

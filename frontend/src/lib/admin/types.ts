@@ -100,6 +100,8 @@ export interface MappedAgent {
   allowed_actions?: string[];
   blocked_actions?: string[];
   metadata?: Record<string, unknown>;
+  key_version?: number;
+  key_rotated_at?: string | null;
 }
 
 export interface MappedAuditLog {
