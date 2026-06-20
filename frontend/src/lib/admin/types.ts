@@ -154,6 +154,7 @@ export interface MappedAuditDetail {
   merkle_leaf_index?: number | null;
   response_time_ms?: number | null;
   policy_hash?: string | null;
+  metadata?: Record<string, unknown> | null;
 }
 
 export interface MappedAuditProof {

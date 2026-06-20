@@ -181,6 +181,7 @@ export function mapAuditDetail(raw: unknown): MappedAuditDetail | null {
     merkle_leaf_index: numOrNull(raw.merkle_leaf_index) as number | null | undefined,
     response_time_ms: numOrNull(raw.response_time_ms),
     policy_hash: strOrNull(raw.policy_hash),
+    metadata: isRecord(raw.metadata) ? raw.metadata : undefined,
   };
 }
 

@@ -8,6 +8,7 @@ import type { MappedAuditDetail, MappedAuditProof } from "@/lib/admin/types";
 import { AdminErrorState } from "@/components/admin/error-state";
 import { AdminEmptyState } from "@/components/admin/empty-state";
 import { AdminVerdictBadge } from "@/components/admin/verdict-badge";
+import { PrGuardEvidence, isPrGuardRecord } from "@/components/admin/pr-guard-evidence";
 import { CopyableMonoValue } from "@/components/admin/copyable-mono-value";
 import { VerifyLinkCopy } from "@/components/admin/verify-link-copy";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -102,6 +103,18 @@ function AuditDetailContent({ logId }: { logId: string }) {
               </div>
             </CardContent>
           </Card>
+
+          {/* SECTION 1b — AI PR Guard evidence (only for guard records) */}
+          {isPrGuardRecord(record) && (
+            <Card className="border-[#22314D] bg-[#0D1728]">
+              <CardHeader>
+                <CardTitle className="text-base text-[#F5F7FB]">AI PR Guard</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <PrGuardEvidence record={record} />
+              </CardContent>
+            </Card>
+          )}
 
           {/* SECTION 2 — Action payload */}
           <Card className="border-[#22314D] bg-[#0D1728]">

@@ -2642,6 +2642,11 @@ async def get_audit_log(
         "trust_score_at_time": row["trust_score_at_time"],
         "merkle_root_id": str(row["merkle_root_id"]) if row["merkle_root_id"] else None,
         "merkle_leaf_index": row["merkle_leaf_index"],
+        "metadata": (
+            row["metadata"]
+            if isinstance(row["metadata"], dict)
+            else json.loads(row["metadata"]) if row["metadata"] else {}
+        ),
     }
 
 @app.get("/admin/audit/{log_id}/proof", tags=["Admin - Audit"], response_model=AuditProof)
