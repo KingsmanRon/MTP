@@ -43,16 +43,34 @@ GitHub Secrets. Keep `INNTRIS_PRIVATE_KEY_B64` secret — it is shown once.
 
 ## 3. Wire up the repo
 
-In the target repo:
-1. Commit `.inntris.yml` (the admin AI PR Guard tab generates the canonical
-   one; it must match what was registered).
-2. Commit `.github/workflows/inntris-ai-pr-guard.yml` (admin generates it; it
-   carries the `agent-id` from step 2).
-3. Set repo Secrets `INNTRIS_API_URL` and `INNTRIS_PRIVATE_KEY_B64` from step 2.
-4. In the admin **AI PR Guard** tab, confirm **Server-side enforcement** shows
-   **Enforcing · v1** and the four code/release actions show **Allowed**.
-5. Make the Inntris check **required** on `main` (GitHub branch protection /
-   ruleset) — a BLOCK only prevents a merge when the check is required.
+### Fastest: dogfood this repo (no external action)
+
+This repo already ships `.github/workflows/inntris-ai-pr-guard.yml`, which runs
+the **local** action (`uses: ./`) and is **inert until enabled**. To turn it on:
+
+1. Set repo **Secrets**: `INNTRIS_API_URL`, `INNTRIS_PRIVATE_KEY_B64` (from
+   step 2).
+2. Set repo **Variables**: `INNTRIS_AGENT_ID` (from step 2) and
+   `INNTRIS_AI_PR_GUARD=on`.
+3. Open a PR and confirm the **Inntris AI PR Guard** check runs.
+4. **Then** make it required on the branch (GitHub branch protection / ruleset)
+   — a BLOCK only prevents a merge when the check is required, and a required
+   check that is *skipped* (variable off) leaves a PR stuck pending, so enable
+   and verify before requiring.
+
+> Note: this repo's default branch is `master`, but the demo `.inntris.yml`
+> lists `main`/`release/*`/`production` as protected. Path categories
+> (`ci_workflow_change`, `production_deployment`) still fire on `master` PRs. To
+> also exercise `protected_branch_merge` here, add `master` to
+> `protected_branches` in `.inntris.yml` and re-register the policy.
+
+### External repo
+
+In the target repo: commit `.inntris.yml` (must match what was registered) and
+the workflow the admin **AI PR Guard** tab generates (its `uses:` comes from
+`NEXT_PUBLIC_INNTRIS_ACTION_REF` — see `github-action/RELEASING.md`), set the two
+secrets + the agent-id, confirm **Server-side enforcement** shows
+**Enforcing · v1**, then make the check required.
 
 ## 4. Drive the cases
 

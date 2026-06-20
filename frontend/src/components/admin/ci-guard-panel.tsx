@@ -100,6 +100,13 @@ type RegistrationState =
   | { status: "unregistered" }
   | { status: "registered"; version: number; policyHash: string };
 
+// The published Inntris action reference. Configurable per deployment so it
+// points at whatever action repo/tag is actually published (e.g.
+// `inntris/inntris-verify@v1`, `KingsmanRon/MTP@v1`, or a pinned SHA). See
+// github-action/RELEASING.md.
+const ACTION_REF =
+  process.env.NEXT_PUBLIC_INNTRIS_ACTION_REF || "inntris/inntris-verify@v1";
+
 function buildWorkflowYaml(agentId: string) {
   return `name: Inntris AI PR Guard
 
@@ -116,7 +123,7 @@ jobs:
       pull-requests: read
     steps:
       - uses: actions/checkout@v4
-      - uses: inntris/inntris-verify@v1
+      - uses: ${ACTION_REF}
         with:
           api-url: \${{ secrets.INNTRIS_API_URL }}
           agent-id: ${agentId}

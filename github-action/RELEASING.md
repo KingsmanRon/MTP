@@ -39,18 +39,28 @@ github-action run build` and commit `dist/`.
 
 ## How consumers reference it
 
-`action.yml` is at the repo root, so the action is usable directly from this
-repository:
+`action.yml` is at the repo root, so the action resolves three ways:
 
 ```yaml
-- uses: <owner>/<repo>@v1            # floating major (gets patches)
-# or, hardened (supply-chain): pin the exact commit and note the version
-- uses: <owner>/<repo>@<full-sha>    # v1.2.3
+# Same repo (dogfood): no tag/publish needed -- run the local action.
+- uses: ./
+
+# External repo, floating major (gets patches). This monorepo works today
+# because action.yml is at its root:
+- uses: KingsmanRon/MTP@v1
+
+# Hardened (supply-chain): pin the exact commit, note the version.
+- uses: KingsmanRon/MTP@<full-sha>    # v1.2.3
 ```
 
+The admin **workflow generator** emits the reference from
+`NEXT_PUBLIC_INNTRIS_ACTION_REF` (default `inntris/inntris-verify@v1`). Set that
+env var on the frontend deployment to whatever you actually publish — the
+monorepo (`KingsmanRon/MTP@v1`), a dedicated mirror, or a pinned SHA — so the
+generated `uses:` always resolves.
+
 **SHA-pinning** is recommended for regulated consumers: a commit SHA is
-immutable, whereas `@v1` moves. The admin workflow generator emits `@v1` for
-ergonomics; swap in the release SHA for a locked-down setup.
+immutable, whereas `@v1` moves.
 
 ### Publishing under a dedicated `inntris/inntris-verify` repo (optional)
 

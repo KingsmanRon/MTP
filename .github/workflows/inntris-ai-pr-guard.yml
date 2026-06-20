@@ -1,0 +1,38 @@
+name: Inntris AI PR Guard
+
+# Dogfood the AI PR Guard on this repo using the LOCAL action (uses: ./), so no
+# external action repo or tag is needed.
+#
+# Inert until enabled: the job is skipped unless the repo variable
+# INNTRIS_AI_PR_GUARD == 'on'. To turn it on:
+#   1. Provision an agent (scripts/provision_demo_agent.py) and register its
+#      policy from .inntris.yml.
+#   2. Set repo Secrets INNTRIS_API_URL + INNTRIS_PRIVATE_KEY_B64, and repo
+#      Variables INNTRIS_AGENT_ID + INNTRIS_AI_PR_GUARD=on.
+#   3. Open a PR, confirm this check runs, THEN make it required on the branch.
+# See docs/runbooks/ai_pr_guard_golive.md.
+
+on:
+  pull_request:
+    branches: [master]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  inntris-ai-pr-guard:
+    if: ${{ vars.INNTRIS_AI_PR_GUARD == 'on' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Local action: action.yml is at the repo root; dist/ is committed.
+      - uses: ./
+        with:
+          api-url: ${{ secrets.INNTRIS_API_URL }}
+          agent-id: ${{ vars.INNTRIS_AGENT_ID }}
+          private-key-b64: ${{ secrets.INNTRIS_PRIVATE_KEY_B64 }}
+          policy-file: .inntris.yml
+          mode: ai-pr-guard
+          fail-on-block: true
