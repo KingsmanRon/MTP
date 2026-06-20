@@ -155,6 +155,28 @@ test("a docs-only PR into main is a truthful protected_branch_merge", () => {
   assert.deepEqual(plannedCalls(byType), ["protected_branch_merge"]);
 });
 
+// Shared golden vectors: the JS action and the Python server (api/policy.py,
+// tests/test_policy_binding.py) must agree on the strongest required action
+// type. `expected` is plannedCalls()[0] -- ACTION_PRIORITY is strongest-first.
+test("classification matches the shared golden vectors", () => {
+  const vectors = JSON.parse(
+    fs.readFileSync(
+      path.join(__dirname, "..", "tests", "fixtures", "classification", "vectors.json"),
+      "utf8",
+    ),
+  );
+  for (const c of vectors.cases) {
+    const { byType } = classifyChange({
+      files: c.files,
+      mapping: vectors.policy.mapping,
+      branch: c.base_ref,
+      protectedBranches: vectors.policy.protected_branches,
+    });
+    const strongest = plannedCalls(byType)[0];
+    assert.equal(strongest, c.expected, `vector: ${c.name}`);
+  }
+});
+
 test("mixed change into main fans out to one call per category, strongest first", () => {
   const { byType } = classifyChange({
     files: [

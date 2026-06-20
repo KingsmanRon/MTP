@@ -4,6 +4,7 @@ Pydantic models for request/response validation.
 All models are strictly typed and validated for forensic-grade operations.
 """
 
+import re
 from datetime import datetime
 from decimal import Decimal
 from enum import Enum
@@ -530,6 +531,47 @@ class AgentRecord(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime
     updated_at: datetime
+
+
+class RegisteredPolicy(BaseModel):
+    """An agent's server-registered governing policy (Tier A).
+
+    The registered ``.inntris.yml``: its hash (for binding) plus the mapping
+    and protected_branches the server uses to re-derive a change's minimum
+    action type independently of the client's asserted action_type.
+    """
+    model_config = ConfigDict(from_attributes=True)
+
+    policy_hash: str
+    mapping: dict[str, list[str]] = Field(default_factory=dict)
+    protected_branches: list[str] = Field(default_factory=list)
+    version: int = 1
+
+
+class RegisterPolicyRequest(BaseModel):
+    """Register (or re-register) an agent's governing policy."""
+
+    policy_hash: str = Field(
+        ...,
+        min_length=64,
+        max_length=64,
+        description="SHA-256 hash of the canonical .inntris.yml the agent runs.",
+    )
+    mapping: dict[str, list[str]] = Field(
+        default_factory=dict,
+        description="action_type -> path globs, for server-side re-derivation.",
+    )
+    protected_branches: list[str] = Field(
+        default_factory=list,
+        description="Branch patterns that gate as protected_branch_merge.",
+    )
+
+    @field_validator("policy_hash")
+    @classmethod
+    def validate_policy_hash(cls, v: str) -> str:
+        if not re.fullmatch(r"[a-f0-9]{64}", v):
+            raise ValueError("policy_hash must be a lowercase hex SHA-256 digest")
+        return v
 
 
 class OrganizationRecord(BaseModel):

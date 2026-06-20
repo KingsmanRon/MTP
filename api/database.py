@@ -22,6 +22,7 @@ from api.models import (
     AuditLogEntry,
     BillingTier,
     OrganizationRecord,
+    RegisteredPolicy,
 )
 
 logger = logging.getLogger(__name__)
@@ -229,6 +230,96 @@ class Database:
             metadata=json.loads(row["metadata"]) if isinstance(row["metadata"], str) else (row["metadata"] or {}),
             created_at=row["created_at"],
             updated_at=row["updated_at"],
+        )
+
+    # =========================================================================
+    # AGENT GOVERNING POLICIES (AI PR Guard — Tier A)
+    # =========================================================================
+
+    async def get_active_agent_policy(
+        self, agent_id: UUID
+    ) -> Optional[RegisteredPolicy]:
+        """Return the agent's active registered policy, or None.
+
+        Read on the /verify path, which runs as ``inntris_worker`` (BYPASSRLS).
+        """
+        query = """
+            SELECT policy_hash, mapping, protected_branches, version
+            FROM agent_policies
+            WHERE agent_id = $1 AND active
+            LIMIT 1
+        """
+        async with self.acquire() as conn:
+            row = await conn.fetchrow(query, agent_id)
+
+        if row is None:
+            return None
+
+        mapping = row["mapping"]
+        branches = row["protected_branches"]
+        return RegisteredPolicy(
+            policy_hash=row["policy_hash"],
+            mapping=json.loads(mapping) if isinstance(mapping, str) else (mapping or {}),
+            protected_branches=(
+                json.loads(branches) if isinstance(branches, str) else (branches or [])
+            ),
+            version=row["version"],
+        )
+
+    async def register_agent_policy(
+        self,
+        agent_id: UUID,
+        org_id: UUID,
+        policy_hash: str,
+        mapping: dict[str, Any],
+        protected_branches: list[str],
+        registered_by: Optional[str] = None,
+    ) -> RegisteredPolicy:
+        """Register (or re-register) an agent's governing policy.
+
+        Deactivates the prior active policy and inserts a new, higher version
+        in one tenant-scoped transaction. RLS (migration 005) enforces that the
+        agent belongs to ``org_id``.
+        """
+        async with self.acquire_as_tenant(org_id) as conn:
+            await conn.execute(
+                "UPDATE agent_policies SET active = false WHERE agent_id = $1 AND active",
+                agent_id,
+            )
+            row = await conn.fetchrow(
+                """
+                INSERT INTO agent_policies (
+                    agent_id, policy_hash, mapping, protected_branches,
+                    version, registered_by, active
+                )
+                VALUES (
+                    $1, $2, $3::jsonb, $4::jsonb,
+                    COALESCE((SELECT MAX(version) FROM agent_policies WHERE agent_id = $1), 0) + 1,
+                    $5, true
+                )
+                RETURNING policy_hash, mapping, protected_branches, version
+                """,
+                agent_id,
+                policy_hash,
+                json.dumps(mapping or {}),
+                json.dumps(protected_branches or []),
+                registered_by,
+            )
+
+        mapping_out = row["mapping"]
+        branches_out = row["protected_branches"]
+        logger.info(f"Registered policy v{row['version']} for agent {agent_id}")
+        return RegisteredPolicy(
+            policy_hash=row["policy_hash"],
+            mapping=(
+                json.loads(mapping_out) if isinstance(mapping_out, str) else (mapping_out or {})
+            ),
+            protected_branches=(
+                json.loads(branches_out)
+                if isinstance(branches_out, str)
+                else (branches_out or [])
+            ),
+            version=row["version"],
         )
 
     async def create_agent(

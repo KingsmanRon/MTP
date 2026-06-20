@@ -6,15 +6,115 @@ Evaluates agent actions against configured rules and limits.
 """
 
 import logging
+import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import Decimal
 from enum import Enum
 from typing import Any, Optional
 
-from api.models import AgentRecord, AgentStatus, ActionVerdict
+from api.models import ActionVerdict, AgentRecord, AgentStatus, RegisteredPolicy
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Server-side change classification (Tier A defense in depth)
+# ---------------------------------------------------------------------------
+# This is the Python mirror of the JS action's classifier (github-action/
+# index.js). The two MUST agree; the shared golden vectors in
+# tests/fixtures/classification/vectors.json pin them together. The server uses
+# the *registered* mapping (its own trusted copy), not the client's, so a
+# caller cannot lower the risk class of a change by asserting a weaker
+# action_type.
+
+# Strongest wins. Keep in sync with the action's ACTION_PRIORITY.
+RISK_RANK = {
+    "repo_change": 0,
+    "ci_workflow_change": 1,
+    "protected_branch_merge": 2,
+    "production_deployment": 3,
+}
+
+# The action types governed by .inntris.yml. Other action types (financial,
+# email, ...) are not classified from changed files and skip policy binding.
+CI_GUARD_ACTIONS = frozenset(RISK_RANK.keys())
+
+_GLOB_SPECIAL = set(".+^${}()|[]\\/")
+
+
+def glob_to_regex(glob: str) -> "re.Pattern[str]":
+    """Translate a minimatch-style glob into an anchored regex.
+
+    Mirrors ``globToRegExp`` in github-action/index.js: ``**`` crosses ``/``,
+    ``*`` does not, ``**/`` matches zero or more leading path segments.
+    """
+    out: list[str] = []
+    i = 0
+    n = len(glob)
+    while i < n:
+        c = glob[i]
+        if c == "*":
+            if i + 1 < n and glob[i + 1] == "*":
+                if i + 2 < n and glob[i + 2] == "/":
+                    out.append("(?:.*/)?")
+                    i += 3
+                    continue
+                out.append(".*")
+                i += 2
+                continue
+            out.append("[^/]*")
+        elif c == "?":
+            out.append("[^/]")
+        elif c in _GLOB_SPECIAL:
+            out.append("\\" + c)
+        else:
+            out.append(c)
+        i += 1
+    return re.compile("^" + "".join(out) + "$")
+
+
+def match_protected_branch(branch: Optional[str], patterns: Any) -> Optional[str]:
+    """Return the matching protected-branch pattern, or None."""
+    if not branch or not isinstance(patterns, (list, tuple)):
+        return None
+    for pattern in patterns:
+        if glob_to_regex(str(pattern)).search(branch):
+            return pattern
+    return None
+
+
+def strongest_required_action_type(
+    changed_files: Any,
+    base_ref: Optional[str],
+    mapping: Optional[dict[str, list[str]]],
+    protected_branches: Any,
+) -> str:
+    """The minimum action type a change requires under the given policy.
+
+    Combines path mapping with the branch dimension (#3): a base_ref matching a
+    protected branch contributes ``protected_branch_merge``. Returns the
+    strongest matched type, defaulting to ``repo_change``.
+    """
+    present: set[str] = set()
+    compiled = {
+        atype: [glob_to_regex(g) for g in (globs or [])]
+        for atype, globs in (mapping or {}).items()
+    }
+    for path in changed_files or []:
+        for atype, regexes in compiled.items():
+            if any(rx.search(str(path)) for rx in regexes):
+                present.add(atype)
+    if match_protected_branch(base_ref, protected_branches):
+        present.add("protected_branch_merge")
+
+    best = "repo_change"
+    best_rank = RISK_RANK["repo_change"]
+    for atype in present:
+        rank = RISK_RANK.get(atype, RISK_RANK["repo_change"])
+        if rank > best_rank:
+            best, best_rank = atype, rank
+    return best
 
 
 class AmountError(ValueError):
@@ -37,6 +137,8 @@ class PolicyViolation(Enum):
     TRUST_SCORE_TOO_LOW = "trust_score_too_low"
     TIMESTAMP_INVALID = "timestamp_invalid"
     AMOUNT_INVALID = "amount_invalid"
+    POLICY_HASH_MISMATCH = "policy_hash_mismatch"
+    ACTION_TYPE_DOWNGRADE = "action_type_downgrade"
 
 
 @dataclass
@@ -117,6 +219,8 @@ class PolicyEngine:
         action_type: str,
         payload: dict[str, Any],
         timestamp: datetime,
+        registered_policy: Optional[RegisteredPolicy] = None,
+        client_policy_hash: Optional[str] = None,
     ) -> PolicyResult:
         """
         Evaluate an action against all applicable policies.
@@ -129,6 +233,10 @@ class PolicyEngine:
             action_type: Type of action being performed.
             payload: Action payload with details.
             timestamp: Client-provided timestamp.
+            registered_policy: The agent's server-registered governing policy,
+                or None. When None, policy binding is advisory (no block) so the
+                feature can roll out before every agent has registered.
+            client_policy_hash: The policy hash the caller asserts it ran with.
 
         Returns:
             PolicyResult with verdict and details.
@@ -142,6 +250,15 @@ class PolicyEngine:
         action_result = self._check_action_allowed(agent, action_type)
         if not action_result.allowed:
             return action_result
+
+        # 2b. Policy binding (Tier A): the server, not the client-asserted
+        # action_type, decides the minimum risk class. Rejects a mismatched
+        # policy hash or a downgrade of a code/release change.
+        binding_result = self._check_policy_binding(
+            action_type, payload, registered_policy, client_policy_hash
+        )
+        if not binding_result.allowed:
+            return binding_result
 
         # 3. Check trust score threshold
         trust_result = self._check_trust_score(agent, action_type)
@@ -228,6 +345,68 @@ class PolicyEngine:
                 violation=PolicyViolation.ACTION_NOT_ALLOWED,
                 reason=f"Action type '{action_type}' is not in the allowed list. Allowed: {agent.allowed_actions}",
             )
+
+        return PolicyResult(allowed=True, verdict=ActionVerdict.APPROVED)
+
+    def _check_policy_binding(
+        self,
+        action_type: str,
+        payload: dict[str, Any],
+        registered_policy: Optional[RegisteredPolicy],
+        client_policy_hash: Optional[str],
+    ) -> PolicyResult:
+        """Bind the request to the agent's registered policy (Tier A).
+
+        Two checks, both applying only to the code/release action types governed
+        by ``.inntris.yml``:
+
+        1. **Policy hash** — the caller must present the registered policy's
+           hash, proving it ran the policy the org registered.
+        2. **No downgrade** — re-derive the minimum required action type from
+           the change (``changed_files`` + ``base_ref``) using the *registered*
+           mapping, and reject an asserted action type that is weaker.
+
+        Advisory when no policy is registered (returns APPROVED): lets the
+        feature deploy before every agent has registered. The action remains a
+        convenience classifier; this is the server-side authority over it.
+        """
+        if registered_policy is None:
+            return PolicyResult(allowed=True, verdict=ActionVerdict.APPROVED)
+
+        if action_type not in CI_GUARD_ACTIONS:
+            return PolicyResult(allowed=True, verdict=ActionVerdict.APPROVED)
+
+        if client_policy_hash != registered_policy.policy_hash:
+            return PolicyResult(
+                allowed=False,
+                verdict=ActionVerdict.BLOCKED,
+                violation=PolicyViolation.POLICY_HASH_MISMATCH,
+                reason=(
+                    "Submitted policy hash does not match the policy registered "
+                    "for this agent. The CI workflow must run the registered "
+                    ".inntris.yml."
+                ),
+            )
+
+        changed_files = payload.get("changed_files") if isinstance(payload, dict) else None
+        if changed_files:
+            base_ref = payload.get("base_ref") if isinstance(payload, dict) else None
+            required = strongest_required_action_type(
+                changed_files,
+                base_ref,
+                registered_policy.mapping,
+                registered_policy.protected_branches,
+            )
+            if RISK_RANK.get(action_type, 0) < RISK_RANK.get(required, 0):
+                return PolicyResult(
+                    allowed=False,
+                    verdict=ActionVerdict.BLOCKED,
+                    violation=PolicyViolation.ACTION_TYPE_DOWNGRADE,
+                    reason=(
+                        f"This change requires action type '{required}' but was "
+                        f"submitted as '{action_type}'."
+                    ),
+                )
 
         return PolicyResult(allowed=True, verdict=ActionVerdict.APPROVED)
 

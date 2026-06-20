@@ -45,6 +45,7 @@ from api.models import (
     TestVerifyRequest,
     RegisterAgentRequest,
     UpdateAgentRequest,
+    RegisterPolicyRequest,
     HealthResponse,
     ErrorResponse,
     ActionVerdict,
@@ -1350,6 +1351,13 @@ async def verify_action(
             minute_request_count=minute_count,
         )
 
+        # Tier A: the agent's server-registered governing policy (or None).
+        # The engine uses it to reject a mismatched policy hash or a downgraded
+        # code/release action type. None => advisory (no block), so the feature
+        # rolls out before every agent has registered.
+        registered_policy = await database.get_active_agent_policy(agent.id)
+        policy_binding_state = "registered" if registered_policy else "unregistered"
+
         # Parse timestamp from request
         request_timestamp = request_data.timestamp
         if isinstance(request_timestamp, str):
@@ -1361,6 +1369,8 @@ async def verify_action(
             action_type=request_data.action_type,
             payload=request_data.payload,
             timestamp=request_timestamp,
+            registered_policy=registered_policy,
+            client_policy_hash=request_data.policy_hash,
         )
 
         verdict = policy_result.verdict
@@ -1406,7 +1416,8 @@ async def verify_action(
                             policy_result.violation.value
                             if policy_result.violation
                             else None
-                        )
+                        ),
+                        "policy_binding": policy_binding_state,
                     },
                 ),
             )
@@ -1569,7 +1580,10 @@ async def verify_action(
             trust_score_at_time=agent.trust_score,
             chain_previous_hash=None,
             policy_hash=effective_policy_hash,
-            metadata=_audit_metadata(client_policy_hash=request_data.policy_hash),
+            metadata=_audit_metadata(
+                client_policy_hash=request_data.policy_hash,
+                extra={"policy_binding": policy_binding_state},
+            ),
         )
         audit_id = await database.insert_audit_log(audit_entry, derive_chain_hash=True)
 
@@ -2374,6 +2388,72 @@ async def update_agent(
         }
     except AgentNotFoundError:
         raise HTTPException(status_code=404, detail="Agent not found")
+
+
+@app.get("/admin/agents/{agent_id}/policy", tags=["Admin - Agents"])
+async def get_agent_policy(
+    agent_id: UUID,
+    auth: dict = Depends(require_api_scope("read")),
+    database: Database = Depends(get_db),
+):
+    """Return the agent's active registered governing policy (AI PR Guard)."""
+    try:
+        agent = await database.get_agent_by_id(agent_id)
+    except AgentNotFoundError:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    if agent.org_id != auth["org_id"]:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    policy = await database.get_active_agent_policy(agent_id)
+    if policy is None:
+        return {"agent_id": str(agent_id), "registered": False}
+    return {
+        "agent_id": str(agent_id),
+        "registered": True,
+        "policy_hash": policy.policy_hash,
+        "mapping": policy.mapping,
+        "protected_branches": policy.protected_branches,
+        "version": policy.version,
+    }
+
+
+@app.put("/admin/agents/{agent_id}/policy", tags=["Admin - Agents"])
+async def register_agent_policy(
+    agent_id: UUID,
+    policy_request: RegisterPolicyRequest,
+    auth: dict = Depends(require_api_scope("write")),
+    database: Database = Depends(get_db),
+):
+    """Register (or re-register) the governing .inntris.yml for an agent.
+
+    Stores the policy hash, mapping, and protected branches the server uses to
+    bind /verify requests: a mismatched hash or a downgraded code/release
+    action type is then BLOCKED server-side (Tier A).
+    """
+    try:
+        agent = await database.get_agent_by_id(agent_id)
+    except AgentNotFoundError:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    if agent.org_id != auth["org_id"]:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    policy = await database.register_agent_policy(
+        agent_id=agent_id,
+        org_id=agent.org_id,
+        policy_hash=policy_request.policy_hash,
+        mapping=policy_request.mapping,
+        protected_branches=policy_request.protected_branches,
+        registered_by=f"admin:{auth['org_id']}",
+    )
+    return {
+        "agent_id": str(agent_id),
+        "registered": True,
+        "policy_hash": policy.policy_hash,
+        "mapping": policy.mapping,
+        "protected_branches": policy.protected_branches,
+        "version": policy.version,
+    }
+
 
 @app.patch("/admin/agents/{agent_id}/status", tags=["Admin - Agents"])
 async def update_agent_status(

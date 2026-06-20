@@ -1,0 +1,67 @@
+{
+  "_comment": "Golden classification vectors shared by the JS action (github-action/index.test.js) and the Python server (tests/test_policy_binding.py). Both must agree on the strongest required action type for each change. 'expected' is the strongest action type a change requires under the given policy. Keep this in sync with .inntris.yml.",
+  "policy": {
+    "mapping": {
+      "ci_workflow_change": [".github/workflows/**"],
+      "production_deployment": ["infra/**", "deploy/**", "terraform/**", "k8s/**"],
+      "repo_change": ["docs/**", "README.md", "src/components/**"]
+    },
+    "protected_branches": ["main", "release/*", "production"]
+  },
+  "cases": [
+    {
+      "name": "docs into a feature branch is a low-risk attestation",
+      "files": ["docs/setup.md"],
+      "base_ref": "feature/login",
+      "expected": "repo_change"
+    },
+    {
+      "name": "docs into main is a protected_branch_merge",
+      "files": ["docs/setup.md"],
+      "base_ref": "main",
+      "expected": "protected_branch_merge"
+    },
+    {
+      "name": "workflow change off a protected branch",
+      "files": [".github/workflows/ci.yml"],
+      "base_ref": "feature/x",
+      "expected": "ci_workflow_change"
+    },
+    {
+      "name": "workflow + docs into main escalates to the merge gate",
+      "files": [".github/workflows/ci.yml", "docs/setup.md"],
+      "base_ref": "main",
+      "expected": "protected_branch_merge"
+    },
+    {
+      "name": "infra is a production_deployment even off a protected branch",
+      "files": ["infra/main.tf"],
+      "base_ref": "feature/x",
+      "expected": "production_deployment"
+    },
+    {
+      "name": "infra + workflow into a release branch picks the strongest",
+      "files": ["infra/main.tf", ".github/workflows/ci.yml"],
+      "base_ref": "release/1.2",
+      "expected": "production_deployment"
+    },
+    {
+      "name": "migrations (not path-mapped) into main gate via the branch",
+      "files": ["supabase/migrations/0012_rls.sql"],
+      "base_ref": "main",
+      "expected": "protected_branch_merge"
+    },
+    {
+      "name": "unmapped file off a protected branch is repo_change",
+      "files": ["scratch/notes.txt"],
+      "base_ref": "feature/x",
+      "expected": "repo_change"
+    },
+    {
+      "name": "release/* does not cross a slash",
+      "files": ["docs/x.md"],
+      "base_ref": "release/1/2",
+      "expected": "repo_change"
+    }
+  ]
+}
