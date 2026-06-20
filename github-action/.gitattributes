@@ -1,0 +1,7 @@
+# The committed ncc bundle is byte-checked in CI (`git diff --exit-code dist/`)
+# against a freshly rebuilt copy, which ncc always emits with LF line endings.
+# Pin these to LF so CRLF normalization on a Windows checkout cannot make the
+# check flap or ship a CRLF bundle.
+dist/index.js text eol=lf
+index.js text eol=lf
+index.test.js text eol=lf

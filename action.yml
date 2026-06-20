@@ -61,7 +61,10 @@ outputs:
 
 runs:
   using: "node20"
-  main: "github-action/index.js"
+  # Bundled with @vercel/ncc (js-yaml inlined). Rebuild with
+  # `npm --prefix github-action run build` after changing index.js; CI verifies
+  # dist is current.
+  main: "github-action/dist/index.js"
 
 branding:
   icon: "shield"

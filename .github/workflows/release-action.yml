@@ -1,0 +1,61 @@
+name: release-action
+
+# Cuts a versioned release of the Inntris CI Guard action.
+#
+# Push a semver tag (e.g. v1.2.3) to trigger. The job re-runs the action's
+# tests, verifies the committed bundle matches source at the tagged commit,
+# moves the floating major tag (v1 -> v1.2.3) so consumers pinning `@v1` get
+# the release, and publishes GitHub release notes.
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: github-action/package-lock.json
+
+      - name: install
+        working-directory: github-action
+        run: npm ci
+
+      - name: test
+        working-directory: github-action
+        run: npm test
+
+      # The tagged commit MUST carry an up-to-date bundle, or consumers run
+      # stale code. Fail the release rather than publish drift.
+      - name: verify bundle is current
+        working-directory: github-action
+        run: |
+          npm run build
+          git diff --exit-code -- dist/ \
+            || { echo "::error::dist is stale at the tagged commit; rebuild, commit, and re-tag."; exit 1; }
+
+      - name: move floating major tag
+        run: |
+          TAG="${GITHUB_REF_NAME}"      # v1.2.3
+          MAJOR="${TAG%%.*}"            # v1
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -f "$MAJOR" "$TAG"
+          git push origin -f "refs/tags/$MAJOR"
+
+      - name: publish release notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${GITHUB_REF_NAME}" --generate-notes --title "${GITHUB_REF_NAME}"

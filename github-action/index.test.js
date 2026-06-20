@@ -24,11 +24,11 @@ const policy = parseYaml(fs.readFileSync(POLICY_PATH, "utf8"));
 // ---------------------------------------------------------------------------
 test("parseYaml reads the enforcement block", () => {
   assert.ok(policy.enforcement);
-  assert.equal(policy.enforcement.fail_closed, "true");
+  assert.equal(policy.enforcement.fail_closed, true);
 });
 
 test("parseYaml reads scalars, sequences, and nested mapping", () => {
-  assert.equal(policy.version, "1");
+  assert.equal(policy.version, 1);
   assert.ok(Array.isArray(policy.protected_paths));
   assert.ok(policy.protected_paths.includes("src/auth/**"));
   // Quoted sequence item is unquoted.
@@ -54,7 +54,7 @@ list:  # trailing comment
   - a
   - b   # inline
 `);
-  assert.equal(parsed.version, "2");
+  assert.equal(parsed.version, 2);
   assert.deepEqual(parsed.list, ["a", "b"]);
 });
 

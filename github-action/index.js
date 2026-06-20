@@ -1,6 +1,7 @@
 const crypto = require("crypto");
 const fs = require("fs");
 const { execFileSync } = require("child_process");
+const yaml = require("js-yaml");
 
 // ===========================================================================
 // Inntris CI Guard — AI PR Guard
@@ -61,117 +62,18 @@ function sha256Hex(value) {
 }
 
 // ---------------------------------------------------------------------------
-// Minimal YAML reader for .inntris.yml
+// Policy file parsing (js-yaml)
 // ---------------------------------------------------------------------------
-// Supports exactly the documented .inntris.yml subset: top-level scalars
-// (`version: 1`), block sequences (`- pattern`), and one level of nested
-// mapping (`mapping:` -> action_type -> sequence). Comments (`#`) and blank
-// lines are ignored; sequence items may be single- or double-quoted. This is
-// not a general YAML parser — keep .inntris.yml within the documented shape.
-function stripComment(line) {
-  let inSingle = false;
-  let inDouble = false;
-  for (let i = 0; i < line.length; i++) {
-    const c = line[i];
-    if (c === "'" && !inDouble) {
-      inSingle = !inSingle;
-    } else if (c === '"' && !inSingle) {
-      inDouble = !inDouble;
-    } else if (c === "#" && !inSingle && !inDouble) {
-      if (i === 0 || /\s/.test(line[i - 1])) {
-        return line.slice(0, i);
-      }
-    }
-  }
-  return line;
-}
-
-function unquote(raw) {
-  const s = raw.trim();
-  if (
-    s.length >= 2 &&
-    ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'")))
-  ) {
-    return s.slice(1, -1);
-  }
-  return s;
-}
-
-function indentOf(line) {
-  return line.length - line.replace(/^ +/, "").length;
-}
+// .inntris.yml is parsed with js-yaml's safe loader (default schema, no code
+// execution). A real YAML parser -- rather than a hand-rolled one -- means a
+// partner's policy with quoting, flow style, anchors, or other valid YAML is
+// read correctly instead of silently mis-parsed, which would be a fail-open
+// risk in a security gate. Only the documented keys are consumed downstream
+// (enforcement, protected_paths, low_risk_paths, protected_branches, mapping).
 
 function parseYaml(text) {
-  const lines = [];
-  for (const raw of String(text).split(/\r?\n/)) {
-    const noComment = stripComment(raw).replace(/\s+$/, "");
-    if (noComment.trim() === "") {
-      continue;
-    }
-    lines.push(noComment);
-  }
-
-  let pos = 0;
-
-  function parseSequence(parentIndent) {
-    const arr = [];
-    while (pos < lines.length) {
-      const ind = indentOf(lines[pos]);
-      if (ind <= parentIndent) {
-        break;
-      }
-      const content = lines[pos].slice(ind);
-      if (!content.startsWith("-")) {
-        break;
-      }
-      arr.push(unquote(content.slice(1).trim()));
-      pos++;
-    }
-    return arr;
-  }
-
-  function parseMap(minIndent) {
-    const obj = {};
-    if (pos >= lines.length || indentOf(lines[pos]) < minIndent) {
-      return obj;
-    }
-    const entryIndent = indentOf(lines[pos]);
-    while (pos < lines.length) {
-      const ind = indentOf(lines[pos]);
-      if (ind < entryIndent) {
-        break;
-      }
-      if (ind > entryIndent) {
-        // Defensive: an unexpected deeper line with no owning key.
-        pos++;
-        continue;
-      }
-      const content = lines[pos].slice(entryIndent);
-      const colon = content.indexOf(":");
-      if (colon === -1) {
-        break;
-      }
-      const key = content.slice(0, colon).trim();
-      const after = content.slice(colon + 1).trim();
-      pos++;
-      if (after !== "") {
-        obj[key] = unquote(after);
-        continue;
-      }
-      if (pos < lines.length && indentOf(lines[pos]) > entryIndent) {
-        const childIndent = indentOf(lines[pos]);
-        const childContent = lines[pos].slice(childIndent);
-        obj[key] = childContent.startsWith("-")
-          ? parseSequence(entryIndent)
-          : parseMap(entryIndent + 1);
-      } else {
-        obj[key] = null;
-      }
-    }
-    return obj;
-  }
-
-  return parseMap(0);
+  const parsed = yaml.load(String(text || ""));
+  return parsed && typeof parsed === "object" ? parsed : {};
 }
 
 // ---------------------------------------------------------------------------

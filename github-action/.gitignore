@@ -1,0 +1,7 @@
+# The repo root .gitignore ignores dist/, but the built action bundle MUST be
+# committed -- it is what GitHub runs for `uses: <owner>/inntris-verify`.
+# Re-include the bundle directory here.
+!dist/
+
+# Dependencies are bundled into dist/ by ncc; never commit node_modules.
+node_modules/
