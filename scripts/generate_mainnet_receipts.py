@@ -14,10 +14,13 @@ import argparse
 import asyncio
 import hashlib
 import json
-import base64
+import os
 import sys
 from datetime import datetime, timezone
 from uuid import uuid4
+
+# Allow `import api...` when run as `python scripts/generate_mainnet_receipts.py`.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 try:
     import requests
@@ -27,10 +30,7 @@ except ImportError:
     print("Missing dependencies. Run: pip install requests pynacl asyncpg")
     sys.exit(1)
 
-
-def compute_hash(data: dict) -> str:
-    canonical = json.dumps(data, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
-    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+from api.agent_client import build_signed_verify_request
 
 
 # Demo policy for the canonical homepage receipts. Per the architectural rule
@@ -53,34 +53,20 @@ DEMO_POLICY_HASH = hashlib.sha256(DEMO_POLICY_YAML.encode("utf-8")).hexdigest()
 def submit_verification(api_url: str, agent_id: str, signing_key: SigningKey,
                         action_type: str, payload: dict,
                         policy_hash: str) -> dict:
-    nonce = str(uuid4())
-    timestamp = datetime.now(timezone.utc).isoformat()
-
-    payload_hash = compute_hash(payload)
-    signing_data = {
-        "agent_id": agent_id,
-        "action_type": action_type,
-        "payload_hash": payload_hash,
-        "nonce": nonce,
-        "timestamp": timestamp,
-    }
-    action_hash = compute_hash(signing_data)
-
-    signature = signing_key.sign(bytes.fromhex(action_hash)).signature
-    signature_b64 = base64.b64encode(signature).decode()
+    # Signed by the shared product client — same canonicalization the server
+    # verifies against (and the same path the MCP tool uses).
+    request_body = build_signed_verify_request(
+        agent_id=agent_id,
+        signing_key=signing_key,
+        action_type=action_type,
+        payload=payload,
+        policy_hash=policy_hash,
+    )
 
     response = requests.post(
         f"{api_url}/verify",
         headers={"Content-Type": "application/json"},
-        json={
-            "agent_id": agent_id,
-            "action_type": action_type,
-            "payload": payload,
-            "nonce": nonce,
-            "timestamp": timestamp,
-            "signature": signature_b64,
-            "policy_hash": policy_hash,
-        },
+        json=request_body,
         timeout=30,
     )
 

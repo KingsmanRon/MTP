@@ -20,20 +20,21 @@ Integration:
 
 import asyncio
 import base64
-import hashlib
-import json
 import logging
 import os
-import secrets
-from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any
 
 import httpx
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
-from mcp.types import Tool, TextContent, CallToolResult
-from nacl.signing import SigningKey
+from mcp.types import CallToolResult, TextContent, Tool
 from nacl.encoding import RawEncoder
+from nacl.signing import SigningKey
+
+# Single source of truth for the agent signing protocol. The MCP server used to
+# re-derive the action hash by hand; it now shares api.crypto via this helper so
+# there is exactly one canonicalization implementation in the codebase.
+from api.agent_client import build_signed_verify_request
 
 # =============================================================================
 # CONFIGURATION
@@ -86,72 +87,6 @@ class InntrisClient:
         """Close HTTP client."""
         await self._http_client.aclose()
 
-    @staticmethod
-    def _canonicalize_timestamp(timestamp: datetime) -> str:
-        """
-        Produce the canonical UTC wire form used for both the action-hash
-        signing payload and the request's ``timestamp`` field.
-
-        This MUST match ``api.crypto.CryptoService.canonicalize_timestamp``:
-        non-UTC timestamps are converted to UTC, naive datetimes are treated
-        as UTC, and the result uses a ``Z`` suffix (not ``+00:00``).
-        """
-        if timestamp.tzinfo is None:
-            ts = timestamp.replace(tzinfo=timezone.utc)
-        else:
-            ts = timestamp.astimezone(timezone.utc)
-        iso = ts.isoformat()
-        if iso.endswith("+00:00"):
-            iso = iso[:-6] + "Z"
-        return iso
-
-    def _compute_action_hash(
-        self,
-        action_type: str,
-        payload: dict[str, Any],
-        nonce: str,
-        timestamp: datetime,
-    ) -> str:
-        """
-        Compute the hash that will be signed.
-
-        CRITICAL: This MUST match the server's canonicalization exactly.
-        Uses ensure_ascii=False for Unicode consistency.
-        """
-        # Compute payload hash - MUST match server exactly
-        payload_canonical = json.dumps(
-            payload,
-            sort_keys=True,
-            separators=(",", ":"),
-            ensure_ascii=False,
-        )
-        payload_hash = hashlib.sha256(payload_canonical.encode("utf-8")).hexdigest()
-
-        # Create signing payload
-        signing_data = {
-            "agent_id": self.agent_id,
-            "action_type": action_type,
-            "payload_hash": payload_hash,
-            "nonce": nonce,
-            "timestamp": self._canonicalize_timestamp(timestamp),
-        }
-
-        signing_canonical = json.dumps(
-            signing_data,
-            sort_keys=True,
-            separators=(",", ":"),
-            ensure_ascii=False,
-        )
-        return hashlib.sha256(signing_canonical.encode("utf-8")).hexdigest()
-
-    def _sign_message(self, message_hash: str) -> str:
-        """Sign a message hash with the agent's private key."""
-        message_bytes = bytes.fromhex(message_hash)
-        signed = self._signing_key.sign(message_bytes)
-        # Extract just the signature (first 64 bytes of signed message)
-        signature = signed.signature
-        return base64.b64encode(signature).decode("utf-8")
-
     async def verify_action(
         self,
         action_type: str,
@@ -160,11 +95,11 @@ class InntrisClient:
         """
         Request verification for an action.
 
-        This method:
-        1. Generates a unique nonce
-        2. Computes the action hash
-        3. Signs the hash with the agent's private key
-        4. Sends the verification request to Inntris Core API
+        The signed request body (nonce, canonical timestamp, action hash,
+        Ed25519 signature, sig_version) is produced by the shared
+        ``api.agent_client.build_signed_verify_request`` so the signing protocol
+        is identical to what the server verifies and to every other Inntris
+        client. This method only handles the HTTP round-trip and verdict mapping.
 
         Args:
             action_type: Type of action (e.g., 'financial_transaction')
@@ -176,30 +111,12 @@ class InntrisClient:
         Raises:
             InntrisVerificationError: If verification fails
         """
-        # Generate nonce and timestamp
-        nonce = secrets.token_urlsafe(32)
-        timestamp = datetime.now(timezone.utc)
-        canonical_ts = self._canonicalize_timestamp(timestamp)
-
-        # Compute hash and sign. Both the hash and the wire payload use the
-        # same canonical timestamp form — if the two ever drift, the server
-        # will reject every signature.
-        action_hash = self._compute_action_hash(action_type, payload, nonce, timestamp)
-        signature = self._sign_message(action_hash)
-
-        # Prepare request. sig_version=2 pins the current UTC-normalized
-        # signing envelope (Phase 0.3 / 0.4). Do not drop this field: servers
-        # default to 2 when absent today, but pinning lets us evolve the wire
-        # format again without every deployed SDK breaking silently.
-        request_body = {
-            "agent_id": self.agent_id,
-            "action_type": action_type,
-            "payload": payload,
-            "signature": signature,
-            "nonce": nonce,
-            "timestamp": canonical_ts,
-            "sig_version": 2,
-        }
+        request_body = build_signed_verify_request(
+            agent_id=self.agent_id,
+            signing_key=self._signing_key,
+            action_type=action_type,
+            payload=payload,
+        )
 
         logger.info(f"Requesting verification for action: {action_type}")
 
@@ -278,7 +195,7 @@ class InntrisVerificationError(Exception):
 server = Server("inntris-guard")
 
 # Global Inntris client (initialized on startup)
-inntris_client: Optional[InntrisClient] = None
+inntris_client: InntrisClient | None = None
 
 
 def get_inntris_client() -> InntrisClient:
@@ -506,7 +423,7 @@ DO NOT proceed with this action. The request has been logged for audit purposes.
         )
 
 
-async def handle_inntris_check_status(arguments: dict[str, Any]) -> CallToolResult:
+async def handle_inntris_check_status(_arguments: dict[str, Any]) -> CallToolResult:
     """Handle the inntris_check_status tool call."""
     client = get_inntris_client()
 

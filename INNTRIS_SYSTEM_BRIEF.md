@@ -21,7 +21,7 @@ The two-plane model (Control + Proof) is **confirmed and accurately described**,
 | Enforce=self-enforcing | **Partially correct** | Self-enforcing only if customer calls `/verify` first; no proxy or kernel hook forces it |
 | Ed25519 signing | **Confirmed** | `api/crypto.py:234-291` |
 | keccak256 Merkle tree | **Confirmed** | `workers/anchor_worker.py:174-247` |
-| Base Mainnet anchoring | **Confirmed** | chain_id=8453; contract `0x0600eA15802c8d2EA429371b2EB0aacCFe321480` (from `scripts/windows_verify_basescan.py:28`) |
+| Base Mainnet anchoring | **Confirmed** | chain_id=8453; AnchorRegistry `0x0600eA15802c8d2EA429371b2EB0aacCFe321480` (verify on-chain: basescan.org/address/0x0600eA15802c8d2EA429371b2EB0aacCFe321480) |
 | Admin frontend is Next.js | **Confirmed** | `frontend/` directory, Next.js App Router |
 | FastAPI backend | **Confirmed** | `api/main.py` |
 
@@ -142,7 +142,7 @@ The `AnchorRegistry.verifyProof()` function (`contracts/AnchorRegistry.sol:347-3
 
 | Parameter | Value |
 |---|---|
-| Contract address | `0x0600eA15802c8d2EA429371b2EB0aacCFe321480` (from `scripts/windows_verify_basescan.py:28`) |
+| Contract address | `0x0600eA15802c8d2EA429371b2EB0aacCFe321480` (Base mainnet AnchorRegistry; verify on basescan.org) |
 | Chain | Base Mainnet, chain_id=8453 |
 | Network check at runtime | YES — worker verifies `eth_chainId` before every submission |
 
