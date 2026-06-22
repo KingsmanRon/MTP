@@ -63,6 +63,25 @@ MASTER_KEY = os.environ.get("INNTRIS_MASTER_KEY", "demo_master_admin_key_0123456
 ORG_NAME = os.environ.get("DEMO_ORG_NAME", "MoonPay Pilot")
 AGENT_NAME = os.environ.get("DEMO_AGENT_NAME", "MoonPay Onramp Agent")
 
+
+def _derive_app_url(api_url: str) -> str | None:
+    """Human-facing Inntris web app that renders the receipt page (/verify/{id}).
+
+    api.inntris.com is the backend JSON API; the product page lives on
+    inntris.com. Override with INNTRIS_APP_URL (e.g. http://localhost:3000 when
+    running the frontend locally).
+    """
+    override = os.environ.get("INNTRIS_APP_URL")
+    if override:
+        return override.rstrip("/")
+    if "api.inntris.com" in api_url:
+        return "https://inntris.com"
+    return None
+
+
+# The rendered verification page (what you'd screenshot / link from X).
+APP_URL = _derive_app_url(API_URL)
+
 # A real, Base-mainnet-anchored Inntris receipt (a BLOCKED $75 > $50 financial
 # transaction). Anyone can verify it on-chain — referenced at the end as proof
 # that production receipts land on Base L2 (chain_id 8453).
@@ -113,7 +132,9 @@ def show_receipt(audit_id: str) -> None:
         kv("block_number", rec.get("block_number"))
     else:
         kv("on-chain anchor", "pending (anchor worker batches to Base L2 hourly)")
-    kv("public URL", f"{API_URL}/public/verify/{audit_id}")
+    if APP_URL:
+        kv("receipt page", f"{APP_URL}/verify/{audit_id}")
+    kv("raw API receipt", f"{API_URL}/public/verify/{audit_id}")
 
 
 # --------------------------------------------------------------------------- #
@@ -277,7 +298,7 @@ def main() -> None:
         "  production these batch hourly into a Merkle tree anchored to Base L2."
     )
     print("\n  Already live & anchored on Base mainnet (chain_id 8453) — verify yourself:")
-    kv("receipt", f"https://api.inntris.com/public/verify/{LIVE_MAINNET_RECEIPT}")
+    kv("receipt page", f"https://inntris.com/verify/{LIVE_MAINNET_RECEIPT}")
     kv("merkle proof", f"https://api.inntris.com/public/verify/{LIVE_MAINNET_RECEIPT}/proof")
     kv("on-chain", f"https://basescan.org/address/{ANCHOR_CONTRACT}")
     print()
