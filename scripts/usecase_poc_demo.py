@@ -605,7 +605,7 @@ def scenario_accounting() -> None:
     step("A", "Agent classifies a ledger entry — record the decision")
     decision = {
         "ledger_entry_id": "GL-2026-04417",
-        "amount": "12500.00",
+        "entry_value_usd": "12500.00",
         "classified_as": "COGS:cloud_infrastructure",
         "confidence": 0.97,
         "source": "stripe_payout_batch_88",

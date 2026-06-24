@@ -177,14 +177,13 @@ export default function VerifyLandingPage() {
         <section className="mx-auto max-w-3xl px-6 pb-24 lg:px-8">
           <div className="rounded-[28px] border border-[#22314D] bg-[#0D1728] p-8 text-center">
             <h2 className="text-2xl font-semibold tracking-tight">
-              Want this for your repo?
+              Want PR protection for your repo?
             </h2>
 
             <p className="mx-auto mt-3 max-w-md text-base leading-7 text-[#AAB7CC]">
-              Add{" "}
+              View the GitHub Actions example for PR protection. It shows how{" "}
               <code className="font-mono text-[#8FB8FF]">inntris-verify</code>{" "}
-              to any GitHub repo in minutes. Every agent PR gets a cryptographic
-              receipt anchored on Base L2.
+              runs as a required status check and records a PASS or BLOCK receipt.
             </p>
 
             <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
@@ -194,16 +193,16 @@ export default function VerifyLandingPage() {
                 rel="noopener noreferrer"
               >
                 <Button className="bg-[#4C8DFF] px-6 text-white hover:bg-[#6AA2FF]">
-                  Install GitHub Action
+                  View GitHub Actions example
                 </Button>
               </a>
 
-              <Link href="/docs">
+              <Link href="/ai-pr-protection">
                 <Button
                   variant="outline"
                   className="border-[#22314D] bg-[#0D1728] text-[#F5F7FB] hover:bg-[#101C31] hover:text-white"
                 >
-                  View Documentation
+                  See buyer page
                 </Button>
               </Link>
             </div>

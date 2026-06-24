@@ -32,6 +32,8 @@ import {
   type CheckStatus,
 } from "@/lib/proof-state";
 
+const blockNumberFormatter = new Intl.NumberFormat("en-GB");
+
 function actionBadgeColor(action: string) {
   const map: Record<string, string> = {
     financial_transaction: "border-[#f59e0b]/30 bg-[#f59e0b]/10 text-[#f59e0b]",
@@ -594,7 +596,9 @@ export function VerifyRecordView({ record }: { record: PublicVerificationRecord 
               <div className="rounded-2xl border border-white/6 bg-[#101C31]/70 p-4">
                 <p className="text-xs text-[#7F8CA3] mb-1">Block</p>
                 <p className="text-sm font-mono text-[#F5F7FB]">
-                  {record.block_number?.toLocaleString() ?? "—"}
+                  {record.block_number == null
+                    ? "—"
+                    : blockNumberFormatter.format(record.block_number)}
                 </p>
               </div>
               <div className="rounded-2xl border border-white/6 bg-[#101C31]/70 p-4">
@@ -642,13 +646,12 @@ export function VerifyRecordView({ record }: { record: PublicVerificationRecord 
         {/* ============================================================ */}
         <section className="mt-8 rounded-[28px] border border-[#4C8DFF]/20 bg-gradient-to-b from-[#4C8DFF]/8 to-[#0D1728] p-8 text-center">
           <h2 className="text-2xl font-semibold tracking-tight">
-            Want this for your AI agent PRs?
+            Want PR protection for AI agent changes?
           </h2>
           <p className="mx-auto mt-3 max-w-md text-base leading-7 text-[#AAB7CC]">
-            Add{" "}
+            View the GitHub Actions example for PR protection. It shows how{" "}
             <code className="font-mono text-[#8FB8FF]">inntris-verify</code>{" "}
-            as a required status check. Every agent PR gets a cryptographic
-            receipt anchored on Base L2.
+            runs as a required status check and records a PASS or BLOCK receipt.
           </p>
           <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
             <a
@@ -657,11 +660,11 @@ export function VerifyRecordView({ record }: { record: PublicVerificationRecord 
               rel="noopener noreferrer"
             >
               <Button className="bg-[#4C8DFF] px-6 text-white hover:bg-[#6AA2FF]">
-                Install GitHub Action
+                View GitHub Actions example
                 <ChevronRight className="ml-1 h-4 w-4" />
               </Button>
             </a>
-            <Link href="/">
+            <Link href="/ai-pr-protection">
               <Button
                 variant="outline"
                 className="border-[#22314D] bg-[#0D1728] text-[#F5F7FB] hover:bg-[#101C31] hover:text-white"
