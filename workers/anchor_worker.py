@@ -66,6 +66,18 @@ RETRY_BACKOFF_BASE_SECONDS = int(os.getenv("ANCHOR_RETRY_BACKOFF_BASE", "60"))
 RETRY_BACKOFF_MAX_SECONDS = int(os.getenv("ANCHOR_RETRY_BACKOFF_MAX", str(60 * 60)))
 
 
+def normalize_transaction_hash(value: Any) -> str:
+    """Return an Ethereum transaction hash in database wire format."""
+    tx_hash = value.hex() if hasattr(value, "hex") else str(value)
+    if not tx_hash.startswith("0x"):
+        tx_hash = f"0x{tx_hash}"
+    if len(tx_hash) != 66:
+        raise ValueError(
+            f"Invalid transaction hash length: expected 66 chars, got {len(tx_hash)}"
+        )
+    return tx_hash
+
+
 def compute_retry_backoff(
     retry_count: int,
     base_seconds: int = RETRY_BACKOFF_BASE_SECONDS,
@@ -388,7 +400,7 @@ class BlockchainService:
         # Compatibility: web3.py v6+ uses raw_transaction, older uses rawTransaction
         raw_tx = getattr(signed_tx, 'raw_transaction', None) or signed_tx.rawTransaction
         tx_hash = self._rpc(lambda: self.w3.eth.send_raw_transaction(raw_tx))
-        logger.info(f"Transaction submitted: {tx_hash.hex()}")
+        logger.info(f"Transaction submitted: {normalize_transaction_hash(tx_hash)}")
 
         receipt = await asyncio.get_event_loop().run_in_executor(
             None,
@@ -398,7 +410,7 @@ class BlockchainService:
         )
 
         return {
-            "transaction_hash": receipt["transactionHash"].hex(),
+            "transaction_hash": normalize_transaction_hash(receipt["transactionHash"]),
             "block_number": receipt["blockNumber"],
             "gas_used": receipt["gasUsed"],
             "gas_price_gwei": gas_price_gwei,

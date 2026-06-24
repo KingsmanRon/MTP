@@ -30,7 +30,32 @@ import pytest
 web3 = pytest.importorskip("web3")  # whole module depends on eth stack
 
 from workers import anchor_worker  # noqa: E402
-from workers.anchor_worker import BlockchainService, DatabaseService  # noqa: E402
+from workers.anchor_worker import (  # noqa: E402
+    BlockchainService,
+    DatabaseService,
+    normalize_transaction_hash,
+)
+
+
+# -----------------------------------------------------------------------------
+# 0. Transaction hash database format
+# -----------------------------------------------------------------------------
+
+def test_normalize_transaction_hash_adds_0x_for_bare_bytes() -> None:
+    raw = bytes.fromhex("ab" * 32)
+
+    assert normalize_transaction_hash(raw) == "0x" + "ab" * 32
+
+
+def test_normalize_transaction_hash_preserves_prefixed_string() -> None:
+    tx_hash = "0x" + "cd" * 32
+
+    assert normalize_transaction_hash(tx_hash) == tx_hash
+
+
+def test_normalize_transaction_hash_rejects_invalid_length() -> None:
+    with pytest.raises(ValueError, match="Invalid transaction hash length"):
+        normalize_transaction_hash("0xabc")
 
 
 # -----------------------------------------------------------------------------
@@ -161,3 +186,45 @@ def test_anchor_batch_refuses_excessive_gas_price(monkeypatch: pytest.MonkeyPatc
     # Critical: we must have bailed BEFORE calling build_transaction. Any
     # signed-tx construction past the cap would defeat the point of the cap.
     contract_fn.build_transaction.assert_not_called()
+
+
+def test_anchor_batch_returns_database_formatted_transaction_hash() -> None:
+    """The worker must persist tx hashes with the 0x prefix required by Postgres."""
+    svc = _build_service(
+        chain_id=anchor_worker.BASE_CHAIN_ID,
+        gas_price_wei=6_000_000,
+    )
+
+    contract_fn = MagicMock()
+    contract_fn.estimate_gas = MagicMock(return_value=200_000)
+    contract_fn.build_transaction = MagicMock(return_value={"nonce": 0})
+    svc.contract.functions.anchorBatch = MagicMock(return_value=contract_fn)
+    svc.w3.eth.get_transaction_count = MagicMock(return_value=0)
+    svc.w3.eth.send_raw_transaction = MagicMock(return_value=bytes.fromhex("ab" * 32))
+    svc.w3.eth.wait_for_transaction_receipt = MagicMock(
+        return_value={
+            "transactionHash": bytes.fromhex("cd" * 32),
+            "blockNumber": 47762091,
+            "gasUsed": 35220,
+            "status": 1,
+        }
+    )
+    signed_tx = MagicMock()
+    signed_tx.raw_transaction = b"signed"
+    svc.w3.eth.account.sign_transaction = MagicMock(return_value=signed_tx)
+
+    import asyncio
+    from datetime import datetime, timezone
+
+    result = asyncio.run(
+        svc.anchor_batch(
+            merkle_root="00" * 32,
+            log_count=1,
+            start_timestamp=datetime.now(timezone.utc),
+            end_timestamp=datetime.now(timezone.utc),
+        )
+    )
+
+    assert result["status"] == "confirmed"
+    assert result["transaction_hash"] == "0x" + "cd" * 32
+    assert len(result["transaction_hash"]) == 66
