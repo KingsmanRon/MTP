@@ -51,7 +51,11 @@ export function policyHashCheckStatus(
 export function anchorCheckStatus(
   txHash: string | null | undefined,
   blockNumber: number | null | undefined,
+  serverIntegrityStatus?: string | null,
 ): CheckStatus {
+  if (serverIntegrityStatus === "failed") {
+    return "failed";
+  }
   if (txHash != null && blockNumber != null) {
     return "verified";
   }

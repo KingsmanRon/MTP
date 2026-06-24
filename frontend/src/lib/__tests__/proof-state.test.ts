@@ -71,6 +71,9 @@ describe("proof-state helpers (PR1 §1.4)", () => {
     it("is PENDING when nothing has been submitted yet", () => {
       expect(anchorCheckStatus(null, null)).toBe("pending");
     });
+    it("is FAILED when the server reports failed receipt integrity", () => {
+      expect(anchorCheckStatus(null, null, "failed")).toBe("failed");
+    });
   });
 
   describe("integrity derivation", () => {
@@ -93,6 +96,11 @@ describe("proof-state helpers (PR1 §1.4)", () => {
       expect(
         deriveIntegrityStatus("verified", "verified", "verified", true, "failed"),
       ).toBe("failed");
+    });
+    it("is PENDING while the anchor is pending and the fingerprint matches", () => {
+      expect(
+        deriveIntegrityStatus("verified", "verified", "pending", true, "pending_anchor"),
+      ).toBe("pending");
     });
     it("is FAILED when any individual check failed", () => {
       expect(

@@ -28,6 +28,7 @@ import {
   isSupportedSchemaVersion,
   checkStatusUiLabel,
   computeReceiptFingerprint,
+  deriveIntegrityStatus,
   type CheckStatus,
 } from "@/lib/proof-state";
 
@@ -192,21 +193,36 @@ export function VerifyRecordNotFound() {
 
 function ProofCompletenessChecks({ record }: { record: PublicVerificationRecord }) {
   const [integrityStatus, setIntegrityStatus] = useState<CheckStatus>("pending");
+  const [fingerprintMatches, setFingerprintMatches] = useState<boolean | null>(null);
 
   useEffect(() => {
     if (!isSupportedSchemaVersion(record.schema_version)) {
+      setFingerprintMatches(false);
       setIntegrityStatus("failed");
       return;
     }
 
     computeReceiptFingerprint(record).then((computed) => {
       const frontendMatch = computed === record.receipt_fingerprint;
-      if (!frontendMatch || record.integrity_status === "failed") {
-        setIntegrityStatus("failed");
-      } else {
-        setIntegrityStatus("verified");
-      }
+      const nextSignatureCheck = signatureCheckStatus(record.signature_valid);
+      const nextPolicyHashCheck = policyHashCheckStatus(record.policy_hash);
+      const nextAnchorCheck = anchorCheckStatus(
+        record.tx_hash,
+        record.block_number,
+        record.integrity_status,
+      );
+      setFingerprintMatches(frontendMatch);
+      setIntegrityStatus(
+        deriveIntegrityStatus(
+          nextSignatureCheck,
+          nextPolicyHashCheck,
+          nextAnchorCheck,
+          frontendMatch,
+          record.integrity_status,
+        ),
+      );
     }).catch(() => {
+      setFingerprintMatches(false);
       setIntegrityStatus("failed");
     });
   }, [record]);
@@ -214,13 +230,29 @@ function ProofCompletenessChecks({ record }: { record: PublicVerificationRecord 
   // Pure deterministic checks (see lib/proof-state.ts).
   const signatureCheck: CheckStatus = signatureCheckStatus(record.signature_valid);
   const policyHashCheck: CheckStatus = policyHashCheckStatus(record.policy_hash);
-  const anchorCheck: CheckStatus = anchorCheckStatus(record.tx_hash, record.block_number);
+  const anchorCheck: CheckStatus = anchorCheckStatus(
+    record.tx_hash,
+    record.block_number,
+    record.integrity_status,
+  );
   const anchorLabel: string =
-    anchorCheck === "verified"
+    anchorCheck === "failed"
+      ? "Anchor proof failed"
+      : anchorCheck === "verified"
       ? "Confirmed on-chain"
       : record.tx_hash != null
       ? "Transaction submitted"
       : "Awaiting anchoring";
+  const integrityLabel: string =
+    fingerprintMatches === false
+      ? "Fingerprint mismatch; receipt may be tampered"
+      : record.integrity_status === "failed"
+      ? "Anchor proof failed; receipt fingerprint still matches"
+      : integrityStatus === "verified"
+      ? "Fingerprint matches; receipt is intact"
+      : integrityStatus === "pending"
+      ? "Fingerprint matches; awaiting anchoring"
+      : "Verifying integrity...";
 
   // Schema version gate
   if (!isSupportedSchemaVersion(record.schema_version)) {
@@ -258,11 +290,7 @@ function ProofCompletenessChecks({ record }: { record: PublicVerificationRecord 
     {
       label: "Receipt integrity",
       status: integrityStatus,
-      sublabel: integrityStatus === "verified"
-        ? "Fingerprint matches — receipt is intact"
-        : integrityStatus === "failed"
-        ? "Fingerprint mismatch — receipt may be tampered"
-        : "Verifying integrity…",
+      sublabel: integrityLabel,
     },
   ];
 
