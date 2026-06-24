@@ -30,7 +30,7 @@ Driver script: `scripts/usecase_poc_demo.py`
 **PowerShell** (from the repo root):
 
 ```powershell
-cd "C:\Users\Ronal\OneDrive\Desktop\DB FInal\premortem\MTP"
+cd C:\path\to\Inntris
 $env:INNTRIS_ADMIN_API_KEY = "inntris_live_sk_********"
 
 # sanity-run one scenario first (small blast radius)

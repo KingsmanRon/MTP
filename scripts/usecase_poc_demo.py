@@ -141,6 +141,11 @@ def preflight() -> None:
         die(f"API not reachable at {API_URL} — start it first (see runbook).")
     if h.get("status") != "healthy":
         die(f"API not healthy: {h}")
+    if h.get("redis") != "connected":
+        die(
+            f"Redis not connected (health: {h}). /verify fails closed (503) without "
+            "Redis — don't record until it's green."
+        )
 
 
 def resolve_org(api_key: str) -> str:
@@ -557,8 +562,7 @@ def scenario_treasury() -> None:
         "to_wallet": "0xOPS00000000000000000000000000000000000A1",
         "business_purpose": "second_move",
     })
-    if code == 200:
-        verdict_line("second $1,500 APPROVED — cumulative now at the $3,000 ceiling")
+    expect_approved(code, j, "second $1,500 move (cumulative now at the $3,000 ceiling)")
     code, j, _ = act(agent_id, signing_key, "financial_transaction", {
         "amount": 1500.0, "asset": "USDC", "chain": "base",
         "to_wallet": "0xOPS00000000000000000000000000000000000A1",
@@ -616,6 +620,12 @@ def scenario_accounting() -> None:
         step("B", "Prove the decision cannot be silently altered after the fact")
         mine = recompute_fingerprint(rec)
         kv("recomputed fingerprint", mine[:40] + "…")
+        if mine != rec.get("receipt_fingerprint"):
+            die(
+                "client recompute != server receipt_fingerprint — the canonical "
+                "fingerprint recipe drifted from api/main.py:fingerprint_payload. "
+                "Reconcile the field set before recording (this is the tamper-evidence beat)."
+            )
         kv("matches receipt", mine == rec.get("receipt_fingerprint"))
         altered = dict(rec)
         altered["verdict"] = "blocked"  # pretend someone rewrites the verdict
