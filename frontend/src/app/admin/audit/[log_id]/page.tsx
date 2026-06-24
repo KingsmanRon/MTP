@@ -171,7 +171,7 @@ function AuditDetailContent({ logId }: { logId: string }) {
                   </p>
                 </div>
               ) : proof ? (
-                <ProofSection proof={proof} />
+                <ProofSection proof={proof} signatureValid={record.signature_valid} />
               ) : (
                 <div className="flex items-center gap-3 rounded-lg border border-[#22314D] bg-[#101C31] p-4">
                   <Link2 className="h-5 w-5 text-[#7F8CA3]" />
@@ -200,6 +200,8 @@ function PolicySection({ record }: { record: MappedAuditDetail }) {
   const hasPolicyData =
     record.policy_rule_triggered !== undefined ||
     record.risk_level !== undefined ||
+    Boolean(record.verdict_reason) ||
+    Boolean(record.policy_hash) ||
     (record.violations && record.violations.length > 0);
 
   if (hasPolicyData) {
@@ -236,6 +238,20 @@ function PolicySection({ record }: { record: MappedAuditDetail }) {
             </div>
           </div>
         )}
+        {record.verdict_reason && (
+          <div className="rounded-lg border border-[#22314D] bg-[#101C31] px-4 py-3">
+            <span className="mb-2 block text-xs text-[#7F8CA3]">Decision Reason</span>
+            <p className="text-xs leading-relaxed text-[#AAB7CC]">
+              {record.verdict_reason}
+            </p>
+          </div>
+        )}
+        {record.policy_hash && (
+          <div className="flex items-center justify-between gap-4 rounded-lg border border-[#22314D] bg-[#101C31] px-4 py-3">
+            <span className="text-xs text-[#7F8CA3]">Policy Hash</span>
+            <CopyableMonoValue value={record.policy_hash} />
+          </div>
+        )}
       </div>
     );
   }
@@ -261,8 +277,20 @@ function PolicySection({ record }: { record: MappedAuditDetail }) {
   );
 }
 
-function ProofSection({ proof }: { proof: MappedAuditProof }) {
-  const hasAnyProof = proof.tx_hash || proof.merkle_root || proof.leaf;
+function ProofSection({
+  proof,
+  signatureValid,
+}: {
+  proof: MappedAuditProof;
+  signatureValid?: boolean;
+}) {
+  const hasAnyProof = proof.status || proof.tx_hash || proof.merkle_root || proof.leaf;
+  const anchorStatus = proof.status ?? (proof.tx_hash ? "confirmed" : "pending");
+  const basescanUrl =
+    proof.basescan_url ||
+    (proof.tx_hash && (proof.chain_id ?? 8453) === 8453
+      ? `https://basescan.org/tx/${proof.tx_hash}`
+      : null);
 
   if (!hasAnyProof) {
     return (
@@ -277,14 +305,28 @@ function ProofSection({ proof }: { proof: MappedAuditProof }) {
 
   return (
     <div className="space-y-3">
+      <div className="flex items-center justify-between rounded-lg border border-[#22314D] bg-[#101C31] px-4 py-3">
+        <span className="text-xs text-[#7F8CA3]">Anchor Status</span>
+        <ProofStatusBadge status={anchorStatus} />
+      </div>
+      <div className="flex items-center justify-between rounded-lg border border-[#22314D] bg-[#101C31] px-4 py-3">
+        <span className="text-xs text-[#7F8CA3]">Signature</span>
+        <SignatureStatus signatureValid={signatureValid} />
+      </div>
+      {proof.leaf && (
+        <div className="flex items-center justify-between gap-4 rounded-lg border border-[#22314D] bg-[#101C31] px-4 py-3">
+          <span className="text-xs text-[#7F8CA3]">Action Hash</span>
+          <CopyableMonoValue value={proof.leaf} />
+        </div>
+      )}
       {proof.tx_hash && (
-        <div className="flex items-center justify-between rounded-lg border border-[#22314D] bg-[#101C31] px-4 py-3">
+        <div className="flex items-center justify-between gap-4 rounded-lg border border-[#22314D] bg-[#101C31] px-4 py-3">
           <span className="text-xs text-[#7F8CA3]">Transaction Hash</span>
           <CopyableMonoValue value={proof.tx_hash} />
         </div>
       )}
       {proof.merkle_root && (
-        <div className="flex items-center justify-between rounded-lg border border-[#22314D] bg-[#101C31] px-4 py-3">
+        <div className="flex items-center justify-between gap-4 rounded-lg border border-[#22314D] bg-[#101C31] px-4 py-3">
           <span className="text-xs text-[#7F8CA3]">Merkle Root</span>
           <CopyableMonoValue value={proof.merkle_root} />
         </div>
@@ -292,14 +334,30 @@ function ProofSection({ proof }: { proof: MappedAuditProof }) {
       {proof.block_number !== undefined && proof.block_number !== null && (
         <div className="flex items-center justify-between rounded-lg border border-[#22314D] bg-[#101C31] px-4 py-3">
           <span className="text-xs text-[#7F8CA3]">Block Number</span>
-          <span className="font-mono text-xs text-[#AAB7CC]">{proof.block_number}</span>
+          <span className="font-mono text-xs text-[#AAB7CC]">
+            {proof.block_number.toLocaleString("en-GB")}
+          </span>
         </div>
       )}
-      {proof.basescan_url && (
+      {proof.anchored_at && (
         <div className="flex items-center justify-between rounded-lg border border-[#22314D] bg-[#101C31] px-4 py-3">
-          <span className="text-xs text-[#7F8CA3]">On-chain</span>
+          <span className="text-xs text-[#7F8CA3]">Anchored At</span>
+          <span className="font-mono text-xs text-[#AAB7CC]">
+            {formatDateTime(proof.anchored_at)}
+          </span>
+        </div>
+      )}
+      {proof.error_message && (
+        <div className="flex items-center justify-between gap-4 rounded-lg border border-red-500/30 bg-red-500/5 px-4 py-3">
+          <span className="text-xs text-red-300">Anchor Error</span>
+          <CopyableMonoValue value={proof.error_message} />
+        </div>
+      )}
+      {basescanUrl && (
+        <div className="flex items-center justify-between rounded-lg border border-[#22314D] bg-[#101C31] px-4 py-3">
+          <span className="text-xs text-[#7F8CA3]">On Chain</span>
           <a
-            href={proof.basescan_url}
+            href={basescanUrl}
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex items-center gap-1 text-xs text-[#8FB8FF] hover:underline"
@@ -309,17 +367,51 @@ function ProofSection({ proof }: { proof: MappedAuditProof }) {
           </a>
         </div>
       )}
-      <div className="flex items-center justify-between rounded-lg border border-[#22314D] bg-[#101C31] px-4 py-3">
-        <span className="text-xs text-[#7F8CA3]">Signature Valid</span>
-        {proof.signature_valid === true ? (
-          <CheckCircle className="h-4 w-4 text-green-400" />
-        ) : proof.signature_valid === false ? (
-          <AlertTriangle className="h-4 w-4 text-amber-400" />
-        ) : (
-          <Minus className="h-4 w-4 text-[#7F8CA3]" />
-        )}
-      </div>
     </div>
+  );
+}
+
+function ProofStatusBadge({ status }: { status: string }) {
+  const normalised = status.toLowerCase();
+  const isConfirmed = normalised === "confirmed" || normalised === "anchored";
+  const isFailed = normalised === "failed" || normalised === "dead_letter";
+  const className = isConfirmed
+    ? "border-green-500/20 bg-green-500/10 text-green-400"
+    : isFailed
+      ? "border-red-500/20 bg-red-500/10 text-red-400"
+      : "border-amber-500/20 bg-amber-500/10 text-amber-300";
+
+  return (
+    <span className={`rounded-full border px-2 py-1 font-mono text-xs uppercase ${className}`}>
+      {status}
+    </span>
+  );
+}
+
+function SignatureStatus({ signatureValid }: { signatureValid?: boolean }) {
+  if (signatureValid === true) {
+    return (
+      <span className="inline-flex items-center gap-2 text-xs font-semibold text-green-400">
+        <CheckCircle className="h-4 w-4" />
+        Valid Ed25519
+      </span>
+    );
+  }
+
+  if (signatureValid === false) {
+    return (
+      <span className="inline-flex items-center gap-2 text-xs font-semibold text-red-400">
+        <AlertTriangle className="h-4 w-4" />
+        Invalid
+      </span>
+    );
+  }
+
+  return (
+    <span className="inline-flex items-center gap-2 text-xs font-semibold text-[#7F8CA3]">
+      <Minus className="h-4 w-4" />
+      Unknown
+    </span>
   );
 }
 

@@ -160,6 +160,7 @@ export interface MappedAuditDetail {
 }
 
 export interface MappedAuditProof {
+  status?: string | null;
   leaf?: string | null;
   proof?: string[];
   positions?: boolean[];
@@ -169,5 +170,5 @@ export interface MappedAuditProof {
   anchored_at?: string | null;
   chain_id?: number | null;
   basescan_url?: string | null;
-  signature_valid?: boolean | null;
+  error_message?: string | null;
 }

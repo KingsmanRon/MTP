@@ -161,6 +161,7 @@ class AuditLogDetail(BaseModel):
 
 
 class AuditProof(BaseModel):
+    status: Optional[str] = None
     leaf: Optional[str] = None
     proof: Optional[list[str]] = None
     positions: Optional[list[bool]] = None
@@ -170,4 +171,5 @@ class AuditProof(BaseModel):
     anchored_at: Optional[str] = None
     chain_id: Optional[int] = None
     basescan_url: Optional[str] = None
+    error_message: Optional[str] = None
     metadata: Optional[dict[str, Any]] = None

@@ -194,6 +194,7 @@ export function mapAuditDetail(raw: unknown): MappedAuditDetail | null {
 export function mapAuditProof(raw: unknown): MappedAuditProof {
   if (!isRecord(raw)) return {};
   return {
+    status: strOrNull(raw.status),
     leaf: strOrNull(raw.leaf),
     proof: strArr(raw.proof),
     positions: Array.isArray(raw.positions) && raw.positions.every((x: unknown) => typeof x === "boolean")
@@ -205,6 +206,7 @@ export function mapAuditProof(raw: unknown): MappedAuditProof {
     anchored_at: strOrNull(raw.anchored_at),
     chain_id: numOrNull(raw.chain_id) as number | null | undefined,
     basescan_url: strOrNull(raw.basescan_url),
+    error_message: strOrNull(raw.error_message),
   };
 }
 

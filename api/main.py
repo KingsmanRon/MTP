@@ -531,6 +531,45 @@ def _audit_metadata(
     return metadata
 
 
+def _json_dict(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return value
+    if not value:
+        return {}
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError:
+            return {}
+        return parsed if isinstance(parsed, dict) else {}
+    return {}
+
+
+def _policy_context_from_audit_row(row: Any) -> dict[str, Any]:
+    payload = _json_dict(row["payload"])
+    metadata = _json_dict(row["metadata"])
+
+    reason = row["verdict_reason"]
+    violations: list[str] = []
+    if reason:
+        if "violations:" in reason.lower():
+            parts = reason.split(":", 1)
+            if len(parts) > 1:
+                violations = [v.strip() for v in parts[1].split(",") if v.strip()]
+        elif row["verdict"] != "approved":
+            violations = [reason]
+
+    risk_level = payload.get("risk_level")
+    violation = metadata.get("violation")
+    return {
+        "payload": payload,
+        "metadata": metadata,
+        "risk_level": risk_level if isinstance(risk_level, str) else None,
+        "violations": violations,
+        "policy_rule_triggered": violation if isinstance(violation, str) else None,
+    }
+
+
 def _public_registration_metadata(raw_metadata: Optional[dict[str, Any]]) -> dict[str, Any]:
     return {
         str(key): value
@@ -2691,6 +2730,8 @@ async def get_audit_log(
     if row["org_id"] != org_id:
         raise HTTPException(status_code=403, detail="Access denied")
 
+    policy_context = _policy_context_from_audit_row(row)
+
     return {
         "id": str(row["id"]),
         "agent_id": str(row["agent_id"]),
@@ -2698,7 +2739,7 @@ async def get_audit_log(
         "timestamp": row["timestamp"].isoformat(),
         "action_type": row["action_type"],
         "action_hash": row["action_hash"],
-        "payload": row["payload"] if isinstance(row["payload"], dict) else json.loads(row["payload"]) if row["payload"] else {},
+        "payload": policy_context["payload"],
         "verdict": row["verdict"],
         "verdict_reason": row["verdict_reason"],
         "signature_valid": row["signature_valid"],
@@ -2706,13 +2747,13 @@ async def get_audit_log(
         "request_user_agent": row["request_user_agent"],
         "response_time_ms": row["response_time_ms"],
         "trust_score_at_time": row["trust_score_at_time"],
+        "policy_rule_triggered": policy_context["policy_rule_triggered"],
+        "risk_level": policy_context["risk_level"],
+        "violations": policy_context["violations"],
         "merkle_root_id": str(row["merkle_root_id"]) if row["merkle_root_id"] else None,
         "merkle_leaf_index": row["merkle_leaf_index"],
-        "metadata": (
-            row["metadata"]
-            if isinstance(row["metadata"], dict)
-            else json.loads(row["metadata"]) if row["metadata"] else {}
-        ),
+        "policy_hash": row["policy_hash"],
+        "metadata": policy_context["metadata"],
     }
 
 @app.get("/admin/audit/{log_id}/proof", tags=["Admin - Audit"], response_model=AuditProof)
@@ -2769,6 +2810,7 @@ async def get_merkle_proof(
         proof_path = []
 
     return {
+        "status": proof_row["status"],
         "leaf": log_row["action_hash"],
         "proof": [p["hash"] for p in proof_path],
         "positions": [p["position"] == 1 for p in proof_path],  # True = right, False = left
@@ -2776,6 +2818,13 @@ async def get_merkle_proof(
         "tx_hash": proof_row["transaction_hash"],
         "block_number": proof_row["block_number"],
         "anchored_at": proof_row["confirmed_at"].isoformat() if proof_row["confirmed_at"] else None,
+        "chain_id": proof_row["chain_id"],
+        "basescan_url": (
+            f"https://basescan.org/tx/{proof_row['transaction_hash']}"
+            if proof_row["transaction_hash"]
+            else None
+        ),
+        "error_message": proof_row["error_message"],
     }
 
 @app.get("/admin/audit/export", tags=["Admin - Audit"])
