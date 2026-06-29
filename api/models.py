@@ -224,6 +224,27 @@ class VerifyTokenResponse(BaseModel):
     )
 
 
+class VerifyDebugResponse(BaseModel):
+    """Dry-run signing diagnostics for POST /verify/debug (no side effects)."""
+    model_config = ConfigDict(strict=False)
+
+    agent_id: str = Field(..., description="Agent the request was built for")
+    agent_found: bool = Field(..., description="Whether the agent_id resolves to a registered agent")
+    action_type: str = Field(..., description="Action type from the request")
+    sig_version: int = Field(..., description="Signing-envelope version the server used")
+    canonical_timestamp: str = Field(..., description="Canonical UTC timestamp the server hashed")
+    expected_action_hash: str = Field(
+        ..., description="Action hash the server verifies the signature against (sign bytes.fromhex of this)"
+    )
+    signature_valid: Optional[bool] = Field(
+        None, description="True/False when the agent exists; null when the agent is not found"
+    )
+    public_key_fingerprint: Optional[str] = Field(
+        None, description="SHA-256 fingerprint of the agent public key checked against"
+    )
+    note: str = Field(..., description="How to use this diagnostic")
+
+
 class RegisterAgentRequest(BaseModel):
     """Request to register a new agent with the platform."""
     # UPDATED: strict=False allows JSON strings to be parsed into Types (UUID, Decimal)

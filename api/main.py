@@ -28,6 +28,8 @@ import redis.asyncio as redis
 from fastapi import FastAPI, Depends, HTTPException, Request, status, Header, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, JSONResponse
+from fastapi.exceptions import RequestValidationError
+from fastapi.encoders import jsonable_encoder
 import io
 import csv
 
@@ -42,6 +44,7 @@ from api.models import (
     VerifyActionResponse,
     VerifyTokenRequest,
     VerifyTokenResponse,
+    VerifyDebugResponse,
     TestVerifyRequest,
     RegisterAgentRequest,
     UpdateAgentRequest,
@@ -344,6 +347,37 @@ app.add_middleware(RequestIdMiddleware)
 # scrape via kube-prometheus's ServiceMonitor. If you terminate TLS at a
 # reverse proxy, add a ``deny`` rule there for non-internal CIDRs.
 app.add_route("/metrics", metrics_endpoint, methods=["GET"])
+
+
+@app.exception_handler(RequestValidationError)
+async def _validation_exception_handler(request: Request, exc: RequestValidationError):
+    """Normalize 422 validation errors into the standard error envelope.
+
+    Additive and back-compatible: keeps the original pydantic ``detail`` array
+    so existing callers do not break, and adds a stable ``error`` code, a human
+    ``message``, a flattened ``details.fields`` summary, and the ``request_id``
+    so a partner can branch on the error type instead of parsing free text.
+    """
+    from api.observability import current_request_id
+
+    errors = exc.errors()
+    fields = []
+    for err in errors:
+        loc = ".".join(str(p) for p in err.get("loc", []) if p != "body")
+        fields.append({"field": loc or "(body)", "message": err.get("msg", "invalid")})
+    return JSONResponse(
+        status_code=422,
+        content=jsonable_encoder(
+            {
+                "error": "validation_error",
+                "message": "Request validation failed. See 'detail' for the offending fields.",
+                "detail": errors,
+                "details": {"fields": fields},
+                "request_id": current_request_id(),
+            }
+        ),
+    )
+
 
 # Global Database Pool
 db_pool: Optional[Database] = None
@@ -1353,9 +1387,39 @@ async def verify_action(
                 was_approved=False,
             )
 
-            raise HTTPException(
+            # Self-diagnosing 401: echo the action hash the server verified
+            # against plus the canonical timestamp and sig_version it used.
+            # These derive only from caller-supplied, non-secret inputs (they
+            # do NOT help forge a signature, which needs the private key) but
+            # let a legitimate integrator instantly diff their local hash and
+            # find the canonicalization bug. ``detail`` is preserved as a
+            # human string for back-compat. See docs/REQUEST_SIGNING.md.
+            from api.observability import current_request_id
+
+            try:
+                diagnostic_ts = CryptoService.canonicalize_timestamp(request_data.timestamp)
+            except Exception:
+                diagnostic_ts = request_data.timestamp
+
+            return JSONResponse(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail=verdict_reason,
+                content={
+                    "error": "signature_invalid",
+                    "detail": verdict_reason,
+                    "message": verdict_reason,
+                    "expected_action_hash": action_hash,
+                    "canonical_timestamp": diagnostic_ts,
+                    "sig_version": request_data.sig_version,
+                    "audit_id": str(audit_id) if audit_id else None,
+                    "hint": (
+                        "Sign bytes.fromhex(expected_action_hash) with the agent's "
+                        "Ed25519 key. If your locally computed action hash differs "
+                        "from expected_action_hash, your canonicalization differs — "
+                        "see docs/REQUEST_SIGNING.md and POST /verify/debug (which "
+                        "has no side effects)."
+                    ),
+                    "request_id": current_request_id(),
+                },
             )
 
         # STEP 3: Replay Check (Nonce) - FAIL-CLOSED
@@ -1688,6 +1752,90 @@ async def verify_action(
     except Exception as e:
         logger.exception(f"Unexpected error: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@app.post(
+    "/verify/debug",
+    response_model=VerifyDebugResponse,
+    tags=["Verification"],
+)
+async def verify_debug(
+    request_data: VerifyActionRequest,
+    request: Request,
+    database: Database = Depends(get_db),
+    redis_conn: Optional[redis.Redis] = Depends(get_redis),
+):
+    """Dry-run signing diagnostics for ``/verify`` — NO side effects.
+
+    Computes the action hash the server would verify against and, if the agent
+    exists, whether the supplied signature is valid — WITHOUT writing an audit
+    row, consuming the nonce, evaluating policy, adjusting the trust score, or
+    emitting a signature-failure security alert.
+
+    Use this while wiring up a new client: a wrong signature here costs nothing,
+    whereas a wrong signature against ``/verify`` writes a forensic row, drops
+    the agent's trust score by 20, and trips signature-failure monitoring. Once
+    ``signature_valid`` is true, switch to ``POST /verify``. See
+    docs/REQUEST_SIGNING.md.
+    """
+    await _check_public_rate_limit(
+        request, redis_conn, key_prefix="verify_debug", max_per_hour=120
+    )
+
+    try:
+        canonical_ts = CryptoService.canonicalize_timestamp(request_data.timestamp)
+    except Exception:
+        canonical_ts = request_data.timestamp
+
+    try:
+        expected_action_hash = CryptoService.compute_action_hash(
+            agent_id=str(request_data.agent_id),
+            action_type=request_data.action_type,
+            payload=request_data.payload,
+            nonce=request_data.nonce,
+            timestamp=request_data.timestamp,
+            sig_version=request_data.sig_version,
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Could not compute action hash from the supplied fields: {exc}",
+        )
+
+    agent_found = False
+    signature_valid: Optional[bool] = None
+    fingerprint: Optional[str] = None
+    try:
+        agent = await database.get_agent_by_id(request_data.agent_id)
+        agent_found = True
+        fingerprint = agent.public_key_fingerprint
+        try:
+            signature_valid = CryptoService.verify_ed25519_signature(
+                public_key=agent.public_key,
+                message_hash=expected_action_hash,
+                signature_b64=request_data.signature,
+            )
+        except SignatureVerificationError:
+            signature_valid = False
+    except AgentNotFoundError:
+        agent_found = False
+
+    return VerifyDebugResponse(
+        agent_id=str(request_data.agent_id),
+        agent_found=agent_found,
+        action_type=request_data.action_type,
+        sig_version=request_data.sig_version,
+        canonical_timestamp=canonical_ts,
+        expected_action_hash=expected_action_hash,
+        signature_valid=signature_valid,
+        public_key_fingerprint=fingerprint,
+        note=(
+            "Diagnostic only — no audit row, nonce, policy evaluation, or trust "
+            "change. Sign bytes.fromhex(expected_action_hash) with the agent "
+            "Ed25519 key; when signature_valid is true your signing is correct, "
+            "so switch to POST /verify."
+        ),
+    )
 
 
 @app.post(

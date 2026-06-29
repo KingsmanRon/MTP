@@ -206,17 +206,18 @@ export default function DocsPage() {
               {
                 step: "1",
                 title: "Register Your Agent",
-                body: "Create an organization and register your AI agent. Inntris generates a unique Ed25519 keypair — you keep the private key, we store the public key.",
-                code: `POST /admin/organizations
+                body: "You generate an Ed25519 keypair locally and register the public key. Your private key never leaves your environment — Inntris only ever stores the public key.",
+                code: `POST /admin/organizations   (operator-only, X-Master-Key)
 {
   "name": "Acme Corp",
   "contact_email": "security@acme.com"
 }
 
-POST /admin/agents
+POST /admin/agents          (X-API-Key)
 {
+  "org_id": "<org-uuid>",
   "name": "PaymentBot",
-  "description": "Handles customer refunds"
+  "public_key": "<base64-ed25519-public-key>"
 }`,
               },
               {
@@ -243,8 +244,8 @@ POST /admin/agents
       "args": ["-m", "mcp_server.server"],
       "env": {
         "INNTRIS_API_URL": "https://api.inntris.com",
-        "INNTRIS_API_KEY": "<your-api-key>",
-        "INNTRIS_AGENT_ID": "<your-agent-id>"
+        "INNTRIS_AGENT_ID": "<your-agent-id>",
+        "INNTRIS_PRIVATE_KEY_B64": "<agent-ed25519-seed-b64>"
       }
     }
   }

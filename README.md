@@ -18,8 +18,6 @@ A **policy decision point and evidence system** for AI agent actions — not obs
 
 ## Architecture Overview
 
-<!-- VERIFY: Check Supabase Database → Extensions to confirm
-     TimescaleDB is enabled. If not, remove "+ TimescaleDB" from diagram. -->
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                           AI AGENT (Lovable/Replit/LangChain)               │
@@ -123,7 +121,7 @@ The **"Management Console"** for organizations and developers.
 
 ```bash
 git clone https://github.com/KingsmanRon/MTP
-cd inntris-core
+cd MTP
 
 # Copy environment template
 cp .env.example .env
@@ -148,10 +146,13 @@ curl http://localhost:8000/health
 ### 3. Register an Organization & Agent
 
 ```bash
-# Create organization (returns API key - save it!)
+# Create organization (operator-only; returns an API key shown ONCE — save it).
+# Requires MASTER_ADMIN_KEY (>= 32 chars) set in the API environment; the
+# X-Master-Key header value below must equal that env var. Partners are usually
+# handed an org_id + API key directly, or can self-serve (see "Alternative" below).
 curl -X POST http://localhost:8000/admin/organizations \
   -H "Content-Type: application/json" \
-  -H "X-Admin-Key: YOUR_ADMIN_KEY" \
+  -H "X-Master-Key: $MASTER_ADMIN_KEY" \
   -d '{
     "name": "My AI Company",
     "contact_email": "admin@example.com",
@@ -180,6 +181,34 @@ curl -X POST http://localhost:8000/admin/agents \
   }'
 ```
 
+### Alternative: self-serve agent (no admin key)
+
+If you don't have an operator master key, bootstrap an agent against the live
+API with no auth. You generate the keypair locally and only ever send the
+**public** key:
+
+```bash
+# Generate an Ed25519 keypair locally (the private seed stays on your machine)
+python -c "
+from nacl.signing import SigningKey
+import base64
+sk = SigningKey.generate()
+print('INNTRIS_PRIVATE_KEY_B64 =', base64.b64encode(bytes(sk)).decode())
+print('public_key             =', base64.b64encode(bytes(sk.verify_key)).decode())
+"
+
+# Register it (returns an immediately-usable agent_id)
+curl -X POST https://api.inntris.com/public/agents/register \
+  -H "Content-Type: application/json" \
+  -d '{ "email": "you@example.com", "public_key": "BASE64_PUBLIC_KEY_HERE" }'
+```
+
+Self-serve agents start with `allowed_actions = ["tool_call", "api_call"]` and
+default limits — enough for your first verified call. To enable
+`financial_transaction`, higher limits, or AI-PR-Guard action types, you need a
+provisioned org with an admin key (those controls live behind authenticated
+`/admin` endpoints). Rate limit: 5 registrations per IP per hour.
+
 ### 4. Configure MCP Server
 
 Add to your AI agent's MCP configuration:
@@ -192,8 +221,8 @@ Add to your AI agent's MCP configuration:
       "args": ["-m", "mcp_server.server"],
       "env": {
         "INNTRIS_API_URL": "https://api.inntris.com",
-        "INNTRIS_API_KEY": "<your-api-key>",
-        "INNTRIS_AGENT_ID": "<your-agent-id>"
+        "INNTRIS_AGENT_ID": "<your-agent-id>",
+        "INNTRIS_PRIVATE_KEY_B64": "<agent-ed25519-seed-b64>"
       }
     }
   }
@@ -267,9 +296,22 @@ Verify an agent action before execution.
   },
   "signature": "base64_ed25519_signature",
   "nonce": "unique_random_string",
-  "timestamp": "2024-01-15T10:30:00Z"
+  "timestamp": "2026-01-15T10:30:00Z",
+  "sig_version": 2,
+  "policy_hash": null
 }
 ```
+
+- `signature` — Ed25519 signature of the action hash. See
+  **[docs/REQUEST_SIGNING.md](docs/REQUEST_SIGNING.md)** for the exact
+  construction, or POST the same body to **`/verify/debug`** (no side effects) to
+  get the server-computed `expected_action_hash` and confirm `signature_valid`
+  before going live.
+- `sig_version` — signing-envelope version (default `2`; use `3` for RFC 8785 JCS
+  from non-Python SDKs).
+- `policy_hash` — only for AI-PR-Guard action types (`repo_change`,
+  `ci_workflow_change`, `protected_branch_merge`, `production_deployment`): the
+  canonical hash of the registered `.inntris.yml`. Omit/`null` for other actions.
 
 **Response (200 OK):**
 ```json
@@ -293,6 +335,19 @@ Verify an agent action before execution.
 - `403 Forbidden` - Policy violation (limits exceeded, blocked action)
 - `404 Not Found` - Agent not registered
 - `429 Too Many Requests` - Rate limit exceeded
+
+**Error format:** errors return `{ "detail": "<message>", ... }`. A `401`
+signature failure additionally includes `expected_action_hash`,
+`canonical_timestamp`, and `sig_version` to help you debug signing; a `422`
+validation error includes a stable `"error": "validation_error"` code and a
+`details.fields` list. Every response carries an `X-Request-ID` header.
+
+**Trust scores:** new agents start at **50**. Common runtime actions pass at that
+level (financial 30, email 20, api/tool 10, data_export 40), but higher-risk
+types require more: `admin_action` 70, and `ci_workflow_change`,
+`protected_branch_merge`, `production_deployment` 80. Trust accrues +1 per
+approval (−20 on a bad signature). To promote a vetted agent immediately,
+`PATCH /admin/agents/{id}` with `{ "trust_score": 85 }`.
 
 ### GET `/public/agent/{agent_id}`
 
@@ -381,15 +436,26 @@ The `AnchorRegistry.sol` contract stores Merkle roots of audit batches:
 
 ### Verifying Audit Proofs
 
+Fetch the proof from `GET /public/verify/{audit_id}/proof` (no auth). It returns
+`action_hash` (the leaf), `proof` (sibling hashes), `positions` (`true` = sibling
+on the right), `merkle_root`, and `tx_hash`. Recompute the root and compare it to
+what the `AnchorRegistry` contract has anchored:
+
+- **Leaf** = the `action_hash` (lowercase SHA-256 hex of the action).
+- **Parent** = `keccak256(left || right)` over the 32-byte concatenation —
+  Ethereum keccak, **not** SHA-256, so it matches the Solidity contract. When a
+  level has an odd number of nodes, the last node is duplicated.
+- Walk `proof`/`positions` from the leaf upward, then `0x`-prefix the result and
+  confirm the batch on-chain:
+
 ```solidity
-// Verify a specific log was part of an anchored batch
-function verifyProof(
-    bytes32 merkleRoot,
-    bytes32 leaf,           // SHA-256 hash of the audit log
-    bytes32[] proof,        // Merkle proof path
-    uint8[] positions       // 0=left, 1=right for each level
-) returns (bool valid)
+// On-chain: confirm a Merkle root was anchored
+function getBatch(bytes32 merkleRoot)
+    returns (uint256 batchId, uint256 logCount, uint256 timestamp, address submitter)
 ```
+
+Reference implementation: `workers/anchor_worker.py` (`compute_merkle_root` /
+`compute_merkle_proof`); end-to-end checker: `scripts/verify_receipt.py`.
 
 ---
 
