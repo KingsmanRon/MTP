@@ -737,6 +737,8 @@ RECEIPT_SCHEMA_V1 = {
         "policy_hash": {"type": ["string", "null"], "pattern": "^[a-f0-9]{64}$", "description": "SHA-256 hash of the adapter-specific governing policy contract at verification time. Meaning depends on the adapter (e.g. .inntris.yml for the default adapter, a promptfoo config hash for the promptfoo adapter)."},
         "action_hash": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
         "signature_valid": {"type": "boolean"},
+        "signature_b64": {"type": ["string", "null"], "description": "Base64 Ed25519 signature over the action hash, for independent re-verification (null unless a 64-byte signature was supplied)."},
+        "public_key_b64": {"type": ["string", "null"], "description": "Base64 Ed25519 public key the signature verifies against."},
         "merkle_root": {"type": ["string", "null"]},
         "tx_hash": {"type": ["string", "null"], "pattern": "^0x[a-fA-F0-9]{64}$"},
         "block_number": {"type": ["integer", "null"]},
@@ -988,6 +990,7 @@ async def get_public_verification_record(
                 row = await conn.fetchrow(
                     """
                     SELECT al.*, a.name AS agent_name, a.org_id,
+                           a.public_key AS agent_public_key,
                            mp.root_hash AS merkle_root,
                            mp.transaction_hash AS tx_hash,
                            mp.block_number,
@@ -1013,6 +1016,7 @@ async def get_public_verification_record(
                 row = await conn.fetchrow(
                     """
                     SELECT al.*, a.name AS agent_name, a.org_id,
+                           a.public_key AS agent_public_key,
                            mp.root_hash AS merkle_root,
                            mp.transaction_hash AS tx_hash,
                            mp.block_number,
@@ -1110,6 +1114,24 @@ async def get_public_verification_record(
     # changes is the *guarantee*: a v2 receipt is asserted to bind a policy.
     schema_version = "v2" if row.get("policy_hash") else "v1"
 
+    # Expose the raw signature + public key so a third party can re-verify the
+    # Ed25519 signature over the action hash, rather than trusting signature_valid.
+    # Only a real 64-byte signature is exposed; the sentinels written for
+    # malformed/invalid submissions (see _decode_signature_for_audit) are not.
+    # The public key is public by definition.
+    sig_bytes = row.get("signature")
+    signature_b64 = (
+        base64.b64encode(sig_bytes).decode()
+        if isinstance(sig_bytes, (bytes, bytearray)) and len(sig_bytes) == 64
+        else None
+    )
+    pub_bytes = row.get("agent_public_key")
+    public_key_b64 = (
+        base64.b64encode(pub_bytes).decode()
+        if isinstance(pub_bytes, (bytes, bytearray)) and len(pub_bytes) == 32
+        else None
+    )
+
     return PublicVerificationRecord(
         audit_id=row["id"],
         timestamp=row["timestamp"],
@@ -1125,6 +1147,8 @@ async def get_public_verification_record(
         policy_hash=row.get("policy_hash"),
         action_hash=row["action_hash"],
         signature_valid=row["signature_valid"],
+        signature_b64=signature_b64,
+        public_key_b64=public_key_b64,
         merkle_root=row.get("merkle_root"),
         tx_hash=row.get("tx_hash"),
         block_number=row.get("block_number"),

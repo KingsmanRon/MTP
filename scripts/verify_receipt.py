@@ -7,6 +7,9 @@ Given a public ``audit_id`` (or a ``0x`` transaction hash), this script:
      confirms it matches the value the server returned. This detects any change
      to the bound verdict fields (verdict, action_hash, agent_id, timestamp,
      policy_hash, action_type, audit_id).
+  1b. Re-verifies the Ed25519 signature over the action hash against the public
+     key published in the receipt, so you do not have to trust ``signature_valid``
+     (needs pynacl; skipped if the receipt does not expose the material).
   2. Recomputes the Merkle root from the public proof using keccak256 for
      internal nodes (matching the on-chain AnchorRegistry) and confirms it
      matches ``merkle_root``. This proves the action is included in the anchored
@@ -28,6 +31,7 @@ Exit code is 0 only if every *attempted* check passed.
 from __future__ import annotations
 
 import argparse
+import base64
 import hashlib
 import json
 import sys
@@ -88,6 +92,33 @@ def recompute_fingerprint(rec: dict) -> str:
     return hashlib.sha256(canonical.encode()).hexdigest()
 
 
+def verify_signature(rec: dict):
+    """Re-verify the Ed25519 signature over the action hash.
+
+    Returns (checked, ok, detail). ``checked`` is False when the receipt does
+    not expose the material or pynacl is unavailable.
+    """
+    sig_b64 = rec.get("signature_b64")
+    pub_b64 = rec.get("public_key_b64")
+    if not sig_b64 or not pub_b64:
+        return (False, False, "receipt does not expose signature_b64/public_key_b64")
+    try:
+        from nacl.encoding import RawEncoder
+        from nacl.exceptions import BadSignatureError
+        from nacl.signing import VerifyKey
+    except Exception:
+        return (False, False, "pynacl not installed (pip install pynacl)")
+    try:
+        VerifyKey(base64.b64decode(pub_b64), encoder=RawEncoder).verify(
+            bytes.fromhex(rec["action_hash"]), base64.b64decode(sig_b64)
+        )
+        return (True, True, "")
+    except BadSignatureError:
+        return (True, False, "Ed25519 verification failed")
+    except Exception as exc:  # malformed key/sig material
+        return (True, False, f"error: {exc}")
+
+
 def recompute_root(action_hash: str, proof: list[str], positions: list[bool], keccak) -> str:
     """Mirror workers/anchor_worker.compute_merkle_root for a single leaf path.
 
@@ -135,6 +166,21 @@ def main() -> None:
         print(f"       server: {want_fp}")
         print(f"       local : {got_fp}")
         failures.append("receipt_fingerprint mismatch")
+
+    # ---- 1b) Ed25519 signature over the action hash ------------------------
+    checked, sig_ok, sig_detail = verify_signature(rec)
+    if not checked:
+        print(f"[SKIP] signature re-verification: {sig_detail}")
+    elif sig_ok:
+        print("[OK]   Ed25519 signature verifies against the published public key")
+        if rec.get("signature_valid") is False:
+            print("[WARN] receipt reports signature_valid=false but the signature verifies")
+    else:
+        if rec.get("signature_valid"):
+            print(f"[FAIL] signature does NOT verify but signature_valid=true ({sig_detail})")
+            failures.append("signature does not verify vs signature_valid=true")
+        else:
+            print(f"[OK]   signature does not verify, consistent with signature_valid=false")
 
     # ---- 2) Merkle root from the public proof ------------------------------
     proof = _get(f"{api}/public/verify/{audit_id}/proof")

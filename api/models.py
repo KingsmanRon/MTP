@@ -495,6 +495,14 @@ class PublicVerificationRecord(BaseModel):
     # On-chain proof
     action_hash: str = Field(..., description="SHA-256 hash of the action")
     signature_valid: bool = Field(..., description="Whether Ed25519 signature was valid")
+    signature_b64: Optional[str] = Field(
+        None,
+        description="Base64 Ed25519 signature over the action hash, for independent re-verification (null unless a 64-byte signature was supplied)",
+    )
+    public_key_b64: Optional[str] = Field(
+        None,
+        description="Base64 Ed25519 public key the signature verifies against",
+    )
     merkle_root: Optional[str] = Field(None, description="Merkle root hash")
     tx_hash: Optional[str] = Field(None, description="Base L2 transaction hash")
     block_number: Optional[int] = Field(None, description="Block number on Base L2")
