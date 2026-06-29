@@ -552,6 +552,7 @@ def _audit_metadata(
     *,
     client_policy_hash: Optional[str],
     key_fingerprint: Optional[str] = None,
+    sandbox: bool = False,
     extra: Optional[dict[str, Any]] = None,
 ) -> dict[str, Any]:
     metadata = dict(extra or {})
@@ -562,6 +563,12 @@ def _audit_metadata(
     # the retired key.
     if key_fingerprint:
         metadata["key_fingerprint"] = key_fingerprint
+    # Sandbox rows must never reach the mainnet anchor path. test_request is the
+    # anchor worker's existing exclusion key (get_unanchored_logs); sandbox is
+    # the human-facing flag surfaced on the public receipt.
+    if sandbox:
+        metadata["test_request"] = True
+        metadata["sandbox"] = True
     return metadata
 
 
@@ -746,7 +753,8 @@ RECEIPT_SCHEMA_V1 = {
         "anchored_at": {"type": ["string", "null"], "format": "date-time"},
         "schema_version": {"type": "string", "enum": ["v1", "v2"]},
         "receipt_fingerprint": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
-        "integrity_status": {"type": "string", "enum": ["verified", "pending_anchor", "failed"]},
+        "integrity_status": {"type": "string", "enum": ["verified", "pending_anchor", "failed", "sandbox"]},
+        "sandbox": {"type": "boolean", "default": False, "description": "True for sandbox/test receipts that never anchor on-chain."},
     },
     "additionalProperties": False,
 }
@@ -862,7 +870,7 @@ async def public_register_agent(
         name=f"agent-{fingerprint[:8]}",
         public_key=public_key_bytes,
         allowed_actions=["tool_call", "api_call"],
-        metadata={"source": "public_registration", **adapter_meta},
+        metadata={**adapter_meta, "source": "public_registration", "sandbox": request_data.sandbox},
     )
     # Public bootstrap promises an immediately usable agent. Persist that
     # promise instead of returning "active" while the row remains pending.
@@ -874,7 +882,12 @@ async def public_register_agent(
         org_id=str(org_id),
         status="active",
         created_at=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
-        message="Agent registered. Use agent_id with POST /verify.",
+        message=(
+            "Sandbox agent registered — decisions are signed and verifiable but "
+            "never anchored on-chain. Use agent_id with POST /verify."
+            if request_data.sandbox
+            else "Agent registered. Use agent_id with POST /verify."
+        ),
     )
 
 
@@ -952,7 +965,7 @@ async def public_register_promptfoo_agent(
         name=f"promptfoo-{fingerprint[:8]}",
         public_key=public_key_bytes,
         allowed_actions=["promptfoo_eval"],
-        metadata={"source": "public_registration_promptfoo", **meta},
+        metadata={**meta, "source": "public_registration_promptfoo", "sandbox": request_data.sandbox},
     )
     await database.update_agent_status(agent_id, AgentStatus.ACTIVE)
 
@@ -962,7 +975,12 @@ async def public_register_promptfoo_agent(
         org_id=str(org_id),
         status="active",
         created_at=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
-        message="Promptfoo agent registered. Use agent_id with POST /verify.",
+        message=(
+            "Sandbox Promptfoo agent registered — signed and verifiable but never "
+            "anchored on-chain. Use agent_id with POST /verify."
+            if request_data.sandbox
+            else "Promptfoo agent registered. Use agent_id with POST /verify."
+        ),
     )
 
 
@@ -1132,6 +1150,11 @@ async def get_public_verification_record(
         else None
     )
 
+    # Sandbox receipts (test_request rows) never anchor on-chain — surface that
+    # explicitly so the UI/clients don't show "pending_anchor" forever.
+    record_metadata = _json_dict(row.get("metadata"))
+    is_sandbox = bool(record_metadata.get("sandbox") or record_metadata.get("test_request"))
+
     return PublicVerificationRecord(
         audit_id=row["id"],
         timestamp=row["timestamp"],
@@ -1156,10 +1179,12 @@ async def get_public_verification_record(
         anchored_at=row.get("anchored_at"),
         schema_version=schema_version,
         receipt_fingerprint=receipt_fingerprint,
-        integrity_status=_compute_integrity_status(
-            row.get("tx_hash"),
-            row.get("proof_status"),
+        integrity_status=(
+            "sandbox"
+            if is_sandbox
+            else _compute_integrity_status(row.get("tx_hash"), row.get("proof_status"))
         ),
+        sandbox=is_sandbox,
     )
 
 
@@ -1327,6 +1352,14 @@ async def verify_action(
                 detail=f"Agent {request_data.agent_id} not found",
             )
 
+        # Sandbox agents (self-serve public registrations, or any agent tagged
+        # metadata.sandbox=true) are kept off the mainnet anchor path and out of
+        # the production decision set: their audit rows carry test_request=true,
+        # which the anchor worker already excludes (get_unanchored_logs). Real
+        # signing, policy, trust, and receipts are unchanged.
+        agent_meta = agent.metadata if isinstance(agent.metadata, dict) else {}
+        is_sandbox = bool(agent_meta.get("sandbox"))
+
         # STEP 2: Verify Ed25519 Signature
         # The signing envelope version is echoed from the client so legacy
         # agents signing with sig_version=1 continue to verify. New agents
@@ -1386,6 +1419,7 @@ async def verify_action(
                 metadata=_audit_metadata(
                     client_policy_hash=request_data.policy_hash,
                     key_fingerprint=agent.public_key_fingerprint,
+                    sandbox=is_sandbox,
                 ),
             )
             audit_id = await database.insert_audit_log(audit_entry, derive_chain_hash=True)
@@ -1549,6 +1583,7 @@ async def verify_action(
                 metadata=_audit_metadata(
                     client_policy_hash=request_data.policy_hash,
                     key_fingerprint=agent.public_key_fingerprint,
+                    sandbox=is_sandbox,
                     extra={
                         "violation": (
                             policy_result.violation.value
@@ -1652,6 +1687,7 @@ async def verify_action(
                 metadata=_audit_metadata(
                     client_policy_hash=request_data.policy_hash,
                     key_fingerprint=agent.public_key_fingerprint,
+                    sandbox=is_sandbox,
                     extra={
                         "violation": (
                             "rate_limit_exceeded" if exc.kind == "rate"
@@ -1722,6 +1758,7 @@ async def verify_action(
             metadata=_audit_metadata(
                 client_policy_hash=request_data.policy_hash,
                 key_fingerprint=agent.public_key_fingerprint,
+                sandbox=is_sandbox,
                 extra={"policy_binding": policy_binding_state},
             ),
         )

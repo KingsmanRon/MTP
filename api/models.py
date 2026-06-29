@@ -392,6 +392,10 @@ class PublicRegisterAgentRequest(BaseModel):
         default_factory=dict,
         description="Adapter-specific metadata (e.g. platform, version, config)",
     )
+    sandbox: bool = Field(
+        default=True,
+        description="Create a sandbox agent — decisions are signed and verifiable but never anchored on-chain. Defaults true for self-serve registration.",
+    )
 
 
 class PublicRegisterAgentResponse(BaseModel):
@@ -513,6 +517,7 @@ class PublicVerificationRecord(BaseModel):
     schema_version: str = Field(default="v1", description="Receipt schema version")
     receipt_fingerprint: str = Field(..., description="SHA-256 of canonical core fields for integrity verification")
     integrity_status: str = Field(default="verified", description="Server-side integrity verification status")
+    sandbox: bool = Field(default=False, description="True for sandbox/test receipts that never anchor on-chain")
 
 
 class PublicProofResponse(BaseModel):

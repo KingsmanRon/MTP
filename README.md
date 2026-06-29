@@ -203,11 +203,12 @@ curl -X POST https://api.inntris.com/public/agents/register \
   -d '{ "email": "you@example.com", "public_key": "BASE64_PUBLIC_KEY_HERE" }'
 ```
 
-Self-serve agents start with `allowed_actions = ["tool_call", "api_call"]` and
-default limits — enough for your first verified call. To enable
-`financial_transaction`, higher limits, or AI-PR-Guard action types, you need a
-provisioned org with an admin key (those controls live behind authenticated
-`/admin` endpoints). Rate limit: 5 registrations per IP per hour.
+Self-serve agents are **sandbox by default** (never anchored on-chain — see
+[Sandbox / test mode](#sandbox--test-mode)) and start with `allowed_actions =
+["tool_call", "api_call"]` and default limits — enough for your first verified
+call. To enable `financial_transaction`, higher limits, or AI-PR-Guard action
+types, you need a provisioned org with an admin key (those controls live behind
+authenticated `/admin` endpoints). Rate limit: 5 registrations per IP per hour.
 
 ### 4. Configure MCP Server
 
@@ -274,6 +275,37 @@ curl -s https://api.inntris.com/public/verify/3030c27c-87c4-4464-b4af-605fbe638e
 - The second call returns the Merkle proof.
 - `chain_id` must be `8453` (Base mainnet).
 - `integrity_status` should be `verified`.
+
+---
+
+## Sandbox / test mode
+
+Integrate and test without touching Base mainnet or the production ledger.
+
+**Sandbox is an agent property.** Any agent whose `metadata.sandbox` is true runs
+the *full* real path — Ed25519 signature check, policy engine, trust scoring, and
+a signed, publicly-verifiable receipt — but its decisions are **never anchored
+on-chain** and are kept out of the production decision set (each audit row is
+written with `test_request=true`, which the anchor worker skips). Such receipts
+report `integrity_status: "sandbox"` and `sandbox: true`.
+
+- **Self-serve agents are sandbox by default.** `POST /public/agents/register`
+  creates a sandbox agent unless you pass `"sandbox": false` — the safe way for a
+  partner to run first integration tests.
+- **Provisioned (admin) agents are production by default** and anchor to Base
+  mainnet. To give a provisioned partner a sandbox agent, set `metadata.sandbox`
+  to `true` at registration or via `PATCH /admin/agents/{id}`.
+
+```bash
+# Sign and POST /verify exactly as in production — same verdict, same signed
+# receipt — but nothing is anchored on-chain.
+curl -X POST https://api.inntris.com/public/agents/register \
+  -H "Content-Type: application/json" \
+  -d '{ "email": "you@example.com", "public_key": "BASE64_PUBLIC_KEY", "sandbox": true }'
+```
+
+To dry-run just the signing handshake with **no** audit row at all, use
+`POST /verify/debug` (see [docs/REQUEST_SIGNING.md](docs/REQUEST_SIGNING.md)).
 
 ---
 
