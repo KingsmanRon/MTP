@@ -11,7 +11,6 @@ import {
   Copy,
   Check,
   ExternalLink,
-  ChevronRight,
   Clock,
   AlertTriangle,
   Fingerprint,
@@ -654,16 +653,6 @@ export function VerifyRecordView({ record }: { record: PublicVerificationRecord 
             runs as a required status check and records a PASS or BLOCK receipt.
           </p>
           <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
-            <a
-              href="https://github.com/Inntris/agent-orchestrator-guardrails"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              <Button className="bg-[#4C8DFF] px-6 text-white hover:bg-[#6AA2FF]">
-                View GitHub Actions example
-                <ChevronRight className="ml-1 h-4 w-4" />
-              </Button>
-            </a>
             <Link href="/ai-pr-protection">
               <Button
                 variant="outline"

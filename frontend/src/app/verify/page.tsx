@@ -187,16 +187,6 @@ export default function VerifyLandingPage() {
             </p>
 
             <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
-              <a
-                href="https://github.com/Inntris/agent-orchestrator-guardrails"
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                <Button className="bg-[#4C8DFF] px-6 text-white hover:bg-[#6AA2FF]">
-                  View GitHub Actions example
-                </Button>
-              </a>
-
               <Link href="/ai-pr-protection">
                 <Button
                   variant="outline"
