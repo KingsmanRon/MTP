@@ -237,7 +237,9 @@ function ProofCompletenessChecks({ record }: { record: PublicVerificationRecord 
     record.integrity_status,
   );
   const anchorLabel: string =
-    anchorCheck === "failed"
+    record.integrity_status === "sandbox"
+      ? "Sandbox — not anchored on-chain"
+      : anchorCheck === "failed"
       ? "Anchor proof failed"
       : anchorCheck === "verified"
       ? "Confirmed on-chain"
@@ -247,6 +249,8 @@ function ProofCompletenessChecks({ record }: { record: PublicVerificationRecord 
   const integrityLabel: string =
     fingerprintMatches === false
       ? "Fingerprint mismatch; receipt may be tampered"
+      : record.integrity_status === "sandbox"
+      ? "Sandbox receipt; signed & verifiable, not anchored"
       : record.integrity_status === "failed"
       ? "Anchor proof failed; receipt fingerprint still matches"
       : integrityStatus === "verified"
@@ -285,12 +289,12 @@ function ProofCompletenessChecks({ record }: { record: PublicVerificationRecord 
     },
     {
       label: "On-chain anchor",
-      status: anchorCheck,
+      status: record.integrity_status === "sandbox" ? "not_applicable" : anchorCheck,
       sublabel: anchorLabel,
     },
     {
       label: "Receipt integrity",
-      status: integrityStatus,
+      status: record.integrity_status === "sandbox" ? "not_applicable" : integrityStatus,
       sublabel: integrityLabel,
     },
   ];
@@ -308,6 +312,13 @@ function ProofCompletenessChecks({ record }: { record: PublicVerificationRecord 
           </p>
         </div>
       </div>
+
+      {record.integrity_status === "sandbox" && (
+        <div className="mb-5 rounded-2xl border border-[#f59e0b]/30 bg-[#f59e0b]/10 px-4 py-3 text-sm text-[#f59e0b]">
+          Sandbox receipt — this decision is cryptographically signed and
+          independently verifiable, but is not anchored on-chain.
+        </div>
+      )}
 
       <div className="space-y-3">
         {checks.map((check) => (

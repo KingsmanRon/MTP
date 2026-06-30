@@ -1224,7 +1224,7 @@ async def get_public_proof(
             """
             SELECT al.id, al.action_hash, al.merkle_root_id,
                    al.merkle_leaf_index, al.policy_hash,
-                   al.timestamp
+                   al.timestamp, al.metadata
             FROM audit_logs al
             WHERE al.id = $1
             """,
@@ -1234,11 +1234,16 @@ async def get_public_proof(
     if not log_row:
         raise HTTPException(status_code=404, detail="Audit log not found")
 
-    # Unanchored: return pending state explicitly rather than 404
+    # Sandbox rows never anchor on-chain — report a distinct "sandbox" status
+    # rather than a forever-"pending_anchor".
+    proof_metadata = _json_dict(log_row.get("metadata"))
+    is_sandbox = bool(proof_metadata.get("sandbox") or proof_metadata.get("test_request"))
+
+    # Unanchored: return pending (or sandbox) state explicitly rather than 404
     if not log_row["merkle_root_id"]:
         return PublicProofResponse(
             audit_id=str(log_row["id"]),
-            status="pending_anchor",
+            status="sandbox" if is_sandbox else "pending_anchor",
             action_hash=log_row["action_hash"],
             proof=[],
             positions=[],

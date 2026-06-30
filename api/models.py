@@ -533,7 +533,7 @@ class PublicProofResponse(BaseModel):
     model_config = ConfigDict(strict=False)
 
     audit_id: str = Field(..., description="Audit log ID")
-    status: str = Field(..., description="'anchored' or 'pending_anchor'")
+    status: str = Field(..., description="'anchored', 'pending_anchor', 'failed', or 'sandbox'")
     action_hash: str = Field(..., description="Leaf hash (SHA-256 of action)")
     proof: list[str] = Field(default_factory=list, description="Sibling hashes in proof path")
     positions: list[bool] = Field(

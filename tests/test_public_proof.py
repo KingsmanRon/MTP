@@ -82,6 +82,31 @@ class TestPublicProofEndpoint:
         assert body["merkle_root"] is None
         assert body["proof"] == []
 
+    def test_sandbox_receipt_returns_sandbox_status(self):
+        row = {
+            "id": FAKE_AUDIT_ID,
+            "timestamp": datetime(2026, 4, 13, 12, 0, 0, tzinfo=timezone.utc),
+            "action_hash": "b" * 64,
+            "merkle_root_id": None,
+            "merkle_leaf_index": None,
+            "policy_hash": None,
+            "metadata": {"sandbox": True, "test_request": True},
+        }
+        m = MagicMock()
+        m.__getitem__ = lambda self, k: row[k]
+        m.get = lambda k, d=None: row.get(k, d)
+        with patch("api.main.db_pool") as mock_pool:
+            conn = AsyncMock()
+            conn.fetchrow = AsyncMock(return_value=m)
+            mock_pool.acquire.return_value.__aenter__ = AsyncMock(return_value=conn)
+            mock_pool.acquire.return_value.__aexit__ = AsyncMock(return_value=False)
+            response = client.get(f"/public/verify/{FAKE_AUDIT_ID}/proof")
+        assert response.status_code == 200
+        body = response.json()
+        assert body["status"] == "sandbox"
+        assert body["tx_hash"] is None
+        assert body["merkle_root"] is None
+
     def test_failed_proof_row_returns_failed_not_anchored(self):
         with patch("api.main.db_pool") as mock_pool:
             conn = AsyncMock()

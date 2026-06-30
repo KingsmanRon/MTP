@@ -185,7 +185,10 @@ def main() -> None:
     # ---- 2) Merkle root from the public proof ------------------------------
     proof = _get(f"{api}/public/verify/{audit_id}/proof")
     pstatus = proof.get("status")
-    if pstatus != "anchored":
+    if pstatus == "sandbox":
+        print("[note] sandbox receipt — not anchored on-chain by design; the "
+              "fingerprint + signature above are the integrity guarantee")
+    elif pstatus != "anchored":
         print(f"[SKIP] proof status is '{pstatus}' — not yet anchored; skipping Merkle check")
     else:
         keccak = _load_keccak()
