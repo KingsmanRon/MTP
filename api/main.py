@@ -2667,7 +2667,13 @@ async def update_agent(
         for field in allowed_fields:
             if field in updates:
                 if field == "metadata":
-                    set_clauses.append(f"metadata = ${param_idx}::jsonb")
+                    # Shallow-merge so a partial PATCH (e.g. {"sandbox": false})
+                    # cannot clobber other metadata keys like "source"; the right
+                    # side wins on conflicts. A merge can add/overwrite keys but
+                    # not remove one — acceptable for the metadata bag.
+                    set_clauses.append(
+                        f"metadata = COALESCE(metadata, '{{}}'::jsonb) || ${param_idx}::jsonb"
+                    )
                     params.append(json.dumps(updates[field]))
                 elif field in ["allowed_actions", "blocked_actions"]:
                     set_clauses.append(f"{field} = ${param_idx}")

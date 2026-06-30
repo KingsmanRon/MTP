@@ -104,6 +104,45 @@ def test_update_agent_policy_controls_are_validated_and_saved():
     assert body["blocked_actions"] == ["data_export", "admin_action"]
 
 
+def test_update_agent_metadata_is_merged_not_replaced():
+    org_id = uuid4()
+    agent_id = uuid4()
+    agent = _agent_record(
+        id=agent_id, org_id=org_id, metadata={"source": "public_registration"}
+    )
+    now = datetime.now(timezone.utc)
+    updated_row = {
+        "id": agent_id, "org_id": org_id, "name": "Policy Agent",
+        "public_key_fingerprint": "ab:cd", "trust_score": 80, "status": "active",
+        "daily_limit_usd": Decimal("1000"), "per_action_limit_usd": Decimal("100"),
+        "allowed_actions": ["api_call"], "blocked_actions": [],
+        "rate_limit_per_minute": 60, "last_action_at": None,
+        "total_actions_count": 0, "total_blocked_count": 0,
+        # The real DB || merge keeps "source"; the mock returns the merged shape.
+        "metadata": {"source": "public_registration", "sandbox": True},
+        "created_at": now, "updated_at": now,
+    }
+    conn = AsyncMock()
+    conn.fetchrow = AsyncMock(return_value=updated_row)
+    db_mock = _acquire_returning(conn)
+    db_mock.get_agent_by_id = AsyncMock(return_value=agent)
+
+    app.dependency_overrides[get_db] = lambda: db_mock
+    app.dependency_overrides[verify_api_key] = lambda: {"org_id": org_id, "scopes": ["write"]}
+    try:
+        response = client.patch(
+            f"/admin/agents/{agent_id}", json={"metadata": {"sandbox": True}}
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200, response.text
+    # The UPDATE must MERGE metadata (|| operator), not overwrite it.
+    query_used = conn.fetchrow.await_args.args[0]
+    assert "COALESCE(metadata, '{}'::jsonb) ||" in query_used
+    assert response.json()["metadata"] == {"source": "public_registration", "sandbox": True}
+
+
 def test_update_agent_rejects_per_action_limit_above_resulting_daily_limit():
     org_id = uuid4()
     agent_id = uuid4()
