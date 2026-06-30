@@ -148,3 +148,5 @@ against them in CI.
   `build_signed_verify_request`.
 - Receipt-side canonicalization (verifying a returned receipt) is documented
   separately in [`RECEIPT_CANONICALIZATION.md`](RECEIPT_CANONICALIZATION.md).
+- Binding execution to an approval (the executor side) is in
+  [`EXECUTION_BINDING.md`](EXECUTION_BINDING.md) — required for the money path.

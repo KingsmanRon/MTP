@@ -13,7 +13,7 @@ import json
 import logging
 import secrets
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any, Iterable, Optional
 
 from nacl.exceptions import BadSignatureError
 from nacl.signing import VerifyKey
@@ -341,18 +341,27 @@ class CryptoService:
     @staticmethod
     def verify_approval_token(
         token_b64: str,
-        server_secret: bytes,
+        server_secret: "bytes | Iterable[bytes]",
     ) -> Optional[dict[str, Any]]:
         """
         Verify and decode an approval token.
 
         Args:
             token_b64: Base64-encoded approval token.
-            server_secret: Server's secret key for HMAC verification.
+            server_secret: The server HMAC secret, OR an ordered iterable of
+                secrets. The token is accepted if its HMAC matches ANY of them,
+                which enables zero-downtime SERVER_SECRET rotation: serve
+                [new, old] during the rollover window so tokens signed with the
+                old secret keep verifying until they expire.
 
         Returns:
             Decoded token data if valid, None if invalid or expired.
         """
+        secrets_list: list[bytes] = (
+            [server_secret]
+            if isinstance(server_secret, (bytes, bytearray))
+            else [s for s in server_secret]
+        )
         try:
             combined = base64.b64decode(token_b64)
             parts = combined.rsplit(b".", 1)
@@ -363,9 +372,14 @@ class CryptoService:
             token_bytes, signature_b64 = parts
             signature = base64.b64decode(signature_b64)
 
-            # Verify HMAC
-            expected_mac = hmac.new(server_secret, token_bytes, hashlib.sha256)
-            if not hmac.compare_digest(expected_mac.digest(), signature):
+            # Verify HMAC against each candidate secret (constant-time compare).
+            matched = False
+            for sec in secrets_list:
+                expected_mac = hmac.new(bytes(sec), token_bytes, hashlib.sha256)
+                if hmac.compare_digest(expected_mac.digest(), signature):
+                    matched = True
+                    break
+            if not matched:
                 return None
 
             # Decode and check expiry

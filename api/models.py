@@ -206,6 +206,14 @@ class VerifyTokenRequest(BaseModel):
     nonce: Optional[str] = Field(None, max_length=64)
     timestamp: Optional[str] = None
     sig_version: int = Field(2, ge=1, le=3)
+    consume: bool = Field(
+        default=False,
+        description=(
+            "If true, atomically mark this token used (single-use). A second "
+            "consume of the same token returns valid:false. Use this in the "
+            "execution gate so one approval cannot authorize two executions."
+        ),
+    )
 
 
 class VerifyTokenResponse(BaseModel):

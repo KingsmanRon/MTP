@@ -9,7 +9,7 @@ from uuid import uuid4
 from fastapi.testclient import TestClient
 
 from api.crypto import CryptoService
-from api.main import SERVER_SECRET, app
+from api.main import SERVER_SECRET, app, get_redis
 
 client = TestClient(app)
 
@@ -109,3 +109,57 @@ class TestVerifyToken:
         body = resp.json()
         assert body["valid"] is False
         assert body["action_hash_matches"] is False
+
+
+class _FakeRedis:
+    """Minimal async Redis stub supporting ``SET key val EX nx`` for single-use."""
+
+    def __init__(self):
+        self.store: dict[str, str] = {}
+
+    async def set(self, key, value, ex=None, nx=False):
+        if nx and key in self.store:
+            return None
+        self.store[key] = value
+        return True
+
+
+def test_consume_makes_token_single_use():
+    fake = _FakeRedis()
+    app.dependency_overrides[get_redis] = lambda: fake
+    try:
+        body = {
+            "approval_token": _token(), "agent_id": AGENT_ID,
+            "action_type": ACTION_TYPE, "payload": PAYLOAD,
+            "nonce": NONCE, "timestamp": TIMESTAMP, "consume": True,
+        }
+        first = client.post("/verify-token", json=body)
+        second = client.post("/verify-token", json=body)
+    finally:
+        app.dependency_overrides.clear()
+    assert first.status_code == 200 and first.json()["valid"] is True
+    assert second.status_code == 200 and second.json()["valid"] is False
+    assert "used" in (second.json()["reason"] or "").lower()
+
+
+def test_consume_without_cache_fails_closed():
+    # No redis override -> get_redis returns the (None) module pool, so single-use
+    # cannot be enforced and the gate must refuse rather than allow a double-spend.
+    resp = client.post("/verify-token", json={"approval_token": _token(), "consume": True})
+    assert resp.status_code == 200
+    assert resp.json()["valid"] is False
+
+
+def test_dual_secret_rotation_accepts_old_secret():
+    old = b"o" * 40
+    new = b"n" * 40
+    token = CryptoService.generate_approval_token(
+        agent_id=AGENT_ID, action_hash=_action_hash(), verdict="approved",
+        server_secret=old, expiry_minutes=5,
+    )
+    # During rotation we serve [new, old]; an old-secret token still verifies.
+    assert CryptoService.verify_approval_token(token, [new, old]) is not None
+    # Wrong secret only -> rejected.
+    assert CryptoService.verify_approval_token(token, [new]) is None
+    # Back-compat: a single bytes secret still works.
+    assert CryptoService.verify_approval_token(token, old) is not None

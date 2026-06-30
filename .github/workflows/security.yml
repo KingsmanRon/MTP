@@ -13,9 +13,8 @@ name: security
 
 on:
   push:
-    branches: [master]
+    branches: [master, main, "claude/**"]
   pull_request:
-    branches: [master]
   schedule:
     - cron: "17 3 * * 1"  # Mondays 03:17 UTC
 
@@ -122,3 +121,26 @@ jobs:
         with:
           sarif_file: trivy.sarif
           category: trivy
+
+  secrets-history:
+    name: gitleaks (full git history)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # full history so a secret committed-then-removed is still caught
+
+      - name: gitleaks detect (report-only)
+        # Report-only for now (|| true), consistent with the other jobs. Tighten
+        # to fail-on-findings once the history baseline is confirmed clean.
+        run: |
+          docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:latest \
+            detect --source=/repo --redact --no-banner \
+            --report-format sarif --report-path /repo/gitleaks.sarif || true
+
+      - name: upload SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: gitleaks.sarif
+          category: gitleaks

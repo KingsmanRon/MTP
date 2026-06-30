@@ -153,6 +153,17 @@ if ENVIRONMENT != "development":
 
 SERVER_SECRET = (SERVER_SECRET_RAW or "dev-secret-do-not-use-in-production").encode("utf-8")
 
+# Optional previous secret for zero-downtime SERVER_SECRET rotation: approval
+# tokens signed with the old secret keep verifying while clients roll over. Set
+# SERVER_SECRET_PREVIOUS=<old value> during the rotation window, then remove it.
+# New tokens are always signed with the current SERVER_SECRET.
+_SERVER_SECRET_PREVIOUS_RAW = os.getenv("SERVER_SECRET_PREVIOUS")
+SERVER_SECRETS = [SERVER_SECRET] + (
+    [_SERVER_SECRET_PREVIOUS_RAW.encode("utf-8")]
+    if _SERVER_SECRET_PREVIOUS_RAW
+    else []
+)
+
 
 async def _deliver_webhook(
     webhook_url: str,
@@ -646,6 +657,7 @@ async def _check_public_rate_limit(
         raise HTTPException(
             status_code=429,
             detail=f"Rate limit exceeded. Max {max_per_hour} registrations per IP per hour.",
+            headers={"Retry-After": "3600"},
         )
 
 # =============================================================================
@@ -1619,6 +1631,7 @@ async def verify_action(
                 raise HTTPException(
                     status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                     detail=verdict_reason,
+                    headers={"Retry-After": "60"},
                 )
             else:
                 raise HTTPException(
@@ -1729,6 +1742,7 @@ async def verify_action(
                     else status.HTTP_403_FORBIDDEN
                 ),
                 detail=reserve_reason,
+                headers={"Retry-After": "60"} if exc.kind == "rate" else None,
             )
 
         # Reservation succeeded — surface the authoritative post-reservation
@@ -1904,7 +1918,10 @@ async def verify_debug(
     response_model=VerifyTokenResponse,
     tags=["Verification"],
 )
-async def verify_token(request_data: VerifyTokenRequest):
+async def verify_token(
+    request_data: VerifyTokenRequest,
+    redis_conn: Optional[redis.Redis] = Depends(get_redis),
+):
     """Verify an approval token issued by ``/verify``.
 
     This is the downstream enforcement primitive: a system about to execute a
@@ -1920,7 +1937,7 @@ async def verify_token(request_data: VerifyTokenRequest):
     binding the approval to the work actually being executed.
     """
     claims = CryptoService.verify_approval_token(
-        request_data.approval_token, SERVER_SECRET
+        request_data.approval_token, SERVER_SECRETS
     )
     if claims is None:
         return VerifyTokenResponse(
@@ -1987,6 +2004,46 @@ async def verify_token(request_data: VerifyTokenRequest):
                 action_hash=token_action_hash,
                 expires_at=expires_at,
                 action_hash_matches=False,
+            )
+
+    # Single-use enforcement for the execution gate. Only consume after every
+    # validity/binding check above has passed, so a rejected token is not burned.
+    if request_data.consume:
+        if redis_conn is None:
+            return VerifyTokenResponse(
+                valid=False,
+                reason="Single-use enforcement unavailable (cache offline). Retry.",
+                verdict=verdict,
+                agent_id=token_agent_id,
+                action_hash=token_action_hash,
+                expires_at=expires_at,
+                action_hash_matches=action_hash_matches,
+            )
+        ttl = 600
+        if isinstance(exp, (int, float)):
+            ttl = max(1, int(exp - datetime.now(timezone.utc).timestamp()))
+        used_key = f"inntris:token_used:{token_action_hash}"
+        try:
+            first_use = await redis_conn.set(used_key, "1", ex=ttl, nx=True)
+        except Exception:
+            return VerifyTokenResponse(
+                valid=False,
+                reason="Single-use enforcement error. Retry.",
+                verdict=verdict,
+                agent_id=token_agent_id,
+                action_hash=token_action_hash,
+                expires_at=expires_at,
+                action_hash_matches=action_hash_matches,
+            )
+        if not first_use:
+            return VerifyTokenResponse(
+                valid=False,
+                reason="Token already used (single-use).",
+                verdict=verdict,
+                agent_id=token_agent_id,
+                action_hash=token_action_hash,
+                expires_at=expires_at,
+                action_hash_matches=action_hash_matches,
             )
 
     return VerifyTokenResponse(

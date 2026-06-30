@@ -253,6 +253,7 @@ class RequestIdMiddleware:
                 message.setdefault("headers", [])
                 message["headers"] = list(message["headers"]) + [
                     (b"x-request-id", rid.encode("latin-1")),
+                    (b"x-inntris-api-version", b"1.0.0"),
                 ]
             await send(message)
 
