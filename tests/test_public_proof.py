@@ -1,5 +1,5 @@
 """Tests for GET /public/verify/{audit_id}/proof (unauthenticated)."""
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
@@ -17,14 +17,14 @@ FAKE_PROOF_ID = uuid4()
 def _log_row(anchored: bool):
     row = {
         "id": FAKE_AUDIT_ID,
-        "timestamp": datetime(2026, 4, 13, 12, 0, 0, tzinfo=timezone.utc),
+        "timestamp": datetime(2026, 4, 13, 12, 0, 0, tzinfo=UTC),
         "action_hash": "b" * 64,
         "merkle_root_id": FAKE_PROOF_ID if anchored else None,
         "merkle_leaf_index": 0 if anchored else None,
         "policy_hash": None,
     }
     m = MagicMock()
-    m.__getitem__ = lambda self, k: row[k]
+    m.__getitem__ = lambda _self, k: row[k]
     m.get = lambda k, d=None: row.get(k, d)
     return m
 
@@ -37,12 +37,12 @@ def _proof_row(status="confirmed", transaction_hash="0x" + "d" * 64):
         "block_number": 12345,
         "chain_id": 8453,
         "status": status,
-        "confirmed_at": datetime(2026, 4, 13, 13, 0, 0, tzinfo=timezone.utc),
+        "confirmed_at": datetime(2026, 4, 13, 13, 0, 0, tzinfo=UTC),
         "leaf_hashes": ["b" * 64, "e" * 64],
         "submitted_by": None,
     }
     m = MagicMock()
-    m.__getitem__ = lambda self, k: row[k]
+    m.__getitem__ = lambda _self, k: row[k]
     m.get = lambda k, d=None: row.get(k, d)
     return m
 
@@ -85,7 +85,7 @@ class TestPublicProofEndpoint:
     def test_sandbox_receipt_returns_sandbox_status(self):
         row = {
             "id": FAKE_AUDIT_ID,
-            "timestamp": datetime(2026, 4, 13, 12, 0, 0, tzinfo=timezone.utc),
+            "timestamp": datetime(2026, 4, 13, 12, 0, 0, tzinfo=UTC),
             "action_hash": "b" * 64,
             "merkle_root_id": None,
             "merkle_leaf_index": None,
@@ -93,7 +93,7 @@ class TestPublicProofEndpoint:
             "metadata": {"sandbox": True, "test_request": True},
         }
         m = MagicMock()
-        m.__getitem__ = lambda self, k: row[k]
+        m.__getitem__ = lambda _self, k: row[k]
         m.get = lambda k, d=None: row.get(k, d)
         with patch("api.main.db_pool") as mock_pool:
             conn = AsyncMock()

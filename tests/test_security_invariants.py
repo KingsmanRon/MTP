@@ -1,5 +1,5 @@
 """Focused regressions for backend security invariants."""
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
@@ -43,7 +43,7 @@ def test_api_key_prefix_uses_random_key_material_and_fits_schema():
 
 
 def _agent_record(agent_id, org_id):
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     return AgentRecord(
         id=agent_id,
         org_id=org_id,

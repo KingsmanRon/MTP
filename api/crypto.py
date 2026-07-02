@@ -12,12 +12,13 @@ import hmac
 import json
 import logging
 import secrets
-from datetime import datetime, timezone
-from typing import Any, Iterable, Optional
+from collections.abc import Iterable
+from datetime import UTC, datetime
+from typing import Any
 
+from nacl.encoding import RawEncoder
 from nacl.exceptions import BadSignatureError
 from nacl.signing import VerifyKey
-from nacl.encoding import RawEncoder
 
 from api import jcs
 
@@ -129,9 +130,9 @@ class CryptoService:
                 "Naive datetime passed to action-hash canonicalization; "
                 "assuming UTC. Upstream callers must send tz-aware UTC."
             )
-            ts = ts.replace(tzinfo=timezone.utc)
+            ts = ts.replace(tzinfo=UTC)
         else:
-            ts = ts.astimezone(timezone.utc)
+            ts = ts.astimezone(UTC)
 
         # isoformat() on a UTC datetime yields "+00:00"; swap to "Z" so the
         # canonical form matches the wire timestamp used for receipts.
@@ -318,7 +319,7 @@ class CryptoService:
         Returns:
             Base64-encoded approval token.
         """
-        expiry = datetime.now(timezone.utc).timestamp() + (expiry_minutes * 60)
+        expiry = datetime.now(UTC).timestamp() + (expiry_minutes * 60)
 
         token_data = {
             "agent_id": agent_id,
@@ -342,7 +343,7 @@ class CryptoService:
     def verify_approval_token(
         token_b64: str,
         server_secret: "bytes | Iterable[bytes]",
-    ) -> Optional[dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """
         Verify and decode an approval token.
 
@@ -360,7 +361,7 @@ class CryptoService:
         secrets_list: list[bytes] = (
             [server_secret]
             if isinstance(server_secret, (bytes, bytearray))
-            else [s for s in server_secret]
+            else list(server_secret)
         )
         try:
             combined = base64.b64decode(token_b64)
@@ -384,7 +385,7 @@ class CryptoService:
 
             # Decode and check expiry
             token_data = json.loads(token_bytes.decode("utf-8"))
-            if token_data.get("exp", 0) < datetime.now(timezone.utc).timestamp():
+            if token_data.get("exp", 0) < datetime.now(UTC).timestamp():
                 return None
 
             return token_data

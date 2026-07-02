@@ -1,5 +1,5 @@
 """Tests for F7: attestation vs runtime action type semantics."""
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import uuid4
 
@@ -30,8 +30,8 @@ def _agent(allowed_actions=None, trust_score=50, status=AgentStatus.ACTIVE):
         total_actions_count=0,
         total_blocked_count=0,
         metadata={},
-        created_at=datetime.now(timezone.utc),
-        updated_at=datetime.now(timezone.utc),
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
     )
 
 
@@ -44,7 +44,7 @@ class TestAttestationActions:
             agent=agent,
             action_type="promptfoo_eval",
             payload={},
-            timestamp=datetime.now(timezone.utc),
+            timestamp=datetime.now(UTC),
         )
         assert result.verdict == ActionVerdict.APPROVED, (
             f"Expected APPROVED, got {result.verdict}: {result.reason}"
@@ -57,7 +57,7 @@ class TestAttestationActions:
             agent=agent,
             action_type="repo_change",
             payload={},
-            timestamp=datetime.now(timezone.utc),
+            timestamp=datetime.now(UTC),
         )
         assert result.verdict == ActionVerdict.APPROVED
 
@@ -71,7 +71,7 @@ class TestRuntimeActions:
             agent=agent_low,
             action_type="tool_call",
             payload={},
-            timestamp=datetime.now(timezone.utc),
+            timestamp=datetime.now(UTC),
         )
         assert result.verdict == ActionVerdict.BLOCKED
 
@@ -80,7 +80,7 @@ class TestRuntimeActions:
             agent=agent_ok,
             action_type="tool_call",
             payload={},
-            timestamp=datetime.now(timezone.utc),
+            timestamp=datetime.now(UTC),
         )
         assert result.verdict == ActionVerdict.APPROVED
 
@@ -92,7 +92,7 @@ class TestRuntimeActions:
             agent=agent_low,
             action_type="admin_action",
             payload={},
-            timestamp=datetime.now(timezone.utc),
+            timestamp=datetime.now(UTC),
         )
         assert result.verdict == ActionVerdict.BLOCKED
 
@@ -101,7 +101,7 @@ class TestRuntimeActions:
             agent=agent_ok,
             action_type="admin_action",
             payload={},
-            timestamp=datetime.now(timezone.utc),
+            timestamp=datetime.now(UTC),
         )
         assert result.verdict == ActionVerdict.APPROVED
 
@@ -113,7 +113,7 @@ class TestRuntimeActions:
             agent=agent,
             action_type="data_export",
             payload={},
-            timestamp=datetime.now(timezone.utc),
+            timestamp=datetime.now(UTC),
         )
         assert result.verdict == ActionVerdict.BLOCKED
 
@@ -123,7 +123,7 @@ class TestRuntimeActions:
             agent=_agent(trust_score=79),
             action_type="protected_branch_merge",
             payload={"base_branch": "main"},
-            timestamp=datetime.now(timezone.utc),
+            timestamp=datetime.now(UTC),
         )
         assert result.verdict == ActionVerdict.BLOCKED
 
@@ -131,7 +131,7 @@ class TestRuntimeActions:
             agent=_agent(trust_score=80),
             action_type="protected_branch_merge",
             payload={"base_branch": "main"},
-            timestamp=datetime.now(timezone.utc),
+            timestamp=datetime.now(UTC),
         )
         assert result.verdict == ActionVerdict.APPROVED
 
@@ -141,6 +141,6 @@ class TestRuntimeActions:
             agent=_agent(trust_score=79),
             action_type="production_deployment",
             payload={"environment": "production"},
-            timestamp=datetime.now(timezone.utc),
+            timestamp=datetime.now(UTC),
         )
         assert result.verdict == ActionVerdict.BLOCKED

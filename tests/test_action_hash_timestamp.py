@@ -12,7 +12,7 @@ pydantic v2 and ``api/main.py::canonical_wire_timestamp``.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 
 import pytest
 
@@ -21,11 +21,11 @@ from api.crypto import CryptoError, CryptoService
 
 class TestCanonicalizeTimestamp:
     def test_utc_aware_datetime_uses_z_suffix(self) -> None:
-        dt = datetime(2026, 4, 17, 12, 0, 0, tzinfo=timezone.utc)
+        dt = datetime(2026, 4, 17, 12, 0, 0, tzinfo=UTC)
         assert CryptoService.canonicalize_timestamp(dt) == "2026-04-17T12:00:00Z"
 
     def test_preserves_microseconds(self) -> None:
-        dt = datetime(2026, 4, 17, 12, 0, 0, 123456, tzinfo=timezone.utc)
+        dt = datetime(2026, 4, 17, 12, 0, 0, 123456, tzinfo=UTC)
         assert (
             CryptoService.canonicalize_timestamp(dt)
             == "2026-04-17T12:00:00.123456Z"
@@ -73,7 +73,7 @@ class TestActionHashIsTimezoneIndependent:
         )
 
     def test_same_instant_in_different_forms_hashes_identically(self) -> None:
-        utc_dt = datetime(2026, 4, 17, 12, 0, 0, tzinfo=timezone.utc)
+        utc_dt = datetime(2026, 4, 17, 12, 0, 0, tzinfo=UTC)
         naive_dt = datetime(2026, 4, 17, 12, 0, 0)
         paris_dt = datetime(
             2026, 4, 17, 14, 0, 0, tzinfo=timezone(timedelta(hours=2))
@@ -89,8 +89,8 @@ class TestActionHashIsTimezoneIndependent:
         assert self._hash(offset_string) == canonical
 
     def test_different_instants_hash_differently(self) -> None:
-        a = datetime(2026, 4, 17, 12, 0, 0, tzinfo=timezone.utc)
-        b = datetime(2026, 4, 17, 12, 0, 1, tzinfo=timezone.utc)
+        a = datetime(2026, 4, 17, 12, 0, 0, tzinfo=UTC)
+        b = datetime(2026, 4, 17, 12, 0, 1, tzinfo=UTC)
         assert self._hash(a) != self._hash(b)
 
 
@@ -124,7 +124,7 @@ class TestSigVersion:
         )
 
     def test_default_matches_version_2(self) -> None:
-        ts = datetime(2026, 4, 17, 12, 0, 0, tzinfo=timezone.utc)
+        ts = datetime(2026, 4, 17, 12, 0, 0, tzinfo=UTC)
         assert self._hash(ts) == self._hash(ts, sig_version=2)
 
     def test_legacy_and_current_envelopes_hash_differently_for_offset_tz(
@@ -144,13 +144,13 @@ class TestSigVersion:
         # This test pins the *old* ambiguous behavior so we remember why we
         # added sig_version=2 in the first place. Two representations of
         # the same instant hash differently under sig_version=1.
-        utc_ts = datetime(2026, 4, 17, 12, 0, 0, tzinfo=timezone.utc)
+        utc_ts = datetime(2026, 4, 17, 12, 0, 0, tzinfo=UTC)
         paris_ts = datetime(
             2026, 4, 17, 14, 0, 0, tzinfo=timezone(timedelta(hours=2))
         )
         assert self._hash(utc_ts, sig_version=1) != self._hash(paris_ts, sig_version=1)
 
     def test_unknown_sig_version_raises(self) -> None:
-        ts = datetime(2026, 4, 17, 12, 0, 0, tzinfo=timezone.utc)
+        ts = datetime(2026, 4, 17, 12, 0, 0, tzinfo=UTC)
         with pytest.raises(CryptoError):
             self._hash(ts, sig_version=99)

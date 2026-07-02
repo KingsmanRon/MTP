@@ -12,8 +12,8 @@ models reject:
   into an ``ipaddress.IPv4Address`` object, but ``AuditLogSummary.request_ip``
   expects a ``str``.
 """
+from datetime import UTC, datetime
 from ipaddress import IPv4Address
-from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
@@ -38,7 +38,7 @@ def _acquire_returning(conn):
 
 def test_list_agents_parses_jsonb_metadata_string():
     """metadata returned as a JSON string must be parsed into a dict, not 500."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     agent_row = {
         "id": uuid4(),
         "org_id": ORG_ID,
@@ -81,7 +81,7 @@ def test_list_agents_parses_jsonb_metadata_string():
 
 def test_search_audit_logs_serializes_inet_request_ip():
     """request_ip returned as an IPv4Address must serialize to a string, not 500."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     log_row = {
         "id": uuid4(),
         "agent_id": uuid4(),
@@ -132,7 +132,7 @@ def test_search_audit_logs_surfaces_transaction_hash_when_anchored():
     on "Pending" even after a batch was confirmed on Base. The LEFT JOIN to
     merkle_proofs surfaces transaction_hash / chain_id / block_number per row.
     """
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     tx_hash = "0x" + "ab" * 32  # 66-char Base L2 tx hash
     log_row = {
         "id": uuid4(),

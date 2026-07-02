@@ -6,35 +6,35 @@ All models are strictly typed and validated for forensic-grade operations.
 
 from datetime import datetime
 from decimal import Decimal
-from enum import Enum
-from typing import Any, Optional
+from enum import StrEnum
+from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_validator, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
-class BillingTier(str, Enum):
+class BillingTier(StrEnum):
     FREE = "free"
     STARTER = "starter"
     PROFESSIONAL = "professional"
     ENTERPRISE = "enterprise"
 
 
-class AgentStatus(str, Enum):
+class AgentStatus(StrEnum):
     ACTIVE = "active"
     SUSPENDED = "suspended"
     REVOKED = "revoked"
     PENDING_VERIFICATION = "pending_verification"
 
 
-class ActionVerdict(str, Enum):
+class ActionVerdict(StrEnum):
     APPROVED = "approved"
     BLOCKED = "blocked"
     RATE_LIMITED = "rate_limited"
     SIGNATURE_INVALID = "signature_invalid"
 
 
-class AlertSeverity(str, Enum):
+class AlertSeverity(StrEnum):
     LOW = "low"
     MEDIUM = "medium"
     HIGH = "high"
@@ -101,14 +101,14 @@ class VerifyActionRequest(BaseModel):
         max_length=64,
         description="Unique nonce to prevent replay attacks"
     )
-    
+
     # CRITICAL FIX: Accept timestamp as RAW STRING to prevent parsing mismatch
     # We removed the validator to ensure the string reaches the backend exactly as sent
     timestamp: str = Field(
         ...,
         description="Client-side timestamp (ISO 8601 string)"
     )
-    policy_hash: Optional[str] = Field(
+    policy_hash: str | None = Field(
         None,
         max_length=64,
         description="SHA-256 hash of .inntris.yml policy file"
@@ -195,16 +195,16 @@ class VerifyTokenRequest(BaseModel):
         min_length=1,
         description="Base64 approval token returned by POST /verify",
     )
-    agent_id: Optional[UUID] = Field(
+    agent_id: UUID | None = Field(
         None,
         description="If provided, must match the agent_id embedded in the token",
     )
     # Optional action parameters. When all are provided, the server recomputes
     # the action hash and confirms the token authorizes exactly this action.
-    action_type: Optional[str] = Field(None, max_length=100)
-    payload: Optional[dict[str, Any]] = None
-    nonce: Optional[str] = Field(None, max_length=64)
-    timestamp: Optional[str] = None
+    action_type: str | None = Field(None, max_length=100)
+    payload: dict[str, Any] | None = None
+    nonce: str | None = Field(None, max_length=64)
+    timestamp: str | None = None
     sig_version: int = Field(2, ge=1, le=3)
     consume: bool = Field(
         default=False,
@@ -221,12 +221,12 @@ class VerifyTokenResponse(BaseModel):
     model_config = ConfigDict(strict=False)
 
     valid: bool = Field(..., description="True only if the token is authentic, unexpired, and (if action params supplied) action-bound")
-    reason: Optional[str] = Field(None, description="Why the token was rejected, when invalid")
-    verdict: Optional[str] = Field(None, description="Verdict embedded in the token (e.g. 'approved')")
-    agent_id: Optional[str] = Field(None, description="Agent the token was issued to")
-    action_hash: Optional[str] = Field(None, description="Action hash the token authorizes")
-    expires_at: Optional[datetime] = Field(None, description="Token expiry (UTC)")
-    action_hash_matches: Optional[bool] = Field(
+    reason: str | None = Field(None, description="Why the token was rejected, when invalid")
+    verdict: str | None = Field(None, description="Verdict embedded in the token (e.g. 'approved')")
+    agent_id: str | None = Field(None, description="Agent the token was issued to")
+    action_hash: str | None = Field(None, description="Action hash the token authorizes")
+    expires_at: datetime | None = Field(None, description="Token expiry (UTC)")
+    action_hash_matches: bool | None = Field(
         None,
         description="Whether supplied action params recompute to the token's action hash (null if params not supplied)",
     )
@@ -244,10 +244,10 @@ class VerifyDebugResponse(BaseModel):
     expected_action_hash: str = Field(
         ..., description="Action hash the server verifies the signature against (sign bytes.fromhex of this)"
     )
-    signature_valid: Optional[bool] = Field(
+    signature_valid: bool | None = Field(
         None, description="True/False when the agent exists; null when the agent is not found"
     )
-    public_key_fingerprint: Optional[str] = Field(
+    public_key_fingerprint: str | None = Field(
         None, description="SHA-256 fingerprint of the agent public key checked against"
     )
     note: str = Field(..., description="How to use this diagnostic")
@@ -301,7 +301,7 @@ class RotateAgentKeyRequest(BaseModel):
         max_length=64,
         description="Base64-encoded new Ed25519 public key (32 bytes).",
     )
-    reason: Optional[str] = Field(
+    reason: str | None = Field(
         None,
         max_length=500,
         description="Why the key is being rotated (recorded for audit).",
@@ -313,23 +313,23 @@ class UpdateAgentRequest(BaseModel):
 
     model_config = ConfigDict(strict=False)
 
-    name: Optional[str] = Field(None, min_length=1, max_length=255)
-    daily_limit_usd: Optional[Decimal] = Field(None, ge=0, le=1000000)
-    per_action_limit_usd: Optional[Decimal] = Field(None, ge=0, le=100000)
-    allowed_actions: Optional[list[str]] = Field(None, max_length=100)
-    blocked_actions: Optional[list[str]] = Field(None, max_length=100)
-    rate_limit_per_minute: Optional[int] = Field(None, ge=1, le=10000)
+    name: str | None = Field(None, min_length=1, max_length=255)
+    daily_limit_usd: Decimal | None = Field(None, ge=0, le=1000000)
+    per_action_limit_usd: Decimal | None = Field(None, ge=0, le=100000)
+    allowed_actions: list[str] | None = Field(None, max_length=100)
+    blocked_actions: list[str] | None = Field(None, max_length=100)
+    rate_limit_per_minute: int | None = Field(None, ge=1, le=10000)
     # Operator override for the agent's trust score. The runtime accrues trust
     # automatically (+1 per approval), but operators need a direct lever to
     # promote a vetted agent to a high-trust action (e.g. raise to 80 so it can
     # run protected_branch_merge) or to demote a suspicious one without waiting
     # for behavioral decay.
-    trust_score: Optional[int] = Field(None, ge=0, le=100)
-    metadata: Optional[dict[str, Any]] = None
+    trust_score: int | None = Field(None, ge=0, le=100)
+    metadata: dict[str, Any] | None = None
 
     @field_validator("allowed_actions", "blocked_actions")
     @classmethod
-    def validate_action_lists(cls, values: Optional[list[str]]) -> Optional[list[str]]:
+    def validate_action_lists(cls, values: list[str] | None) -> list[str] | None:
         if values is None:
             return None
 
@@ -432,7 +432,7 @@ class CreateOrganizationRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=255, description="Organization name")
     contact_email: str = Field(..., description="Primary contact email")
     billing_tier: BillingTier = Field(default=BillingTier.FREE, description="Billing tier")
-    webhook_url: Optional[str] = Field(None, description="Webhook URL for notifications")
+    webhook_url: str | None = Field(None, description="Webhook URL for notifications")
 
 
 # =============================================================================
@@ -449,15 +449,15 @@ class VerifyActionResponse(BaseModel):
     model_config = ConfigDict(strict=True)
 
     verdict: ActionVerdict = Field(..., description="The verification verdict")
-    verdict_reason: Optional[str] = Field(None, description="Human-readable reason for the verdict")
-    approval_token: Optional[str] = Field(
+    verdict_reason: str | None = Field(None, description="Human-readable reason for the verdict")
+    approval_token: str | None = Field(
         None,
         description="Signed approval token if verdict is APPROVED"
     )
     trust_score: int = Field(..., ge=0, le=100, description="Current trust score of the agent")
     audit_id: UUID = Field(..., description="Audit log entry ID for this verification")
     timestamp: datetime = Field(..., description="Server timestamp of the verification")
-    limits_remaining: Optional[dict[str, Any]] = Field(
+    limits_remaining: dict[str, Any] | None = Field(
         None,
         description="Remaining limits for the agent"
     )
@@ -473,9 +473,9 @@ class AgentPublicInfo(BaseModel):
     trust_score: int = Field(..., ge=0, le=100, description="Current trust score")
     status: AgentStatus = Field(..., description="Current agent status")
     is_verified: bool = Field(..., description="Whether the agent is verified and active")
-    verified_since: Optional[datetime] = Field(None, description="Date of initial verification")
+    verified_since: datetime | None = Field(None, description="Date of initial verification")
     total_actions: int = Field(..., ge=0, description="Total verified actions")
-    last_action_at: Optional[datetime] = Field(None, description="Timestamp of last action")
+    last_action_at: datetime | None = Field(None, description="Timestamp of last action")
 
 
 class PublicVerificationRecord(BaseModel):
@@ -488,7 +488,7 @@ class PublicVerificationRecord(BaseModel):
 
     # Verdict
     verdict: ActionVerdict = Field(..., description="APPROVED or BLOCKED")
-    verdict_reason: Optional[str] = Field(None, description="Human-readable reason")
+    verdict_reason: str | None = Field(None, description="Human-readable reason")
     action_type: str = Field(..., description="Action type verified")
 
     # Agent info
@@ -498,28 +498,28 @@ class PublicVerificationRecord(BaseModel):
     trust_score: int = Field(..., ge=0, le=100, description="Trust score at time of verification")
 
     # Policy decision
-    risk_level: Optional[str] = Field(None, description="Risk level from payload")
+    risk_level: str | None = Field(None, description="Risk level from payload")
     violations: list[str] = Field(default_factory=list, description="Policy violations if any")
 
     # Policy binding
-    policy_hash: Optional[str] = Field(None, description="SHA-256 hash of policy file at verification time")
+    policy_hash: str | None = Field(None, description="SHA-256 hash of policy file at verification time")
 
     # On-chain proof
     action_hash: str = Field(..., description="SHA-256 hash of the action")
     signature_valid: bool = Field(..., description="Whether Ed25519 signature was valid")
-    signature_b64: Optional[str] = Field(
+    signature_b64: str | None = Field(
         None,
         description="Base64 Ed25519 signature over the action hash, for independent re-verification (null unless a 64-byte signature was supplied)",
     )
-    public_key_b64: Optional[str] = Field(
+    public_key_b64: str | None = Field(
         None,
         description="Base64 Ed25519 public key the signature verifies against",
     )
-    merkle_root: Optional[str] = Field(None, description="Merkle root hash")
-    tx_hash: Optional[str] = Field(None, description="Base L2 transaction hash")
-    block_number: Optional[int] = Field(None, description="Block number on Base L2")
+    merkle_root: str | None = Field(None, description="Merkle root hash")
+    tx_hash: str | None = Field(None, description="Base L2 transaction hash")
+    block_number: int | None = Field(None, description="Block number on Base L2")
     chain_id: int = Field(default=8453, description="Chain ID (Base L2)")
-    anchored_at: Optional[datetime] = Field(None, description="When the proof was anchored on-chain")
+    anchored_at: datetime | None = Field(None, description="When the proof was anchored on-chain")
 
     # Receipt integrity
     schema_version: str = Field(default="v1", description="Receipt schema version")
@@ -540,15 +540,15 @@ class PublicProofResponse(BaseModel):
         default_factory=list,
         description="True = sibling is on the right, False = on the left",
     )
-    merkle_root: Optional[str] = Field(None, description="Merkle root hash of the anchor batch")
-    tx_hash: Optional[str] = Field(None, description="On-chain transaction hash")
-    chain_id: Optional[int] = Field(None, description="Chain ID (8453 for Base Mainnet)")
-    block_number: Optional[int] = Field(None, description="Block number of the anchor transaction")
-    anchored_at: Optional[str] = Field(None, description="ISO 8601 timestamp of on-chain anchor")
-    submitter: Optional[str] = Field(None, description="Wallet address that submitted the Merkle root")
-    receipt_fingerprint: Optional[str] = Field(None, description="SHA-256 receipt fingerprint from the audit log")
-    policy_hash: Optional[str] = Field(None, description="Policy hash bound to this receipt, if any")
-    timestamp: Optional[str] = Field(None, description="ISO 8601 timestamp of the original verification event")
+    merkle_root: str | None = Field(None, description="Merkle root hash of the anchor batch")
+    tx_hash: str | None = Field(None, description="On-chain transaction hash")
+    chain_id: int | None = Field(None, description="Chain ID (8453 for Base Mainnet)")
+    block_number: int | None = Field(None, description="Block number of the anchor transaction")
+    anchored_at: str | None = Field(None, description="ISO 8601 timestamp of on-chain anchor")
+    submitter: str | None = Field(None, description="Wallet address that submitted the Merkle root")
+    receipt_fingerprint: str | None = Field(None, description="SHA-256 receipt fingerprint from the audit log")
+    policy_hash: str | None = Field(None, description="Policy hash bound to this receipt, if any")
+    timestamp: str | None = Field(None, description="ISO 8601 timestamp of the original verification event")
 
 
 class HealthResponse(BaseModel):
@@ -564,8 +564,8 @@ class ErrorResponse(BaseModel):
     """Standard error response."""
     error: str = Field(..., description="Error type")
     message: str = Field(..., description="Human-readable error message")
-    details: Optional[dict[str, Any]] = Field(None, description="Additional error details")
-    request_id: Optional[str] = Field(None, description="Request tracking ID")
+    details: dict[str, Any] | None = Field(None, description="Additional error details")
+    request_id: str | None = Field(None, description="Request tracking ID")
 
 
 # =============================================================================
@@ -589,7 +589,7 @@ class AgentRecord(BaseModel):
     allowed_actions: list[str]
     blocked_actions: list[str]
     rate_limit_per_minute: int
-    last_action_at: Optional[datetime]
+    last_action_at: datetime | None
     total_actions_count: int
     total_blocked_count: int
     metadata: dict[str, Any] = Field(default_factory=dict)
@@ -598,7 +598,7 @@ class AgentRecord(BaseModel):
     # Signing-key rotation (migration 011). Defaults keep older callers and
     # test fixtures that construct AgentRecord without these fields valid.
     key_version: int = 1
-    key_rotated_at: Optional[datetime] = None
+    key_rotated_at: datetime | None = None
 
 
 class RegisteredPolicy(BaseModel):
@@ -642,7 +642,7 @@ class OrganizationRecord(BaseModel):
     name: str
     billing_tier: BillingTier
     contact_email: str
-    webhook_url: Optional[str]
+    webhook_url: str | None
     daily_limit_usd: Decimal
     monthly_limit_usd: Decimal
     metadata: dict[str, Any] = Field(default_factory=dict)
@@ -657,13 +657,13 @@ class AuditLogEntry(BaseModel):
     action_hash: str
     payload: dict[str, Any]
     verdict: ActionVerdict
-    verdict_reason: Optional[str]
+    verdict_reason: str | None
     signature: bytes
     signature_valid: bool
-    request_ip: Optional[str]
-    request_user_agent: Optional[str]
-    response_time_ms: Optional[int]
+    request_ip: str | None
+    request_user_agent: str | None
+    response_time_ms: int | None
     trust_score_at_time: int
-    chain_previous_hash: Optional[str]
-    policy_hash: Optional[str] = None
+    chain_previous_hash: str | None
+    policy_hash: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)

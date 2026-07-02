@@ -4,7 +4,7 @@ The rotation DB path (history insert + in-place key swap) is exercised by the
 RLS integration suite; here we cover the pure pieces that gate the endpoint.
 """
 import base64
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import uuid4
 
@@ -59,8 +59,8 @@ def test_agent_record_key_version_defaults():
         total_actions_count=0,
         total_blocked_count=0,
         metadata={},
-        created_at=datetime.now(timezone.utc),
-        updated_at=datetime.now(timezone.utc),
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
     )
     assert agent.key_version == 1
     assert agent.key_rotated_at is None

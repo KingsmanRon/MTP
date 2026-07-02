@@ -9,6 +9,8 @@ for the design.
 
 from __future__ import annotations
 
+from datetime import UTC
+
 import pytest
 import requests
 
@@ -412,7 +414,7 @@ class TestWorkerHandlesCircuitOpen:
     )
     @pytest.mark.asyncio
     async def test_submit_records_failure_on_circuit_open(self) -> None:
-        from datetime import datetime, timezone
+        from datetime import datetime
         from unittest.mock import AsyncMock
         from uuid import uuid4
 
@@ -421,7 +423,7 @@ class TestWorkerHandlesCircuitOpen:
         worker.blockchain = MagicMock()
         worker.blockchain.get_balance = MagicMock(return_value=1.0)
 
-        async def _raise_open(**kwargs):
+        async def _raise_open(**_kwargs):
             raise RpcCircuitOpenError(
                 "circuit open; retries in 42.0s",
                 cooldown_remaining_seconds=42.0,
@@ -431,7 +433,7 @@ class TestWorkerHandlesCircuitOpen:
         worker._record_failure = AsyncMock()
 
         proof_id = uuid4()
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         # _submit_to_blockchain must NOT let RpcCircuitOpenError propagate
         await worker._submit_to_blockchain(
             proof_id=proof_id,

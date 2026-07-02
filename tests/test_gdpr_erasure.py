@@ -21,7 +21,6 @@ import pytest
 
 from api.erasure import ErasureResult, erase_personal_data, is_row_erased
 
-
 # -----------------------------------------------------------------------------
 # Unit tests — wrapper validation
 # -----------------------------------------------------------------------------
@@ -238,7 +237,9 @@ async def test_integration_erasure_preserves_test_request_flag() -> None:
     """The anchor worker's ``test_request`` filter must keep working after
     erasure — otherwise dev rows would start flowing into Merkle batches
     once they're redacted."""
-    import asyncpg, json
+    import json
+
+    import asyncpg
 
     conn = await asyncpg.connect(os.environ["DATABASE_URL"])
     try:

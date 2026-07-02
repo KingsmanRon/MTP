@@ -18,8 +18,6 @@ import json
 import logging
 from io import StringIO
 
-import pytest
-
 from api.observability import (
     JsonFormatter,
     RequestIdMiddleware,
@@ -27,7 +25,6 @@ from api.observability import (
     current_request_id,
     request_id_var,
 )
-
 
 # -----------------------------------------------------------------------------
 # JsonFormatter
@@ -126,7 +123,7 @@ async def _receive() -> dict:
     return {"type": "http.request", "body": b"", "more_body": False}
 
 
-async def _minimal_app(scope, receive, send):
+async def _minimal_app(_scope, _receive, send):
     # Echo the in-request request ID so we can assert it propagates.
     rid = current_request_id()
     await send({"type": "http.response.start", "status": 200, "headers": []})
@@ -177,7 +174,7 @@ def test_non_http_scope_passes_through() -> None:
     """Websocket / lifespan scopes must not touch request_id_var."""
     called = {"inner": False}
 
-    async def inner_app(scope, receive, send):
+    async def inner_app(_scope, _receive, _send):
         called["inner"] = True
 
     mw = RequestIdMiddleware(inner_app)

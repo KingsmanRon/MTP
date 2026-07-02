@@ -10,10 +10,10 @@ import json
 import logging
 import re
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 from enum import Enum
-from typing import Any, Optional
+from typing import Any
 
 from api.models import ActionVerdict, AgentRecord, AgentStatus, RegisteredPolicy
 
@@ -43,7 +43,7 @@ RISK_RANK = {
 CI_GUARD_ACTIONS = frozenset(RISK_RANK.keys())
 
 def canonical_policy_hash(
-    mapping: Optional[dict[str, list[str]]],
+    mapping: dict[str, list[str]] | None,
     protected_branches: Any,
 ) -> str:
     """Canonical hash of a policy's enforced content (mapping + branches).
@@ -99,7 +99,7 @@ def glob_to_regex(glob: str) -> "re.Pattern[str]":
     return re.compile("^" + "".join(out) + "$")
 
 
-def match_protected_branch(branch: Optional[str], patterns: Any) -> Optional[str]:
+def match_protected_branch(branch: str | None, patterns: Any) -> str | None:
     """Return the matching protected-branch pattern, or None."""
     if not branch or not isinstance(patterns, (list, tuple)):
         return None
@@ -111,8 +111,8 @@ def match_protected_branch(branch: Optional[str], patterns: Any) -> Optional[str
 
 def strongest_required_action_type(
     changed_files: Any,
-    base_ref: Optional[str],
-    mapping: Optional[dict[str, list[str]]],
+    base_ref: str | None,
+    mapping: dict[str, list[str]] | None,
     protected_branches: Any,
 ) -> str:
     """The minimum action type a change requires under the given policy.
@@ -171,9 +171,9 @@ class PolicyResult:
     """Result of policy evaluation."""
     allowed: bool
     verdict: ActionVerdict
-    violation: Optional[PolicyViolation] = None
-    reason: Optional[str] = None
-    limits_remaining: Optional[dict[str, Any]] = None
+    violation: PolicyViolation | None = None
+    reason: str | None = None
+    limits_remaining: dict[str, Any] | None = None
 
 
 class PolicyEngine:
@@ -244,8 +244,8 @@ class PolicyEngine:
         action_type: str,
         payload: dict[str, Any],
         timestamp: datetime,
-        registered_policy: Optional[RegisteredPolicy] = None,
-        client_policy_hash: Optional[str] = None,
+        registered_policy: RegisteredPolicy | None = None,
+        client_policy_hash: str | None = None,
     ) -> PolicyResult:
         """
         Evaluate an action against all applicable policies.
@@ -377,8 +377,8 @@ class PolicyEngine:
         self,
         action_type: str,
         payload: dict[str, Any],
-        registered_policy: Optional[RegisteredPolicy],
-        client_policy_hash: Optional[str],
+        registered_policy: RegisteredPolicy | None,
+        client_policy_hash: str | None,
     ) -> PolicyResult:
         """Bind the request to the agent's registered policy (Tier A).
 
@@ -464,8 +464,8 @@ class PolicyEngine:
 
     def _check_timestamp(self, timestamp: datetime) -> PolicyResult:
         """Check if timestamp is within acceptable range."""
-        now = datetime.now(timezone.utc)
-        ts = timestamp.replace(tzinfo=timezone.utc) if timestamp.tzinfo is None else timestamp
+        now = datetime.now(UTC)
+        ts = timestamp.replace(tzinfo=UTC) if timestamp.tzinfo is None else timestamp
 
         diff = abs((now - ts).total_seconds())
 
@@ -519,7 +519,7 @@ class PolicyEngine:
 
         return PolicyResult(allowed=True, verdict=ActionVerdict.APPROVED)
 
-    def _extract_amount(self, payload: dict[str, Any]) -> Optional[Decimal]:
+    def _extract_amount(self, payload: dict[str, Any]) -> Decimal | None:
         """Extract and validate a transaction amount from the payload.
 
         Returns the amount from the first recognized field (priority order in
@@ -555,7 +555,7 @@ class PolicyEngine:
     def _compute_limits_remaining(
         self,
         agent: AgentRecord,
-        amount: Optional[Decimal],
+        amount: Decimal | None,
     ) -> dict[str, Any]:
         """Compute remaining limits for the agent."""
         new_daily_spend = self.daily_spend

@@ -7,14 +7,15 @@ Uses asyncpg for high-performance async PostgreSQL operations.
 import hashlib
 import json
 import logging
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Any, AsyncGenerator, Optional
+from typing import Any
 from uuid import UUID
 
 import asyncpg
-from asyncpg import Pool, Connection
+from asyncpg import Connection, Pool
 
 from api.models import (
     AgentRecord,
@@ -126,14 +127,13 @@ class Database:
                 hold membership of ``inntris_api`` (operator must run
                 migration 005 and switch DATABASE_URL to ``inntris_worker``).
         """
-        async with self._pool.acquire() as conn:
-            async with conn.transaction():
-                await conn.execute("SET LOCAL ROLE inntris_api")
-                await conn.execute(
-                    "SELECT set_config('app.current_org_id', $1, true)",
-                    str(org_id),
-                )
-                yield conn
+        async with self._pool.acquire() as conn, conn.transaction():
+            await conn.execute("SET LOCAL ROLE inntris_api")
+            await conn.execute(
+                "SELECT set_config('app.current_org_id', $1, true)",
+                str(org_id),
+            )
+            yield conn
 
     async def health_check(self) -> bool:
         """Check database connectivity."""
@@ -242,7 +242,7 @@ class Database:
 
     async def get_active_agent_policy(
         self, agent_id: UUID
-    ) -> Optional[RegisteredPolicy]:
+    ) -> RegisteredPolicy | None:
         """Return the agent's active registered policy, or None.
 
         Read on the /verify path, which runs as ``inntris_worker`` (BYPASSRLS).
@@ -277,7 +277,7 @@ class Database:
         policy_hash: str,
         mapping: dict[str, Any],
         protected_branches: list[str],
-        registered_by: Optional[str] = None,
+        registered_by: str | None = None,
     ) -> RegisteredPolicy:
         """Register (or re-register) an agent's governing policy.
 
@@ -332,8 +332,8 @@ class Database:
         org_id: UUID,
         new_public_key: bytes,
         new_fingerprint: str,
-        retired_by: Optional[str] = None,
-        reason: Optional[str] = None,
+        retired_by: str | None = None,
+        reason: str | None = None,
     ) -> dict[str, Any]:
         """Rotate an agent's Ed25519 signing key in place.
 
@@ -399,8 +399,8 @@ class Database:
         public_key: bytes,
         daily_limit_usd: Decimal = Decimal("100.00"),
         per_action_limit_usd: Decimal = Decimal("50.00"),
-        allowed_actions: Optional[list[str]] = None,
-        metadata: Optional[dict[str, Any]] = None,
+        allowed_actions: list[str] | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> UUID:
         """
         Register a new agent.
@@ -547,7 +547,7 @@ class Database:
         contact_email: str,
         api_key_hash: bytes,
         billing_tier: str = "free",
-        webhook_url: Optional[str] = None,
+        webhook_url: str | None = None,
     ) -> UUID:
         """Create a new organization."""
         query = """
@@ -617,29 +617,28 @@ class Database:
                 )
                 RETURNING id
             """
-            async with self.acquire() as conn:
-                async with conn.transaction():
-                    await conn.execute(
-                        "SELECT pg_advisory_xact_lock(hashtext($1)::bigint)",
-                        str(entry.agent_id),
-                    )
-                    log_id = await conn.fetchval(
-                        query,
-                        entry.agent_id,
-                        entry.action_type,
-                        entry.action_hash,
-                        json.dumps(entry.payload),
-                        entry.verdict.value,
-                        entry.verdict_reason,
-                        entry.signature,
-                        entry.signature_valid,
-                        entry.request_ip,
-                        entry.request_user_agent,
-                        entry.response_time_ms,
-                        entry.trust_score_at_time,
-                        entry.policy_hash,
-                        json.dumps(entry.metadata),
-                    )
+            async with self.acquire() as conn, conn.transaction():
+                await conn.execute(
+                    "SELECT pg_advisory_xact_lock(hashtext($1)::bigint)",
+                    str(entry.agent_id),
+                )
+                log_id = await conn.fetchval(
+                    query,
+                    entry.agent_id,
+                    entry.action_type,
+                    entry.action_hash,
+                    json.dumps(entry.payload),
+                    entry.verdict.value,
+                    entry.verdict_reason,
+                    entry.signature,
+                    entry.signature_valid,
+                    entry.request_ip,
+                    entry.request_user_agent,
+                    entry.response_time_ms,
+                    entry.trust_score_at_time,
+                    entry.policy_hash,
+                    json.dumps(entry.metadata),
+                )
             return log_id
 
         query = """
@@ -674,7 +673,7 @@ class Database:
 
         return log_id
 
-    async def get_last_audit_hash(self, agent_id: UUID) -> Optional[str]:
+    async def get_last_audit_hash(self, agent_id: UUID) -> str | None:
         """Get the hash of the last audit log entry for chain linking."""
         query = """
             SELECT action_hash
@@ -780,7 +779,7 @@ class Database:
 
     async def get_daily_spend(self, agent_id: UUID) -> Decimal:
         """Get total spend for an agent today."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
 
         query = """
@@ -816,10 +815,9 @@ class Database:
         Returns ``(minute_count, daily_spend)`` reflecting the counters after
         this request is included.
         """
-        async with self.acquire() as conn:
-            async with conn.transaction():
-                minute_count = await conn.fetchval(
-                    """
+        async with self.acquire() as conn, conn.transaction():
+            minute_count = await conn.fetchval(
+                """
                     INSERT INTO rate_limit_windows (
                         agent_id, window_type, window_start, request_count, amount_usd
                     )
@@ -828,14 +826,14 @@ class Database:
                     DO UPDATE SET request_count = rate_limit_windows.request_count + 1
                     RETURNING request_count
                     """,
-                    agent_id,
-                    minute_start,
-                )
-                if minute_count > rate_limit_per_minute:
-                    raise LimitReservationError("rate", minute_count)
+                agent_id,
+                minute_start,
+            )
+            if minute_count > rate_limit_per_minute:
+                raise LimitReservationError("rate", minute_count)
 
-                daily_spend = await conn.fetchval(
-                    """
+            daily_spend = await conn.fetchval(
+                """
                     INSERT INTO rate_limit_windows (
                         agent_id, window_type, window_start, request_count, amount_usd
                     )
@@ -846,14 +844,14 @@ class Database:
                         amount_usd = rate_limit_windows.amount_usd + $3
                     RETURNING amount_usd
                     """,
-                    agent_id,
-                    day_start,
-                    amount,
-                )
-                if daily_spend > daily_limit_usd:
-                    raise LimitReservationError("daily", daily_spend)
+                agent_id,
+                day_start,
+                amount,
+            )
+            if daily_spend > daily_limit_usd:
+                raise LimitReservationError("daily", daily_spend)
 
-                return minute_count, daily_spend
+            return minute_count, daily_spend
 
     # =========================================================================
     # MERKLE PROOF OPERATIONS
@@ -896,11 +894,11 @@ class Database:
         self,
         proof_id: UUID,
         status: str,
-        transaction_hash: Optional[str] = None,
-        block_number: Optional[int] = None,
-        gas_used: Optional[int] = None,
-        gas_price_gwei: Optional[Decimal] = None,
-        error_message: Optional[str] = None,
+        transaction_hash: str | None = None,
+        block_number: int | None = None,
+        gas_used: int | None = None,
+        gas_price_gwei: Decimal | None = None,
+        error_message: str | None = None,
     ) -> None:
         """Update merkle proof status after blockchain submission."""
         query = """
@@ -954,10 +952,10 @@ class Database:
         severity: str,
         title: str,
         description: str,
-        agent_id: Optional[UUID] = None,
-        org_id: Optional[UUID] = None,
-        evidence: Optional[dict[str, Any]] = None,
-        audit_log_ids: Optional[list[UUID]] = None,
+        agent_id: UUID | None = None,
+        org_id: UUID | None = None,
+        evidence: dict[str, Any] | None = None,
+        audit_log_ids: list[UUID] | None = None,
     ) -> UUID:
         """Create a high-priority security alert."""
         query = """

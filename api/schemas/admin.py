@@ -8,21 +8,20 @@ Fields remain Optional where the column is nullable or the data is derived/joine
 
 from __future__ import annotations
 
-from datetime import datetime
-from enum import Enum
-from typing import Any, Optional
+from enum import StrEnum
+from typing import Any
 
 from pydantic import BaseModel, Field
 
 
-class ActionVerdict(str, Enum):
+class ActionVerdict(StrEnum):
     approved = "approved"
     blocked = "blocked"
     rate_limited = "rate_limited"
     signature_invalid = "signature_invalid"
 
 
-class AgentStatus(str, Enum):
+class AgentStatus(StrEnum):
     active = "active"
     suspended = "suspended"
     revoked = "revoked"
@@ -34,99 +33,99 @@ class OrganizationResponse(BaseModel):
     name: str
     billing_tier: str
     contact_email: str
-    webhook_url: Optional[str] = None
+    webhook_url: str | None = None
     daily_limit_usd: float
     monthly_limit_usd: float
-    metadata: Optional[dict[str, Any]] = None
+    metadata: dict[str, Any] | None = None
     created_at: str
-    updated_at: Optional[str] = None
+    updated_at: str | None = None
 
 
 class AgentSummary(BaseModel):
     id: str
-    org_id: Optional[str] = None
+    org_id: str | None = None
     name: str
     status: AgentStatus | str
-    public_key_fingerprint: Optional[str] = None
+    public_key_fingerprint: str | None = None
     trust_score: int = Field(..., ge=0, le=100)
     daily_limit_usd: float
     per_action_limit_usd: float
-    allowed_actions: Optional[list[str]] = None
-    blocked_actions: Optional[list[str]] = None
+    allowed_actions: list[str] | None = None
+    blocked_actions: list[str] | None = None
     rate_limit_per_minute: int
-    last_action_at: Optional[str] = None
+    last_action_at: str | None = None
     total_actions_count: int
     total_blocked_count: int
-    metadata: Optional[dict[str, Any]] = None
+    metadata: dict[str, Any] | None = None
     created_at: str
-    updated_at: Optional[str] = None
+    updated_at: str | None = None
 
 
 class PolicyRule(BaseModel):
-    rule_id: Optional[str] = None
-    description: Optional[str] = None
-    action: Optional[str] = None
+    rule_id: str | None = None
+    description: str | None = None
+    action: str | None = None
 
 
 class Policy(BaseModel):
-    policy_id: Optional[str] = None
-    name: Optional[str] = None
-    rules: Optional[list[PolicyRule]] = None
-    created_at: Optional[str] = None
-    raw: Optional[dict[str, Any]] = None
+    policy_id: str | None = None
+    name: str | None = None
+    rules: list[PolicyRule] | None = None
+    created_at: str | None = None
+    raw: dict[str, Any] | None = None
 
 
 class AgentDetail(BaseModel):
     id: str
-    org_id: Optional[str] = None
+    org_id: str | None = None
     name: str
     status: AgentStatus | str
-    public_key_fingerprint: Optional[str] = None
+    public_key_fingerprint: str | None = None
     trust_score: int = Field(..., ge=0, le=100)
     daily_limit_usd: float
     per_action_limit_usd: float
-    allowed_actions: Optional[list[str]] = None
-    blocked_actions: Optional[list[str]] = None
+    allowed_actions: list[str] | None = None
+    blocked_actions: list[str] | None = None
     rate_limit_per_minute: int
-    last_action_at: Optional[str] = None
+    last_action_at: str | None = None
     total_actions_count: int
     total_blocked_count: int
-    policy: Optional[Policy] = None
-    metadata: Optional[dict[str, Any]] = None
+    policy: Policy | None = None
+    metadata: dict[str, Any] | None = None
     created_at: str
-    updated_at: Optional[str] = None
+    updated_at: str | None = None
     key_version: int = 1
-    key_rotated_at: Optional[str] = None
+    key_rotated_at: str | None = None
 
 
 class AuditLogSummary(BaseModel):
     id: str
     agent_id: str
-    agent_name: Optional[str] = None
+    agent_name: str | None = None
     timestamp: str
     action_type: str
     action_hash: str
-    payload: Optional[dict[str, Any]] = None
+    payload: dict[str, Any] | None = None
     verdict: ActionVerdict | str
-    verdict_reason: Optional[str] = None
+    verdict_reason: str | None = None
     signature_valid: bool
-    request_ip: Optional[str] = None
-    request_user_agent: Optional[str] = None
-    response_time_ms: Optional[int] = None
+    request_ip: str | None = None
+    request_user_agent: str | None = None
+    response_time_ms: int | None = None
     trust_score_at_time: int
-    risk_level: Optional[str] = None
-    violations: Optional[list[str]] = None
-    merkle_root_id: Optional[str] = None
-    merkle_leaf_index: Optional[int] = None
+    risk_level: str | None = None
+    violations: list[str] | None = None
+    merkle_root_id: str | None = None
+    merkle_leaf_index: int | None = None
     # On-chain anchor fields, joined from merkle_proofs. ``transaction_hash`` is
     # what the admin UI keys its "Anchored / Pending" badge on; ``tx_hash`` is a
     # legacy alias carrying the same value. NULL until the batch is anchored.
-    transaction_hash: Optional[str] = None
-    tx_hash: Optional[str] = None
-    chain_id: Optional[int] = None
-    block_number: Optional[int] = None
-    policy_hash: Optional[str] = None
-    metadata: Optional[dict[str, Any]] = None
+    transaction_hash: str | None = None
+    tx_hash: str | None = None
+    chain_id: int | None = None
+    block_number: int | None = None
+    policy_hash: str | None = None
+    metadata: dict[str, Any] | None = None
 
 
 class AuditSearchResponse(BaseModel):
@@ -139,37 +138,37 @@ class AuditSearchResponse(BaseModel):
 class AuditLogDetail(BaseModel):
     id: str
     agent_id: str
-    agent_name: Optional[str] = None
+    agent_name: str | None = None
     timestamp: str
     action_type: str
     action_hash: str
-    payload: Optional[dict[str, Any]] = None
+    payload: dict[str, Any] | None = None
     verdict: ActionVerdict | str
-    verdict_reason: Optional[str] = None
+    verdict_reason: str | None = None
     signature_valid: bool
-    request_ip: Optional[str] = None
-    request_user_agent: Optional[str] = None
-    response_time_ms: Optional[int] = None
+    request_ip: str | None = None
+    request_user_agent: str | None = None
+    response_time_ms: int | None = None
     trust_score_at_time: int
-    policy_rule_triggered: Optional[str] = None
-    risk_level: Optional[str] = None
-    violations: Optional[list[str]] = None
-    merkle_root_id: Optional[str] = None
-    merkle_leaf_index: Optional[int] = None
-    policy_hash: Optional[str] = None
-    metadata: Optional[dict[str, Any]] = None
+    policy_rule_triggered: str | None = None
+    risk_level: str | None = None
+    violations: list[str] | None = None
+    merkle_root_id: str | None = None
+    merkle_leaf_index: int | None = None
+    policy_hash: str | None = None
+    metadata: dict[str, Any] | None = None
 
 
 class AuditProof(BaseModel):
-    status: Optional[str] = None
-    leaf: Optional[str] = None
-    proof: Optional[list[str]] = None
-    positions: Optional[list[bool]] = None
-    merkle_root: Optional[str] = None
-    tx_hash: Optional[str] = None
-    block_number: Optional[int] = None
-    anchored_at: Optional[str] = None
-    chain_id: Optional[int] = None
-    basescan_url: Optional[str] = None
-    error_message: Optional[str] = None
-    metadata: Optional[dict[str, Any]] = None
+    status: str | None = None
+    leaf: str | None = None
+    proof: list[str] | None = None
+    positions: list[bool] | None = None
+    merkle_root: str | None = None
+    tx_hash: str | None = None
+    block_number: int | None = None
+    anchored_at: str | None = None
+    chain_id: int | None = None
+    basescan_url: str | None = None
+    error_message: str | None = None
+    metadata: dict[str, Any] | None = None

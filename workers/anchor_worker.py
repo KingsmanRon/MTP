@@ -18,16 +18,17 @@ import os
 import signal
 import socket
 import sys
-from datetime import datetime, timedelta, timezone
+from collections.abc import Callable
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from typing import Any, Callable, Optional, TypeVar
+from typing import Any, TypeVar
 from urllib.parse import urlsplit, urlunsplit
 from uuid import UUID
 
 import asyncpg
-from web3 import Web3
 from eth_account import Account
 from eth_account.signers.local import LocalAccount
+from web3 import Web3
 
 from workers.circuit_breaker import RpcCircuitBreaker, RpcCircuitOpenError
 
@@ -344,11 +345,8 @@ class BlockchainService:
         self.assert_chain_id()
 
         # Ensure 0x prefix for Web3, but input might be raw hex
-        if not merkle_root.startswith("0x"):
-            merkle_root_hex = "0x" + merkle_root
-        else:
-            merkle_root_hex = merkle_root
-            
+        merkle_root_hex = merkle_root if merkle_root.startswith("0x") else "0x" + merkle_root
+
         root_bytes = bytes.fromhex(merkle_root_hex[2:]) # Strip 0x for bytes conversion
 
         start_unix = int(start_timestamp.timestamp())
@@ -417,11 +415,11 @@ class BlockchainService:
             "status": "confirmed" if receipt["status"] == 1 else "failed",
         }
 
-    def verify_batch_anchored(self, merkle_root: str) -> Optional[dict[str, Any]]:
+    def verify_batch_anchored(self, merkle_root: str) -> dict[str, Any] | None:
         # Ensure clean hex for bytes conversion
         if merkle_root.startswith("0x"):
             merkle_root = merkle_root[2:]
-            
+
         root_bytes = bytes.fromhex(merkle_root)
 
         try:
@@ -434,7 +432,7 @@ class BlockchainService:
             return {
                 "batch_id": batch_id,
                 "log_count": log_count,
-                "timestamp": datetime.fromtimestamp(timestamp, tz=timezone.utc),
+                "timestamp": datetime.fromtimestamp(timestamp, tz=UTC),
                 "submitter": submitter,
             }
         except Exception as e:
@@ -530,12 +528,12 @@ class DatabaseService:
         self,
         proof_id: UUID,
         status: str,
-        transaction_hash: Optional[str] = None,
-        block_number: Optional[int] = None,
-        gas_used: Optional[int] = None,
-        gas_price_gwei: Optional[Decimal] = None,
-        error_message: Optional[str] = None,
-        next_retry_at: Optional[datetime] = None,
+        transaction_hash: str | None = None,
+        block_number: int | None = None,
+        gas_used: int | None = None,
+        gas_price_gwei: Decimal | None = None,
+        error_message: str | None = None,
+        next_retry_at: datetime | None = None,
     ):
         # $2::varchar avoids asyncpg "could not determine data type" errors.
         # When status='failed', the worker has already computed next_retry_at
@@ -663,7 +661,7 @@ class AnchorWorker:
                     timeout=self.interval_seconds,
                 )
                 break
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 pass
 
         logger.info("Anchor worker stopped")
@@ -806,7 +804,7 @@ class AnchorWorker:
             return
 
         backoff = compute_retry_backoff(next_retry_count)
-        next_retry_at = datetime.now(timezone.utc) + backoff
+        next_retry_at = datetime.now(UTC) + backoff
         logger.warning(
             f"Proof {proof_id} failed (attempt {next_retry_count}/{MAX_RETRIES}). "
             f"Next retry at {next_retry_at.isoformat()} ({backoff})."
@@ -915,7 +913,7 @@ async def main():
     worker = AnchorWorker(db_service, blockchain_service)
 
     # Handle shutdown signals
-    def signal_handler(sig, frame):
+    def signal_handler(sig, _frame):
         logger.info(f"Received signal {sig}, initiating shutdown...")
         asyncio.create_task(worker.stop())
 

@@ -10,7 +10,7 @@ These cover the integrator-onboarding path:
   human ``detail`` string for back-compat and still recording the forensic row.
 """
 import base64
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
@@ -29,7 +29,7 @@ client = TestClient(app)
 
 
 def _agent_record(agent_id, org_id, public_key: bytes):
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     return AgentRecord(
         id=agent_id,
         org_id=org_id,

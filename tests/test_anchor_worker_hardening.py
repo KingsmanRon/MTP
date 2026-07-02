@@ -29,13 +29,14 @@ import pytest
 
 web3 = pytest.importorskip("web3")  # whole module depends on eth stack
 
+from datetime import UTC  # noqa: E402
+
 from workers import anchor_worker  # noqa: E402
 from workers.anchor_worker import (  # noqa: E402
     BlockchainService,
     DatabaseService,
     normalize_transaction_hash,
 )
-
 
 # -----------------------------------------------------------------------------
 # 0. Transaction hash database format
@@ -150,10 +151,10 @@ def test_assert_chain_id_raises_on_mismatch() -> None:
 def test_gas_price_cap_default_is_conservative() -> None:
     # If someone bumps the default to, say, 500 gwei "to avoid alerts,"
     # the cap stops protecting against a runaway oracle. Pin the default.
-    assert anchor_worker.MAX_GAS_PRICE_GWEI == Decimal("50")
+    assert Decimal("50") == anchor_worker.MAX_GAS_PRICE_GWEI
 
 
-def test_anchor_batch_refuses_excessive_gas_price(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_anchor_batch_refuses_excessive_gas_price() -> None:
     """A gas price above the cap must raise before any tx is submitted."""
     # 100 gwei = 100 * 10^9 wei, exceeds default cap of 50 gwei.
     svc = _build_service(
@@ -170,14 +171,14 @@ def test_anchor_batch_refuses_excessive_gas_price(monkeypatch: pytest.MonkeyPatc
 
     # Drive anchor_batch synchronously via asyncio to exercise the raise path.
     import asyncio
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     async def _run() -> None:
         await svc.anchor_batch(
             merkle_root="00" * 32,
             log_count=1,
-            start_timestamp=datetime.now(timezone.utc),
-            end_timestamp=datetime.now(timezone.utc),
+            start_timestamp=datetime.now(UTC),
+            end_timestamp=datetime.now(UTC),
         )
 
     with pytest.raises(RuntimeError, match="exceeds cap"):
@@ -214,14 +215,14 @@ def test_anchor_batch_returns_database_formatted_transaction_hash() -> None:
     svc.w3.eth.account.sign_transaction = MagicMock(return_value=signed_tx)
 
     import asyncio
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     result = asyncio.run(
         svc.anchor_batch(
             merkle_root="00" * 32,
             log_count=1,
-            start_timestamp=datetime.now(timezone.utc),
-            end_timestamp=datetime.now(timezone.utc),
+            start_timestamp=datetime.now(UTC),
+            end_timestamp=datetime.now(UTC),
         )
     )
 

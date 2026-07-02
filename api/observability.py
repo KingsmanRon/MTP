@@ -24,7 +24,7 @@ import json
 import logging
 import uuid
 from contextvars import ContextVar
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -82,7 +82,7 @@ class JsonFormatter(logging.Formatter):
 
     def format(self, record: logging.LogRecord) -> str:
         payload: dict[str, Any] = {
-            "ts": datetime.fromtimestamp(record.created, tz=timezone.utc).isoformat(),
+            "ts": datetime.fromtimestamp(record.created, tz=UTC).isoformat(),
             "level": record.levelname,
             "logger": record.name,
             "msg": record.getMessage(),
@@ -133,16 +133,16 @@ class _NoopMetric:
     ``_HAS_PROMETHEUS`` at every increment.
     """
 
-    def labels(self, *a: Any, **kw: Any) -> "_NoopMetric":
+    def labels(self, *_a: Any, **_kw: Any) -> _NoopMetric:
         return self
 
-    def inc(self, amount: float = 1.0) -> None:
+    def inc(self, _amount: float = 1.0) -> None:
         return None
 
-    def observe(self, amount: float) -> None:
+    def observe(self, _amount: float) -> None:
         return None
 
-    def set(self, value: float) -> None:
+    def set(self, _value: float) -> None:
         return None
 
 
