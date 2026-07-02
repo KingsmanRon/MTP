@@ -259,13 +259,13 @@ export default async function InntrisCoreDarkPreview() {
               One control plane. Four modules.
             </h2>
           </div>
-          <div className="grid grid-cols-2 gap-x-5 md:grid-cols-4">
-            <div className="col-span-2 mb-2">
+          <div className="grid grid-cols-1 gap-x-5 sm:grid-cols-2 md:grid-cols-4">
+            <div className="hidden sm:col-span-2 sm:mb-2 sm:block">
               <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#4A6FA5]">
                 Operate
               </span>
             </div>
-            <div className="col-span-2 mb-2">
+            <div className="hidden sm:col-span-2 sm:mb-2 sm:block">
               <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#4A6FA5]">
                 Prove
               </span>
