@@ -66,11 +66,11 @@ function DialogContent({ children, className }: { children: React.ReactNode; cla
         className="fixed inset-0 bg-black/80 animate-in fade-in-0"
         onClick={() => setOpen(false)}
       />
-      {/* Content */}
-      <div className="fixed left-[50%] top-[50%] z-50 translate-x-[-50%] translate-y-[-50%]">
+      {/* Content — capped to the viewport so tall dialogs scroll on phones */}
+      <div className="fixed left-[50%] top-[50%] z-50 w-[calc(100vw-2rem)] max-w-lg translate-x-[-50%] translate-y-[-50%]">
         <div
           className={cn(
-            "w-full max-w-lg rounded-lg border bg-background p-6 shadow-lg animate-in fade-in-0 zoom-in-95",
+            "relative max-h-[85vh] w-full overflow-y-auto rounded-lg border bg-background p-6 shadow-lg animate-in fade-in-0 zoom-in-95",
             className
           )}
         >

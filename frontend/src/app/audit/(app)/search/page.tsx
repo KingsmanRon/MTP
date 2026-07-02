@@ -59,14 +59,14 @@ export default function AuditSearchPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-3xl font-bold">Audit Explorer</h1>
+          <h1 className="text-2xl font-bold sm:text-3xl">Audit Explorer</h1>
           <p className="text-muted-foreground">
             Forensic-grade verification logs anchored on Base L2
           </p>
         </div>
-        <Button variant="outline">
+        <Button variant="outline" className="self-start sm:self-auto">
           <Download className="h-4 w-4 mr-2" />
           Export Evidence
         </Button>

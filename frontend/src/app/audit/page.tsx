@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { InntrisLogo } from "@/components/inntris-logo";
 import { AuthRedirectBanner } from "@/components/auth-redirect-banner";
+import { MobileMenu } from "@/components/mobile-menu";
 
 /* ------------------------------------------------------------------ */
 /*  Curated preview data                                               */
@@ -79,6 +80,14 @@ export default function AuditPreviewPage() {
             <Link href="/verify" className="text-[#C4CFDE] transition hover:text-white">Verify</Link>
             <Link href="/docs" className="text-[#C4CFDE] transition hover:text-white">Docs</Link>
           </nav>
+          <MobileMenu
+            links={[
+              { href: "/admin", label: "Console" },
+              { href: "/portal", label: "Portal" },
+              { href: "/verify", label: "Verify" },
+              { href: "/docs", label: "Docs" },
+            ]}
+          />
         </div>
       </header>
 

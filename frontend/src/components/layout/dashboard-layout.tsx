@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Sidebar } from "./sidebar";
 import { useTheme } from "next-themes";
-import { Sun, Moon, LogOut } from "lucide-react";
+import { Sun, Moon, LogOut, Menu, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 interface DashboardLayoutProps {
@@ -16,6 +16,7 @@ export function DashboardLayout({ children, variant }: DashboardLayoutProps) {
   const router = useRouter();
   const { theme, setTheme } = useTheme();
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   // Check for session on mount
   useEffect(() => {
@@ -64,11 +65,46 @@ export function DashboardLayout({ children, variant }: DashboardLayoutProps) {
 
   return (
     <div className="flex h-screen bg-background">
-      <Sidebar variant={variant} />
+      {/* Desktop sidebar; on phones it lives in the drawer below. */}
+      <div className="hidden md:block">
+        <Sidebar variant={variant} />
+      </div>
+
+      {/* Mobile drawer */}
+      {mobileNavOpen && (
+        <div className="fixed inset-0 z-50 md:hidden">
+          <div
+            className="absolute inset-0 bg-black/60"
+            onClick={() => setMobileNavOpen(false)}
+            aria-hidden="true"
+          />
+          <div className="absolute inset-y-0 left-0 shadow-xl">
+            <Sidebar variant={variant} onNavigate={() => setMobileNavOpen(false)} />
+          </div>
+          <button
+            onClick={() => setMobileNavOpen(false)}
+            aria-label="Close navigation"
+            className="absolute left-[17rem] top-3 flex h-10 w-10 items-center justify-center rounded-md bg-card text-foreground"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+      )}
+
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Top bar */}
-        <header className="h-14 border-b bg-card flex items-center justify-between px-6">
-          <div />
+        <header className="h-14 border-b bg-card flex items-center justify-between px-4 sm:px-6">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="md:hidden"
+            onClick={() => setMobileNavOpen(true)}
+            title="Open navigation"
+          >
+            <Menu className="h-5 w-5" />
+            <span className="sr-only">Open navigation</span>
+          </Button>
+          <div className="hidden md:block" />
           <div className="flex items-center gap-2">
             <Button
               variant="ghost"
@@ -92,7 +128,7 @@ export function DashboardLayout({ children, variant }: DashboardLayoutProps) {
           </div>
         </header>
         {/* Main content */}
-        <main className="flex-1 overflow-y-auto p-6">{children}</main>
+        <main className="flex-1 overflow-y-auto p-4 sm:p-6">{children}</main>
       </div>
     </div>
   );

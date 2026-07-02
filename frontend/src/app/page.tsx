@@ -3,6 +3,7 @@ import Link from "next/link";
 import { LayoutDashboard, Bot, SearchCheck, Globe, KeyRound, Lock, FileCheck2, ChevronRight, CheckCircle2, XOctagon } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { InntrisLogo } from "@/components/inntris-logo";
+import { MobileMenu } from "@/components/mobile-menu";
 import ContactSection from "@/components/contact-section";
 import { ReceiptIdCopy } from "@/components/receipt-id-copy";
 import { LandingHash } from "@/components/landing-hash";
@@ -141,6 +142,16 @@ export default async function InntrisCoreDarkPreview() {
             >
               Scope a Pilot
             </Link>
+            <MobileMenu
+              links={[
+                { href: "/#overview", label: "Overview" },
+                { href: "/#modules", label: "Modules" },
+                { href: "/pilot", label: "14-day Pilot" },
+                { href: "/docs", label: "Docs" },
+                { href: "/verify", label: "Verify" },
+              ]}
+              cta={{ href: "/pilot", label: "Scope a Pilot" }}
+            />
           </div>
         </div>
       </header>
@@ -197,14 +208,16 @@ export default async function InntrisCoreDarkPreview() {
                 See live verification
               </a>
             </div>
-            <div className="grid grid-cols-2 md:grid-cols-4 divide-x divide-[#22314D] border-t border-[#22314D] pt-7">
+            {/* Dividers only when all four stats share a row; stacked 2x2 on
+                phones the divide-x borders land in odd places. */}
+            <div className="grid grid-cols-2 gap-y-6 border-t border-[#22314D] pt-7 md:grid-cols-4 md:gap-y-0 md:divide-x md:divide-[#22314D]">
               {[
                 { value: "<100ms", label: "Verification latency" },
                 { value: "Ed25519", label: "Signing algorithm" },
                 { value: "Base L2", label: "Audit anchor" },
                 { value: "Fail-closed", label: "Default policy mode" },
               ].map(({ value, label }) => (
-                <div key={label} className="px-5 first:pl-0">
+                <div key={label} className="pr-4 md:px-5 md:first:pl-0">
                   <p className="text-lg font-semibold font-mono text-[#F5F7FB] mb-1">
                     {value}
                   </p>

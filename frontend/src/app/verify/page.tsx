@@ -15,6 +15,7 @@ import {
   ChevronRight,
 } from "lucide-react";
 import { InntrisLogo } from "@/components/inntris-logo";
+import { MobileMenu } from "@/components/mobile-menu";
 
 const features = [
   {
@@ -74,6 +75,14 @@ export default function VerifyLandingPage() {
             <Link href="/audit" className="text-[#C4CFDE] transition hover:text-white">Audit</Link>
             <Link href="/docs" className="text-[#C4CFDE] transition hover:text-white">Docs</Link>
           </nav>
+          <MobileMenu
+            links={[
+              { href: "/admin", label: "Console" },
+              { href: "/portal", label: "Portal" },
+              { href: "/audit", label: "Audit" },
+              { href: "/docs", label: "Docs" },
+            ]}
+          />
         </div>
       </header>
 

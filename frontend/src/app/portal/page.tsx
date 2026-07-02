@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { InntrisLogo } from "@/components/inntris-logo";
 import { AuthRedirectBanner } from "@/components/auth-redirect-banner";
+import { MobileMenu } from "@/components/mobile-menu";
 
 /* ------------------------------------------------------------------ */
 /*  Page (Server Component — SSR public preview shell)                 */
@@ -40,6 +41,14 @@ export default function PortalPreviewPage() {
             <Link href="/verify" className="text-[#C4CFDE] transition hover:text-white">Verify</Link>
             <Link href="/docs" className="text-[#C4CFDE] transition hover:text-white">Docs</Link>
           </nav>
+          <MobileMenu
+            links={[
+              { href: "/admin", label: "Console" },
+              { href: "/audit", label: "Audit" },
+              { href: "/verify", label: "Verify" },
+              { href: "/docs", label: "Docs" },
+            ]}
+          />
         </div>
       </header>
 

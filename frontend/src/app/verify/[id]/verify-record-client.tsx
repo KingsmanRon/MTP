@@ -602,7 +602,7 @@ export function VerifyRecordView({ record }: { record: PublicVerificationRecord 
             </div>
 
             {/* Grid: block, chain, anchored */}
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
               <div className="rounded-2xl border border-white/6 bg-[#101C31]/70 p-4">
                 <p className="text-xs text-[#7F8CA3] mb-1">Block</p>
                 <p className="text-sm font-mono text-[#F5F7FB]">

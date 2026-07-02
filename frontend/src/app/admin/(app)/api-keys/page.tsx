@@ -97,14 +97,14 @@ export default function APIKeysPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-3xl font-bold">API Keys</h1>
+          <h1 className="text-2xl font-bold sm:text-3xl">API Keys</h1>
           <p className="text-muted-foreground">
             Manage API keys for accessing the Inntris API
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Button variant="outline" onClick={() => setShowRotateDialog(true)}>
             <RefreshCw className="h-4 w-4 mr-2" />
             Rotate All

@@ -117,9 +117,9 @@ export default function PortalDashboard() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-3xl font-bold">Agent Dashboard</h1>
+          <h1 className="text-2xl font-bold sm:text-3xl">Agent Dashboard</h1>
           <p className="text-muted-foreground">
             Real-time overview of your agent&apos;s activity and limits
           </p>

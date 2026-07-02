@@ -19,6 +19,8 @@ import { useState } from "react";
 
 interface SidebarProps {
   variant: "admin" | "portal" | "audit";
+  /** Set when rendered inside the mobile drawer: closes the drawer on link click. */
+  onNavigate?: () => void;
 }
 
 const navItems = {
@@ -48,33 +50,39 @@ const titles = {
   audit: "Audit Explorer",
 };
 
-export function Sidebar({ variant }: SidebarProps) {
+export function Sidebar({ variant, onNavigate }: SidebarProps) {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
   const items = navItems[variant];
   const title = titles[variant];
+  // Inside the mobile drawer the backdrop handles closing, so the
+  // collapse toggle would only waste tap space.
+  const collapsible = !onNavigate;
 
   return (
     <aside
       className={cn(
-        "flex flex-col h-screen border-r bg-card transition-all duration-300",
+        "flex flex-col h-full border-r bg-card transition-all duration-300",
         collapsed ? "w-16" : "w-64"
       )}
     >
       {/* Header */}
       <div className="flex items-center justify-between p-4 border-b">
         {!collapsed && (
-          <Link href="/" className="flex items-center gap-2">
+          <Link href="/" onClick={onNavigate} className="flex items-center gap-2">
             <InntrisLogo className="h-6 w-6" />
             <span className="font-semibold">Inntris</span>
           </Link>
         )}
-        <button
-          onClick={() => setCollapsed(!collapsed)}
-          className="p-2 rounded-md hover:bg-muted transition"
-        >
-          {collapsed ? <Menu className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
-        </button>
+        {collapsible && (
+          <button
+            onClick={() => setCollapsed(!collapsed)}
+            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            className="p-2 rounded-md hover:bg-muted transition"
+          >
+            {collapsed ? <Menu className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
+          </button>
+        )}
       </div>
 
       {/* Title */}
@@ -92,6 +100,7 @@ export function Sidebar({ variant }: SidebarProps) {
             <Link
               key={item.href}
               href={item.href}
+              onClick={onNavigate}
               className={cn(
                 "flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors",
                 isActive
