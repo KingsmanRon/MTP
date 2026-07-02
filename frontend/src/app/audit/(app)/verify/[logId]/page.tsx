@@ -65,15 +65,15 @@ export default function VerificationPage() {
   return (
     <div className="max-w-5xl mx-auto space-y-8 pb-10">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex items-start gap-2">
           <Link href="/audit/search">
             <Button variant="ghost" size="icon">
               <ArrowLeft className="h-4 w-4" />
             </Button>
           </Link>
-          <div>
-            <h1 className="text-2xl font-bold flex items-center gap-2">
+          <div className="min-w-0">
+            <h1 className="text-2xl font-bold flex flex-wrap items-center gap-2">
               Forensic Verification
               {isAnchored && (
                 <Badge variant="outline" className="bg-green-500/10 text-green-600 border-green-500/20">
@@ -83,7 +83,7 @@ export default function VerificationPage() {
               )}
             </h1>
             <p className="text-muted-foreground text-sm">
-              Log ID: <span className="font-mono">{log.id}</span>
+              Log ID: <span className="font-mono break-all">{log.id}</span>
             </p>
           </div>
         </div>

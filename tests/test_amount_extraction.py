@@ -4,7 +4,7 @@ Regression for the spend-limit bypass: a financial action whose amount field
 was missing, malformed, NaN, infinite, or negative previously slipped through
 the spend checks (returning None → no check, or NaN → every comparison False).
 """
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import uuid4
 
@@ -32,8 +32,8 @@ def _agent(trust_score=50, daily=Decimal("1000"), per_action=Decimal("100")):
         total_actions_count=0,
         total_blocked_count=0,
         metadata={},
-        created_at=datetime.now(timezone.utc),
-        updated_at=datetime.now(timezone.utc),
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
     )
 
 
@@ -43,7 +43,7 @@ def _evaluate(payload, action_type="financial_transaction", **agent_kwargs):
         agent=_agent(**agent_kwargs),
         action_type=action_type,
         payload=payload,
-        timestamp=datetime.now(timezone.utc),
+        timestamp=datetime.now(UTC),
     )
 
 

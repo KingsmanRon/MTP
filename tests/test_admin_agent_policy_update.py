@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
@@ -12,7 +12,7 @@ client = TestClient(app)
 
 
 def _agent_record(**overrides):
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     data = {
         "id": uuid4(),
         "org_id": uuid4(),
@@ -50,7 +50,7 @@ def test_update_agent_policy_controls_are_validated_and_saved():
     org_id = uuid4()
     agent_id = uuid4()
     agent = _agent_record(id=agent_id, org_id=org_id)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     updated_row = {
         "id": agent_id,
@@ -110,7 +110,7 @@ def test_update_agent_metadata_is_merged_not_replaced():
     agent = _agent_record(
         id=agent_id, org_id=org_id, metadata={"source": "public_registration"}
     )
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     updated_row = {
         "id": agent_id, "org_id": org_id, "name": "Policy Agent",
         "public_key_fingerprint": "ab:cd", "trust_score": 80, "status": "active",

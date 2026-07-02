@@ -10,14 +10,15 @@ from __future__ import annotations
 import enum
 import logging
 import time
-from typing import Callable, Optional, TypeVar
+from collections.abc import Callable
+from typing import TypeVar
 
 import requests
 
 try:
     import web3.exceptions as _web3_exc
 
-    _WEB3_PROVIDER_CONNECTION_ERROR: Optional[type[BaseException]] = getattr(
+    _WEB3_PROVIDER_CONNECTION_ERROR: type[BaseException] | None = getattr(
         _web3_exc, "ProviderConnectionError", None
     )
     if _WEB3_PROVIDER_CONNECTION_ERROR is not None and not isinstance(
@@ -102,7 +103,7 @@ class RpcCircuitBreaker:
         self._clock = clock
         self._state: BreakerState = BreakerState.CLOSED
         self._failure_count: int = 0
-        self._opened_at: Optional[float] = None
+        self._opened_at: float | None = None
         self._set_state(BreakerState.CLOSED)
 
     @property

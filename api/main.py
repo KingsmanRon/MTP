@@ -10,68 +10,68 @@ Complete API with all endpoints for:
 - Public verification
 """
 
+import base64
+import binascii
+import csv
 import hashlib
+import io
+import json
 import logging
 import os
 import secrets
 import time
-import json
-import base64
-import binascii
-from datetime import datetime, timezone, timedelta
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from typing import Any, Optional
+from typing import Any
 from uuid import UUID, uuid4
 
 import asyncpg
 import redis.asyncio as redis
-from fastapi import FastAPI, Depends, HTTPException, Request, status, Header, Query
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse, JSONResponse
-from fastapi.exceptions import RequestValidationError
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, status
 from fastapi.encoders import jsonable_encoder
-import io
-import csv
+from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse, StreamingResponse
 
-from api.database import (
-    Database,
-    AgentNotFoundError,
-    OrganizationNotFoundError,
-    LimitReservationError,
-)
-from api.models import (
-    VerifyActionRequest,
-    VerifyActionResponse,
-    VerifyTokenRequest,
-    VerifyTokenResponse,
-    VerifyDebugResponse,
-    TestVerifyRequest,
-    RegisterAgentRequest,
-    UpdateAgentRequest,
-    RegisterPolicyRequest,
-    RotateAgentKeyRequest,
-    HealthResponse,
-    ErrorResponse,
-    ActionVerdict,
-    AuditLogEntry,
-    AgentStatus,
-    PublicVerificationRecord,
-    PublicProofResponse,
-    PublicRegisterAgentRequest,
-    PublicRegisterAgentResponse,
-)
 from api.crypto import (
     CryptoService,
     SignatureVerificationError,
 )
+from api.database import (
+    AgentNotFoundError,
+    Database,
+    LimitReservationError,
+    OrganizationNotFoundError,
+)
+from api.models import (
+    ActionVerdict,
+    AgentStatus,
+    AuditLogEntry,
+    ErrorResponse,
+    HealthResponse,
+    PublicProofResponse,
+    PublicRegisterAgentRequest,
+    PublicRegisterAgentResponse,
+    PublicVerificationRecord,
+    RegisterAgentRequest,
+    RegisterPolicyRequest,
+    RotateAgentKeyRequest,
+    TestVerifyRequest,
+    UpdateAgentRequest,
+    VerifyActionRequest,
+    VerifyActionResponse,
+    VerifyDebugResponse,
+    VerifyTokenRequest,
+    VerifyTokenResponse,
+)
 from api.policy import PolicyEngine, TrustScorer, canonical_policy_hash
 from api.schemas.admin import (
-    OrganizationResponse,
-    AgentSummary,
     AgentDetail,
-    AuditSearchResponse,
+    AgentSummary,
     AuditLogDetail,
     AuditProof,
+    AuditSearchResponse,
+    OrganizationResponse,
 )
 
 # Configure logging. Phase 2C: switch to structured JSON output when
@@ -103,7 +103,7 @@ SERVER_SECRET_RAW = os.getenv("SERVER_SECRET")
 MASTER_ADMIN_KEY_RAW = os.getenv("MASTER_ADMIN_KEY")
 
 
-def _resolve_master_admin_key(raw: Optional[str]) -> Optional[str]:
+def _resolve_master_admin_key(raw: str | None) -> str | None:
     """Normalize ``MASTER_ADMIN_KEY`` and fail closed on weak values.
 
     Behavior:
@@ -178,13 +178,14 @@ async def _deliver_webhook(
     the request originated from Inntris. Failures are logged but never raised
     — the audit log is already persisted, the webhook is a notification.
     """
-    import httpx
     import hmac
+
+    import httpx
 
     body = {
         "event": event,
         "org_id": str(org_id),
-        "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "timestamp": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
         "data": payload,
     }
     canonical = json.dumps(body, sort_keys=True, separators=(",", ":"))
@@ -216,10 +217,10 @@ async def _dispatch_verdict_webhook(
     org_id: UUID,
     event: str,
     agent_id: UUID,
-    audit_id: Optional[UUID],
+    audit_id: UUID | None,
     action_type: str,
     verdict: str,
-    verdict_reason: Optional[str],
+    verdict_reason: str | None,
 ) -> None:
     """
     Look up the org's webhook_url and schedule a fire-and-forget delivery.
@@ -272,8 +273,8 @@ def canonical_wire_timestamp(dt: datetime) -> str:
 
 
 def _compute_integrity_status(
-    tx_hash: "Optional[str]",
-    proof_status: "Optional[str]" = None,
+    tx_hash: "str | None",
+    proof_status: "str | None" = None,
 ) -> str:
     """Return integrity_status reflecting whether the receipt has been anchored.
 
@@ -344,13 +345,14 @@ origins = _resolve_cors_origins(ENVIRONMENT, os.getenv("ALLOWED_ORIGINS", ""))
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
-    allow_credentials=False if origins == ["*"] else True,
+    allow_credentials=origins != ["*"],
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 
 # Phase 2C: request ID correlation for log/trace joins.
 from api.observability import RequestIdMiddleware, metrics_endpoint  # noqa: E402
+
 app.add_middleware(RequestIdMiddleware)
 
 # Phase 2C: Prometheus scrape endpoint. Unauthenticated by design — the
@@ -361,7 +363,7 @@ app.add_route("/metrics", metrics_endpoint, methods=["GET"])
 
 
 @app.exception_handler(RequestValidationError)
-async def _validation_exception_handler(request: Request, exc: RequestValidationError):
+async def _validation_exception_handler(_request: Request, exc: RequestValidationError):
     """Normalize 422 validation errors into the standard error envelope.
 
     Additive and back-compatible: keeps the original pydantic ``detail`` array
@@ -391,10 +393,10 @@ async def _validation_exception_handler(request: Request, exc: RequestValidation
 
 
 # Global Database Pool
-db_pool: Optional[Database] = None
+db_pool: Database | None = None
 
 # Global Redis Pool
-redis_pool: Optional[redis.Redis] = None
+redis_pool: redis.Redis | None = None
 
 # =============================================================================
 # DEPENDENCIES
@@ -405,13 +407,13 @@ async def get_db() -> Database:
         raise HTTPException(status_code=503, detail="Database not initialized")
     return db_pool
 
-async def get_redis() -> Optional[redis.Redis]:
+async def get_redis() -> redis.Redis | None:
     """Return the global Redis connection pool."""
     return redis_pool
 
 
 async def verify_master_admin_key(
-    x_master_key: Optional[str] = Header(None, alias="X-Master-Key"),
+    x_master_key: str | None = Header(None, alias="X-Master-Key"),
 ) -> None:
     """
     Gate for operator-level endpoints that provision new organizations.
@@ -432,7 +434,7 @@ async def verify_master_admin_key(
 
 
 async def verify_api_key(
-    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+    x_api_key: str | None = Header(None, alias="X-API-Key"),
     database: Database = Depends(get_db),
 ) -> dict:
     """
@@ -478,7 +480,7 @@ async def verify_api_key(
         if not row["is_active"]:
             raise HTTPException(status_code=401, detail="API key is inactive")
 
-        if row["expires_at"] and row["expires_at"] < datetime.now(timezone.utc):
+        if row["expires_at"] and row["expires_at"] < datetime.now(UTC):
             raise HTTPException(status_code=401, detail="API key has expired")
 
         # Update last_used_at
@@ -561,10 +563,10 @@ def _effective_policy_hash(agent: Any) -> str:
 
 def _audit_metadata(
     *,
-    client_policy_hash: Optional[str],
-    key_fingerprint: Optional[str] = None,
+    client_policy_hash: str | None,
+    key_fingerprint: str | None = None,
     sandbox: bool = False,
-    extra: Optional[dict[str, Any]] = None,
+    extra: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     metadata = dict(extra or {})
     if client_policy_hash:
@@ -622,7 +624,7 @@ def _policy_context_from_audit_row(row: Any) -> dict[str, Any]:
     }
 
 
-def _public_registration_metadata(raw_metadata: Optional[dict[str, Any]]) -> dict[str, Any]:
+def _public_registration_metadata(raw_metadata: dict[str, Any] | None) -> dict[str, Any]:
     return {
         str(key): value
         for key, value in dict(raw_metadata or {}).items()
@@ -632,7 +634,7 @@ def _public_registration_metadata(raw_metadata: Optional[dict[str, Any]]) -> dic
 
 async def _check_public_rate_limit(
     request: Request,
-    redis_conn: Optional[redis.Redis],
+    redis_conn: redis.Redis | None,
     key_prefix: str,
     max_per_hour: int = 5,
 ) -> None:
@@ -648,7 +650,7 @@ async def _check_public_rate_limit(
     if redis_conn is None:
         return  # fail-open: Redis unavailable
     ip = request.client.host if request.client else "unknown"
-    hour_str = datetime.now(timezone.utc).strftime("%Y%m%dT%H")
+    hour_str = datetime.now(UTC).strftime("%Y%m%dT%H")
     window_key = f"inntris:{key_prefix}:{ip}:{hour_str}"
     count = await redis_conn.incr(window_key)
     if count == 1:
@@ -704,7 +706,7 @@ async def shutdown_event():
 @app.get("/health", response_model=HealthResponse, tags=["System"])
 async def health_check(
     database: Database = Depends(get_db),
-    redis_conn: Optional[redis.Redis] = Depends(get_redis),
+    redis_conn: redis.Redis | None = Depends(get_redis),
 ):
     """System health check."""
     db_healthy = await database.health_check()
@@ -724,7 +726,7 @@ async def health_check(
         version="1.0.0",
         database="connected" if db_healthy else "disconnected",
         redis=redis_status,
-        timestamp=datetime.now(timezone.utc),
+        timestamp=datetime.now(UTC),
     )
 
 # =============================================================================
@@ -821,7 +823,7 @@ async def public_register_agent(
     request_data: PublicRegisterAgentRequest,
     request: Request,
     database: Database = Depends(get_db),
-    redis_conn: Optional[redis.Redis] = Depends(get_redis),
+    redis_conn: redis.Redis | None = Depends(get_redis),
 ):
     """
     Bootstrap a new agent without an API key.
@@ -893,7 +895,7 @@ async def public_register_agent(
         public_key_fingerprint=fingerprint,
         org_id=str(org_id),
         status="active",
-        created_at=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        created_at=datetime.now(UTC).isoformat().replace("+00:00", "Z"),
         message=(
             "Sandbox agent registered — decisions are signed and verifiable but "
             "never anchored on-chain. Use agent_id with POST /verify."
@@ -913,7 +915,7 @@ async def public_register_promptfoo_agent(
     request_data: PublicRegisterAgentRequest,
     request: Request,
     database: Database = Depends(get_db),
-    redis_conn: Optional[redis.Redis] = Depends(get_redis),
+    redis_conn: redis.Redis | None = Depends(get_redis),
 ):
     """
     Promptfoo-specific agent registration alias.
@@ -986,7 +988,7 @@ async def public_register_promptfoo_agent(
         public_key_fingerprint=fingerprint,
         org_id=str(org_id),
         status="active",
-        created_at=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        created_at=datetime.now(UTC).isoformat().replace("+00:00", "Z"),
         message=(
             "Sandbox Promptfoo agent registered — signed and verifiable but never "
             "anchored on-chain. Use agent_id with POST /verify."
@@ -1350,14 +1352,14 @@ async def verify_action(
     request_data: VerifyActionRequest,
     request: Request,
     database: Database = Depends(get_db),
-    redis_conn: Optional[redis.Redis] = Depends(get_redis),
+    redis_conn: redis.Redis | None = Depends(get_redis),
 ):
     """Verify an agent action using strict forensic logging."""
     start_time = time.time()
     signature_valid = False
     verdict = ActionVerdict.BLOCKED
-    verdict_reason: Optional[str] = None
-    audit_id: Optional[UUID] = None
+    verdict_reason: str | None = None
+    audit_id: UUID | None = None
 
     try:
         # STEP 1: Fetch Agent
@@ -1526,7 +1528,7 @@ async def verify_action(
 
         # STEP 4: Policy Check - Full PolicyEngine evaluation
         # Get current limits from database
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         minute_start = now.replace(second=0, microsecond=0)
         minute_count, _ = await database.get_rate_limit_count(
             agent.id, "minute", minute_start
@@ -1823,7 +1825,7 @@ async def verify_action(
             approval_token=token,
             trust_score=new_trust_score,
             audit_id=audit_id,
-            timestamp=datetime.now(timezone.utc),
+            timestamp=datetime.now(UTC),
             limits_remaining=limits_remaining
         )
 
@@ -1843,7 +1845,7 @@ async def verify_debug(
     request_data: VerifyActionRequest,
     request: Request,
     database: Database = Depends(get_db),
-    redis_conn: Optional[redis.Redis] = Depends(get_redis),
+    redis_conn: redis.Redis | None = Depends(get_redis),
 ):
     """Dry-run signing diagnostics for ``/verify`` — NO side effects.
 
@@ -1883,8 +1885,8 @@ async def verify_debug(
         )
 
     agent_found = False
-    signature_valid: Optional[bool] = None
-    fingerprint: Optional[str] = None
+    signature_valid: bool | None = None
+    fingerprint: str | None = None
     try:
         agent = await database.get_agent_by_id(request_data.agent_id)
         agent_found = True
@@ -1925,7 +1927,7 @@ async def verify_debug(
 )
 async def verify_token(
     request_data: VerifyTokenRequest,
-    redis_conn: Optional[redis.Redis] = Depends(get_redis),
+    redis_conn: redis.Redis | None = Depends(get_redis),
 ):
     """Verify an approval token issued by ``/verify``.
 
@@ -1955,7 +1957,7 @@ async def verify_token(
     verdict = claims.get("verdict")
     exp = claims.get("exp")
     expires_at = (
-        datetime.fromtimestamp(exp, tz=timezone.utc) if isinstance(exp, (int, float)) else None
+        datetime.fromtimestamp(exp, tz=UTC) if isinstance(exp, (int, float)) else None
     )
 
     # Optional agent_id cross-check.
@@ -1971,7 +1973,7 @@ async def verify_token(
 
     # Optional action-binding check: recompute the action hash and confirm the
     # token authorizes exactly this action.
-    action_hash_matches: Optional[bool] = None
+    action_hash_matches: bool | None = None
     action_fields = (
         request_data.action_type,
         request_data.payload,
@@ -2026,7 +2028,7 @@ async def verify_token(
             )
         ttl = 600
         if isinstance(exp, (int, float)):
-            ttl = max(1, int(exp - datetime.now(timezone.utc).timestamp()))
+            ttl = max(1, int(exp - datetime.now(UTC).timestamp()))
         used_key = f"inntris:token_used:{token_action_hash}"
         try:
             first_use = await redis_conn.set(used_key, "1", ex=ttl, nx=True)
@@ -2104,7 +2106,7 @@ async def test_verify_action(
             )
 
         # Get current limits from database
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         minute_start = now.replace(second=0, microsecond=0)
         minute_count, _ = await database.get_rate_limit_count(
             agent.id, "minute", minute_start
@@ -2196,7 +2198,7 @@ async def test_verify_action(
 # anchoring pipeline as /verify entries.
 
 async def _verify_bearer_token(
-    authorization: Optional[str],
+    authorization: str | None,
     database: "Database",
 ) -> dict:
     """Validate ``Authorization: Bearer <token>`` against ``api_keys.key_hash``.
@@ -2228,7 +2230,7 @@ async def _verify_bearer_token(
         raise HTTPException(status_code=401, detail="Invalid bearer token")
     if not row["is_active"]:
         raise HTTPException(status_code=401, detail="Bearer token is inactive")
-    if row["expires_at"] and row["expires_at"] < datetime.now(timezone.utc):
+    if row["expires_at"] and row["expires_at"] < datetime.now(UTC):
         raise HTTPException(status_code=401, detail="Bearer token has expired")
     scopes = _normalise_scopes(row.get("scopes") if hasattr(row, "get") else None)
     if "admin" not in scopes and "verify" not in scopes:
@@ -2297,7 +2299,7 @@ async def _get_or_create_events_agent(
 async def ingest_event_v1(
     body: dict,
     request: Request,
-    authorization: Optional[str] = Header(None, alias="Authorization"),
+    authorization: str | None = Header(None, alias="Authorization"),
     database: Database = Depends(get_db),
 ):
     """Bearer-authenticated event ingestion for partner integrations.
@@ -2377,7 +2379,7 @@ async def ingest_event_v1(
         "audit_id": str(audit_id),
         "org_id": str(org_id),
         "agent_id": str(agent_id),
-        "ingested_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "ingested_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
     }
 
 
@@ -2497,7 +2499,7 @@ async def get_agent_dashboard(
         daily_spend = await database.get_daily_spend(agent_id)
 
         # Get today's stats from audit logs
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
 
         async with database.acquire() as conn:
@@ -2871,11 +2873,11 @@ async def update_agent_status(
 
 @app.get("/admin/audit/search", tags=["Admin - Audit"], response_model=AuditSearchResponse)
 async def search_audit_logs(
-    agent_id: Optional[UUID] = None,
-    action_type: Optional[str] = None,
-    verdict: Optional[str] = None,
-    start: Optional[str] = None,
-    end: Optional[str] = None,
+    agent_id: UUID | None = None,
+    action_type: str | None = None,
+    verdict: str | None = None,
+    start: str | None = None,
+    end: str | None = None,
     limit: int = Query(default=50, le=1000),
     offset: int = Query(default=0, ge=0),
     auth: dict = Depends(require_api_scope("read")),
@@ -3107,9 +3109,9 @@ async def get_merkle_proof(
 @app.get("/admin/audit/export", tags=["Admin - Audit"])
 async def export_audit_logs(
     format: str = Query(..., pattern="^(csv|json)$"),
-    start: Optional[str] = None,
-    end: Optional[str] = None,
-    agent_id: Optional[UUID] = None,
+    start: str | None = None,
+    end: str | None = None,
+    agent_id: UUID | None = None,
     auth: dict = Depends(require_api_scope("read")),
     database: Database = Depends(get_db),
 ):
@@ -3206,8 +3208,8 @@ async def export_audit_logs(
 
 @app.get("/admin/alerts", tags=["Admin - Alerts"])
 async def list_alerts(
-    status: Optional[str] = Query(None, pattern="^(open|acknowledged|resolved)$"),
-    severity: Optional[str] = None,
+    status: str | None = Query(None, pattern="^(open|acknowledged|resolved)$"),
+    severity: str | None = None,
     limit: int = Query(default=50, le=1000),
     offset: int = Query(default=0, ge=0),
     auth: dict = Depends(require_api_scope("read")),
@@ -3713,32 +3715,31 @@ async def create_organization_endpoint(
     key_hash = hashlib.sha256(raw_key.encode()).digest()
     key_prefix = _api_key_prefix(raw_key)
 
-    async with database.acquire() as conn:
-        async with conn.transaction():
-            org_id = await conn.fetchval(
-                """
+    async with database.acquire() as conn, conn.transaction():
+        org_id = await conn.fetchval(
+            """
                 INSERT INTO organizations (
                     name, contact_email, billing_tier, api_key_hash, webhook_url
                 )
                 VALUES ($1, $2, $3, $4, $5)
                 RETURNING id
                 """,
-                name, contact_email, billing_tier, key_hash, webhook_url,
-            )
-            key_id = await conn.fetchval(
-                """
+            name, contact_email, billing_tier, key_hash, webhook_url,
+        )
+        key_id = await conn.fetchval(
+            """
                 INSERT INTO api_keys (
                     org_id, key_hash, key_prefix, name, scopes, is_active
                 )
                 VALUES ($1, $2, $3, $4, $5, true)
                 RETURNING id
                 """,
-                org_id,
-                key_hash,
-                key_prefix,
-                "Bootstrap Admin Key",
-                ["admin", "read", "write", "verify"],
-            )
+            org_id,
+            key_hash,
+            key_prefix,
+            "Bootstrap Admin Key",
+            ["admin", "read", "write", "verify"],
+        )
 
     logger.info("Provisioned organization %s with bootstrap key %s", org_id, key_id)
 

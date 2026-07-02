@@ -14,7 +14,7 @@ that a batch was stuck. These tests pin the new contract:
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
@@ -83,7 +83,7 @@ class TestRecordFailure:
         assert isinstance(kwargs["next_retry_at"], datetime)
         # next_retry_at is in the future and tz-aware.
         assert kwargs["next_retry_at"].tzinfo is not None
-        assert kwargs["next_retry_at"] > datetime.now(timezone.utc)
+        assert kwargs["next_retry_at"] > datetime.now(UTC)
 
     @pytest.mark.asyncio
     async def test_exhausted_retries_transition_to_dead_letter(

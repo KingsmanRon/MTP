@@ -34,7 +34,7 @@ from __future__ import annotations
 import hashlib
 import os
 import secrets
-from typing import AsyncIterator
+from collections.abc import AsyncIterator
 from uuid import UUID, uuid4
 
 import pytest
@@ -42,7 +42,6 @@ import pytest
 asyncpg = pytest.importorskip("asyncpg")
 
 from api.database import Database  # noqa: E402
-
 
 INTEGRATION_ENABLED = os.getenv("INNTRIS_DB_INTEGRATION") == "1"
 DATABASE_URL = os.getenv("DATABASE_URL", "")
@@ -202,11 +201,10 @@ async def test_missing_tenant_context_fails_closed(db: Database) -> None:
     org_a = await _make_org(db, f"rls-a-{uuid4().hex[:8]}")
     await _make_agent(db, org_a, "agent-a")
 
-    async with db.acquire() as conn:
-        async with conn.transaction():
-            await conn.execute("SET LOCAL ROLE inntris_api")
-            # Intentionally skip set_config — simulate a bug that forgets context.
-            rows = await conn.fetch("SELECT id FROM agents")
+    async with db.acquire() as conn, conn.transaction():
+        await conn.execute("SET LOCAL ROLE inntris_api")
+        # Intentionally skip set_config — simulate a bug that forgets context.
+        rows = await conn.fetch("SELECT id FROM agents")
 
     assert rows == [], "missing tenant context must yield zero rows, not leak"
 

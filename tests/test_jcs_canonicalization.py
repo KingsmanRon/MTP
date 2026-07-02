@@ -18,7 +18,7 @@ language is a bug in that SDK, not in the vectors.
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -73,7 +73,7 @@ class TestJCSInvariants:
 
     def test_unsupported_type_is_rejected(self) -> None:
         with pytest.raises(jcs.JCSError):
-            jcs.canonicalize({"when": datetime.now(timezone.utc)})
+            jcs.canonicalize({"when": datetime.now(UTC)})
 
     def test_negative_zero_serializes_like_positive_zero(self) -> None:
         assert jcs.canonicalize(-0.0) == b"0"
@@ -93,7 +93,7 @@ class TestSigVersion3:
     AGENT_ID = "4f0e4fd5-5e2f-4e95-a2d5-78b0a7b0d66a"
     ACTION = "financial_transaction"
     NONCE = "nonce-0xdeadbeef"
-    TS = datetime(2026, 4, 17, 12, 0, 0, tzinfo=timezone.utc)
+    TS = datetime(2026, 4, 17, 12, 0, 0, tzinfo=UTC)
 
     def test_jcs_and_current_hashes_differ(self) -> None:
         # A payload that contains an integer-valued float is the easiest

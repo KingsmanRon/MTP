@@ -141,7 +141,7 @@ def _canonicalize(obj: Any) -> str:
         # identical to code-point sorting. For keys containing non-BMP
         # characters (emoji etc.) we sort by the UTF-16 encoding.
         items = []
-        for key in obj.keys():
+        for key in obj:
             if not isinstance(key, str):
                 raise JCSError(
                     f"object keys must be strings; got {type(key).__name__}"

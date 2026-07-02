@@ -117,7 +117,7 @@ class _FakeRedis:
     def __init__(self):
         self.store: dict[str, str] = {}
 
-    async def set(self, key, value, ex=None, nx=False):
+    async def set(self, key, value, ex=None, nx=False):  # noqa: ARG002 — mirrors redis signature
         if nx and key in self.store:
             return None
         self.store[key] = value

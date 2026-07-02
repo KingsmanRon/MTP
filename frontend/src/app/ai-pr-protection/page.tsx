@@ -18,6 +18,7 @@ import {
   Workflow,
 } from "lucide-react";
 import { InntrisLogo } from "@/components/inntris-logo";
+import { MobileMenu } from "@/components/mobile-menu";
 
 export const metadata: Metadata = {
   title: "AI PR Protection for GitHub - Inntris",
@@ -76,6 +77,14 @@ export default function AiPrProtectionPage() {
             <a href="#demo" className="transition hover:text-[#171A1F]">Demo</a>
             <a href="#pricing" className="transition hover:text-[#171A1F]">Pricing</a>
           </nav>
+          <MobileMenu
+            variant="light"
+            links={[
+              { href: "#problem", label: "Problem" },
+              { href: "#demo", label: "Demo" },
+              { href: "#pricing", label: "Pricing" },
+            ]}
+          />
         </div>
       </header>
 

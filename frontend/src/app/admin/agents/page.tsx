@@ -55,12 +55,12 @@ function AgentsContent() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Agent Registry</h1>
           <p className="text-sm text-[#7F8CA3]">All registered agents in your organization</p>
         </div>
-        <Button onClick={() => setShowRegisterDialog(true)}>
+        <Button onClick={() => setShowRegisterDialog(true)} className="self-start">
           <Plus className="h-4 w-4 mr-2" />
           Register Agent
         </Button>
@@ -328,7 +328,7 @@ function RegisterAgentDialog({
               </code>
             </p>
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-2">
               <label className="text-sm font-medium">Daily Limit (USD)</label>
               <Input

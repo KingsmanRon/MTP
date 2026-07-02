@@ -6,7 +6,7 @@ hash from the public receipt alone, rather than trusting the server's
 signatures) must NOT be surfaced.
 """
 import base64
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
@@ -33,7 +33,7 @@ class _AcquireCtx:
 
 def _row(values: dict):
     m = MagicMock()
-    m.__getitem__ = lambda self, k: values[k]
+    m.__getitem__ = lambda _self, k: values[k]
     m.get = lambda k, d=None: values.get(k, d)
     return m
 
@@ -52,7 +52,7 @@ def _mock_db(row_values: dict):
 def _base_row(**overrides):
     values = {
         "id": uuid4(),
-        "timestamp": datetime.now(timezone.utc),
+        "timestamp": datetime.now(UTC),
         "verdict": "approved",
         "verdict_reason": None,
         "action_type": "tool_call",

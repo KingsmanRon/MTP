@@ -14,6 +14,7 @@ import {
   Database,
 } from "lucide-react";
 import { InntrisLogo } from "@/components/inntris-logo";
+import { MobileMenu } from "@/components/mobile-menu";
 
 export const metadata: Metadata = {
   title: "Documentation — Inntris | AI Agent Governance Integration Guide",
@@ -44,6 +45,14 @@ export default function DocsPage() {
             <Link href="/audit" className="text-[#C4CFDE] transition hover:text-white">Audit</Link>
             <Link href="/verify" className="text-[#C4CFDE] transition hover:text-white">Verify</Link>
           </nav>
+          <MobileMenu
+            links={[
+              { href: "/admin", label: "Console" },
+              { href: "/portal", label: "Portal" },
+              { href: "/audit", label: "Audit" },
+              { href: "/verify", label: "Verify" },
+            ]}
+          />
         </div>
       </header>
 

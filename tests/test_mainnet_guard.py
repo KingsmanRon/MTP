@@ -1,10 +1,11 @@
 """Tests for mainnet-only enforcement on GET /public/verify/{record_id}."""
-from unittest.mock import AsyncMock, patch, MagicMock
-from fastapi.testclient import TestClient
+from datetime import UTC, datetime
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
-from datetime import datetime, timezone
 
-from api.main import app, _compute_integrity_status
+from fastapi.testclient import TestClient
+
+from api.main import _compute_integrity_status, app
 
 client = TestClient(app)
 
@@ -13,7 +14,7 @@ def _mock_row(chain_id: int):
     """Build a minimal mock row dict."""
     row = {
         "id": uuid4(),
-        "timestamp": datetime.now(timezone.utc),
+        "timestamp": datetime.now(UTC),
         "verdict": "approved",
         "verdict_reason": None,
         "action_type": "tool_call",
@@ -33,7 +34,7 @@ def _mock_row(chain_id: int):
         "policy_hash": None,
     }
     m = MagicMock()
-    m.__getitem__ = lambda self, k: row[k]
+    m.__getitem__ = lambda _self, k: row[k]
     m.get = lambda k, d=None: row.get(k, d)
     return m
 

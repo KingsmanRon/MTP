@@ -4,7 +4,7 @@ These tests cover the security backbone that makes the backend -- not the
 client-asserted action_type -- the authority over a code/release change.
 """
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
 from uuid import uuid4
@@ -52,8 +52,8 @@ def _agent(trust_score=50, status=AgentStatus.ACTIVE, allowed=None, blocked=None
         total_actions_count=0,
         total_blocked_count=0,
         metadata={},
-        created_at=datetime.now(timezone.utc),
-        updated_at=datetime.now(timezone.utc),
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
     )
 
 
@@ -189,7 +189,7 @@ def test_evaluate_blocks_downgrade_before_trust_check():
         agent=agent,
         action_type="repo_change",
         payload={"changed_files": ["infra/main.tf"], "base_ref": "main"},
-        timestamp=datetime.now(timezone.utc),
+        timestamp=datetime.now(UTC),
         registered_policy=_registered(),
         client_policy_hash="b" * 64,
     )
@@ -206,7 +206,7 @@ def test_evaluate_unregistered_is_backward_compatible():
         agent=agent,
         action_type="production_deployment",
         payload={"changed_files": ["infra/main.tf"], "base_ref": "main"},
-        timestamp=datetime.now(timezone.utc),
+        timestamp=datetime.now(UTC),
     )
     assert result.allowed is True
     assert result.verdict == ActionVerdict.APPROVED

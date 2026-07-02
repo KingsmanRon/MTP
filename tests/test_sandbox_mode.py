@@ -5,7 +5,7 @@ anchor worker's existing exclusion key (get_unanchored_logs) — plus a sandbox
 flag, and the public receipt must report sandbox=true / integrity_status=sandbox
 instead of a forever-"pending_anchor".
 """
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
@@ -19,7 +19,7 @@ client = TestClient(app)
 
 
 def _agent_record(agent_id, org_id, *, metadata):
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     return AgentRecord(
         id=agent_id, org_id=org_id, name="Verifier",
         public_key=b"\x00" * 32, public_key_fingerprint="a" * 64,
@@ -88,7 +88,7 @@ class _AcquireCtx:
 
 def _row(values):
     m = MagicMock()
-    m.__getitem__ = lambda self, k: values[k]
+    m.__getitem__ = lambda _self, k: values[k]
     m.get = lambda k, d=None: values.get(k, d)
     return m
 
@@ -98,7 +98,8 @@ def _receipt_db(row_values):
     conn.fetchrow = AsyncMock(return_value=_row(row_values))
     db = MagicMock()
     db.acquire = lambda: _AcquireCtx(conn)
-    org = MagicMock(); org.name = "Test Org"
+    org = MagicMock()
+    org.name = "Test Org"
     db.get_organization_by_id = AsyncMock(return_value=org)
     return db
 
@@ -106,7 +107,7 @@ def _receipt_db(row_values):
 def test_receipt_surfaces_sandbox():
     rid = uuid4()
     row = {
-        "id": rid, "timestamp": datetime.now(timezone.utc),
+        "id": rid, "timestamp": datetime.now(UTC),
         "verdict": "approved", "verdict_reason": None, "action_type": "tool_call",
         "agent_id": uuid4(), "agent_name": "sb", "org_id": uuid4(),
         "payload": {}, "trust_score_at_time": 50,
