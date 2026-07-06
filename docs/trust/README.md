@@ -22,6 +22,7 @@ to execute without a valid Inntris PASS decision.
 | [Production readback checklist](PRODUCTION_READBACK_CHECKLIST.md) | Operator, security review | Evidence required before claiming live controls |
 | [14-day pilot SOW](../pilot/AGENT_ACTION_PROOF_PILOT_SOW.md) | Buyer, sponsor, procurement | Fixed-scope pilot template |
 | [Pilot evidence-pack template](../pilot/PILOT_EVIDENCE_PACK_TEMPLATE.md) | Pilot team, buyer | Repeatable final pilot artifact |
+| [Evidence-pack methodology](../../evidence_pack/pack_contents/METHODOLOGY.md) | Auditors, regulators | Deterministic construction, hash scheme, custody chain, and anchor semantics for exported packs |
 | [Engineering threat model](../THREAT_MODEL.md) | Security engineering | STRIDE analysis with code references and residual risks |
 | [Receipt canonicalization](../RECEIPT_CANONICALIZATION.md) | Integrators, auditors | Signing and fingerprint contract |
 | [Security policy](../../SECURITY.md) | Security researchers, buyers | Reporting process and response targets |
@@ -58,6 +59,12 @@ active.
 - Receipt fingerprinting and policy-hash binding
 - Merkle batching and Base L2 anchoring
 - Public receipt and Merkle proof endpoints
+- Deterministic (byte-reproducible) evidence-pack export with a signed
+  per-file hash manifest as the attested object
+- Ingest-hash re-verification at pack assembly with hard-fail on mismatch
+  and per-hop custody events
+- Standalone offline pack verifier (zero Inntris dependencies) plus a
+  methodology document embedded in every exported pack
 - Incident response, secret rotation, timelock, and GDPR erasure runbooks
 - Tenant RLS migrations and integration tests
 

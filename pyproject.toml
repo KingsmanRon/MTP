@@ -79,7 +79,10 @@ inntris-server = "mcp_server.server:main"
 # -----------------------------------------------------------------------------
 
 [tool.setuptools.packages.find]
-include = ["api*", "mcp_server*", "workers*", "config*"]
+include = ["api*", "mcp_server*", "workers*", "config*", "evidence_pack*"]
+
+[tool.setuptools.package-data]
+evidence_pack = ["pack_contents/*"]
 
 [tool.black]
 line-length = 100
