@@ -9,6 +9,13 @@ This packet records what was tested and observed during one Agent Action Proof
 Pilot. It is evidence for a scoped decision, not a certification or guarantee
 about actions outside the covered workflow.
 
+Export the machine-verifiable pack with `scripts/build_evidence_pack.py`
+(keygen → ingest → build). The resulting archive is byte-reproducible, signs a
+per-file SHA-256 manifest as the attested object, re-verifies every ingest
+hash at assembly, and embeds a standalone offline verifier plus
+[the verification methodology](../../evidence_pack/pack_contents/METHODOLOGY.md).
+Include this completed document in the pack as `evidence/report.md`.
+
 ## 1. Executive Result
 
 | Field | Result |

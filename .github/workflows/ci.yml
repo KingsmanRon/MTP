@@ -42,7 +42,7 @@ jobs:
           pip install -e '.[dev]'
 
       - name: ruff
-        run: ruff check api workers mcp_server tests
+        run: ruff check api workers mcp_server tests evidence_pack
 
       - name: pytest
         # Integration tests that need Postgres are gated on
