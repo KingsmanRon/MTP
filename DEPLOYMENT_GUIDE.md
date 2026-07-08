@@ -266,7 +266,7 @@ BLOCKCHAIN_PROVIDER_URL=https://base-rpc.publicnode.com  # Base Mainnet (or http
 BLOCKCHAIN_PRIVATE_KEY=[from Step 3.2]
 ANCHOR_CONTRACT_ADDRESS=[from Step 3.4]
 ANCHOR_BATCH_SIZE=1000
-ANCHOR_INTERVAL_MINUTES=60
+ANCHOR_INTERVAL_MINUTES=10  # Anchor block time is the trustless upper bound on each receipt; keep this tight
 BLOCKCHAIN_CHAIN_ID=8453  # Base Mainnet (use 84532 for Sepolia testnet)
 
 # ============================================================================
@@ -499,7 +499,7 @@ Expected output:
 1. Check contract on BaseScan:
    - Mainnet: `https://basescan.org/address/YOUR_CONTRACT_ADDRESS`
    - Testnet: `https://sepolia.basescan.org/address/YOUR_CONTRACT_ADDRESS`
-2. Verify anchoring transactions appear every hour
+2. Verify anchoring transactions appear every `ANCHOR_INTERVAL_MINUTES` (default: 10 minutes) whenever there are unanchored audit logs
 
 ### 7.4 Set Up Alerts
 1. Railway: Go to **"Settings"** → **"Integrations"**
@@ -661,7 +661,7 @@ After completing all steps above:
 - ⬜ Created at least one organization
 - ⬜ Registered at least one agent
 - ⬜ Verified at least one action
-- ⬜ Confirmed blockchain anchoring works (wait 1 hour after first action)
+- ⬜ Confirmed blockchain anchoring works (wait one anchor interval — default 10 minutes — after first action)
 - ⬜ Set up monitoring alerts
 - ⬜ Backed up environment variables
 - ⬜ Documented organization IDs and API keys

@@ -309,7 +309,7 @@ yet. See **Scope** below; vendor allowlists are the next hard-gate extension.
 # The public receipt
 curl -s https://api.inntris.com/public/verify/<AUDIT_ID> | python -m json.tool
 
-# The Merkle proof (pending_anchor until the hourly anchor worker batches to Base)
+# The Merkle proof (pending_anchor until the anchor worker batches to Base — default every 10 minutes)
 curl -s https://api.inntris.com/public/verify/<AUDIT_ID>/proof | python -m json.tool
 ```
 
@@ -362,7 +362,7 @@ RATE_LIMITED / SIGNATURE_INVALID` — there is **no `ESCALATE` / step-up** verdi
 | `could not resolve org` / HTTP 401 | `INNTRIS_ADMIN_API_KEY` is missing or not admin-scoped. |
 | `create agent failed` HTTP 403 | The key needs admin/`write` scope to register agents. |
 | `/health` shows `redis: disconnected` | Server-side issue — `/verify` fails closed (503) without Redis; don't demo until it's green. |
-| Receipt shows `integrity_status: pending_anchor` | Expected — anchoring batches hourly to Base L2; the receipt is already signed and verifiable. |
+| Receipt shows `integrity_status: pending_anchor` | Expected — anchoring batches to Base L2 every 10 minutes by default; the receipt is already signed and verifiable. |
 | A beat asserts the wrong verdict | The driver `die()`s loudly with the HTTP status + body so you can see which gate fired. |
 
 ---

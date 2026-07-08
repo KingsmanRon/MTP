@@ -230,6 +230,14 @@ class VerifyTokenResponse(BaseModel):
         None,
         description="Whether supplied action params recompute to the token's action hash (null if params not supplied)",
     )
+    consumption_audit_id: str | None = Field(
+        None,
+        description=(
+            "Audit ID of the anchored token_consumed event, set only when "
+            "consume=true succeeded. Fetch its public receipt as proof the "
+            "pre-execution check happened."
+        ),
+    )
 
 
 class VerifyDebugResponse(BaseModel):

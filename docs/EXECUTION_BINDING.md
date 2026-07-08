@@ -35,9 +35,25 @@ Each guard does one job:
 | `consume:true` | the approval hasn't already been spent | "Token already used (single-use)" |
 
 If `/verify-token` is unreachable, errors, or returns `valid:false` for **any**
-reason — **do not execute.** Fail closed. (When `consume:true` and the cache is
-offline, the server itself returns `valid:false` rather than allow an
-unenforceable double-spend.)
+reason — **do not execute.** Fail closed. (When `consume:true` and the cache or
+database is offline, the server itself returns `valid:false` rather than allow
+an unenforceable double-spend or an unrecorded consumption.)
+
+## The consumption is itself provable
+
+A successful `consume:true` call inserts a `token_consumed` audit event that
+chains into the agent's hash chain and Merkle-anchors to Base like every other
+audit row. The response carries its id as `consumption_audit_id`; fetch
+`GET /public/verify/{consumption_audit_id}` for the public receipt.
+
+This is what makes the approve→execute **ordering** independently verifiable
+after the fact: the anchored record contains both the approval and the
+consumption that gated execution, the consumption references the approval's
+`action_hash`, and the token's 5-minute TTL bounds the gap between them.
+Retain `consumption_audit_id` next to your execution artifact (payment id,
+tx hash, …) so an auditor can walk from the act back to the anchored proof
+that it was authorized first. If the consumption event cannot be written, the
+consume fails closed and the token is **not** burned — retry.
 
 ## Why you must retain the signed params
 
@@ -76,7 +92,10 @@ gate = requests.post(f"{API}/verify-token", json={
 if not gate.get("valid"):
     raise SystemExit(f"execution blocked: {gate.get('reason')}")
 
-settle_payment(body["payload"])          # safe: bound + single-use
+# Anchored proof that this gate ran — store it with the payment record.
+consumption_receipt = gate["consumption_audit_id"]
+
+settle_payment(body["payload"])          # safe: bound + single-use + provable
 ```
 
 A second attempt to settle with the same approval returns
