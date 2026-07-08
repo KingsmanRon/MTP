@@ -24,7 +24,7 @@ Inntris is a **runtime verification + cryptographic audit layer** that sits in f
 
 1. **Verify** — Ed25519 signature, policy hash, nonce, clock-skew checks
 2. **Decide** — Policy engine returns `APPROVED` (with HMAC token) or `BLOCKED`
-3. **Record** — Every decision is a signed receipt, hashed into an hourly Merkle tree, **anchored to Base L2 mainnet**
+3. **Record** — Every decision is a signed receipt, hashed into a Merkle tree every 10 minutes, **anchored to Base L2 mainnet**
 
 Three guarantees: **Fail Closed. Zero Trust. Tamper Evident.**
 
@@ -56,7 +56,7 @@ A single `inntris_guard` tool drops into any MCP-compatible agent (Claude, Curso
 |---|---|
 | **MCP Server** | Universal adapter — exposes `inntris_guard` tool to any agent |
 | **Enforcer API** | FastAPI policy decision point — Ed25519, rate limits, trust scoring |
-| **Audit Engine** | Append-only Postgres + hourly Merkle batches + Base L2 anchoring |
+| **Audit Engine** | Append-only Postgres + 10-minute Merkle batches + Base L2 anchoring |
 | **Trust Badge Widget** | Embeddable React component showing live agent trust score |
 | **Admin Console** | Org / policy / key management, audit search, usage metrics |
 | **Public Verify** | `inntris.com/verify/{id}` — anyone can independently check a receipt |
@@ -78,7 +78,7 @@ A single `inntris_guard` tool drops into any MCP-compatible agent (Claude, Curso
 - **Backend:** FastAPI · Python 3.12 · Postgres + TimescaleDB · Redis
 - **Frontend:** Next.js 18 · Tailwind · Trust Badge (React)
 - **Crypto:** Ed25519 signatures · SHA-256 canonical leaf hashes · keccak256 Merkle tree (Solidity-native) · HMAC approval tokens
-- **Chain:** Base L2 mainnet (chain 8453) · `AnchorRegistry` at `0x0600eA15…321480` · ~1,000 logs / hourly batch
+- **Chain:** Base L2 mainnet (chain 8453) · `AnchorRegistry` at `0x0600eA15…321480` · up to 1,000 logs / 10-minute batch
 - **Deploy:** Docker Compose · Railway · Render · K8s-compatible (12-factor)
 
 Canonical receipt anchored at Base block **44,401,999** — already live.
@@ -90,7 +90,7 @@ Canonical receipt anchored at Base block **44,401,999** — already live.
 - Agentic AI is hitting production in regulated industries (finance, healthcare, gov) **faster than governance tooling exists**.
 - EU AI Act, SEC, and SOC2 auditors are starting to ask: *"Show me what the agent decided, and prove it."*
 - MCP just became the de-facto standard for agent tool use — the integration surface is finally stable.
-- L2s made on-chain anchoring cheap enough to do **hourly, for every customer**.
+- L2s made on-chain anchoring cheap enough to do **every 10 minutes, for every customer**.
 
 ---
 

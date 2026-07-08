@@ -58,7 +58,12 @@ BLOCKCHAIN_PRIVATE_KEY = os.getenv("BLOCKCHAIN_PRIVATE_KEY")  # With or without 
 # Worker settings
 BATCH_SIZE = int(os.getenv("ANCHOR_BATCH_SIZE", "1000"))
 # Support both ANCHOR_INTERVAL_MINUTES (new) and ANCHOR_BATCH_INTERVAL (old, seconds)
-BATCH_INTERVAL_MINUTES = int(os.getenv("ANCHOR_INTERVAL_MINUTES", "60"))  # Default: 1 hour
+# Default is 10 minutes: the anchor block timestamp is the trustless upper
+# bound on when each audit entry existed, so a shorter interval tightens the
+# provable time bound on every receipt. Base gas cost at this cadence is
+# negligible; raise the interval only if anchoring cost ever matters more
+# than receipt latency.
+BATCH_INTERVAL_MINUTES = int(os.getenv("ANCHOR_INTERVAL_MINUTES", "10"))
 BATCH_INTERVAL_SECONDS = int(os.getenv("ANCHOR_BATCH_INTERVAL", str(BATCH_INTERVAL_MINUTES * 60)))
 MAX_RETRIES = int(os.getenv("ANCHOR_MAX_RETRIES", "5"))
 # Exponential backoff between failed retries. retry N waits

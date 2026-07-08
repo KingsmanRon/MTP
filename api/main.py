@@ -412,6 +412,17 @@ async def get_redis() -> redis.Redis | None:
     return redis_pool
 
 
+async def get_db_optional() -> Database | None:
+    """Return the database pool, or None when it is not initialized.
+
+    Unlike ``get_db`` this never raises 503. It exists for endpoints that are
+    DB-free on their common path and only need the database for one optional
+    feature — the handler decides how to fail when the pool is absent, so a
+    stateless call is not rejected just because the database is down.
+    """
+    return db_pool
+
+
 async def verify_master_admin_key(
     x_master_key: str | None = Header(None, alias="X-Master-Key"),
 ) -> None:
@@ -1920,6 +1931,81 @@ async def verify_debug(
     )
 
 
+async def _record_token_consumption(
+    database: Database,
+    token_agent_id: str,
+    token_action_hash: str,
+    token_verdict: str | None,
+    expires_at: datetime | None,
+    action_hash_matches: bool | None,
+    request: Request,
+) -> UUID:
+    """Insert the anchored ``token_consumed`` audit event for a consumed token.
+
+    The consumption event is what makes the approve→execute ordering provable
+    after the fact: the original approval and this consumption both live in the
+    per-agent hash chain and flow into the same Merkle anchoring pipeline, and
+    the token's TTL bounds the gap between them. Without this row the
+    executor's check would leave no trace anywhere a verifier can reach.
+
+    Like ``/v1/events`` rows, the event carries no agent Ed25519 signature —
+    it is a server-side attestation triggered by presentation of a valid HMAC
+    token — so it is recorded honestly with a sentinel signature,
+    ``signature_valid=False``, and an explicit ``attestation_type`` marker.
+
+    Raises on any failure (unknown agent, DB error); the caller must treat
+    that as "consumption not recorded" and fail closed.
+    """
+    agent_uuid = UUID(token_agent_id)
+    async with database.acquire() as conn:
+        trust_score = await conn.fetchval(
+            "SELECT trust_score FROM agents WHERE id = $1",
+            agent_uuid,
+        )
+    if trust_score is None:
+        raise AgentNotFoundError(f"Agent {agent_uuid} not found")
+
+    consumed_at = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+    payload = {
+        "event": "token_consumed",
+        "original_action_hash": token_action_hash,
+        "token_verdict": token_verdict,
+        "token_expires_at": (
+            expires_at.isoformat().replace("+00:00", "Z") if expires_at else None
+        ),
+        "action_hash_matches": action_hash_matches,
+        "consumed_at": consumed_at,
+    }
+    # The consumption gets its own leaf hash (a content commitment over the
+    # consumption facts), distinct from the original action hash it references.
+    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    consumption_hash = hashlib.sha256(canonical.encode()).hexdigest()
+
+    audit_entry = AuditLogEntry(
+        agent_id=agent_uuid,
+        action_type="token_consumed",
+        action_hash=consumption_hash,
+        payload=payload,
+        verdict=ActionVerdict.APPROVED,
+        verdict_reason="Approval token consumed (single-use downstream execution gate)",
+        signature=b"TOKEN_CONSUMED",
+        signature_valid=False,
+        request_ip=request.client.host if request.client else None,
+        request_user_agent=request.headers.get("User-Agent"),
+        response_time_ms=None,
+        trust_score_at_time=trust_score,
+        chain_previous_hash=None,
+        policy_hash=None,
+        metadata={
+            "source": "verify_token",
+            "attestation_type": "token_consumption",
+            "original_action_hash": token_action_hash,
+            "non_cryptographic": True,
+        },
+    )
+    return await database.insert_audit_log(audit_entry, derive_chain_hash=True)
+
+
 @app.post(
     "/verify-token",
     response_model=VerifyTokenResponse,
@@ -1927,21 +2013,30 @@ async def verify_debug(
 )
 async def verify_token(
     request_data: VerifyTokenRequest,
+    request: Request,
     redis_conn: redis.Redis | None = Depends(get_redis),
+    database: Database | None = Depends(get_db_optional),
 ):
     """Verify an approval token issued by ``/verify``.
 
     This is the downstream enforcement primitive: a system about to execute a
     guarded action presents the approval token it received and proceeds only if
     this endpoint returns ``valid: true``. The token is an HMAC over
-    ``SERVER_SECRET`` with an absolute expiry, so verification needs no DB
-    lookup and cannot be forged without the server secret — which is why this
-    surface is safe to expose unauthenticated, like the public verify routes.
+    ``SERVER_SECRET`` with an absolute expiry, so bare validity checks need no
+    DB lookup and cannot be forged without the server secret — which is why
+    this surface is safe to expose unauthenticated, like the public verify
+    routes.
 
     If the action parameters (``action_type``, ``payload``, ``nonce``,
     ``timestamp``) are supplied, the server recomputes the action hash and
     confirms the token authorizes *this* action and not merely *some* action —
     binding the approval to the work actually being executed.
+
+    When ``consume=true``, a successful consumption additionally inserts a
+    ``token_consumed`` audit event that chains and Merkle-anchors like every
+    other audit row, so the executor's pre-execution check is itself provable
+    later. If that event cannot be recorded, the consumption fails closed
+    (``valid: false``) and the token is not burned.
     """
     claims = CryptoService.verify_approval_token(
         request_data.approval_token, SERVER_SECRETS
@@ -2015,11 +2110,24 @@ async def verify_token(
 
     # Single-use enforcement for the execution gate. Only consume after every
     # validity/binding check above has passed, so a rejected token is not burned.
+    consumption_audit_id: UUID | None = None
     if request_data.consume:
         if redis_conn is None:
             return VerifyTokenResponse(
                 valid=False,
                 reason="Single-use enforcement unavailable (cache offline). Retry.",
+                verdict=verdict,
+                agent_id=token_agent_id,
+                action_hash=token_action_hash,
+                expires_at=expires_at,
+                action_hash_matches=action_hash_matches,
+            )
+        # The consumption must be recorded in the audit chain or refused, so
+        # a missing database fails the request before the token is burned.
+        if database is None:
+            return VerifyTokenResponse(
+                valid=False,
+                reason="Consumption recording unavailable (database offline). Retry.",
                 verdict=verdict,
                 agent_id=token_agent_id,
                 action_hash=token_action_hash,
@@ -2052,6 +2160,42 @@ async def verify_token(
                 expires_at=expires_at,
                 action_hash_matches=action_hash_matches,
             )
+        try:
+            consumption_audit_id = await _record_token_consumption(
+                database=database,
+                token_agent_id=token_agent_id or "",
+                token_action_hash=token_action_hash or "",
+                token_verdict=verdict,
+                expires_at=expires_at,
+                action_hash_matches=action_hash_matches,
+                request=request,
+            )
+        except Exception:
+            logger.exception("Failed to record token_consumed audit event")
+            # Release the single-use key so a transient failure does not burn
+            # the token without a recorded consumption; the caller may retry.
+            # If the release itself fails the token stays burned — that is the
+            # fail-closed direction (deny, never allow unrecorded execution).
+            try:
+                await redis_conn.delete(used_key)
+            except Exception:
+                logger.warning(
+                    "Could not release single-use key %s after audit failure; "
+                    "token remains burned",
+                    used_key,
+                )
+            return VerifyTokenResponse(
+                valid=False,
+                reason=(
+                    "Consumption could not be recorded in the audit chain. "
+                    "The token was not consumed; retry."
+                ),
+                verdict=verdict,
+                agent_id=token_agent_id,
+                action_hash=token_action_hash,
+                expires_at=expires_at,
+                action_hash_matches=action_hash_matches,
+            )
 
     return VerifyTokenResponse(
         valid=True,
@@ -2060,6 +2204,7 @@ async def verify_token(
         action_hash=token_action_hash,
         expires_at=expires_at,
         action_hash_matches=action_hash_matches,
+        consumption_audit_id=str(consumption_audit_id) if consumption_audit_id else None,
     )
 
 

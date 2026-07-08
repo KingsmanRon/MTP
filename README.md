@@ -462,7 +462,7 @@ Inntris uses the Base L2 blockchain for immutable audit anchoring.
 The `AnchorRegistry.sol` contract stores Merkle roots of audit batches:
 
 - Each batch contains up to 1,000 audit log hashes
-- Merkle root is computed and submitted hourly
+- Merkle root is computed and submitted every 10 minutes by default (`ANCHOR_INTERVAL_MINUTES`)
 - On-chain proof verification available
 - Gas-efficient batch operations
 
