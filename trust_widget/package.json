@@ -2,9 +2,16 @@
   "name": "@inntris/trust-badge",
   "version": "1.0.0",
   "description": "Trust Badge widget for Inntris Core verified agents",
-  "main": "dist/index.js",
-  "module": "dist/index.esm.js",
-  "types": "dist/index.d.ts",
+  "main": "dist/TrustBadge.js",
+  "module": "dist/TrustBadge.mjs",
+  "types": "dist/TrustBadge.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/TrustBadge.d.ts",
+      "import": "./dist/TrustBadge.mjs",
+      "require": "./dist/TrustBadge.js"
+    }
+  },
   "files": [
     "dist",
     "src"

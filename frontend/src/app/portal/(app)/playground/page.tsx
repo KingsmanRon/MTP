@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -146,9 +147,9 @@ export default function PlaygroundPage() {
         title="No Agents Found"
         description="Register an agent first to test verifications."
         action={
-          <a href="/admin/agents" className="text-sm font-medium underline">
+          <Link href="/admin/agents" className="text-sm font-medium underline">
             Go to Agents
-          </a>
+          </Link>
         }
       />
     );

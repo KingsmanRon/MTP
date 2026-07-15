@@ -358,7 +358,7 @@ export function CiGuardPanel({
             <h2 className="text-sm font-semibold text-[#F5F7FB]">Secrets</h2>
             <div className="mt-4 space-y-3">
               <SecretRow name="INNTRIS_API_URL" value="Core API base URL" />
-              <SecretRow name="INNTRIS_PRIVATE_KEY_B64" value="Agent Ed25519 private key seed" />
+              <SecretRow name="INNTRIS_PRIVATE_KEY_B64" value="Agent Ed25519 private key seed" /> {/* gitleaks:allow configuration label, not a secret */}
             </div>
           </div>
           <SigningKeyPanel agent={agent} />
