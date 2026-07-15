@@ -8,7 +8,7 @@
 # -----------------------------------------------------------------------------
 # Stage 1: Builder
 # -----------------------------------------------------------------------------
-FROM python:3.12-slim as builder
+FROM python:3.12.13-slim-bookworm AS builder
 
 # Set build environment
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -35,7 +35,7 @@ RUN pip install --upgrade pip && \
 # -----------------------------------------------------------------------------
 # Stage 2: Production Base
 # -----------------------------------------------------------------------------
-FROM python:3.12-slim as production-base
+FROM python:3.12.13-slim-bookworm AS production-base
 
 # Set production environment
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -66,11 +66,23 @@ COPY --chown=inntris:inntris workers/ ./workers/
 COPY --chown=inntris:inntris alembic/ ./alembic/
 COPY --chown=inntris:inntris database/ ./database/
 COPY --chown=inntris:inntris alembic.ini ./alembic.ini
+COPY --chown=inntris:inntris scripts/configure_runtime_role.py ./scripts/configure_runtime_role.py
 
 # -----------------------------------------------------------------------------
-# Stage 3: Core API Service
+# Stage 3: Database migrations and runtime role provisioning
 # -----------------------------------------------------------------------------
-FROM production-base as api
+FROM production-base AS migrate
+
+USER inntris
+
+# The privileged migration DSN is confined to this one-shot container.  The
+# script then provisions inntris_worker from a separate runtime credential.
+CMD ["sh", "-c", "alembic upgrade head && python /app/scripts/configure_runtime_role.py"]
+
+# -----------------------------------------------------------------------------
+# Stage 4: Core API Service
+# -----------------------------------------------------------------------------
+FROM production-base AS api
 
 # Expose API port
 EXPOSE 8000
@@ -86,9 +98,9 @@ USER inntris
 CMD ["python", "-m", "uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]
 
 # -----------------------------------------------------------------------------
-# Stage 4: MCP Server
+# Stage 5: MCP Server
 # -----------------------------------------------------------------------------
-FROM production-base as mcp-server
+FROM production-base AS mcp-server
 
 # MCP Server runs via stdio, no port needed
 USER inntris
@@ -97,11 +109,16 @@ USER inntris
 CMD ["python", "-m", "mcp_server.server"]
 
 # -----------------------------------------------------------------------------
-# Stage 5: Anchor Worker
+# Stage 6: Anchor Worker
 # -----------------------------------------------------------------------------
-FROM production-base as anchor-worker
+FROM production-base AS anchor-worker
 
-# No port needed for background worker
+# Prometheus heartbeat and proof backlog metrics
+EXPOSE 9100
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD curl -f http://localhost:${ANCHOR_METRICS_PORT:-9100}/metrics || exit 1
+
 USER inntris
 
 # Run the anchor worker
@@ -110,4 +127,4 @@ CMD ["python", "-m", "workers.anchor_worker"]
 # -----------------------------------------------------------------------------
 # Default target: API
 # -----------------------------------------------------------------------------
-FROM api as default
+FROM api AS default

@@ -1,194 +1,230 @@
 # Secrets management and rotation
 
-Phase 3.5 — canonical inventory of every secret the platform reads
-from the environment, how it is stored, and how to rotate it without
-an outage.
-
-KMS / Vault integration is deliberately out of scope for the current
-milestone (the enterprise-readiness plan explicitly defers it). This
-runbook assumes the operator holds secrets in a password manager or
-cloud-provider secret store and provides them as environment variables
-at boot. When KMS is adopted, the rotation procedures below become the
-skeleton for the automated versions.
+This runbook describes the rotation mechanisms that exist in the current
+codebase. Store secret values in the deployment provider's secret store. Never
+commit them, print them in CI, or attach them to an incident record.
 
 ## Inventory
 
-All env vars read by the API, worker, and MCP server:
+| Name or secret | Consumer and storage | Rotation owner |
+| --- | --- | --- |
+| `SERVER_SECRET` | API approval-token HMAC and encryption key derivation for organisation webhook secrets | Platform security |
+| `SERVER_SECRET_PREVIOUS` | Temporary API overlap value during `SERVER_SECRET` rotation | Platform security |
+| `MASTER_ADMIN_KEY` | Operator organisation-provisioning endpoint | Platform security |
+| `ADMIN_SESSION_SECRET` | Frontend admin-session encryption | Platform security |
+| `DATABASE_URL` | API and worker PostgreSQL credential | Database owner |
+| `REDIS_URL` | API Redis credential | Platform owner |
+| `BLOCKCHAIN_PRIVATE_KEY` | Anchor worker submitter EOA | Treasury and platform security |
+| `BLOCKCHAIN_PROVIDER_URL` | Worker RPC URL; treat it as secret when it embeds provider credentials | Platform owner |
+| Organisation API keys | Plaintext shown once; SHA-256 hashes stored in `api_keys.key_hash` | Tenant administrator |
+| Agent Ed25519 private key | Customer agent or MCP runtime only; public key stored in `agents.public_key` | Tenant administrator |
+| Organisation webhook signing secret | Plaintext shown once; AES-GCM ciphertext stored in `organizations.webhook_secret_ciphertext` | Tenant administrator |
 
-| Name | Consumer | Type | Rotation frequency | Source of truth |
-|------|----------|------|-------------------|-----------------|
-| `SERVER_SECRET` | `api/main.py` | HMAC-style secret, ≥32 chars | Quarterly + on suspicion | Secret store |
-| `DATABASE_URL` | `api/main.py`, `workers/` | Postgres DSN, includes password | Quarterly + on suspicion | Secret store |
-| `REDIS_URL` | `api/main.py` | Redis URL, may include password | Quarterly + on suspicion | Secret store |
-| `BLOCKCHAIN_PRIVATE_KEY` | `workers/anchor_worker.py` | EOA private key (anchor submitter) | **Annually or on suspicion — see §4** | Cold storage + hot copy in secret store |
-| `BLOCKCHAIN_PROVIDER_URL` | `workers/anchor_worker.py` | RPC URL (may include API key path) | Per-provider rotation cadence | Secret store |
-| `ANCHOR_CONTRACT_ADDRESS` | `workers/anchor_worker.py` | Contract address — NOT a secret | On contract redeploy only | Public |
-| `BLOCKCHAIN_CHAIN_ID` | `workers/anchor_worker.py` | `8453` for Base mainnet — NOT a secret | On chain migration | Public |
-| `ALLOWED_ORIGINS` | `api/main.py` | Comma-separated origins — NOT a secret | On frontend-host change | Public |
-| `INNTRIS_PRIVATE_KEY_B64` | `mcp_server/server.py` | Per-agent Ed25519 signing key | Per issuance + on suspicion | Secret store per tenant |
-| `INNTRIS_AGENT_ID` | `mcp_server/server.py` | Agent UUID — NOT a secret | Never | Public |
-| `JSON_LOGS` / `ENVIRONMENT` | `api/main.py` | Config toggle — NOT a secret | N/A | Config |
+`ANCHOR_CONTRACT_ADDRESS`, `BLOCKCHAIN_CHAIN_ID`, `ALLOWED_ORIGINS`,
+`INNTRIS_AGENT_ID`, `ENVIRONMENT`, and logging or interval settings are
+configuration, not secrets.
 
-Anything marked "NOT a secret" is safe to write into deploy manifests,
-Dockerfiles, or commit history — it is included here to make the
-boundary explicit. Everything else must live in the secret store.
+## Rotation record
 
-## General principles
+For every rotation, record the owner, reason, start and completion timestamps,
+affected environments, old and new SHA-256 fingerprint prefixes, deployment
+identifiers, readback evidence, and rollback decision. A fingerprint is not a
+substitute for deleting the old value from every secret store and runtime.
 
-1. **Never rotate at peak traffic.** All rotations below assume the
-   API remains up throughout; rotation windows are chosen so the
-   in-flight request count is minimal.
-2. **Two-key overlap for HMAC and private keys.** When rotating, the
-   new and old keys must both be accepted for at least one rate-limit
-   window (60s) before the old one is retired, so in-flight requests
-   complete without a signature-verification failure spike.
-3. **Record the rotation.** Every rotation produces a short write-up
-   under `incidents/rotations/YYYY-MM-DD-<key>.md`: who rotated, why,
-   old-key SHA-256 prefix (for IOC / forensics), new-key SHA-256
-   prefix, list of systems updated.
+## 1. `SERVER_SECRET`
 
-## 1. `SERVER_SECRET` rotation
+The current API accepts approval tokens and decrypts webhook-secret envelopes
+with the ordered pair `SERVER_SECRET`, then `SERVER_SECRET_PREVIOUS`. New
+approval tokens and new webhook envelopes always use `SERVER_SECRET`.
 
-Used for any internal HMAC / token derivation in `api/main.py`.
+### Safe overlap procedure
 
-### Procedure
-1. Generate: `openssl rand -hex 32`.
-2. Add to secret store as `SERVER_SECRET_NEXT`.
-3. Update the API deployment to accept both values (this may require
-   a code change if the current module only reads one env var — see
-   §Implementation note below).
-4. Roll the API pods one by one; confirm 200 rate stays flat and
-   `signature_failures_total` does not spike.
-5. Retire the old value: rename `SERVER_SECRET_NEXT` to
-   `SERVER_SECRET`, remove the old value. Roll pods once more.
+1. Generate a new value with at least 32 random bytes, for example
+   `openssl rand -hex 32`.
+2. First deploy all API instances with the old value as `SERVER_SECRET` and the
+   new value as `SERVER_SECRET_PREVIOUS`. No new material uses the new value
+   yet, but every instance can accept either value during the later rolling
+   change.
+3. Confirm `/health`, approval-token verification, and a controlled webhook
+   delivery on every instance.
+4. Roll all API instances to the new value as `SERVER_SECRET` and the old value
+   as `SERVER_SECRET_PREVIOUS`. Mixed old and new instances accept both values.
+5. Wait at least the five-minute approval-token lifetime and confirm no old
+   deployment instance remains.
+6. Complete the webhook-envelope work below before removing
+   `SERVER_SECRET_PREVIOUS`.
+7. Remove `SERVER_SECRET_PREVIOUS`, roll every API instance, and repeat the
+   readbacks only after all webhook rows use envelopes encrypted by the new
+   key.
 
-### Implementation note
-The current code reads a single `SERVER_SECRET`. A two-key overlap
-requires adding `SERVER_SECRET_PREV` support before the first real
-rotation. File this as Phase 3.5a; for now, a brief single-secret
-swap at low traffic is acceptable.
+### Webhook-envelope limitation
 
-## 2. Postgres credentials (`DATABASE_URL`)
+There is currently no bulk rewrap operation that decrypts each existing
+`organizations.webhook_secret_ciphertext` with the old server secret and
+reencrypts the same tenant signing secret with the new server secret. Removing
+`SERVER_SECRET_PREVIOUS` while any old envelope remains makes those webhook
+deliveries fail decryption and eventually dead letter.
 
-### Procedure
-1. `CREATE ROLE inntris_api_next LOGIN PASSWORD '<new>';` and grant
-   the same role memberships as `inntris_api` (see Phase 1C.1 RLS
-   migration).
-2. Update the secret store with the new DSN pointing at
-   `inntris_api_next`.
-3. Roll the API and worker deployments.
-4. After 24h with no errors, `DROP ROLE inntris_api_prev` (whatever
-   the old role was named).
+The available tenant endpoint,
+`POST /admin/organization/webhook-secret/rotate`, generates a different
+webhook signing secret and encrypts it with the current `SERVER_SECRET`. It is
+not a transparent rewrap. Before retiring the old server secret, either:
 
-Never reuse role names. Dropping the old role is the safety net.
+1. Coordinate that endpoint for every organisation with a webhook, update each
+   receiver from the one-time plaintext response, send a controlled delivery,
+   and confirm the new secret version; or
+2. Implement, review, and run a one-off rewrap tool that preserves tenant
+   signing-secret plaintext while replacing only its envelope.
 
-### Rollback
-Leave the old role in place for 24h. Roll back by pointing
-`DATABASE_URL` at the old role's DSN and redeploying.
+Until one of those paths is complete for every row, retain
+`SERVER_SECRET_PREVIOUS` and record the extended exposure as an open rotation
+item. A low-traffic single-secret swap is not safe.
 
-## 3. Redis credentials (`REDIS_URL`)
+Use this readback without selecting ciphertext:
 
-Redis ACLs are simpler than Postgres — a single user can hold
-multiple passwords during rotation:
+```sql
+SELECT id, webhook_url, webhook_secret_version, webhook_secret_rotated_at
+FROM organizations
+WHERE webhook_url IS NOT NULL
+ORDER BY id;
+```
 
-1. `ACL SETUSER inntris on >newpass >oldpass ...` so both
-   passwords authenticate.
-2. Update the secret store with `newpass` in the DSN.
-3. Roll deployments.
-4. `ACL SETUSER inntris on >newpass ...` to remove `oldpass`.
+## 2. `MASTER_ADMIN_KEY` and `ADMIN_SESSION_SECRET`
 
-## 4. Anchor-submitter private key (`BLOCKCHAIN_PRIVATE_KEY`)
+These controls do not currently have a two-key overlap.
 
-Highest-risk secret in the system — controls who can write Merkle
-roots on-chain. A compromise does NOT let an attacker mint fake
-receipts (those require the per-tenant Ed25519 key and a valid
-signed payload), but it does let them anchor garbage roots that
-exhaust our gas budget and pollute the registry.
+1. Schedule a controlled maintenance window and stop organisation provisioning
+   for `MASTER_ADMIN_KEY`, or admin sign-in for `ADMIN_SESSION_SECRET`.
+2. Generate a new value of at least 32 random bytes and update the secret store.
+3. Roll all consuming instances.
+4. Confirm the old master key returns 401 and the new key can perform an
+   approved sandbox provisioning smoke test. For the session secret, confirm
+   old cookies fail closed and a new login creates a valid secure cookie.
+5. Remove the old value from the secret store and close the maintenance item.
 
-### Procedure
-1. Generate a new EOA offline (hardware wallet or `cast wallet new`
-   in an air-gapped environment).
-2. Fund it from the treasury with enough ETH for ~30 days of anchor
-   gas at current rates.
-3. From the Safe, **schedule** a queued op on the timelock:
-   * `registry.grantRole(SUBMITTER_ROLE, newAddress)`
-4. Wait the 48h delay. During the window:
-   * Keep the old key online and anchoring normally.
-   * Confirm the new address shows up in
-     `getRoleMember(SUBMITTER_ROLE, ...)` once executed.
-5. Execute the queued grant.
-6. Cut worker config over to `BLOCKCHAIN_PRIVATE_KEY` = new key.
-   Restart the worker. Confirm first batch anchors cleanly.
-7. Schedule `revokeRole(SUBMITTER_ROLE, oldAddress)` through the
-   timelock. Wait the delay. Execute.
-8. Sweep any leftover ETH from the old address to treasury, then
-   wipe the private key from all systems.
+## 3. PostgreSQL credential
 
-### Emergency rotation (suspected compromise)
-* **Pause first.** From the pauser hot wallet, call
-  `registry.pause()`. This blocks further anchors regardless of
-  who holds `SUBMITTER_ROLE`.
-* Follow the regular procedure above, but run it in parallel with
-  incident response. Unpause only after the revoke executes.
-* Document the outage window — any logs submitted during the pause
-  remain in `audit_logs` with `merkle_root_id IS NULL` and will be
-  batched in the next anchoring window after unpause.
+Use a parallel login rather than changing the active password in place.
 
-## 5. Per-tenant Ed25519 signing key (`INNTRIS_PRIVATE_KEY_B64`)
+1. Create a new login with a unique name, strong password, required object-role
+   membership, and the same explicit attributes as the current runtime login.
+   If the deployment relies on `BYPASSRLS`, read that attribute back on the new
+   login; role membership does not substitute for an explicit security review.
+2. Test the new DSN against `/health`, tenant isolation, audit immutability, and
+   worker Merkle-field updates.
+3. Roll API and worker instances to the new `DATABASE_URL`.
+4. Confirm no sessions use the old login, then revoke login and remove its
+   credential. Drop the old role only after ownership and grants are verified.
 
-Held by the customer's MCP server / agent runtime; we only hold
-the public key in `public_orgs.api_key_hash`.
+Keep the old login disabled rather than deleted during the agreed rollback
+window.
 
-### Procedure (from the tenant's side)
-1. Tenant generates a new Ed25519 keypair.
-2. Tenant POSTs the new public key to `/admin/keys/rotate` (when
-   implemented — see gap below) alongside a signature from the
-   current key proving continuity.
-3. API stores the new public key hash, flags the old one as
-   `rotating`, and accepts both for a 60-minute grace window.
-4. Tenant cuts clients over to the new private key.
-5. After grace, API rejects signatures from the old key.
+## 4. Redis credential
 
-### Current gap
-The admin key-rotation endpoint is not yet implemented in the
-public API. Today, rotation requires a support ticket: the operator
-manually updates `public_orgs.api_key_hash` after verifying the
-tenant's identity out-of-band (email signed from their registered
-domain, or a signed challenge from the existing key).
+Use Redis ACL password overlap when the provider supports it:
 
-Phase 3.5b should add this endpoint so rotation is self-service.
+1. Add the new password while retaining the old password.
+2. Test a dedicated connection and the `/verify` pre-authentication limits,
+   nonce replay control, and bounded invalid-signature telemetry.
+3. Roll the API to the new `REDIS_URL`.
+4. Confirm all instances use it, then remove the old password.
 
-## 6. RPC provider URL (`BLOCKCHAIN_PROVIDER_URL`)
+A Redis restart or flush can remove replay state. Treat any loss of nonce keys
+as a security incident, not a routine rotation side effect.
 
-Usually a URL with an embedded API key path segment. Treat the URL
-itself as a secret. Rotation follows the provider's cadence; our
-only requirement is that the new URL resolves to the same
-`BLOCKCHAIN_CHAIN_ID`, which the worker now enforces at startup
-(Phase 2B `assert_chain_id`).
+## 5. Organisation API key
 
-### Procedure
-1. Update secret store with the new URL.
-2. Roll the worker. It will fail-fast on any chain-ID mismatch
-   before sending a single transaction.
-3. Monitor `inntris_anchor_submissions_total{outcome=...}` for one
-   batch interval to confirm the new provider is healthy.
+`POST /admin/api-keys/rotate` revokes every existing key for the organisation
+and returns one new key. It does not provide overlap.
 
-## Rotation smoke checklist (post any rotation)
+1. Schedule tenant cutover and stop writes using the old key.
+2. Call the rotation endpoint through a protected operator session.
+3. Store the one-time new key, update every client, and verify an authenticated
+   read with the new key.
+4. Verify the same authenticated endpoint returns 401 with the old key.
+5. Record the new key prefix from `api_keys`, never the hash or plaintext.
 
-- [ ] `/metrics` returns 200 with `inntris_verify_requests_total` counters incrementing.
-- [ ] A signed test request from a production tenant returns `approved`.
-- [ ] The next anchor batch confirms on-chain within one `BATCH_INTERVAL_MINUTES`.
-- [ ] No spike on `signature_failures_total` or `anchor_submissions_total{outcome="failed"}`.
-- [ ] Incident/rotation record filed in `incidents/rotations/`.
+If zero-downtime overlap is required, create a separately named API key first,
+cut clients over, and then revoke the old key by prefix. Do not use the
+all-keys rotation endpoint for that workflow.
 
-## What is NOT in this runbook yet
+## 6. Agent Ed25519 signing key
 
-* **KMS / HSM integration.** Deferred by the current enterprise-
-  readiness plan. When adopted, §1 and §4 should be the first two to
-  migrate because they are HMAC / private-key shaped already.
-* **Automated rotation via scheduler.** Today everything here is
-  operator-driven. That is acceptable for quarterly cadence but
-  does not scale to per-customer keys — see the gap in §5.
-* **Break-glass procedure for full cluster compromise.** Covered at
-  a higher level in the enterprise-readiness doc; the runbook-level
-  write-up lands with Phase 4+ work.
+The tenant generates the private key. Inntris stores the public key and its
+fingerprint on the `agents` row.
+
+1. Suspend the agent if compromise is suspected.
+2. Generate the replacement keypair in the tenant-controlled runtime.
+3. Call `POST /admin/agents/{agent_id}/rotate-key` with the base64-encoded
+   32-byte public key and a reason. The old key stops verifying immediately;
+   there is no overlap window.
+4. Update the tenant runtime with the new private key.
+5. Submit a side-effect-free `/verify/debug` request, then a sandbox or approved
+   production request appropriate to that agent.
+6. Read back `agents.key_version`, `public_key_fingerprint`, and
+   `key_rotated_at`. Review prior `audit_logs.metadata.key_fingerprint` values
+   to scope activity signed by the retired key.
+
+## 7. Organisation webhook signing secret
+
+1. Prepare the receiver to accept a replacement secret.
+2. Call `POST /admin/organization/webhook-secret/rotate` with a tenant admin
+   key and the approved change or incident reference. Capture the one-time
+   plaintext response directly into the receiver's secret store.
+3. Deploy the receiver, send a controlled verification event, and confirm the
+   corresponding `webhook_deliveries` row reaches `delivered` with the expected
+   secret version header.
+4. Remove the old receiver secret only after successful delivery.
+5. Review retrying and dead-letter rows for failures during the cutover.
+6. Confirm the immutable `administrative_audit_events` row records the actor,
+   organisation, approval reference, secret version, and rotation time.
+
+The API supports one active organisation webhook signing secret. Receiver-side
+overlap must provide the safe transition.
+
+Creating, replacing, or clearing a webhook URL is also a privileged security
+change. Supply a non-empty approval reference, then confirm the corresponding
+administrative event before treating the configuration as active. Do not use a
+generic organisation update without that evidence.
+
+## 8. Anchor submitter private key
+
+This key can submit Merkle roots and spend gas. It cannot create a valid agent
+signature, but compromise can pollute the registry and exhaust funds.
+
+1. Generate a replacement EOA offline and fund only the approved operating
+   amount.
+2. Through the Safe and timelock, grant `SUBMITTER_ROLE` to the new address.
+3. After the delay and independent role readback, update
+   `BLOCKCHAIN_PRIVATE_KEY` and restart the worker.
+4. Confirm chain ID, contract address, first transaction, root, and matching
+   `merkle_proofs` row.
+5. Through the Safe and timelock, revoke the old submitter role.
+6. Sweep remaining funds and destroy all copies of the retired key.
+
+For suspected compromise, pause the registry and stop the worker first. Do not
+unpause until the hostile key is revoked and pending operations are reviewed.
+
+## 9. RPC provider credential
+
+1. Create or rotate the provider credential and update
+   `BLOCKCHAIN_PROVIDER_URL` in the secret store.
+2. Roll the worker. It must fail before submission if
+   `BLOCKCHAIN_CHAIN_ID` does not match.
+3. Confirm the worker scrape, heartbeat, successful cycle, and one expected
+   anchor transaction.
+4. Revoke the old provider credential.
+
+## Post-rotation evidence
+
+* `/health` and the relevant authenticated readback pass.
+* Old credentials fail on an endpoint that actually requires them.
+* New credentials work on the intended consumer.
+* Worker or webhook metrics show no unexplained failure increase.
+* Persistent database state matches the expected key version, delivery state,
+  or proof state.
+* The rotation record identifies owner, timestamps, evidence, and any remaining
+  dependency on an old value.
+
+KMS or HSM custody and automated fleet-wide rewrap remain future hardening.
+Do not describe manual environment-secret storage as equivalent to either.

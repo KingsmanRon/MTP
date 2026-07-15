@@ -1,0 +1,24 @@
+# Reviewed false positives from historical examples and deterministic test data.
+# Fingerprint scoping ensures any new occurrence still fails the release gate.
+ae19ce5e676feec4fd4bb06dd694b8ffb0c53852:frontend/src/components/admin/ci-guard-panel.tsx:generic-api-key:354
+f9714d75bb059206d48031e7ad9b4a71fc5977c1:frontend/src/components/admin/ci-guard-panel.tsx:generic-api-key:139
+0068b1e4fc003f641afc6e7a496bda1a0429b03e:tests/test_public_agents.py:generic-api-key:18
+0faa040553c45e7a48f99cb5b0be133d89636323:docs/verify-page-spec.md:generic-api-key:123
+cf2032f52ebe700745e23cc0e279e9e4309a6b89:docs/verify-page-spec.md:generic-api-key:123
+90772931a16f084cff4983da6d3171a1aed93766:scripts/windows_demo_success.py:generic-api-key:24
+90772931a16f084cff4983da6d3171a1aed93766:scripts/windows_demo_blocked.py:generic-api-key:31
+7027dc9fe9023906f4e6e708d06b8c5a81e248f8:SECURITY_CHECKLIST.md:curl-auth-header:156
+7027dc9fe9023906f4e6e708d06b8c5a81e248f8:SECURITY_CHECKLIST.md:curl-auth-header:200
+520b907977bdc2c3d9db866635e2eb4f63ac6372:README.md:curl-auth-header:148
+520b907977bdc2c3d9db866635e2eb4f63ac6372:api/crypto.py:generic-api-key:226
+47dbe6120834477c296a697633d4bdfea468752c:docs/LOCAL_DEVELOPMENT.md:curl-auth-header:109
+47dbe6120834477c296a697633d4bdfea468752c:docs/LOCAL_DEVELOPMENT.md:curl-auth-header:134
+47dbe6120834477c296a697633d4bdfea468752c:docs/LOCAL_DEVELOPMENT.md:generic-api-key:70
+47dbe6120834477c296a697633d4bdfea468752c:docs/LOCAL_DEVELOPMENT.md:generic-api-key:71
+47dbe6120834477c296a697633d4bdfea468752c:docs/LOCAL_DEVELOPMENT.md:generic-api-key:111
+47dbe6120834477c296a697633d4bdfea468752c:docs/DEPLOYMENT.md:curl-auth-header:305
+47dbe6120834477c296a697633d4bdfea468752c:docs/DEPLOYMENT.md:curl-auth-header:332
+47dbe6120834477c296a697633d4bdfea468752c:docs/DEPLOYMENT.md:curl-auth-header:528
+47dbe6120834477c296a697633d4bdfea468752c:docs/DEPLOYMENT.md:curl-auth-header:537
+7027dc9fe9023906f4e6e708d06b8c5a81e248f8:DEPLOYMENT_GUIDE.md:curl-auth-header:372
+7027dc9fe9023906f4e6e708d06b8c5a81e248f8:DEPLOYMENT_GUIDE.md:curl-auth-header:405

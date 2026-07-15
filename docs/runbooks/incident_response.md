@@ -1,238 +1,258 @@
 # Incident response runbook
 
-Phase 3.4 — triage playbook for the five incident classes the platform
-actually reports on. Each section is organized the same way:
-**Symptom → Detect → Contain → Investigate → Recover → Postmortem
-checklist**.
+Use this runbook for the incident classes emitted by the current API, webhook
+outbox, and anchor worker. All times are UTC. Preserve request IDs, row IDs,
+metric snapshots, deployment identifiers, and relevant log windows in the
+incident record. Never copy credentials, signing secrets, raw webhook payloads,
+or private keys into that record.
 
-Common operator handles referenced below:
+## Operator handles
 
-| Handle | What it is |
-|--------|-----------|
-| `metrics` | The Prometheus `/metrics` endpoint (Phase 2C) — `inntris_*` series. |
-| `logs` | Stdout JSON logs when `INNTRIS_JSON_LOGS=1` (Phase 2C). Grep on `request_id`. |
-| `pauser` | Hot wallet holding `PAUSER_ROLE` on `AnchorRegistry` (Phase 3.3). |
-| `safe` | Gnosis Safe holding `PROPOSER_ROLE` on the `TimelockController`. |
-| `worker` | `workers/anchor_worker.py` process (can be stopped without data loss). |
+| Handle | Current source |
+| --- | --- |
+| API metrics | API `/metrics`, with `inntris_verify_*`, signature, replay, rate-limit, and webhook series |
+| Worker metrics | Anchor worker `:9100/metrics`, scraped as job `inntris-anchor-worker` |
+| Logs | Structured stdout when `INNTRIS_JSON_LOGS=1`; correlate with `request_id` |
+| Audit evidence | PostgreSQL `audit_logs`; authenticated policy decisions only |
+| Proof state | PostgreSQL `merkle_proofs` |
+| Webhook state | PostgreSQL `webhook_deliveries` |
+| Erasure ledger | PostgreSQL `erasure_requests` |
 
-All times are UTC. "Sev" tags follow the usual Sev1 (user-visible
-breakage, hour-scale response) / Sev2 (degraded, business-hours) /
-Sev3 (informational) convention.
+Severity 1 means user-visible or evidence-pipeline failure requiring immediate
+response. Severity 2 means degraded security or delivery requiring prompt
+investigation. Severity 3 means an informational event that still needs an
+owner and disposition.
 
----
+## 1. Invalid signature spike
 
-## 1. Signature-failure spike
+**Severity: 2. Promote to 1 if valid customer traffic is broadly failing.**
 
-**Sev: 2 (can promote to 1 if sustained).**
-
-Signatures in `/verify` are failing unexpectedly. Either a key has
-rotated without the client being updated, or an attacker is probing.
+An invalid signature is an unauthenticated attack signal. It is not evidence
+that the named agent acted. The API does not create an `audit_logs` row, consume
+the nonce, change trust, advance usage counters, send a webhook, or create an
+anchor-eligible receipt for this path.
 
 ### Detect
-* `rate(inntris_signature_failures_total[5m])` crosses its alert
-  threshold.
-* Logs show `signature_invalid` records clustered on a single
-  `agent_id` or source IP.
+
+* `rate(inntris_signature_failures_total[5m])` rises above the agreed baseline.
+* `rate(inntris_verify_requests_total{verdict="invalid_signature"}[5m])` rises.
+* API logs contain `SECURITY ALERT: invalid signature` with a hashed
+  `source_id`, claimed `agent_id`, and request ID.
+* Redis contains bounded hourly counters under
+  `inntris:security:signature_invalid:source:*` and
+  `inntris:security:signature_invalid:agent:*`. These expire after one hour.
+
+Do not query `audit_logs` for `signature_invalid`. A row there would contradict
+the security contract and should be treated as a separate integrity incident.
 
 ### Contain
-1. If one agent dominates: disable its API key in the public_orgs
-   table; RLS will stop accepting new calls within one rate-limit
-   window.
-2. If the spike is cross-agent: suspect a clock-skew or a canonical
-   payload regression — jump straight to Investigate.
+
+1. If one source dominates, block or challenge it at the edge using the direct
+   peer evidence and a short expiry. Do not create an application allowlist.
+2. If many sources claim one agent, contact the tenant. Suspend that agent only
+   when key compromise or a legitimate client regression is supported by
+   evidence:
+
+   ```bash
+   curl -X PATCH "$API_URL/admin/agents/$AGENT_ID/status?new_status=suspended" \
+     -H "X-API-Key: $INNTRIS_API_KEY"
+   ```
+
+3. If many agents fail after a deployment, stop the rollout and investigate
+   signing canonicalisation before disabling tenants.
 
 ### Investigate
-* `SELECT agent_id, count(*) FROM audit_logs WHERE verdict='invalid_signature' AND created_at > now()-interval '15 min' GROUP BY 1 ORDER BY 2 DESC`
-  tells you whether the failures concentrate on a small agent set.
-* Compare `fingerprint` in the failing payloads against the canonical
-  rules in `docs/RECEIPT_CANONICALIZATION.md`. A mismatch almost
-  always means the client skipped the `policy_hash` field or the
-  timestamp canonicalization changed.
-* Check recent deploys — a backend canonicalization change is the
-  most common cause of a legitimate-client mass failure.
+
+* Group structured logs by `source_id`, claimed `agent_id`, deployment ID, and
+  client version. Raw source IPs are intentionally absent from bounded Redis
+  telemetry.
+* Compare the client hash with `expected_action_hash` from the 401 response and
+  use side-effect-free `POST /verify/debug`.
+* Check timestamp and `sig_version` handling against `docs/REQUEST_SIGNING.md`.
+* Confirm no unexpected forensic row was inserted:
+
+  ```sql
+  SELECT id, agent_id, timestamp, verdict, signature_valid
+  FROM audit_logs
+  WHERE agent_id = 'CLAIMED_AGENT_UUID'
+    AND timestamp >= now() - interval '15 minutes'
+  ORDER BY timestamp DESC;
+  ```
+
+  Compare this result with known authenticated requests. Do not interpret the
+  absence of an invalid row as missing telemetry; it is the intended boundary.
 
 ### Recover
-* Key compromise suspected → see `secrets_rotation.md` §API keys.
-* Canonicalization regression → roll back the offending deploy; the
-  anchor worker has no state that cares.
 
-### Postmortem checklist
-* Were the failures blocked by rate limits or just logged? (Should
-  have been rate-limited at the per-agent window.)
-* Did the signature-failures counter move at least 5 minutes before
-  a human noticed?
-
----
+* For a client regression, deploy the corrected signing implementation and
+  verify with `/verify/debug` before resuming `/verify` traffic.
+* For confirmed key compromise, generate the replacement key client-side and
+  call `POST /admin/agents/{agent_id}/rotate-key`. The old key stops verifying
+  immediately. Review all audits pinned to the retired key fingerprint.
+* Remove temporary edge controls only after the metric and log rate returns to
+  baseline.
 
 ## 2. Nonce replay attempts
 
-**Sev: 2. Usually an attacker / misconfigured client replaying.**
+**Severity: 2.**
 
 ### Detect
-* `rate(inntris_nonce_replays_total[5m])` > 0 for more than one
-  window. Legitimate clients should never hit this.
+
+* `rate(inntris_nonce_replays_total[5m]) > 0`.
+* `/verify` returns 401 with `Nonce already used`.
+* The live Redis key is `inntris:nonce:{agent_id}:{nonce}` and normally has at
+  most a 600 second lifetime.
+
+The audit schema has no nonce column. Do not search `audit_logs` for a nonce or
+claim that it identifies the original request.
+
+### Contain and investigate
+
+1. Capture the request ID, agent ID, source logs, and the key's remaining TTL:
+
+   ```bash
+   redis-cli TTL "inntris:nonce:${AGENT_ID}:${NONCE}"
+   ```
+
+2. If a client retried an identical request, stop its automatic retries and
+   issue a fresh nonce for the new request.
+3. If sources or payloads differ, suspend and rotate the agent key as described
+   in section 1.
+4. Check Redis availability and restart history. A Redis flush removes replay
+   memory and is a security incident even though it cannot produce a false
+   replay response.
+
+### Recover
+
+Resume only after the client generates a unique nonce per signed request and
+Redis remains healthy. Record whether the replay window or Redis persistence
+settings need adjustment.
+
+## 3. Anchor worker stale, failed, or dead lettered
+
+**Severity: 1 if the receipt anchoring service level is breached; otherwise 2.**
+
+### Detect
+
+* `up{job="inntris-anchor-worker"} == 0`.
+* `time() - inntris_anchor_worker_heartbeat_timestamp_seconds > 900`.
+* `inntris_anchor_proof_backlog{status=~"failed|dead_letter"} > 0`.
+* `increase(inntris_anchor_submissions_total{outcome=~"failed|dead_letter"}[10m]) > 0`.
+* PostgreSQL confirms the persistent state:
+
+  ```sql
+  SELECT id, status, retry_count, next_retry_at, dead_lettered_at,
+         error_message, created_at
+  FROM merkle_proofs
+  WHERE status IN ('failed', 'dead_letter')
+  ORDER BY created_at;
+
+  SELECT count(*) AS eligible_unanchored
+  FROM audit_logs
+  WHERE merkle_root_id IS NULL
+    AND NOT COALESCE((metadata->>'test_request')::boolean, false);
+  ```
 
 ### Contain
-* Identify the source agent from the JSON log for the replayed
-  request (each replay log carries `agent_id` and `request_id`).
-* Same as §1 Contain step 1 — disable the API key of the replaying
-  agent.
 
-### Investigate
-* Confirm the original request that established the nonce: search
-  audit_logs by `nonce` value. If no prior request exists, Redis has
-  been wiped (e.g. a cache flush) and this is a false alarm; see
-  Recover.
-* If a prior request exists with a different client IP, the key is
-  likely leaked — proceed to rotation.
+1. Stop the worker if it is submitting to the wrong chain, repeatedly failing,
+   or producing unexpected roots. Stopping the worker does not delete audits.
+2. Do not delete or rewrite `merkle_proofs` or `audit_logs` rows.
+3. If only the RPC is unavailable, leave the API online and communicate the
+   receipt delay.
 
-### Recover
-* Key leak: rotate via `secrets_rotation.md` §API keys and revoke the
-  old one.
-* Redis wipe: accept the replay window loss; nonces pre-wipe are now
-  also reusable. Mitigation: the Ed25519 signature *plus* the
-  rolling-window rate limit still rejects most replay-based abuse.
+### Investigate and recover
 
-### Postmortem checklist
-* Did the nonce TTL match the expected signature validity window?
-  Misaligned TTLs are a common false-positive source.
+* For chain mismatch, correct `BLOCKCHAIN_PROVIDER_URL` and verify
+  `BLOCKCHAIN_CHAIN_ID` before restarting.
+* For gas refusal, compare live gas with `ANCHOR_MAX_GAS_PRICE_GWEI`. Any
+  temporary increase needs an approved change reference and rollback time.
+* For a `dead_letter` row, record the error, transaction state, and operator
+  decision before any manual retry.
+* Restart the worker after the cause is corrected. Confirm a fresh heartbeat,
+  a successful cycle, backlog reduction, database status, and the on-chain
+  transaction before resolving the incident.
 
----
+## 4. Webhook retry or dead letter growth
 
-## 3. Anchor worker stuck or mempool issues
-
-**Sev: 1 if unanchored log backlog exceeds SLA; Sev 2 otherwise.**
+**Severity: 2. Promote to 1 for a contractual delivery outage.**
 
 ### Detect
-* `inntris_anchor_submissions_total{outcome="failed"}` climbing or
-  `outcome="dead_letter"` non-zero (Phase 2B+2C).
-* `get_unanchored_logs` returning a growing count — surface via a
-  scrape on the worker's metrics.
-* Worker log line `assert_chain_id mismatch` or `gas cap exceeded —
-  refusing to submit`.
 
-### Contain
-1. **Stop the worker.** `SIGINT` is safe — the anchor worker state
-   machine (Phase 0.6) ensures in-flight batches either confirm or
-   move to `failed` on retry.
-2. Do **not** delete the `pending_anchor` batches. They carry the
-   audit-log integrity story.
+* `increase(inntris_webhook_delivery_attempts_total{outcome=~"retry|dead_letter|security_rejected"}[10m]) > 0`.
+* Tenant readback:
+  `GET /admin/organization/webhook-deliveries?status=dead_letter`.
+* Persistent readback:
 
-### Investigate
-* `gas cap exceeded`: network is congested. Either raise
-  `MAX_GAS_PRICE_GWEI` for a single scheduled run, or wait for gas
-  to subside. Never raise the cap silently in production config —
-  set it on a one-shot invocation with an explicit env override.
-* `chain id mismatch`: the RPC endpoint has been pointed at the
-  wrong network. Check `BASE_RPC_URL`. Do NOT restart the worker
-  until resolved.
-* `outcome=dead_letter`: inspect the batch row. These require a
-  human decision to either retry or close out with a documented
-  reason.
+  ```sql
+  SELECT id, org_id, event, status, attempt_count, response_status,
+         last_error, next_attempt_at, last_attempt_at, dead_lettered_at
+  FROM webhook_deliveries
+  WHERE status IN ('retrying', 'dead_letter')
+  ORDER BY updated_at DESC;
+  ```
 
-### Recover
-* Restart the worker once the blocker is cleared. The retry loop
-  picks up `failed` rows automatically.
-* If the on-chain contract is paused (see §5), do not restart until
-  unpause is queued through the timelock.
+### Contain and recover
 
-### Postmortem checklist
-* How long was the unanchored log window?
-* Did monitoring page in under 10 minutes?
+1. A `security_rejected` outcome means the destination failed the HTTPS, DNS,
+   public address, redirect, peer, or response-size boundary. Do not weaken
+   destination validation. Disable or replace the tenant webhook URL.
+2. For receiver errors, confirm the tenant can accept the signed request within
+   the timeout and response-size limits. Do not log or replay the raw payload
+   outside the durable outbox.
+3. For a suspected signing-secret leak, rotate with
+   `POST /admin/organization/webhook-secret/rotate`, supply the approved change
+   or incident reference, update the receiver from the one-time response, and
+   run a controlled delivery. Confirm the matching immutable
+   `administrative_audit_events` row before closing the incident.
+4. Assign every dead-letter row an owner and disposition. Preserve the row as
+   delivery evidence.
 
----
+## 5. Contract pause or submitter compromise
 
-## 4. Paused contract / admin incident
+**Severity: 1.**
 
-**Sev: 1.**
+1. Read `AnchorRegistry.paused()` and inspect recent `Paused`, `RoleGranted`,
+   and `RoleRevoked` events against the recorded addresses.
+2. For a hostile or uncertain submitter event, pause through the authorised
+   pauser, stop the worker, and inspect pending timelock operations.
+3. Use the Safe and timelock procedure to grant a replacement submitter and
+   revoke the old one. Do not bypass the configured delay.
+4. Keep the worker stopped until chain ID, contract address, role holders, Safe
+   threshold, and expected operation IDs have been read back independently.
+5. On recovery, confirm the first root against the exact `merkle_proofs` row
+   before unpausing normal operations.
 
-### Detect
-* `AnchorRegistry.paused()` returns `true` unexpectedly; worker
-  cannot anchor and starts logging `outcome=failed`.
-* Unexpected `RoleGranted` / `RoleRevoked` events on the registry.
+## 6. Rate-limit storm or denial of service
 
-### Contain — IMMEDIATE
-1. **Verify the pause is ours.** Check the `Paused` event sender
-   against the known pauser hot-wallet address.
-   * If it matches: intentional — likely a sibling incident;
-     coordinate with whoever initiated.
-   * If it does NOT match: the `DEFAULT_ADMIN_ROLE` (timelock) has
-     been used to grant `PAUSER_ROLE` to a new address, which means
-     a 48h timelock op successfully executed against us.
-2. If the pause is hostile, check `TimelockController` for pending
-   ops and cancel any that are not ours from the Safe.
-
-### Investigate
-* `etherscan` / `basescan` for recent calls to the registry and the
-  timelock. Compare against our Safe's proposal history.
-* Confirm the Safe signer set has not been altered (Safe mgmt UI).
-
-### Recover
-* Hostile pauser: from the Safe, schedule
-  `revokeRole(PAUSER_ROLE, attackerAddr)` through the timelock.
-  Wait the delay. Execute. During the delay, keep the contract
-  paused — the worker is read-safe, just cannot write.
-* Once remediated, schedule `unpause` from the Safe and execute
-  after the delay.
-
-### Postmortem checklist
-* Did the Safe threshold require more signatures than expected
-  given the incident?
-* Did on-chain monitoring alert on the scheduled op while the delay
-  was still running? The 48h delay is only useful if we actually
-  watch the queue.
-
----
-
-## 5. Rate-limit storm / denial-of-service
-
-**Sev: 2 (public), Sev: 1 (admin-login lockout).**
+**Severity: 2. Promote to 1 if legitimate verification is broadly unavailable.**
 
 ### Detect
-* `rate(inntris_rate_limit_trips_total[1m])` surges, especially the
-  `window="public_verify"` label.
-* 429 responses dominate the `/verify` latency histogram.
 
-### Contain
-* The rate limiter is fail-closed (Phase 0.5). That is the correct
-  state under load.
-* If legitimate traffic is being blocked, identify the offending
-  agent set and consider raising that agent's per-minute window in
-  code — NOT the global limit.
+* `rate(inntris_rate_limit_trips_total[1m])` rises by window label.
+* 429 responses dominate `/verify` or public registration traffic.
+* Structured logs identify `verify_preauth_source`, `verify_preauth_agent`,
+  `tenant_minute`, or another specific window.
 
-### Investigate
-* Is the surge from a single `/32` or `/24`? Add a WAF rule at the
-  edge; do not add IP allowlists to app code.
-* Check whether the surge correlates with a recent documentation
-  release — it is common for new clients to over-fetch on first
-  integration.
+### Respond
 
-### Recover
-* Edge WAF rule for the offending network range, 1-hour TTL.
-* Comm to affected legitimate clients: their requests are being
-  queued client-side by retries; our API is deliberately rejecting.
+1. Keep fail-closed limits in place.
+2. Block a proven abusive network at the edge with an expiry.
+3. Do not raise global limits to accommodate one tenant. Change a tenant or
+   agent limit only with measured capacity evidence and approval.
+4. Confirm Redis latency and API saturation before attributing the event to an
+   attacker.
+5. After recovery, verify the pre-authentication source and agent limits still
+   run before signature processing.
 
-### Postmortem checklist
-* Did fail-closed behavior cause any secondary outage (e.g.
-  cascading timeouts in downstream systems)?
-* Did alerting for `admin_login` rate-limit trips page separately?
-  (Admin login trips are ~always incident-worthy.)
+## Generic evidence capture
 
----
-
-## Generic triage template
-
-When an incident does not match a pre-written class:
-
-1. **Stop the bleeding first.** Prefer pausing writes over losing
-   data — our forensic guarantee depends on `audit_logs` being a
-   complete record of what the API decided.
-2. **Capture state before changing it.** `pg_dump` of `audit_logs`
-   and the relevant `agent` rows, Redis `DEBUG INFO`, current
-   metrics scrape, last 1k log lines. These live forever on shared
-   storage under `incidents/YYYY-MM-DD-short-slug/`.
-3. **Narrow the blast radius with the timelock.** `schedule` the
-   remediation from the Safe; if the situation escalates during
-   the delay, `cancel` is always available.
-4. **Write the postmortem the same day.** Template:
-   `what happened / detection gap / recovery gap / prevention`.
+1. Stop the unsafe activity first while preserving `audit_logs`,
+   `merkle_proofs`, `webhook_deliveries`, `approval_token_consumptions`,
+   `administrative_audit_events`, and `erasure_requests`.
+2. Capture the relevant PostgreSQL rows, Redis TTL or counter summaries,
+   Prometheus query results, Alertmanager notification evidence, deployment
+   identifiers, and structured logs. Hash exported files.
+3. Record every temporary control with an owner and expiry.
+4. Write the postmortem with timeline, blast radius, root cause, detection gap,
+   recovery gap, and prevention action.

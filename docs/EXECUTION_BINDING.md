@@ -25,6 +25,10 @@ verdict = POST /verify-token {
 proceed only if verdict.valid === true
 ```
 
+Sandbox approvals are never execution authority. A `consume:true` request for a
+token issued while the agent was sandboxed, or for an agent that is currently
+sandboxed, returns `valid:false` and does not create a consumption receipt.
+
 Each guard does one job:
 
 | Field | What it proves | Failure → `valid:false` reason |

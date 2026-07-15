@@ -1,10 +1,12 @@
 # =============================================================================
 # Security scanning — Phase 5.3
 # =============================================================================
-# Three independent jobs:
+# Five independent release-blocking jobs, including a built production image scan:
+#   * image-scan — builds the API target and blocks high or critical image CVEs.
 #   * sast      — Semgrep with the OWASP + security-audit rulesets.
 #   * sca       — pip-audit + npm audit for known-CVE dependencies.
-#   * fs-scan   — Trivy filesystem scan (configs, secrets, OS pkgs if any).
+#   * fs-scan   — Trivy configuration and working-tree secret scan.
+#   * secrets-history — Gitleaks scan across the complete Git history.
 #
 # Runs on every PR and every push to master, plus a weekly schedule so a
 # CVE that lands between pushes is still caught within 7 days.
@@ -38,7 +40,7 @@ jobs:
     # Public action from returntocorp; pinned to a major version. Dependabot
     # bumps this under ``github-actions`` ecosystem.
     container:
-      image: returntocorp/semgrep
+      image: returntocorp/semgrep:1.169.0
     steps:
       - uses: actions/checkout@v4
 
@@ -47,13 +49,13 @@ jobs:
         # p/security-audit adds language-specific patterns.
         # r2c-security-audit is the maintainer's curated baseline.
         run: |
-          semgrep ci \
+          semgrep scan \
             --config p/owasp-top-ten \
             --config p/security-audit \
             --config p/python \
-            --config p/typescript \
-            --sarif --output semgrep.sarif \
-            || true  # do not fail CI on findings (yet); upload SARIF either way
+            --config p/javascript \
+            --error \
+            --sarif --output semgrep.sarif
 
       # Code scanning needs GitHub Advanced Security on private repos; until
       # that is enabled in the repo settings the upload is best-effort and the
@@ -90,22 +92,34 @@ jobs:
           pip install -e '.[dev]'
 
       - name: pip-audit
-        # Report-only to start. Once the baseline is clean, drop the
-        # ``|| true`` so any new CVE fails CI.
-        run: pip-audit --desc --strict || true
+        run: |
+          python -m pip freeze --exclude-editable > /tmp/inntris-installed.txt
+          pip-audit -r /tmp/inntris-installed.txt \
+            --no-deps --disable-pip --desc --strict
 
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
           cache: npm
-          cache-dependency-path: frontend/package-lock.json
+          cache-dependency-path: |
+            frontend/package-lock.json
+            github-action/package-lock.json
+            trust_widget/package-lock.json
 
       - name: npm audit (frontend)
         working-directory: frontend
         # --audit-level=high so only High + Critical block the build. Low/
         # moderate go into a weekly report the team reviews; not every
         # moderate CVE is exploitable in our dep graph.
-        run: npm audit --audit-level=high --omit=dev || true
+        run: npm audit --audit-level=high
+
+      - name: npm audit (GitHub Action)
+        working-directory: github-action
+        run: npm audit --audit-level=high
+
+      - name: npm audit (trust widget)
+        working-directory: trust_widget
+        run: npm audit --audit-level=high
 
   fs-scan:
     name: trivy (filesystem + secrets)
@@ -122,12 +136,14 @@ jobs:
           #   * vuln — known CVEs in any lockfile we have
           #   * config — Dockerfile / IaC / Kubernetes misconfig
           #   * secret — accidentally committed credentials
-          scanners: vuln,config,secret
+          # Dependency CVEs are handled above with production aware pip and npm
+          # gates. Trivy blocks high severity configuration and secret findings.
+          scanners: misconfig,secret
           severity: CRITICAL,HIGH
           ignore-unfixed: true
           format: sarif
           output: trivy.sarif
-          exit-code: "0"  # report-only for now; tighten once baseline is clean
+          exit-code: "1"
 
       # Best-effort while code scanning (GHAS) is off; see the sast job note.
       - name: upload SARIF
@@ -145,6 +161,27 @@ jobs:
           name: trivy-sarif
           path: trivy.sarif
 
+  image-scan:
+    name: trivy (production image)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: build production API image
+        run: docker build --target api --tag "inntris-api:${GITHUB_SHA}" .
+
+      - name: scan production API image
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: image
+          image-ref: inntris-api:${{ github.sha }}
+          scanners: vuln
+          vuln-type: os,library
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          format: table
+          exit-code: "1"
+
   secrets-history:
     name: gitleaks (full git history)
     runs-on: ubuntu-latest
@@ -153,13 +190,12 @@ jobs:
         with:
           fetch-depth: 0  # full history so a secret committed-then-removed is still caught
 
-      - name: gitleaks detect (report-only)
-        # Report-only for now (|| true), consistent with the other jobs. Tighten
-        # to fail-on-findings once the history baseline is confirmed clean.
+      - name: gitleaks full history
         run: |
-          docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:latest \
-            detect --source=/repo --redact --no-banner \
-            --report-format sarif --report-path /repo/gitleaks.sarif || true
+          docker run --rm -v "$PWD:/repo" ghcr.io/gitleaks/gitleaks:v8.30.1 \
+            git /repo --redact --no-banner \
+            --gitleaks-ignore-path /repo/.gitleaksignore \
+            --report-format sarif --report-path /repo/gitleaks.sarif
 
       # Best-effort while code scanning (GHAS) is off; see the sast job note.
       - name: upload SARIF
