@@ -36,15 +36,15 @@ $env:INNTRIS_ADMIN_API_KEY = "inntris_live_sk_********"
 # sanity-run one scenario first (small blast radius)
 .\.venv\Scripts\python.exe scripts\usecase_poc_demo.py --scenario card
 
-# then the full set
-.\.venv\Scripts\python.exe scripts\usecase_poc_demo.py --scenario all
+# then the production recording set
+.\.venv\Scripts\python.exe scripts\usecase_poc_demo.py --scenario all --production-demo
 ```
 
 **Git Bash** — only the env line changes:
 
 ```bash
 export INNTRIS_ADMIN_API_KEY=inntris_live_sk_********
-.venv/Scripts/python.exe scripts/usecase_poc_demo.py --scenario card
+.venv/Scripts/python.exe scripts/usecase_poc_demo.py --scenario card --production-demo
 ```
 
 `INNTRIS_API_URL` already defaults to `https://api.inntris.com`. A bad or
@@ -103,19 +103,25 @@ curl -s https://api.inntris.com/health
 
 ## 2. Run the demo
 
+The default is sandbox mode. It creates verifiable test receipts but deliberately
+refuses token consumption, downstream execution, and on-chain anchoring. Use the
+explicit `--production-demo` flag for a recording that must show the execute gate
+and later Base anchoring. That flag promotes only the agents created by that run
+through the audited admin promotion endpoint.
+
 All four scenarios in order:
 
 ```bash
-.venv/Scripts/python.exe scripts/usecase_poc_demo.py --scenario all
+.venv/Scripts/python.exe scripts/usecase_poc_demo.py --scenario all --production-demo
 ```
 
 Or one at a time (good for focused recordings):
 
 ```bash
-.venv/Scripts/python.exe scripts/usecase_poc_demo.py --scenario card
-.venv/Scripts/python.exe scripts/usecase_poc_demo.py --scenario treasury
-.venv/Scripts/python.exe scripts/usecase_poc_demo.py --scenario accounting
-.venv/Scripts/python.exe scripts/usecase_poc_demo.py --scenario refund
+.venv/Scripts/python.exe scripts/usecase_poc_demo.py --scenario card --production-demo
+.venv/Scripts/python.exe scripts/usecase_poc_demo.py --scenario treasury --production-demo
+.venv/Scripts/python.exe scripts/usecase_poc_demo.py --scenario accounting --production-demo
+.venv/Scripts/python.exe scripts/usecase_poc_demo.py --scenario refund --production-demo
 ```
 
 The driver resolves your org from the admin key (`GET /admin/organization`),
@@ -257,7 +263,7 @@ is hash-bound, so "execute only after PASS" is enforced, not just narrated.
 |---|---|---|---|
 | Simulated (default) | `--execution-mode mock` | A labelled MoonPay-style execution + a mock ref | Recording; no MoonPay account needed |
 | MoonPay CLI (dry-run) | `--execution-mode moonpay-cli` | Detects the CLI on PATH, prints the intended spend, **no money moves** | Prove the real execution path is wired |
-| MoonPay CLI (live) | `--execution-mode moonpay-cli --moonpay-live` | Runs your `INNTRIS_MOONPAY_CLI_CMD` template | A real, **tiny**, pre-arranged spend only |
+| MoonPay CLI (live) | `--production-demo --execution-mode moonpay-cli --moonpay-live` | Runs your `INNTRIS_MOONPAY_CLI_CMD` template | A real, **tiny**, pre-arranged spend only |
 
 Config for the CLI path:
 
@@ -273,8 +279,8 @@ export INNTRIS_MOONPAY_CLI_CMD='<your-moonpay-cli-command> --amount {amount} --c
 
 ### Recording guidance
 
-1. Record **mock** first — deterministic and always clean.
-2. If demoing the CLI, record a **dry-run** (`moonpay-cli` without `--moonpay-live`).
+1. Record **mock** first with `--production-demo` so the execute receipt and anchor path are real.
+2. If demoing the CLI, record a **dry-run** (`--production-demo --execution-mode moonpay-cli` without `--moonpay-live`).
 3. Only do a real spend if it is **tiny and pre-funded**, and dry-run it first.
 
 ### The honest framing (say this)

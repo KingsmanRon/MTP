@@ -47,6 +47,7 @@ Inntris approves, and a blocked action is never executed.
     INNTRIS_MOONPAY_CLI_CMD live spend command template   ({amount} {currency} {vendor}
                                                            {mcc} {wallet} {asset})
     INNTRIS_MOONPAY_LIVE    "1" to allow a real spend     (or --moonpay-live; off by default)
+    INNTRIS_PRODUCTION_DEMO "1" to explicitly promote demo agents for execution and anchoring
 """
 from __future__ import annotations
 
@@ -59,15 +60,15 @@ import shlex
 import shutil
 import subprocess
 import sys
+from contextlib import suppress
+from pathlib import Path
 
 # Allow `import api...` when run as `python scripts/usecase_poc_demo.py`.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Windows consoles default to cp1252; force UTF-8 so output never crashes.
-try:
+with suppress(Exception):
     sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[attr-defined]
-except Exception:
-    pass
 
 try:
     import requests
@@ -97,6 +98,11 @@ ANCHOR_CONTRACT = "0x0600eA15802c8d2EA429371b2EB0aacCFe321480"
 # never before, and never for a blocked action.
 EXECUTION_MODE = os.environ.get("INNTRIS_EXECUTION_MODE", "mock")  # mock | moonpay-cli
 MOONPAY_LIVE = os.environ.get("INNTRIS_MOONPAY_LIVE", "").lower() in ("1", "true", "yes")
+PRODUCTION_DEMO = os.environ.get("INNTRIS_PRODUCTION_DEMO", "").lower() in (
+    "1",
+    "true",
+    "yes",
+)
 MOONPAY_CLI_BIN = os.environ.get("INNTRIS_MOONPAY_CLI_BIN", "moonpay")
 # Operator-provided command template for a REAL spend, e.g.
 #   "<your-moonpay-cli-command> --amount {amount} --currency {currency} --memo {vendor}"
@@ -129,6 +135,14 @@ def verdict_line(text: str) -> None:
 def die(msg: str) -> None:
     print(f"\nERROR: {msg}")
     sys.exit(1)
+
+
+def _safe_cli_substitution(name: str, value: object) -> str:
+    """Return an action value that cannot be interpreted as a CLI option."""
+    rendered = str(value)
+    if "\x00" in rendered or rendered.startswith("-"):
+        raise ValueError(f"unsafe MoonPay CLI value for {name}")
+    return rendered
 
 
 # --------------------------------------------------------------------------- #
@@ -208,12 +222,17 @@ def provision_agent(
     agent_id = created.json()["agent_id"]
     fingerprint = created.json().get("public_key_fingerprint", "")
 
-    requests.patch(
+    activated = requests.patch(
         f"{API_URL}/admin/agents/{agent_id}/status",
         headers=admin,
         params={"new_status": "active"},
         timeout=15,
     )
+    if activated.status_code != 200:
+        die(
+            f"activate agent '{name}' failed (HTTP {activated.status_code}): "
+            f"{activated.text}"
+        )
 
     patch: dict = {
         "trust_score": trust,
@@ -222,7 +241,30 @@ def provision_agent(
     }
     if blocked:
         patch["blocked_actions"] = list(blocked)
-    requests.patch(f"{API_URL}/admin/agents/{agent_id}", headers=admin, json=patch, timeout=15)
+    configured = requests.patch(
+        f"{API_URL}/admin/agents/{agent_id}",
+        headers=admin,
+        json=patch,
+        timeout=15,
+    )
+    if configured.status_code != 200:
+        die(
+            f"configure agent '{name}' failed (HTTP {configured.status_code}): "
+            f"{configured.text}"
+        )
+
+    if PRODUCTION_DEMO:
+        promoted = requests.post(
+            f"{API_URL}/admin/agents/{agent_id}/promote",
+            headers=admin,
+            json={"approval_reference": f"recorded-demo:{agent_id}"},
+            timeout=15,
+        )
+        if promoted.status_code != 200:
+            die(
+                f"promote agent '{name}' failed (HTTP {promoted.status_code}): "
+                f"{promoted.text}"
+            )
     return agent_id, signing_key, fingerprint
 
 
@@ -291,6 +333,7 @@ def execute_gate(agent_id: str, body: dict, approval_token: str | None) -> dict:
             "nonce": body["nonce"],
             "timestamp": body["timestamp"],
             "sig_version": body.get("sig_version", 2),
+            "consume": True,
         },
         timeout=15,
     )
@@ -424,14 +467,45 @@ def moonpay_execute(payload: dict, gate: dict) -> None:
 
     # Live path: run the operator-provided command template (their machine, their
     # credentials, their explicit opt-in). Keep amounts tiny; record a dry run first.
-    cmd = MOONPAY_CLI_CMD.format(
-        amount=amount, currency=currency, vendor=vendor, mcc=mcc,
-        wallet=payload.get("wallet_address", ""),
-        asset=payload.get("crypto_asset", payload.get("asset", "")),
-    )
-    verdict_line(f"MoonPay execution [LIVE] — {cmd}")
+    # Split the trusted operator template before substituting action data. A
+    # payload value can therefore occupy one argument but can never introduce
+    # a new executable or flag. The executable must resolve to the binary that
+    # MOONPAY_CLI_BIN selected above.
+    template_args = shlex.split(MOONPAY_CLI_CMD)
+    if not template_args:
+        kv("error", "INNTRIS_MOONPAY_CLI_CMD produced no command")
+        return
+    resolved_template_binary = shutil.which(template_args[0])
+    if not resolved_template_binary or (
+        Path(resolved_template_binary).resolve() != Path(found).resolve()
+    ):
+        kv("error", "MoonPay command template executable does not match MOONPAY_CLI_BIN")
+        return
     try:
-        out = subprocess.run(shlex.split(cmd), capture_output=True, text=True, timeout=60)
+        substitutions = {
+            name: _safe_cli_substitution(name, value)
+            for name, value in {
+                "amount": amount,
+                "currency": currency,
+                "vendor": vendor,
+                "mcc": mcc,
+                "wallet": payload.get("wallet_address", ""),
+                "asset": payload.get("crypto_asset", payload.get("asset", "")),
+            }.items()
+        }
+    except ValueError as exc:
+        kv("error", str(exc))
+        return
+    cmd_args = [found, *(arg.format(**substitutions) for arg in template_args[1:])]
+    verdict_line(f"MoonPay execution [LIVE] — {found}")
+    try:
+        out = subprocess.run(
+            cmd_args,  # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-tainted-env-args.dangerous-subprocess-use-tainted-env-args
+            capture_output=True,
+            text=True,
+            timeout=60,
+            shell=False,
+        )
         kv("exit", out.returncode)
         if out.stdout.strip():
             kv("stdout", out.stdout.strip()[:300])
@@ -481,9 +555,12 @@ def scenario_card() -> None:
     gate = execute_gate(agent_id, body, j.get("approval_token"))
     kv("execute-gate valid", gate.get("valid"))
     kv("action-bound", gate.get("action_hash_matches"))
+    kv("consumption receipt", gate.get("consumption_audit_id"))
     moonpay_execute(card_payload, gate)  # Layer 2: runs only because the gate passed
     print("\n  Public, no-auth receipt (link a counterparty to this):")
     show_receipt(j.get("audit_id"))
+    print("\n  Token consumption receipt (proof the gate ran before execution):")
+    show_receipt(gate.get("consumption_audit_id"))
 
     # B — amount over the per-action ceiling.
     step("B", "Same card, $750 purchase — over the $100 per-action ceiling")
@@ -544,7 +621,9 @@ def scenario_treasury() -> None:
     kv("daily_remaining", (j.get("limits_remaining") or {}).get("daily_remaining_usd"))
     gate = execute_gate(agent_id, body, j.get("approval_token"))
     kv("execute-gate valid", gate.get("valid"))
+    kv("consumption receipt", gate.get("consumption_audit_id"))
     show_receipt(j.get("audit_id"))
+    show_receipt(gate.get("consumption_audit_id"))
 
     # B — over the per-action ceiling ("requires stronger approval").
     step("B", "Move $5,000 USDC — above the $2,000 ceiling (needs stronger approval)")
@@ -686,7 +765,9 @@ def scenario_refund() -> None:
     kv("audit_id", j.get("audit_id"))
     gate = execute_gate(ref_id, body, j.get("approval_token"))
     kv("execute-gate valid", gate.get("valid"))
+    kv("consumption receipt", gate.get("consumption_audit_id"))
     show_receipt(j.get("audit_id"))
+    show_receipt(gate.get("consumption_audit_id"))
 
     # B — THE headline: an agent issues a refund it is not authorised to issue.
     step("B", "Support chatbot tries to issue a refund — it was never authorised to")
@@ -733,7 +814,7 @@ SCENARIOS = {
 
 
 def main() -> None:
-    global API_URL, ADMIN_API_KEY, ORG_ID, EXECUTION_MODE, MOONPAY_LIVE
+    global API_URL, ADMIN_API_KEY, ORG_ID, EXECUTION_MODE, MOONPAY_LIVE, PRODUCTION_DEMO
 
     parser = argparse.ArgumentParser(description="Inntris four-scenario PoC driver.")
     parser.add_argument(
@@ -760,12 +841,24 @@ def main() -> None:
         default=MOONPAY_LIVE,
         help="Allow a REAL MoonPay CLI spend (needs moonpay-cli + INNTRIS_MOONPAY_CLI_CMD). Off by default.",
     )
+    parser.add_argument(
+        "--production-demo",
+        action="store_true",
+        default=PRODUCTION_DEMO,
+        help=(
+            "Promote newly created demo agents so approved actions can pass the "
+            "execute gate and anchor. Use only for an intentional recorded demo."
+        ),
+    )
     args = parser.parse_args()
 
     API_URL = args.api_url.rstrip("/")
     ADMIN_API_KEY = args.api_key
     EXECUTION_MODE = args.execution_mode
     MOONPAY_LIVE = args.moonpay_live
+    PRODUCTION_DEMO = args.production_demo
+    if MOONPAY_LIVE and not PRODUCTION_DEMO:
+        die("--moonpay-live requires --production-demo")
     if not ADMIN_API_KEY:
         die(
             "missing admin API key — pass --api-key or set INNTRIS_ADMIN_API_KEY.\n"
@@ -783,6 +876,7 @@ def main() -> None:
     ORG_ID = resolve_org(ADMIN_API_KEY)
     kv("api_url", API_URL)
     kv("org_id", ORG_ID)
+    kv("agent lifecycle", "production approved" if PRODUCTION_DEMO else "sandbox")
     live = " (LIVE spend enabled)" if (EXECUTION_MODE == "moonpay-cli" and MOONPAY_LIVE) else ""
     kv("execution_mode", EXECUTION_MODE + live)
 
@@ -798,12 +892,19 @@ def main() -> None:
         "  signed, tamper-evident receipt; in production these batch hourly into a\n"
         "  Merkle tree anchored to Base L2 (chain_id 8453)."
     )
-    print(
-        "\n  MoonPay execution is the downstream consumer of the approval token —\n"
-        f"  it ran in '{EXECUTION_MODE}' mode, only after the execute gate passed.\n"
-        "  Vendor/MCC are captured in the signed receipt; vendor allowlists are the\n"
-        "  next hard-gate extension (not enforced today)."
-    )
+    if PRODUCTION_DEMO:
+        print(
+            "\n  MoonPay execution is the downstream consumer of the approval token —\n"
+            f"  it ran in '{EXECUTION_MODE}' mode, only after the execute gate passed.\n"
+            "  Vendor/MCC are captured in the signed receipt; vendor allowlists are the\n"
+            "  next hard-gate extension (not enforced today)."
+        )
+    else:
+        print(
+            "\n  Sandbox mode kept every demo agent off the production execution and\n"
+            "  anchor paths. Re-run with --production-demo only for an intentional\n"
+            "  recorded demonstration that needs execution receipts and anchoring."
+        )
     print("\n  Already live & anchored on Base mainnet — verify yourself:")
     kv("receipt page", f"https://inntris.com/verify/{LIVE_MAINNET_RECEIPT}")
     kv("merkle proof", f"https://api.inntris.com/public/verify/{LIVE_MAINNET_RECEIPT}/proof")

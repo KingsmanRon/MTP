@@ -125,7 +125,7 @@ def recompute_root(action_hash: str, proof: list[str], positions: list[bool], ke
     positions[i] is True when the sibling sits on the RIGHT of the current node.
     """
     current = bytes.fromhex(action_hash)
-    for sibling_hex, sibling_on_right in zip(proof, positions):
+    for sibling_hex, sibling_on_right in zip(proof, positions, strict=True):
         sibling = bytes.fromhex(sibling_hex)
         combined = current + sibling if sibling_on_right else sibling + current
         current = keccak(combined)
@@ -180,7 +180,7 @@ def main() -> None:
             print(f"[FAIL] signature does NOT verify but signature_valid=true ({sig_detail})")
             failures.append("signature does not verify vs signature_valid=true")
         else:
-            print(f"[OK]   signature does not verify, consistent with signature_valid=false")
+            print("[OK]   signature does not verify, consistent with signature_valid=false")
 
     # ---- 2) Merkle root from the public proof ------------------------------
     proof = _get(f"{api}/public/verify/{audit_id}/proof")
