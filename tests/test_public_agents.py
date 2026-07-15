@@ -15,7 +15,9 @@ VALID_PAYLOAD = {
 }
 
 # Base64 string that is >=44 chars but decodes to 37 bytes (not 32) — triggers 400
-WRONG_LENGTH_KEY = "c2hvcnRfa2V5X3RoYXRfaXNfbm90X2V4YWN0bHlfMzJieXRlcw=="
+WRONG_LENGTH_KEY = (  # gitleaks:allow deterministic malformed public key fixture
+    "c2hvcnRfa2V5X3RoYXRfaXNfbm90X2V4YWN0bHlfMzJieXRlcw=="
+)
 
 
 def _make_db_mock():
@@ -61,6 +63,22 @@ class TestPublicRegisterAgent:
         assert body["status"] == "active"
         db_mock.update_agent_status.assert_awaited_once()
         assert db_mock.update_agent_status.await_args.args[1].value == "active"
+        assert db_mock.create_agent.await_args.kwargs["metadata"]["sandbox"] is True
+
+    def test_public_registration_cannot_disable_sandbox(self):
+        payload = {**VALID_PAYLOAD, "sandbox": False}
+        db_mock = _make_db_mock()
+
+        app.dependency_overrides[get_db] = lambda: db_mock
+        app.dependency_overrides[get_redis] = lambda: None
+        try:
+            response = client.post("/public/agents/register", json=payload)
+        finally:
+            app.dependency_overrides.clear()
+
+        assert response.status_code == 201, response.text
+        assert db_mock.create_agent.await_args.kwargs["metadata"]["sandbox"] is True
+        assert "sandbox" in response.json()["message"].lower()
 
     def test_public_registration_ignores_allowed_actions_metadata(self):
         payload = dict(VALID_PAYLOAD)
@@ -119,6 +137,27 @@ class TestPublicRegisterAgent:
         db_mock.update_agent_status.assert_awaited_once()
         assert db_mock.update_agent_status.await_args.args[1].value == "active"
         assert db_mock.create_agent.await_args.kwargs["allowed_actions"] == ["promptfoo_eval"]
+        assert db_mock.create_agent.await_args.kwargs["metadata"]["sandbox"] is True
+
+    def test_promptfoo_public_registration_cannot_disable_sandbox(self):
+        payload = {
+            "email": "promptfoo@example.com",
+            "public_key": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+            "adapter_metadata": {},
+            "sandbox": False,
+        }
+        db_mock = _make_db_mock()
+
+        app.dependency_overrides[get_db] = lambda: db_mock
+        app.dependency_overrides[get_redis] = lambda: None
+        try:
+            response = client.post("/public/agents/register-promptfoo", json=payload)
+        finally:
+            app.dependency_overrides.clear()
+
+        assert response.status_code == 201, response.text
+        assert db_mock.create_agent.await_args.kwargs["metadata"]["sandbox"] is True
+        assert "sandbox" in response.json()["message"].lower()
 
     def test_invalid_base64_public_key_returns_400(self):
         # Valid base64 format but decodes to 37 bytes — fails our 32-byte check

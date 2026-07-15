@@ -205,6 +205,10 @@ def test_expected_metric_names_are_exported() -> None:
     assert hasattr(obs, "nonce_replays_total")
     assert hasattr(obs, "rate_limit_trips_total")
     assert hasattr(obs, "anchor_submissions_total")
+    assert hasattr(obs, "anchor_worker_heartbeat_timestamp_seconds")
+    assert hasattr(obs, "anchor_worker_last_success_timestamp_seconds")
+    assert hasattr(obs, "anchor_worker_cycles_total")
+    assert hasattr(obs, "anchor_proof_backlog")
     assert hasattr(obs, "verify_latency_seconds")
 
 

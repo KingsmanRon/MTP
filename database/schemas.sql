@@ -77,7 +77,7 @@ CREATE TABLE agents (
     total_actions_count BIGINT NOT NULL DEFAULT 0,
     total_blocked_count BIGINT NOT NULL DEFAULT 0,
     consecutive_success_count INTEGER NOT NULL DEFAULT 0,  -- For trust score adjustment
-    metadata JSONB DEFAULT '{}',
+    metadata JSONB NOT NULL DEFAULT '{"sandbox": true}',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
@@ -85,7 +85,22 @@ CREATE TABLE agents (
     CONSTRAINT agent_trust_score_range CHECK (trust_score >= 0 AND trust_score <= 100),
     CONSTRAINT agent_daily_limit_positive CHECK (daily_limit_usd >= 0),
     CONSTRAINT agent_per_action_limit_positive CHECK (per_action_limit_usd >= 0),
-    CONSTRAINT agent_rate_limit_positive CHECK (rate_limit_per_minute > 0)
+    CONSTRAINT agent_rate_limit_positive CHECK (rate_limit_per_minute > 0),
+    CONSTRAINT agent_production_approval_required CHECK (
+        COALESCE(
+            metadata @> '{"sandbox": true}'::JSONB
+            OR (
+                metadata @> '{"sandbox": false}'::JSONB
+                AND JSONB_TYPEOF(metadata->'production_approval_reference') = 'string'
+                AND BTRIM(metadata->>'production_approval_reference') <> ''
+                AND JSONB_TYPEOF(metadata->'production_approved_at') = 'string'
+                AND BTRIM(metadata->>'production_approved_at') <> ''
+                AND JSONB_TYPEOF(metadata->'production_approved_by') = 'string'
+                AND BTRIM(metadata->>'production_approved_by') <> ''
+            ),
+            FALSE
+        )
+    )
 );
 
 CREATE UNIQUE INDEX idx_agents_public_key_fingerprint ON agents(public_key_fingerprint);

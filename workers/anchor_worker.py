@@ -18,7 +18,9 @@ import os
 import signal
 import socket
 import sys
-from collections.abc import Callable
+import time
+from collections.abc import AsyncIterator, Callable, Mapping
+from contextlib import asynccontextmanager, suppress
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any, TypeVar
@@ -70,6 +72,37 @@ MAX_RETRIES = int(os.getenv("ANCHOR_MAX_RETRIES", "5"))
 # RETRY_BACKOFF_BASE_SECONDS * 2^(N-1), capped at RETRY_BACKOFF_MAX_SECONDS.
 RETRY_BACKOFF_BASE_SECONDS = int(os.getenv("ANCHOR_RETRY_BACKOFF_BASE", "60"))
 RETRY_BACKOFF_MAX_SECONDS = int(os.getenv("ANCHOR_RETRY_BACKOFF_MAX", str(60 * 60)))
+METRICS_ENABLED = os.getenv("ANCHOR_METRICS_ENABLED", "true").lower() not in (
+    "0",
+    "false",
+    "no",
+)
+
+
+def resolve_worker_metrics_port(environment: Mapping[str, str] = os.environ) -> int:
+    """Return the dedicated worker metrics port.
+
+    ``PORT`` belongs to the API/web process on several hosting platforms. The
+    anchor worker is a separate process and must not silently bind the API
+    listener's port when both services share an environment.
+    """
+    port = int(environment.get("ANCHOR_METRICS_PORT", "9100"))
+    if not 1 <= port <= 65535:
+        raise ValueError("ANCHOR_METRICS_PORT must be between 1 and 65535")
+    return port
+
+
+METRICS_PORT = resolve_worker_metrics_port()
+METRICS_ADDRESS = os.getenv("ANCHOR_METRICS_ADDRESS", "0.0.0.0")
+HEARTBEAT_INTERVAL_SECONDS = float(os.getenv("ANCHOR_HEARTBEAT_INTERVAL_SECONDS", "30"))
+if HEARTBEAT_INTERVAL_SECONDS <= 0:
+    raise ValueError("ANCHOR_HEARTBEAT_INTERVAL_SECONDS must be greater than zero")
+
+# A session advisory lock serialises all anchor processing for this database.
+# The value is deliberately stable across releases and fits PostgreSQL bigint.
+ANCHOR_WORKER_LOCK_ID = int(os.getenv("ANCHOR_WORKER_LOCK_ID", "5282246097192575745"))
+if not -(2**63) <= ANCHOR_WORKER_LOCK_ID < 2**63:
+    raise ValueError("ANCHOR_WORKER_LOCK_ID must fit a signed PostgreSQL bigint")
 
 
 def normalize_transaction_hash(value: Any) -> str:
@@ -469,6 +502,80 @@ class DatabaseService:
     async def close(self):
         await self._pool.close()
 
+    @asynccontextmanager
+    async def anchor_cycle_lock(self) -> AsyncIterator[bool]:
+        """Try to hold the database wide anchor lock for one complete cycle.
+
+        A transaction scoped advisory lock remains safe when the deployment
+        uses a transaction pooling proxy such as PgBouncer. Keep the
+        transaction and its exact pooled connection open until processing
+        finishes. PostgreSQL releases the lock on commit, rollback, connection
+        loss, or process death, allowing another worker to take over safely.
+        """
+        connection = await self._pool.acquire()
+        transaction = connection.transaction()
+        transaction_started = False
+        connection_terminated = False
+        try:
+            await transaction.start()
+            transaction_started = True
+            try:
+                # The lock transaction intentionally spans RPC work. Prevent a
+                # database default idle timeout from silently releasing the
+                # lock while an on chain receipt is still pending.
+                await connection.execute(
+                    "SET LOCAL idle_in_transaction_session_timeout = 0"
+                )
+                acquired = bool(
+                    await connection.fetchval(
+                        "SELECT pg_try_advisory_xact_lock($1::bigint)",
+                        ANCHOR_WORKER_LOCK_ID,
+                    )
+                )
+                yield acquired
+            except BaseException:
+                try:
+                    await transaction.rollback()
+                except Exception:
+                    connection.terminate()
+                    connection_terminated = True
+                    logger.exception(
+                        "Failed to roll back anchor worker lock transaction"
+                    )
+                raise
+            else:
+                try:
+                    await transaction.commit()
+                except Exception:
+                    connection.terminate()
+                    connection_terminated = True
+                    logger.exception("Failed to commit anchor worker lock transaction")
+                    raise
+        finally:
+            # A failed transaction start has no lock, but the connection still
+            # belongs to the pool and must be returned. Failed commit/rollback
+            # paths terminate it so a possibly lock holding session is never
+            # reused.
+            if transaction_started and connection_terminated:
+                logger.warning("Discarded anchor worker lock connection")
+            if not connection_terminated:
+                await self._pool.release(connection)
+
+    async def get_proof_failure_counts(self) -> dict[str, int]:
+        """Return persistent failed and dead letter proof counts for alerts."""
+        query = """
+            SELECT
+                count(*) FILTER (WHERE status = 'failed') AS failed,
+                count(*) FILTER (WHERE status = 'dead_letter') AS dead_letter
+            FROM merkle_proofs
+        """
+        async with self._pool.acquire() as conn:
+            row = await conn.fetchrow(query)
+        return {
+            "failed": int(row["failed"] or 0),
+            "dead_letter": int(row["dead_letter"] or 0),
+        }
+
     async def get_unanchored_logs(self, limit: int = 1000) -> list[dict[str, Any]]:
         # Phase 2B: exclude test_request rows from real Merkle batches.
         # /admin/test-verify writes audit rows with metadata.test_request=true
@@ -654,20 +761,30 @@ class AnchorWorker:
             f"Interval: {self.interval_seconds}s"
         )
 
-        while self._running:
-            try:
-                await self._process_batch()
-            except Exception as e:
-                logger.exception(f"Error in batch processing: {e}")
+        heartbeat_task = asyncio.create_task(
+            self._heartbeat_loop(),
+            name="anchor-worker-heartbeat",
+        )
+        try:
+            while self._running:
+                try:
+                    await self._run_processing_cycle()
+                except Exception as e:
+                    self._record_cycle_error()
+                    logger.exception(f"Error in batch processing: {e}")
 
-            try:
-                await asyncio.wait_for(
-                    self._shutdown_event.wait(),
-                    timeout=self.interval_seconds,
-                )
-                break
-            except TimeoutError:
-                pass
+                try:
+                    await asyncio.wait_for(
+                        self._shutdown_event.wait(),
+                        timeout=self.interval_seconds,
+                    )
+                    break
+                except TimeoutError:
+                    pass
+        finally:
+            heartbeat_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await heartbeat_task
 
         logger.info("Anchor worker stopped")
 
@@ -676,7 +793,95 @@ class AnchorWorker:
         self._running = False
         self._shutdown_event.set()
 
+    async def _heartbeat_loop(self) -> None:
+        """Publish process liveness independently of processing outcomes."""
+        while self._running:
+            self._record_liveness_heartbeat(time.time())
+            try:
+                await asyncio.wait_for(
+                    self._shutdown_event.wait(),
+                    timeout=HEARTBEAT_INTERVAL_SECONDS,
+                )
+                return
+            except TimeoutError:
+                pass
+
+    async def _run_processing_cycle(self) -> bool:
+        """Run at most one globally serialised cycle.
+
+        Returns ``False`` when another worker owns the advisory lock. Lock
+        contention is not a successful cycle and therefore never advances the
+        last success gauge.
+        """
+        async with self.db.anchor_cycle_lock() as acquired:
+            if not acquired:
+                self._record_cycle_contention()
+                logger.warning(
+                    "Anchor processing skipped because another worker owns the advisory lock"
+                )
+                return False
+
+            await self._process_batch()
+            self._record_cycle_success(time.time())
+            return True
+
+    @staticmethod
+    def _record_liveness_heartbeat(timestamp: float) -> None:
+        try:
+            from api.observability import anchor_worker_heartbeat_timestamp_seconds
+
+            anchor_worker_heartbeat_timestamp_seconds.set(timestamp)
+        except ImportError:
+            logger.warning("Anchor worker heartbeat metric is unavailable")
+
+    @staticmethod
+    def _record_cycle_success(timestamp: float) -> None:
+        try:
+            from api.observability import (
+                anchor_worker_cycles_total,
+                anchor_worker_last_success_timestamp_seconds,
+            )
+
+            anchor_worker_last_success_timestamp_seconds.set(timestamp)
+            anchor_worker_cycles_total.labels(outcome="success").inc()
+        except ImportError:
+            logger.warning("Anchor worker success metrics are unavailable")
+
+    @staticmethod
+    def _record_cycle_error() -> None:
+        try:
+            from api.observability import anchor_worker_cycles_total
+
+            anchor_worker_cycles_total.labels(outcome="error").inc()
+        except ImportError:
+            logger.warning("Anchor worker error metric is unavailable")
+
+    @staticmethod
+    def _record_cycle_contention() -> None:
+        try:
+            from api.observability import anchor_worker_cycles_total
+
+            anchor_worker_cycles_total.labels(outcome="lock_contended").inc()
+        except ImportError:
+            logger.warning("Anchor worker contention metric is unavailable")
+
+    async def _publish_failure_backlog(self) -> None:
+        get_counts = getattr(self.db, "get_proof_failure_counts", None)
+        if get_counts is None:
+            return
+        counts = await get_counts()
+        try:
+            from api.observability import anchor_proof_backlog
+
+            for proof_status in ("failed", "dead_letter"):
+                anchor_proof_backlog.labels(status=proof_status).set(
+                    counts.get(proof_status, 0)
+                )
+        except ImportError:
+            logger.warning("Anchor proof backlog metric is unavailable")
+
     async def _process_batch(self):
+        await self._publish_failure_backlog()
         await self._retry_pending_proofs()
 
         logs = await self.db.get_unanchored_logs(self.batch_size)
@@ -820,6 +1025,12 @@ class AnchorWorker:
             error_message=error_message,
             next_retry_at=next_retry_at,
         )
+        try:
+            from api.observability import anchor_submissions_total
+
+            anchor_submissions_total.labels(outcome="failed").inc()
+        except ImportError:
+            pass
 
     async def _retry_pending_proofs(self):
         pending = await self.db.get_pending_proofs()
@@ -854,6 +1065,20 @@ async def main():
 
     # Initialize services
     logger.info("Initializing anchor worker...")
+
+    if METRICS_ENABLED:
+        from api.observability import start_worker_metrics_endpoint
+
+        start_worker_metrics_endpoint(METRICS_PORT, METRICS_ADDRESS)
+        logger.info(
+            "Anchor worker metrics listening on http://%s:%s/metrics",
+            METRICS_ADDRESS,
+            METRICS_PORT,
+        )
+    else:
+        logger.warning(
+            "Anchor worker metrics are explicitly disabled; stale worker alerts will be blind"
+        )
     db_host = _database_host_from_dsn(DATABASE_URL)
     if not db_host:
         logger.critical(

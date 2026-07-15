@@ -37,6 +37,7 @@ try:
         Gauge,
         Histogram,
         generate_latest,
+        start_http_server,
     )
     _HAS_PROMETHEUS = True
 except ImportError:  # pragma: no cover — exercised in no-prom environments
@@ -170,6 +171,34 @@ if _HAS_PROMETHEUS:
         "Total anchor transactions attempted by the worker.",
         ["outcome"],  # confirmed | failed | dead_letter
     )
+    anchor_worker_heartbeat_timestamp_seconds = Gauge(
+        "inntris_anchor_worker_heartbeat_timestamp_seconds",
+        "Unix timestamp when the anchor worker process last reported liveness.",
+    )
+    anchor_worker_last_success_timestamp_seconds = Gauge(
+        "inntris_anchor_worker_last_success_timestamp_seconds",
+        "Unix timestamp of the anchor worker's most recent successful cycle.",
+    )
+    anchor_worker_cycles_total = Counter(
+        "inntris_anchor_worker_cycles_total",
+        "Total anchor worker processing cycles by outcome.",
+        ["outcome"],  # success | error | lock_contended
+    )
+    anchor_proof_backlog = Gauge(
+        "inntris_anchor_proof_backlog",
+        "Current number of anchor proofs requiring operator attention.",
+        ["status"],  # failed | dead_letter
+    )
+    webhook_delivery_attempts_total = Counter(
+        "inntris_webhook_delivery_attempts_total",
+        "Total webhook delivery attempts by outcome.",
+        ["outcome"],  # delivered | retry | dead_letter | security_rejected
+    )
+    webhook_delivery_latency_seconds = Histogram(
+        "inntris_webhook_delivery_latency_seconds",
+        "Wall time for one outbound webhook attempt, seconds.",
+        buckets=(0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10),
+    )
     rpc_breaker_trips_total = Counter(
         "inntris_rpc_breaker_trips_total",
         "Total times the RPC circuit breaker transitioned to OPEN.",
@@ -194,6 +223,12 @@ else:  # pragma: no cover — exercised in stub mode
     nonce_replays_total = _NoopMetric()
     rate_limit_trips_total = _NoopMetric()
     anchor_submissions_total = _NoopMetric()
+    anchor_worker_heartbeat_timestamp_seconds = _NoopMetric()
+    anchor_worker_last_success_timestamp_seconds = _NoopMetric()
+    anchor_worker_cycles_total = _NoopMetric()
+    anchor_proof_backlog = _NoopMetric()
+    webhook_delivery_attempts_total = _NoopMetric()
+    webhook_delivery_latency_seconds = _NoopMetric()
     rpc_breaker_trips_total = _NoopMetric()
     rpc_breaker_rejected_total = _NoopMetric()
     rpc_breaker_state = _NoopMetric()
@@ -216,6 +251,20 @@ async def metrics_endpoint() -> Response:
             status_code=501,
         )
     return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
+
+
+def start_worker_metrics_endpoint(port: int, addr: str = "0.0.0.0") -> Any:
+    """Start the anchor worker's Prometheus HTTP endpoint.
+
+    The worker is a separate process from FastAPI, so it needs its own scrape
+    listener. Failure is explicit: silently running without a heartbeat would
+    make a dead worker indistinguishable from a quiet one.
+    """
+    if not _HAS_PROMETHEUS:
+        raise RuntimeError(
+            "prometheus-client is required for the anchor worker metrics endpoint"
+        )
+    return start_http_server(port=port, addr=addr)
 
 
 # -----------------------------------------------------------------------------

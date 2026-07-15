@@ -302,6 +302,8 @@ class CryptoService:
         verdict: str,
         server_secret: bytes,
         expiry_minutes: int = 5,
+        *,
+        sandbox: bool = False,
     ) -> str:
         """
         Generate a signed approval token.
@@ -315,6 +317,10 @@ class CryptoService:
             verdict: The verification verdict.
             server_secret: Server's secret key for HMAC.
             expiry_minutes: Token validity period.
+            sandbox: Whether the approval originated from a sandbox decision.
+                The signed claim is propagated to the consumption receipt so a
+                later agent promotion cannot turn test activity into a mainnet
+                eligible record.
 
         Returns:
             Base64-encoded approval token.
@@ -322,10 +328,12 @@ class CryptoService:
         expiry = datetime.now(UTC).timestamp() + (expiry_minutes * 60)
 
         token_data = {
+            "token_id": secrets.token_urlsafe(24),
             "agent_id": agent_id,
             "action_hash": action_hash,
             "verdict": verdict,
             "exp": int(expiry),
+            "sandbox": bool(sandbox),
         }
 
         token_json = json.dumps(token_data, sort_keys=True, separators=(",", ":"))
@@ -370,7 +378,7 @@ class CryptoService:
             if len(parts) != 2:
                 return None
 
-            token_bytes, signature_b64 = parts
+            token_bytes, signature_b64 = parts  # gitleaks:allow parsed values, not a credential
             signature = base64.b64decode(signature_b64)
 
             # Verify HMAC against each candidate secret (constant-time compare).

@@ -28,6 +28,15 @@ from api.models import (
 
 logger = logging.getLogger(__name__)
 
+_AGENT_PRODUCTION_METADATA_KEYS = frozenset(
+    {
+        "production_approval_reference",
+        "production_approved_at",
+        "production_approved_by",
+        "sandbox",
+    }
+)
+
 
 class DatabaseError(Exception):
     """Base exception for database operations."""
@@ -413,7 +422,15 @@ class Database:
 
         fingerprint = hashlib.sha256(public_key).hexdigest()
         allowed = allowed_actions or ["financial_transaction", "email_send", "api_call"]
-        meta = metadata or {}
+        # Registration can never grant production eligibility. Only the
+        # tenant-scoped promotion operation may install lifecycle approval
+        # evidence and clear the sandbox flag.
+        meta = {
+            key: value
+            for key, value in dict(metadata or {}).items()
+            if key not in _AGENT_PRODUCTION_METADATA_KEYS
+        }
+        meta["sandbox"] = True
 
         query = """
             INSERT INTO agents (
@@ -457,6 +474,64 @@ class Database:
             raise AgentNotFoundError(f"Agent {agent_id} not found")
 
         logger.info(f"Updated agent {agent_id} status to {status.value}")
+
+    async def promote_agent_to_production(
+        self,
+        *,
+        agent_id: UUID,
+        org_id: UUID,
+        approved_by: str,
+        approval_reference: str,
+    ) -> dict[str, Any]:
+        """Atomically clear sandbox status after explicit organisation approval."""
+        approval_metadata = {
+            "sandbox": False,
+            "production_approved_at": datetime.now(UTC).isoformat(),
+            "production_approved_by": approved_by,
+            "production_approval_reference": approval_reference,
+        }
+        query = """
+            UPDATE agents
+            SET status = 'active',
+                metadata = COALESCE(metadata, '{}'::jsonb) || $3::jsonb,
+                updated_at = NOW()
+            WHERE id = $1
+              AND org_id = $2
+              AND metadata @> '{"sandbox": true}'::jsonb
+            RETURNING metadata
+        """
+        async with self.acquire() as conn, conn.transaction():
+            metadata = await conn.fetchval(
+                query,
+                agent_id,
+                org_id,
+                json.dumps(approval_metadata),
+            )
+            if metadata is not None:
+                await conn.execute(
+                    """
+                    INSERT INTO administrative_audit_events (
+                        org_id, event_type, actor, approval_reference, details
+                    ) VALUES ($1, 'agent.production_promoted', $2, $3, $4::jsonb)
+                    """,
+                    org_id,
+                    approved_by,
+                    approval_reference,
+                    json.dumps({"agent_id": str(agent_id)}),
+                )
+
+        if metadata is None:
+            raise ValueError("Agent is not an eligible sandbox agent")
+        if isinstance(metadata, str):
+            metadata = json.loads(metadata)
+
+        logger.info(
+            "Promoted sandbox agent %s for org %s with approval %s",
+            agent_id,
+            org_id,
+            approval_reference,
+        )
+        return dict(metadata)
 
     async def update_agent_after_verification(
         self,
@@ -570,6 +645,240 @@ class Database:
         logger.info(f"Created organization {org_id}")
         return org_id
 
+    async def ensure_organization_webhook_secret(
+        self,
+        org_id: UUID,
+        encrypted_secret: bytes,
+    ) -> dict[str, Any] | None:
+        """Install an initial webhook secret without racing another request."""
+
+        query = """
+            UPDATE organizations
+            SET webhook_secret_ciphertext = $2,
+                webhook_secret_version = 1,
+                webhook_secret_rotated_at = NOW(),
+                updated_at = NOW()
+            WHERE id = $1
+              AND webhook_secret_ciphertext IS NULL
+            RETURNING webhook_secret_version, webhook_secret_rotated_at
+        """
+        async with self.acquire() as conn:
+            row = await conn.fetchrow(query, org_id, encrypted_secret)
+        return dict(row) if row else None
+
+    async def rotate_organization_webhook_secret(
+        self,
+        org_id: UUID,
+        encrypted_secret: bytes,
+        *,
+        actor: str,
+        approval_reference: str,
+    ) -> dict[str, Any] | None:
+        """Atomically replace a webhook secret and append approval evidence."""
+
+        query = """
+            UPDATE organizations
+            SET webhook_secret_ciphertext = $2,
+                webhook_secret_version = webhook_secret_version + 1,
+                webhook_secret_rotated_at = NOW(),
+                updated_at = NOW()
+            WHERE id = $1
+            RETURNING webhook_secret_version, webhook_secret_rotated_at
+        """
+        async with self.acquire() as conn, conn.transaction():
+            row = await conn.fetchrow(query, org_id, encrypted_secret)
+            if row is not None:
+                await conn.execute(
+                    """
+                    INSERT INTO administrative_audit_events (
+                        org_id, event_type, actor, approval_reference, details
+                    ) VALUES (
+                        $1, 'organization.webhook_secret_rotated', $2, $3,
+                        jsonb_build_object('webhook_secret_version', $4::integer)
+                    )
+                    """,
+                    org_id,
+                    actor,
+                    approval_reference,
+                    int(row["webhook_secret_version"]),
+                )
+        return dict(row) if row else None
+
+    async def enqueue_webhook_delivery(
+        self,
+        org_id: UUID,
+        event: str,
+        payload: dict[str, Any],
+    ) -> UUID | None:
+        """Persist a webhook outbox row when the tenant is fully configured."""
+
+        query = """
+            INSERT INTO webhook_deliveries (org_id, event, payload)
+            SELECT id, $2, $3::jsonb
+            FROM organizations
+            WHERE id = $1
+              AND webhook_url IS NOT NULL
+              AND webhook_secret_ciphertext IS NOT NULL
+              AND webhook_secret_version > 0
+            RETURNING id
+        """
+        async with self.acquire() as conn:
+            return await conn.fetchval(query, org_id, event, json.dumps(payload))
+
+    async def begin_webhook_delivery_attempt(self, delivery_id: UUID) -> Any | None:
+        """Claim a pending delivery and return its current tenant configuration."""
+
+        query = """
+            UPDATE webhook_deliveries AS d
+            SET status = 'delivering',
+                attempt_count = d.attempt_count + 1,
+                last_attempt_at = NOW(),
+                updated_at = NOW()
+            FROM organizations AS o
+            WHERE d.id = $1
+              AND d.org_id = o.id
+              AND (
+                    (
+                        d.status IN ('pending', 'retrying')
+                        AND d.next_attempt_at <= NOW()
+                    )
+                    OR (
+                        d.status = 'delivering'
+                        AND d.last_attempt_at < NOW() - INTERVAL '5 minutes'
+                    )
+                  )
+              AND d.attempt_count < 3
+            RETURNING d.id, d.org_id, d.event, d.payload, d.attempt_count,
+                      o.webhook_url, o.webhook_secret_ciphertext,
+                      o.webhook_secret_version
+        """
+        async with self.acquire() as conn, conn.transaction():
+            await conn.execute(
+                    """
+                    UPDATE webhook_deliveries
+                    SET status = 'dead_letter',
+                        last_error = COALESCE(
+                            last_error,
+                            'Delivery ownership expired after the final attempt'
+                        ),
+                        dead_lettered_at = NOW(),
+                        next_attempt_at = NULL,
+                        updated_at = NOW()
+                    WHERE id = $1
+                      AND status = 'delivering'
+                      AND last_attempt_at < NOW() - INTERVAL '5 minutes'
+                      AND attempt_count >= 3
+                    """,
+                delivery_id,
+            )
+            return await conn.fetchrow(query, delivery_id)
+
+    async def mark_webhook_delivery_delivered(
+        self,
+        delivery_id: UUID,
+        response_status: int,
+    ) -> None:
+        query = """
+            UPDATE webhook_deliveries
+            SET status = 'delivered',
+                response_status = $2,
+                last_error = NULL,
+                delivered_at = NOW(),
+                next_attempt_at = NULL,
+                updated_at = NOW()
+            WHERE id = $1 AND status = 'delivering'
+        """
+        async with self.acquire() as conn:
+            await conn.execute(query, delivery_id, response_status)
+
+    async def mark_webhook_delivery_retry(
+        self,
+        delivery_id: UUID,
+        error: str,
+        response_status: int | None,
+        retry_delay_seconds: float,
+    ) -> None:
+        query = """
+            UPDATE webhook_deliveries
+            SET status = 'retrying',
+                response_status = $3,
+                last_error = $2,
+                next_attempt_at = NOW() + ($4 * INTERVAL '1 second'),
+                updated_at = NOW()
+            WHERE id = $1 AND status = 'delivering'
+        """
+        async with self.acquire() as conn:
+            await conn.execute(
+                query,
+                delivery_id,
+                error,
+                response_status,
+                retry_delay_seconds,
+            )
+
+    async def mark_webhook_delivery_dead_letter(
+        self,
+        delivery_id: UUID,
+        error: str,
+        response_status: int | None,
+    ) -> None:
+        query = """
+            UPDATE webhook_deliveries
+            SET status = 'dead_letter',
+                response_status = $3,
+                last_error = $2,
+                dead_lettered_at = NOW(),
+                next_attempt_at = NULL,
+                updated_at = NOW()
+            WHERE id = $1 AND status = 'delivering'
+        """
+        async with self.acquire() as conn:
+            await conn.execute(query, delivery_id, error, response_status)
+
+    async def list_webhook_deliveries(
+        self,
+        org_id: UUID,
+        *,
+        status_filter: str | None = None,
+        limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        """Return recent delivery state without exposing stored payloads."""
+
+        query = """
+            SELECT id, event, status, attempt_count, response_status, last_error,
+                   created_at, last_attempt_at, delivered_at, dead_lettered_at,
+                   next_attempt_at
+            FROM webhook_deliveries
+            WHERE org_id = $1
+              AND ($2::text IS NULL OR status = $2)
+            ORDER BY created_at DESC
+            LIMIT $3
+        """
+        async with self.acquire() as conn:
+            rows = await conn.fetch(query, org_id, status_filter, limit)
+        return [dict(row) for row in rows]
+
+    async def list_due_webhook_delivery_ids(self, limit: int = 50) -> list[UUID]:
+        """Return delivery ids that are due or whose previous owner died."""
+
+        query = """
+            SELECT id
+            FROM webhook_deliveries
+            WHERE (
+                    status IN ('pending', 'retrying')
+                    AND next_attempt_at <= NOW()
+                  )
+               OR (
+                    status = 'delivering'
+                    AND last_attempt_at < NOW() - INTERVAL '5 minutes'
+                  )
+            ORDER BY next_attempt_at ASC NULLS FIRST, created_at ASC
+            LIMIT $1
+        """
+        async with self.acquire() as conn:
+            rows = await conn.fetch(query, limit)
+        return [row["id"] for row in rows]
+
     # =========================================================================
     # AUDIT LOG OPERATIONS
     # =========================================================================
@@ -610,7 +919,7 @@ class Database:
                     (
                         SELECT action_hash FROM audit_logs
                         WHERE agent_id = $1
-                        ORDER BY timestamp DESC
+                        ORDER BY chain_sequence DESC
                         LIMIT 1
                     ),
                     $13, $14
@@ -673,13 +982,93 @@ class Database:
 
         return log_id
 
+    async def insert_token_consumption(
+        self,
+        entry: AuditLogEntry,
+        *,
+        token_id: str,
+        token_digest: bytes,
+        approved_action_hash: str,
+    ) -> UUID | None:
+        """Atomically claim one token and append its consumption receipt.
+
+        The database uniqueness constraints are the single use authority. A
+        conflicting token id or digest rolls back the audit insert and returns
+        ``None``. Redis may cache replay results but is never authoritative.
+        """
+
+        audit_query = """
+            INSERT INTO audit_logs (
+                agent_id, action_type, action_hash, payload, verdict,
+                verdict_reason, signature, signature_valid, request_ip,
+                request_user_agent, response_time_ms, trust_score_at_time,
+                chain_previous_hash, policy_hash, metadata
+            )
+            VALUES (
+                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
+                NULL, $13, $14
+            )
+            RETURNING id
+        """
+        try:
+            async with self.acquire() as conn, conn.transaction():
+                await conn.execute(
+                    "SELECT pg_advisory_xact_lock(hashtext($1)::bigint)",
+                    f"approval-token:{token_id}",
+                )
+                already_used = await conn.fetchval(
+                    """
+                    SELECT 1
+                    FROM approval_token_consumptions
+                    WHERE token_id = $1 OR token_digest = $2
+                    """,
+                    token_id,
+                    token_digest,
+                )
+                if already_used:
+                    return None
+
+                audit_id = await conn.fetchval(
+                    audit_query,
+                    entry.agent_id,
+                    entry.action_type,
+                    entry.action_hash,
+                    json.dumps(entry.payload),
+                    entry.verdict.value,
+                    entry.verdict_reason,
+                    entry.signature,
+                    entry.signature_valid,
+                    entry.request_ip,
+                    entry.request_user_agent,
+                    entry.response_time_ms,
+                    entry.trust_score_at_time,
+                    entry.policy_hash,
+                    json.dumps(entry.metadata),
+                )
+                await conn.execute(
+                    """
+                    INSERT INTO approval_token_consumptions (
+                        token_id, token_digest, agent_id, action_hash,
+                        audit_log_id
+                    ) VALUES ($1, $2, $3, $4, $5)
+                    """,
+                    token_id,
+                    token_digest,
+                    entry.agent_id,
+                    approved_action_hash,
+                    audit_id,
+                )
+                return audit_id
+        except asyncpg.UniqueViolationError:
+            return None
+
     async def get_last_audit_hash(self, agent_id: UUID) -> str | None:
         """Get the hash of the last audit log entry for chain linking."""
         query = """
             SELECT action_hash
             FROM audit_logs
             WHERE agent_id = $1
-            ORDER BY timestamp DESC
+            ORDER BY chain_sequence DESC
             LIMIT 1
         """
         async with self.acquire() as conn:

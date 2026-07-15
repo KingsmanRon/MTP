@@ -10,6 +10,7 @@ Complete API with all endpoints for:
 - Public verification
 """
 
+import asyncio
 import base64
 import binascii
 import csv
@@ -20,6 +21,7 @@ import logging
 import os
 import secrets
 import time
+from contextlib import suppress
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
@@ -49,6 +51,7 @@ from api.models import (
     AuditLogEntry,
     ErrorResponse,
     HealthResponse,
+    PromoteAgentRequest,
     PublicProofResponse,
     PublicRegisterAgentRequest,
     PublicRegisterAgentResponse,
@@ -72,6 +75,15 @@ from api.schemas.admin import (
     AuditProof,
     AuditSearchResponse,
     OrganizationResponse,
+)
+from api.webhooks import (
+    WebhookDeliveryError,
+    WebhookSecurityError,
+    dispatch_verdict_webhook,
+    encrypt_webhook_signing_secret,
+    generate_webhook_signing_secret,
+    resolve_webhook_destination,
+    run_webhook_delivery_recovery,
 )
 
 # Configure logging. Phase 2C: switch to structured JSON output when
@@ -134,7 +146,44 @@ def _resolve_master_admin_key(raw: str | None) -> str | None:
 
 MASTER_ADMIN_KEY = _resolve_master_admin_key(MASTER_ADMIN_KEY_RAW)
 API_KEY_PREFIX_LENGTH = 8
+VERIFY_ABUSE_WINDOW_SECONDS = 60
+VERIFY_ATTACK_TELEMETRY_TTL_SECONDS = 3600
+
+
+def _positive_int_setting(name: str, default: int) -> int:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        logger.warning("%s must be a positive integer; using %s", name, default)
+        return default
+    if value < 1:
+        logger.warning("%s must be at least 1; using %s", name, default)
+        return default
+    return value
+
+
+VERIFY_SOURCE_ATTEMPTS_PER_MINUTE = _positive_int_setting(
+    "VERIFY_SOURCE_ATTEMPTS_PER_MINUTE", 300
+)
+VERIFY_AGENT_ATTEMPTS_PER_MINUTE = _positive_int_setting(
+    "VERIFY_AGENT_ATTEMPTS_PER_MINUTE", 120
+)
+VERIFY_AGENT_SIGNATURE_CONCURRENCY = _positive_int_setting(
+    "VERIFY_AGENT_SIGNATURE_CONCURRENCY", 20
+)
+if VERIFY_AGENT_SIGNATURE_CONCURRENCY > 500:
+    raise RuntimeError("VERIFY_AGENT_SIGNATURE_CONCURRENCY must be between 1 and 500")
+AGENT_LIFECYCLE_METADATA_KEYS = {
+    "production_approval_reference",
+    "production_approved_at",
+    "production_approved_by",
+    "sandbox",
+}
 PUBLIC_REGISTRATION_METADATA_BLOCKLIST = {
+    *AGENT_LIFECYCLE_METADATA_KEYS,
     "allowed_actions",
     "blocked_actions",
     "daily_limit_usd",
@@ -165,53 +214,6 @@ SERVER_SECRETS = [SERVER_SECRET] + (
 )
 
 
-async def _deliver_webhook(
-    webhook_url: str,
-    event: str,
-    payload: dict,
-    org_id: UUID,
-) -> None:
-    """
-    Fire-and-forget webhook delivery.
-
-    Signs the payload with SERVER_SECRET (HMAC-SHA256) so receivers can verify
-    the request originated from Inntris. Failures are logged but never raised
-    — the audit log is already persisted, the webhook is a notification.
-    """
-    import hmac
-
-    import httpx
-
-    body = {
-        "event": event,
-        "org_id": str(org_id),
-        "timestamp": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
-        "data": payload,
-    }
-    canonical = json.dumps(body, sort_keys=True, separators=(",", ":"))
-    signature = hmac.new(SERVER_SECRET, canonical.encode("utf-8"), hashlib.sha256).hexdigest()
-
-    try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            response = await client.post(
-                webhook_url,
-                content=canonical,
-                headers={
-                    "Content-Type": "application/json",
-                    "X-Inntris-Signature": signature,
-                    "X-Inntris-Event": event,
-                    "User-Agent": "Inntris-Webhook/1.0",
-                },
-            )
-            if response.status_code >= 400:
-                logger.warning(
-                    "Webhook delivery returned %s for org %s event %s",
-                    response.status_code, org_id, event,
-                )
-    except Exception as e:
-        logger.warning("Webhook delivery failed for org %s event %s: %s", org_id, event, e)
-
-
 async def _dispatch_verdict_webhook(
     database: "Database",
     org_id: UUID,
@@ -222,38 +224,33 @@ async def _dispatch_verdict_webhook(
     verdict: str,
     verdict_reason: str | None,
 ) -> None:
-    """
-    Look up the org's webhook_url and schedule a fire-and-forget delivery.
-
-    Returns immediately if the org has no webhook configured. The actual HTTP
-    request is dispatched via ``asyncio.create_task`` so /verify's response
-    time is unaffected.
-    """
+    """Persist and schedule a tenant signed, SSRF safe webhook delivery."""
     try:
-        async with database.acquire() as conn:
-            webhook_url = await conn.fetchval(
-                "SELECT webhook_url FROM organizations WHERE id = $1",
-                org_id,
-            )
-        if not webhook_url:
-            return
-        import asyncio
-        asyncio.create_task(
-            _deliver_webhook(
-                webhook_url=webhook_url,
-                event=event,
-                payload={
-                    "agent_id": str(agent_id),
-                    "audit_id": str(audit_id) if audit_id else None,
-                    "action_type": action_type,
-                    "verdict": verdict,
-                    "verdict_reason": verdict_reason,
-                },
-                org_id=org_id,
-            )
+        await dispatch_verdict_webhook(
+            database=database,
+            org_id=org_id,
+            event=event,
+            agent_id=agent_id,
+            audit_id=audit_id,
+            action_type=action_type,
+            verdict=verdict,
+            verdict_reason=verdict_reason,
+            server_secrets=SERVER_SECRETS,
         )
     except Exception as e:
         logger.warning("Failed to schedule webhook for org %s: %s", org_id, e)
+
+
+async def _validated_webhook_url(raw_url: object) -> str:
+    """Return a canonical public HTTPS webhook URL or an HTTP 400."""
+
+    if not isinstance(raw_url, str):
+        raise HTTPException(status_code=400, detail="webhook_url must be a string")
+    try:
+        destination = await resolve_webhook_destination(raw_url)
+    except (WebhookSecurityError, WebhookDeliveryError) as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid webhook_url: {exc}")
+    return destination.url
 
 
 def canonical_wire_timestamp(dt: datetime) -> str:
@@ -397,6 +394,9 @@ db_pool: Database | None = None
 
 # Global Redis Pool
 redis_pool: redis.Redis | None = None
+
+# Durable webhook outbox recovery loop
+webhook_recovery_task: asyncio.Task[None] | None = None
 
 # =============================================================================
 # DEPENDENCIES
@@ -673,13 +673,204 @@ async def _check_public_rate_limit(
             headers={"Retry-After": "3600"},
         )
 
+
+def _request_source_id(request: Request) -> str:
+    """Return a non-reversible identifier for the direct network peer."""
+    source = request.client.host if request.client else "unknown"
+    return hashlib.sha256(source.encode("utf-8")).hexdigest()[:24]
+
+
+async def _increment_expiring_counters(
+    redis_conn: redis.Redis,
+    keys: tuple[str, ...],
+    ttl_seconds: int,
+) -> tuple[int, ...]:
+    """Increment fixed-cardinality counters and attach a finite lifetime."""
+    pipeline = redis_conn.pipeline(transaction=True)
+    for key in keys:
+        pipeline.incr(key)
+        pipeline.expire(key, ttl_seconds)
+    results = await pipeline.execute()
+    return tuple(int(results[index]) for index in range(0, len(results), 2))
+
+
+async def _check_verify_abuse_limits(
+    request: Request,
+    redis_conn: redis.Redis | None,
+    _agent_id: UUID | None = None,
+) -> None:
+    """Reserve a bounded source attempt before agent lookup or signature work.
+
+    ``agent_id`` remains an optional compatibility argument for callers from
+    older SDK tests. It is deliberately not used as a persistent rate limit:
+    an unauthenticated attacker must not be able to exhaust a victim agent's
+    verification budget by repeatedly submitting invalid signatures.
+    """
+    if redis_conn is None:
+        logger.error("SECURITY: Redis unavailable for verification abuse limits")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Verification service temporarily unavailable. Please retry.",
+        )
+
+    source_id = _request_source_id(request)
+    minute_bucket = int(time.time()) // VERIFY_ABUSE_WINDOW_SECONDS
+    source_key = f"inntris:verify:preauth:source:{source_id}:{minute_bucket}"
+    try:
+        (source_count,) = await _increment_expiring_counters(
+            redis_conn,
+            (source_key,),
+            VERIFY_ABUSE_WINDOW_SECONDS * 2,
+        )
+    except Exception as exc:
+        logger.error("SECURITY: verification abuse limiter failed closed: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Verification service temporarily unavailable. Please retry.",
+        ) from exc
+
+    if source_count > VERIFY_SOURCE_ATTEMPTS_PER_MINUTE:
+        from api.observability import rate_limit_trips_total
+
+        rate_limit_trips_total.labels(window="verify_preauth_source").inc()
+        logger.warning(
+            "SECURITY: verification preauthentication limit exceeded "
+            "window=verify_preauth_source source_id=%s",
+            source_id,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Verification attempt rate limit exceeded.",
+            headers={"Retry-After": str(VERIFY_ABUSE_WINDOW_SECONDS)},
+        )
+
+
+async def _check_authenticated_agent_limit(
+    redis_conn: redis.Redis | None,
+    agent_id: UUID,
+) -> None:
+    """Reserve an agent attempt only after its signature has authenticated it."""
+    if redis_conn is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Verification service temporarily unavailable. Please retry.",
+        )
+
+    minute_bucket = int(time.time()) // VERIFY_ABUSE_WINDOW_SECONDS
+    agent_key = f"inntris:verify:authenticated:agent:{agent_id}:{minute_bucket}"
+    try:
+        (agent_count,) = await _increment_expiring_counters(
+            redis_conn,
+            (agent_key,),
+            VERIFY_ABUSE_WINDOW_SECONDS * 2,
+        )
+    except Exception as exc:
+        logger.error("SECURITY: authenticated agent limiter failed closed: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Verification service temporarily unavailable. Please retry.",
+        ) from exc
+
+    if agent_count > VERIFY_AGENT_ATTEMPTS_PER_MINUTE:
+        from api.observability import rate_limit_trips_total
+
+        rate_limit_trips_total.labels(window="verify_authenticated_agent").inc()
+        logger.warning(
+            "SECURITY: authenticated agent limit exceeded agent_id=%s",
+            agent_id,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Agent verification attempt rate limit exceeded.",
+            headers={"Retry-After": str(VERIFY_ABUSE_WINDOW_SECONDS)},
+        )
+
+
+async def _acquire_agent_signature_slot(
+    redis_conn: redis.Redis | None,
+    agent_id: UUID,
+) -> str:
+    """Acquire a crash bounded concurrency slot for expensive signature work."""
+    if redis_conn is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Verification service temporarily unavailable. Please retry.",
+        )
+    slot_key = f"inntris:verify:signature_slots:{agent_id}"
+    try:
+        slot_count = int(await redis_conn.incr(slot_key))
+        await redis_conn.expire(slot_key, 10)
+        if slot_count > VERIFY_AGENT_SIGNATURE_CONCURRENCY:
+            await redis_conn.decr(slot_key)
+            from api.observability import rate_limit_trips_total
+
+            rate_limit_trips_total.labels(window="verify_signature_concurrency").inc()
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Agent signature verification is at capacity. Please retry.",
+                headers={"Retry-After": "1"},
+            )
+        return slot_key
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("SECURITY: signature concurrency limiter failed closed: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Verification service temporarily unavailable. Please retry.",
+        ) from exc
+
+
+async def _release_agent_signature_slot(
+    redis_conn: redis.Redis | None,
+    slot_key: str,
+) -> None:
+    """Release a signature slot; its short TTL remains the crash safety net."""
+    if redis_conn is None:
+        return
+    try:
+        remaining = int(await redis_conn.decr(slot_key))
+        if remaining <= 0:
+            await redis_conn.delete(slot_key)
+    except Exception:
+        logger.warning("Could not release signature concurrency slot", exc_info=True)
+
+
+async def _record_invalid_signature_telemetry(
+    request: Request,
+    redis_conn: redis.Redis,
+    agent_id: UUID,
+) -> tuple[int, int] | None:
+    """Record bounded attack counters without entering the agent audit chain."""
+    source_id = _request_source_id(request)
+    hour_bucket = int(time.time()) // VERIFY_ATTACK_TELEMETRY_TTL_SECONDS
+    keys = (
+        f"inntris:security:signature_invalid:source:{source_id}:{hour_bucket}",
+        f"inntris:security:signature_invalid:agent:{agent_id}:{hour_bucket}",
+    )
+    try:
+        counts = await _increment_expiring_counters(
+            redis_conn,
+            keys,
+            VERIFY_ATTACK_TELEMETRY_TTL_SECONDS,
+        )
+        return counts[0], counts[1]
+    except Exception as exc:
+        logger.error(
+            "SECURITY: invalid signature telemetry failed source_id=%s agent_id=%s: %s",
+            source_id,
+            agent_id,
+            exc,
+        )
+        return None
+
 # =============================================================================
 # STARTUP / SHUTDOWN
 # =============================================================================
 
 @app.on_event("startup")
 async def startup_event():
-    global db_pool, redis_pool
+    global db_pool, redis_pool, webhook_recovery_task
     logger.info("Starting Inntris Core API v1.0.0")
 
     # Initialize database pool
@@ -687,6 +878,10 @@ async def startup_event():
     try:
         db_pool = await Database.create(dsn)
         logger.info("Database connection established")
+        webhook_recovery_task = asyncio.create_task(
+            run_webhook_delivery_recovery(db_pool, SERVER_SECRETS),
+            name="webhook-delivery-recovery",
+        )
     except Exception as e:
         logger.critical(f"Failed to connect to database: {e}")
 
@@ -702,7 +897,12 @@ async def startup_event():
 
 @app.on_event("shutdown")
 async def shutdown_event():
-    global db_pool, redis_pool
+    global db_pool, redis_pool, webhook_recovery_task
+    if webhook_recovery_task:
+        webhook_recovery_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await webhook_recovery_task
+        webhook_recovery_task = None
     if db_pool:
         await db_pool.close()
         logger.info("Database connection closed")
@@ -806,15 +1006,32 @@ async def get_public_agent_info(
 
         # Get organization name
         org = await database.get_organization_by_id(agent.org_id)
+        agent_metadata = _json_dict(agent.metadata)
+        sandbox = bool(agent_metadata.get("sandbox"))
+        production_approved = bool(
+            not sandbox
+            and agent_metadata.get("production_approval_reference")
+            and agent_metadata.get("production_approved_at")
+            and agent_metadata.get("production_approved_by")
+        )
+        is_verified = bool(
+            agent.status == AgentStatus.ACTIVE and production_approved
+        )
 
         return {
             "agent_id": str(agent.id),
             "name": agent.name,
-            "organization_name": org.name,
+            "organization_name": org.name if production_approved else "Sandbox",
             "trust_score": agent.trust_score,
             "status": agent.status.value,
-            "is_verified": agent.status == AgentStatus.ACTIVE,
-            "verified_since": agent.created_at.isoformat() if agent.status == AgentStatus.ACTIVE else None,
+            "is_verified": is_verified,
+            "sandbox": sandbox,
+            "production_approved": production_approved,
+            "verified_since": (
+                str(agent_metadata["production_approved_at"])
+                if is_verified
+                else None
+            ),
             "total_actions": agent.total_actions_count,
             "last_action_at": agent.last_action_at.isoformat() if agent.last_action_at else None,
         }
@@ -837,7 +1054,7 @@ async def public_register_agent(
     redis_conn: redis.Redis | None = Depends(get_redis),
 ):
     """
-    Bootstrap a new agent without an API key.
+    Bootstrap a new sandbox agent without an API key.
 
     Creates (or reuses) an organization keyed by email, then registers the
     agent with the provided Ed25519 public key. Rate-limited to 5 per IP
@@ -895,7 +1112,7 @@ async def public_register_agent(
         name=f"agent-{fingerprint[:8]}",
         public_key=public_key_bytes,
         allowed_actions=["tool_call", "api_call"],
-        metadata={**adapter_meta, "source": "public_registration", "sandbox": request_data.sandbox},
+        metadata={**adapter_meta, "source": "public_registration", "sandbox": True},
     )
     # Public bootstrap promises an immediately usable agent. Persist that
     # promise instead of returning "active" while the row remains pending.
@@ -908,10 +1125,9 @@ async def public_register_agent(
         status="active",
         created_at=datetime.now(UTC).isoformat().replace("+00:00", "Z"),
         message=(
-            "Sandbox agent registered — decisions are signed and verifiable but "
-            "never anchored on-chain. Use agent_id with POST /verify."
-            if request_data.sandbox
-            else "Agent registered. Use agent_id with POST /verify."
+            "Sandbox agent registered. Decisions are signed and verifiable but "
+            "never anchored on chain. An organisation admin must explicitly "
+            "promote the agent before production use."
         ),
     )
 
@@ -990,7 +1206,7 @@ async def public_register_promptfoo_agent(
         name=f"promptfoo-{fingerprint[:8]}",
         public_key=public_key_bytes,
         allowed_actions=["promptfoo_eval"],
-        metadata={**meta, "source": "public_registration_promptfoo", "sandbox": request_data.sandbox},
+        metadata={**meta, "source": "public_registration_promptfoo", "sandbox": True},
     )
     await database.update_agent_status(agent_id, AgentStatus.ACTIVE)
 
@@ -1001,10 +1217,9 @@ async def public_register_promptfoo_agent(
         status="active",
         created_at=datetime.now(UTC).isoformat().replace("+00:00", "Z"),
         message=(
-            "Sandbox Promptfoo agent registered — signed and verifiable but never "
-            "anchored on-chain. Use agent_id with POST /verify."
-            if request_data.sandbox
-            else "Promptfoo agent registered. Use agent_id with POST /verify."
+            "Sandbox Promptfoo agent registered. Decisions are signed and "
+            "verifiable but never anchored on chain. An organisation admin must "
+            "explicitly promote the agent before production use."
         ),
     )
 
@@ -1365,7 +1580,7 @@ async def verify_action(
     database: Database = Depends(get_db),
     redis_conn: redis.Redis | None = Depends(get_redis),
 ):
-    """Verify an agent action using strict forensic logging."""
+    """Verify a signed agent action without attributing attacks to the agent."""
     start_time = time.time()
     signature_valid = False
     verdict = ActionVerdict.BLOCKED
@@ -1373,7 +1588,11 @@ async def verify_action(
     audit_id: UUID | None = None
 
     try:
-        # STEP 1: Fetch Agent
+        # STEP 1: Reserve bounded unauthenticated attempt budgets. This runs
+        # before the agent lookup, action hashing, and Ed25519 verification.
+        await _check_verify_abuse_limits(request, redis_conn, request_data.agent_id)
+
+        # STEP 2: Fetch Agent
         try:
             agent = await database.get_agent_by_id(request_data.agent_id)
         except AgentNotFoundError:
@@ -1390,7 +1609,7 @@ async def verify_action(
         agent_meta = agent.metadata if isinstance(agent.metadata, dict) else {}
         is_sandbox = bool(agent_meta.get("sandbox"))
 
-        # STEP 2: Verify Ed25519 Signature
+        # STEP 3: Verify Ed25519 Signature
         # The signing envelope version is echoed from the client so legacy
         # agents signing with sig_version=1 continue to verify. New agents
         # should pin sig_version=2 (the default), which normalizes the
@@ -1404,75 +1623,62 @@ async def verify_action(
             timestamp=request_data.timestamp,
             sig_version=request_data.sig_version,
         )
-        effective_policy_hash = _effective_policy_hash(agent)
-        audit_signature = _decode_signature_for_audit(request_data.signature)
-
+        signature_slot = await _acquire_agent_signature_slot(redis_conn, agent.id)
         try:
-            signature_valid = CryptoService.verify_ed25519_signature(
-                public_key=agent.public_key,
-                message_hash=action_hash,
-                signature_b64=request_data.signature,
-            )
-        except SignatureVerificationError as e:
-            logger.error(f"Signature error for agent {agent.id}: {e}")
-            signature_valid = False
+            try:
+                signature_valid = CryptoService.verify_ed25519_signature(
+                    public_key=agent.public_key,
+                    message_hash=action_hash,
+                    signature_b64=request_data.signature,
+                )
+            except SignatureVerificationError as e:
+                logger.error(f"Signature error for agent {agent.id}: {e}")
+                signature_valid = False
+        finally:
+            await _release_agent_signature_slot(redis_conn, signature_slot)
 
         if not signature_valid:
             verdict = ActionVerdict.SIGNATURE_INVALID
             verdict_reason = "Ed25519 signature verification failed. Potential attack detected."
 
-            # Phase 2C: bump signature-failure counter before logging so the
-            # alerting rule (rate(inntris_signature_failures_total[5m]) > N)
-            # fires even if the audit insert later fails.
+            # Count the unauthenticated attack signal independently of the
+            # agent audit chain. Invalid signatures never reach an audit insert.
             from api.observability import signature_failures_total, verify_requests_total
             signature_failures_total.inc()
             verify_requests_total.labels(verdict="invalid_signature").inc()
 
-            logger.warning(f"SECURITY ALERT: Invalid signature from {agent.id}")
-
-            # Log failure
-            audit_entry = AuditLogEntry(
-                agent_id=agent.id,
-                action_type=request_data.action_type,
-                action_hash=action_hash,
-                payload=request_data.payload,
-                verdict=verdict,
-                verdict_reason=verdict_reason,
-                signature=audit_signature,
-                signature_valid=False,
-                request_ip=request.client.host if request.client else None,
-                request_user_agent=request.headers.get("User-Agent"),
-                response_time_ms=int((time.time() - start_time) * 1000),
-                trust_score_at_time=agent.trust_score,
-                chain_previous_hash=None,
-                policy_hash=effective_policy_hash,
-                metadata=_audit_metadata(
-                    client_policy_hash=request_data.policy_hash,
-                    key_fingerprint=agent.public_key_fingerprint,
-                    sandbox=is_sandbox,
-                ),
-            )
-            audit_id = await database.insert_audit_log(audit_entry, derive_chain_hash=True)
-
-            await _dispatch_verdict_webhook(
-                database=database,
-                org_id=agent.org_id,
-                event="verification.signature_invalid",
-                agent_id=agent.id,
-                audit_id=audit_id,
-                action_type=request_data.action_type,
-                verdict=verdict.value,
-                verdict_reason=verdict_reason,
-            )
-
-            new_trust_score = TrustScorer.calculate_adjustment(
-                current_score=agent.trust_score,
-                event_type="signature_invalid",
-            )
-            await database.update_agent_after_verification(
+            telemetry_counts = await _record_invalid_signature_telemetry(
+                request,
+                redis_conn,
                 agent.id,
-                new_trust_score,
-                was_approved=False,
+            )
+            if isinstance(telemetry_counts, tuple) and telemetry_counts[1] == 1:
+                try:
+                    await database.create_security_alert(
+                        alert_type="SIGNATURE_VERIFICATION_FAILED",
+                        severity="critical",
+                        title="Invalid Signature Detected - Potential Attack",
+                        description=(
+                            "An invalid signature was submitted for this agent. "
+                            "The alert is deduplicated to one record per agent per hour."
+                        ),
+                        agent_id=agent.id,
+                        org_id=agent.org_id,
+                        evidence={
+                            "action_type": request_data.action_type,
+                            "action_hash": action_hash,
+                            "source_id": _request_source_id(request),
+                        },
+                    )
+                except Exception:
+                    logger.exception(
+                        "SECURITY: failed to persist invalid signature alert agent_id=%s",
+                        agent.id,
+                    )
+            logger.warning(
+                "SECURITY ALERT: invalid signature source_id=%s agent_id=%s",
+                _request_source_id(request),
+                agent.id,
             )
 
             # Self-diagnosing 401: echo the action hash the server verified
@@ -1510,7 +1716,13 @@ async def verify_action(
                 },
             )
 
-        # STEP 3: Replay Check (Nonce) - FAIL-CLOSED
+        # Only authenticated agent actions enter execution policy, usage, trust,
+        # forensic audit, webhook, or anchoring paths.
+        await _check_authenticated_agent_limit(redis_conn, agent.id)
+        effective_policy_hash = _effective_policy_hash(agent)
+        audit_signature = _decode_signature_for_audit(request_data.signature)
+
+        # STEP 4: Replay Check (Nonce) - FAIL-CLOSED
         # If Redis is unavailable, we MUST block the request to prevent replay attacks
         if not redis_conn:
             logger.error("SECURITY: Redis unavailable, cannot verify nonce - blocking request")
@@ -1820,7 +2032,8 @@ async def verify_action(
             agent_id=str(agent.id),
             action_hash=action_hash,
             verdict=verdict.value,
-            server_secret=SERVER_SECRET
+            server_secret=SERVER_SECRET,
+            sandbox=is_sandbox,
         )
 
         # Phase 2C — successful verification. Observed after the audit insert
@@ -1865,10 +2078,10 @@ async def verify_debug(
     row, consuming the nonce, evaluating policy, adjusting the trust score, or
     emitting a signature-failure security alert.
 
-    Use this while wiring up a new client: a wrong signature here costs nothing,
-    whereas a wrong signature against ``/verify`` writes a forensic row, drops
-    the agent's trust score by 20, and trips signature-failure monitoring. Once
-    ``signature_valid`` is true, switch to ``POST /verify``. See
+    Use this while wiring up a new client. A wrong signature against either
+    endpoint never changes the agent's trust or forensic execution chain.
+    ``POST /verify`` additionally records bounded attack telemetry and returns
+    401. Once ``signature_valid`` is true, switch to ``POST /verify``. See
     docs/REQUEST_SIGNING.md.
     """
     await _check_public_rate_limit(
@@ -1933,19 +2146,23 @@ async def verify_debug(
 
 async def _record_token_consumption(
     database: Database,
+    token_id: str,
+    token_digest: bytes,
     token_agent_id: str,
     token_action_hash: str,
     token_verdict: str | None,
     expires_at: datetime | None,
     action_hash_matches: bool | None,
+    token_sandbox: bool,
     request: Request,
 ) -> UUID:
-    """Insert the anchored ``token_consumed`` audit event for a consumed token.
+    """Insert the ``token_consumed`` audit event for a consumed token.
 
     The consumption event is what makes the approve→execute ordering provable
     after the fact: the original approval and this consumption both live in the
-    per-agent hash chain and flow into the same Merkle anchoring pipeline, and
-    the token's TTL bounds the gap between them. Without this row the
+    per-agent hash chain. Production records flow into the Merkle anchoring
+    pipeline; sandbox records remain explicitly excluded. The token's TTL
+    bounds the gap between approval and consumption. Without this row the
     executor's check would leave no trace anywhere a verifier can reach.
 
     Like ``/v1/events`` rows, the event carries no agent Ed25519 signature —
@@ -1958,12 +2175,19 @@ async def _record_token_consumption(
     """
     agent_uuid = UUID(token_agent_id)
     async with database.acquire() as conn:
-        trust_score = await conn.fetchval(
-            "SELECT trust_score FROM agents WHERE id = $1",
+        agent_row = await conn.fetchrow(
+            "SELECT trust_score, metadata FROM agents WHERE id = $1",
             agent_uuid,
         )
-    if trust_score is None:
+    if agent_row is None:
         raise AgentNotFoundError(f"Agent {agent_uuid} not found")
+    trust_score = agent_row["trust_score"]
+    agent_metadata = _json_dict(agent_row["metadata"])
+    is_sandbox = bool(token_sandbox or agent_metadata.get("sandbox"))
+    if is_sandbox:
+        raise SandboxExecutionDeniedError(
+            "Sandbox approvals cannot authorize production execution"
+        )
 
     consumed_at = datetime.now(UTC).isoformat().replace("+00:00", "Z")
     payload = {
@@ -1996,14 +2220,30 @@ async def _record_token_consumption(
         trust_score_at_time=trust_score,
         chain_previous_hash=None,
         policy_hash=None,
-        metadata={
-            "source": "verify_token",
-            "attestation_type": "token_consumption",
-            "original_action_hash": token_action_hash,
-            "non_cryptographic": True,
-        },
+        metadata=_audit_metadata(
+            client_policy_hash=None,
+            sandbox=is_sandbox,
+            extra={
+                "source": "verify_token",
+                "attestation_type": "token_consumption",
+                "original_action_hash": token_action_hash,
+                "non_cryptographic": True,
+            },
+        ),
     )
-    return await database.insert_audit_log(audit_entry, derive_chain_hash=True)
+    audit_id = await database.insert_token_consumption(
+        audit_entry,
+        token_id=token_id,
+        token_digest=token_digest,
+        approved_action_hash=token_action_hash,
+    )
+    if audit_id is None:
+        raise ValueError("approval token already consumed")
+    return audit_id
+
+
+class SandboxExecutionDeniedError(RuntimeError):
+    """Raised before token state changes when an execution is not production eligible."""
 
 
 @app.post(
@@ -2014,7 +2254,6 @@ async def _record_token_consumption(
 async def verify_token(
     request_data: VerifyTokenRequest,
     request: Request,
-    redis_conn: redis.Redis | None = Depends(get_redis),
     database: Database | None = Depends(get_db_optional),
 ):
     """Verify an approval token issued by ``/verify``.
@@ -2049,7 +2288,9 @@ async def verify_token(
 
     token_agent_id = claims.get("agent_id")
     token_action_hash = claims.get("action_hash")
+    token_id = claims.get("token_id")
     verdict = claims.get("verdict")
+    token_sandbox = bool(claims.get("sandbox"))
     exp = claims.get("exp")
     expires_at = (
         datetime.fromtimestamp(exp, tz=UTC) if isinstance(exp, (int, float)) else None
@@ -2066,8 +2307,9 @@ async def verify_token(
             expires_at=expires_at,
         )
 
-    # Optional action-binding check: recompute the action hash and confirm the
-    # token authorizes exactly this action.
+    # A consumed token authorizes an irreversible execution, so partial or bare
+    # consumption is never allowed. Stateless authenticity checks may remain
+    # bare, but every consume must bind all action inputs to the signed hash.
     action_hash_matches: bool | None = None
     action_fields = (
         request_data.action_type,
@@ -2075,7 +2317,20 @@ async def verify_token(
         request_data.nonce,
         request_data.timestamp,
     )
-    if all(field is not None for field in action_fields):
+    complete_action = all(field is not None for field in action_fields)
+    if request_data.consume and not complete_action:
+        return VerifyTokenResponse(
+            valid=False,
+            reason=(
+                "Token consumption requires action_type, payload, nonce, and "
+                "timestamp so the execution is bound to the approved action."
+            ),
+            verdict=verdict,
+            agent_id=token_agent_id,
+            action_hash=token_action_hash,
+            expires_at=expires_at,
+        )
+    if complete_action:
         try:
             recomputed = CryptoService.compute_action_hash(
                 agent_id=token_agent_id,
@@ -2112,18 +2367,27 @@ async def verify_token(
     # validity/binding check above has passed, so a rejected token is not burned.
     consumption_audit_id: UUID | None = None
     if request_data.consume:
-        if redis_conn is None:
+        if token_sandbox:
             return VerifyTokenResponse(
                 valid=False,
-                reason="Single-use enforcement unavailable (cache offline). Retry.",
+                reason="Sandbox approval tokens cannot authorize production execution.",
+                verdict=verdict,
+                agent_id=token_agent_id,
+                action_hash=token_action_hash,
+                expires_at=expires_at,
+                action_hash_matches=action_hash_matches,
+                sandbox=True,
+            )
+        if not isinstance(token_id, str) or not token_id:
+            return VerifyTokenResponse(
+                valid=False,
+                reason="Token predates durable single-use support. Request a new approval.",
                 verdict=verdict,
                 agent_id=token_agent_id,
                 action_hash=token_action_hash,
                 expires_at=expires_at,
                 action_hash_matches=action_hash_matches,
             )
-        # The consumption must be recorded in the audit chain or refused, so
-        # a missing database fails the request before the token is burned.
         if database is None:
             return VerifyTokenResponse(
                 valid=False,
@@ -2134,23 +2398,33 @@ async def verify_token(
                 expires_at=expires_at,
                 action_hash_matches=action_hash_matches,
             )
-        ttl = 600
-        if isinstance(exp, (int, float)):
-            ttl = max(1, int(exp - datetime.now(UTC).timestamp()))
-        used_key = f"inntris:token_used:{token_action_hash}"
         try:
-            first_use = await redis_conn.set(used_key, "1", ex=ttl, nx=True)
-        except Exception:
+            consumption_audit_id = await _record_token_consumption(
+                database=database,
+                token_id=token_id,
+                token_digest=hashlib.sha256(
+                    request_data.approval_token.encode("utf-8")
+                ).digest(),
+                token_agent_id=token_agent_id or "",
+                token_action_hash=token_action_hash or "",
+                token_verdict=verdict,
+                expires_at=expires_at,
+                action_hash_matches=action_hash_matches,
+                token_sandbox=token_sandbox,
+                request=request,
+            )
+        except SandboxExecutionDeniedError:
             return VerifyTokenResponse(
                 valid=False,
-                reason="Single-use enforcement error. Retry.",
+                reason="The agent is currently sandboxed and cannot authorize execution.",
                 verdict=verdict,
                 agent_id=token_agent_id,
                 action_hash=token_action_hash,
                 expires_at=expires_at,
                 action_hash_matches=action_hash_matches,
+                sandbox=True,
             )
-        if not first_use:
+        except ValueError:
             return VerifyTokenResponse(
                 valid=False,
                 reason="Token already used (single-use).",
@@ -2160,30 +2434,8 @@ async def verify_token(
                 expires_at=expires_at,
                 action_hash_matches=action_hash_matches,
             )
-        try:
-            consumption_audit_id = await _record_token_consumption(
-                database=database,
-                token_agent_id=token_agent_id or "",
-                token_action_hash=token_action_hash or "",
-                token_verdict=verdict,
-                expires_at=expires_at,
-                action_hash_matches=action_hash_matches,
-                request=request,
-            )
         except Exception:
             logger.exception("Failed to record token_consumed audit event")
-            # Release the single-use key so a transient failure does not burn
-            # the token without a recorded consumption; the caller may retry.
-            # If the release itself fails the token stays burned — that is the
-            # fail-closed direction (deny, never allow unrecorded execution).
-            try:
-                await redis_conn.delete(used_key)
-            except Exception:
-                logger.warning(
-                    "Could not release single-use key %s after audit failure; "
-                    "token remains burned",
-                    used_key,
-                )
             return VerifyTokenResponse(
                 valid=False,
                 reason=(
@@ -2205,6 +2457,7 @@ async def verify_token(
         expires_at=expires_at,
         action_hash_matches=action_hash_matches,
         consumption_audit_id=str(consumption_audit_id) if consumption_audit_id else None,
+        sandbox=token_sandbox,
     )
 
 
@@ -2312,7 +2565,8 @@ async def test_verify_action(
                 agent_id=str(agent.id),
                 action_hash=action_hash,
                 verdict=verdict.value,
-                server_secret=SERVER_SECRET
+                server_secret=SERVER_SECRET,
+                sandbox=True,
             )
 
         return VerifyActionResponse(
@@ -2407,7 +2661,9 @@ async def _get_or_create_events_agent(
         agent_id = await conn.fetchval(
             """
             SELECT id FROM agents
-            WHERE org_id = $1 AND name = 'events-v1-ingest'
+            WHERE org_id = $1
+              AND name = 'events-v1-ingest'
+              AND metadata @> '{"source": "events_v1_bootstrap", "non_cryptographic": true}'::jsonb
             LIMIT 1
             """,
             org_id,
@@ -2426,6 +2682,7 @@ async def _get_or_create_events_agent(
         metadata={
             "source": "events_v1_bootstrap",
             "non_cryptographic": True,
+            "sandbox": True,
         },
     )
     # Ingestion agents skip the Ed25519 /verify path that activates normal
@@ -2473,20 +2730,20 @@ async def ingest_event_v1(
     canonical = json.dumps(event_payload, sort_keys=True, separators=(",", ":"))
     action_hash = hashlib.sha256(canonical.encode()).hexdigest()
 
-    # Read the synthetic agent's real trust score so the audit row records a
-    # truthful value instead of a fabricated 100. The audit insert trigger owns
-    # activity counters and last_action_at.
+    # Read the synthetic agent's real trust score and lifecycle state so the
+    # audit row records truthful provenance and cannot bypass production
+    # promotion. The audit insert trigger owns activity counters and
+    # last_action_at.
     async with database.acquire() as conn:
-        agent_trust_score = await conn.fetchval(
+        agent_state = await conn.fetchrow(
             """
-            SELECT trust_score
+            SELECT trust_score, metadata
             FROM agents
             WHERE id = $1
             """,
             agent_id,
         )
-    if agent_trust_score is None:
-        agent_trust_score = 0
+    agent_trust_score = int(agent_state["trust_score"]) if agent_state else 0
 
     # These events are NOT cryptographically signed: they are partner-reported
     # facts ingested over a bearer-authenticated channel. Record them honestly.
@@ -2510,12 +2767,16 @@ async def ingest_event_v1(
         trust_score_at_time=agent_trust_score,
         chain_previous_hash=None,
         policy_hash=None,
-        metadata={
-            "source": "events_v1",
-            "key_id": str(key_id),
-            "attestation_type": "unsigned_ingestion",
-            "non_cryptographic": True,
-        },
+        metadata=_audit_metadata(
+            client_policy_hash=None,
+            sandbox=True,
+            extra={
+                "source": "events_v1",
+                "key_id": str(key_id),
+                "attestation_type": "unsigned_ingestion",
+                "non_cryptographic": True,
+            },
+        ),
     )
     audit_id = await database.insert_audit_log(audit_entry, derive_chain_hash=True)
 
@@ -2725,13 +2986,13 @@ async def get_agent_dashboard(
     except AgentNotFoundError:
         raise HTTPException(status_code=404, detail="Agent not found")
 
-@app.post("/admin/agents", tags=["Admin - Agents"])
+@app.post("/admin/agents", tags=["Admin - Agents"], status_code=201)
 async def register_agent(
     request_data: RegisterAgentRequest,
     auth: dict = Depends(require_api_scope("write")),
     database: Database = Depends(get_db),
 ):
-    """Register a new agent."""
+    """Register a new sandbox agent pending explicit production approval."""
     # Verify org_id matches authenticated org
     if request_data.org_id != auth["org_id"]:
         raise HTTPException(status_code=403, detail="Cannot register agent for another organization")
@@ -2741,6 +3002,13 @@ async def register_agent(
         if len(public_key) != 32:
             raise HTTPException(status_code=400, detail="Public key must be 32 bytes (Ed25519)")
 
+        registration_metadata = {
+            key: value
+            for key, value in request_data.metadata.items()
+            if key not in AGENT_LIFECYCLE_METADATA_KEYS
+        }
+        registration_metadata["sandbox"] = True
+
         agent_id = await database.create_agent(
             org_id=request_data.org_id,
             name=request_data.name,
@@ -2748,7 +3016,7 @@ async def register_agent(
             daily_limit_usd=request_data.daily_limit_usd,
             per_action_limit_usd=request_data.per_action_limit_usd,
             allowed_actions=request_data.allowed_actions,
-            metadata=request_data.metadata,
+            metadata=registration_metadata,
         )
 
         fingerprint = hashlib.sha256(public_key).hexdigest()
@@ -2757,6 +3025,12 @@ async def register_agent(
             "agent_id": str(agent_id),
             "public_key_fingerprint": fingerprint,
             "status": "pending_verification",
+            "sandbox": True,
+            "message": (
+                "Agent registered in sandbox. An organisation admin must use "
+                f"POST /admin/agents/{agent_id}/promote with an approval reference "
+                "before production use."
+            ),
         }
     except Exception:
         logger.exception("Admin agent registration failed")
@@ -2780,6 +3054,18 @@ async def update_agent(
             raise HTTPException(status_code=403, detail="Access denied")
 
         updates = update_request.model_dump(exclude_unset=True)
+
+        metadata_updates = updates.get("metadata")
+        if isinstance(metadata_updates, dict):
+            protected_updates = set(metadata_updates) & AGENT_LIFECYCLE_METADATA_KEYS
+            if protected_updates:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        "Sandbox and production approval metadata cannot be changed "
+                        f"directly. Use POST /admin/agents/{agent_id}/promote."
+                    ),
+                )
 
         resulting_daily_limit = updates.get("daily_limit_usd", agent.daily_limit_usd)
         resulting_per_action_limit = updates.get(
@@ -2866,6 +3152,56 @@ async def update_agent(
         }
     except AgentNotFoundError:
         raise HTTPException(status_code=404, detail="Agent not found")
+
+
+@app.post("/admin/agents/{agent_id}/promote", tags=["Admin - Agents"])
+async def promote_agent(
+    agent_id: UUID,
+    request_data: PromoteAgentRequest,
+    auth: dict = Depends(require_api_scope("admin")),
+    database: Database = Depends(get_db),
+):
+    """Explicitly approve a sandbox agent for production and mainnet proofs."""
+    try:
+        agent = await database.get_agent_by_id(agent_id)
+    except AgentNotFoundError:
+        raise HTTPException(status_code=404, detail="Agent not found")
+
+    if agent.org_id != auth["org_id"]:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    agent_metadata = agent.metadata if isinstance(agent.metadata, dict) else {}
+    if agent_metadata.get("non_cryptographic") is True:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Non-cryptographic ingestion agents cannot be promoted.",
+        )
+    if agent_metadata.get("sandbox") is not True:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Agent is already production eligible or was not created as sandbox.",
+        )
+
+    try:
+        metadata = await database.promote_agent_to_production(
+            agent_id=agent_id,
+            org_id=agent.org_id,
+            approved_by=f"org_admin:{auth['org_id']}",
+            approval_reference=request_data.approval_reference,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Agent is no longer eligible for promotion.",
+        ) from exc
+
+    return {
+        "agent_id": str(agent_id),
+        "status": AgentStatus.ACTIVE.value,
+        "sandbox": False,
+        "approval_reference": metadata.get("production_approval_reference"),
+        "approved_at": metadata.get("production_approved_at"),
+    }
 
 
 @app.get("/admin/agents/{agent_id}/policy", tags=["Admin - Agents"])
@@ -3748,7 +4084,7 @@ async def get_organization(
 @app.patch("/admin/organization", tags=["Admin - Organization"])
 async def update_organization(
     body: dict,
-    auth: dict = Depends(require_api_scope("write")),
+    auth: dict = Depends(require_api_scope("admin")),
     database: Database = Depends(get_db),
 ):
     """
@@ -3759,6 +4095,21 @@ async def update_organization(
     existing webhook.
     """
     org_id = auth["org_id"]
+    actor = f"org_admin:{org_id}"
+    approval_reference: str | None = None
+    if "webhook_url" in body:
+        raw_approval_reference = body.get("approval_reference")
+        if not isinstance(raw_approval_reference, str) or not raw_approval_reference.strip():
+            raise HTTPException(
+                status_code=400,
+                detail="approval_reference is required when changing webhook_url",
+            )
+        approval_reference = raw_approval_reference.strip()
+        if len(approval_reference) > 255:
+            raise HTTPException(
+                status_code=400,
+                detail="approval_reference must be at most 255 characters",
+            )
 
     updates: list[tuple[str, object]] = []
     if "name" in body:
@@ -3776,13 +4127,7 @@ async def update_organization(
         if raw is None or raw == "":
             updates.append(("webhook_url", None))
         else:
-            url = str(raw).strip()
-            if not url.startswith(("http://", "https://")) or len(url) > 2048:
-                raise HTTPException(
-                    status_code=400,
-                    detail="webhook_url must be an http(s) URL under 2048 chars",
-                )
-            updates.append(("webhook_url", url))
+            updates.append(("webhook_url", await _validated_webhook_url(raw)))
 
     if not updates:
         raise HTTPException(status_code=400, detail="No updatable fields provided")
@@ -3790,16 +4135,149 @@ async def update_organization(
     set_clause = ", ".join(f"{col} = ${i+2}" for i, (col, _) in enumerate(updates))
     values = [v for _, v in updates]
 
-    async with database.acquire() as conn:
+    one_time_secret: str | None = None
+    secret_version: int | None = None
+    async with database.acquire() as conn, conn.transaction():
+        previous_webhook_url: str | None = None
+        if "webhook_url" in body:
+            previous_webhook_url = await conn.fetchval(
+                "SELECT webhook_url FROM organizations WHERE id = $1 FOR UPDATE",
+                org_id,
+            )
         result = await conn.execute(
             f"UPDATE organizations SET {set_clause}, updated_at = NOW() WHERE id = $1",
-            org_id, *values,
+            org_id,
+            *values,
         )
+        configured_url = next(
+            (value for column, value in updates if column == "webhook_url"),
+            None,
+        )
+        if result != "UPDATE 0" and configured_url:
+            secret_state = await conn.fetchrow(
+                """
+                SELECT webhook_secret_ciphertext, webhook_secret_version
+                FROM organizations
+                WHERE id = $1
+                FOR UPDATE
+                """,
+                org_id,
+            )
+            if secret_state and secret_state["webhook_secret_ciphertext"] is None:
+                candidate_secret = generate_webhook_signing_secret()
+                encrypted_secret = encrypt_webhook_signing_secret(
+                    candidate_secret,
+                    org_id,
+                    SERVER_SECRET,
+                )
+                rotated = await conn.fetchrow(
+                    """
+                    UPDATE organizations
+                    SET webhook_secret_ciphertext = $2,
+                        webhook_secret_version = 1,
+                        webhook_secret_rotated_at = NOW(),
+                        updated_at = NOW()
+                    WHERE id = $1 AND webhook_secret_ciphertext IS NULL
+                    RETURNING webhook_secret_version
+                    """,
+                    org_id,
+                    encrypted_secret,
+                )
+                if rotated:
+                    one_time_secret = candidate_secret
+                    secret_version = int(rotated["webhook_secret_version"])
+        if result != "UPDATE 0" and "webhook_url" in body:
+            await conn.execute(
+                """
+                INSERT INTO administrative_audit_events (
+                    org_id, event_type, actor, approval_reference, details
+                ) VALUES ($1, 'organization.webhook_url_changed', $2, $3, $4::jsonb)
+                """,
+                org_id,
+                actor,
+                approval_reference,
+                json.dumps(
+                    {
+                        "previous_webhook_url": previous_webhook_url,
+                        "new_webhook_url": configured_url,
+                    }
+                ),
+            )
 
     if result == "UPDATE 0":
         raise HTTPException(status_code=404, detail="Organization not found")
 
-    return {"updated": [col for col, _ in updates]}
+    response: dict[str, Any] = {"updated": [col for col, _ in updates]}
+    if one_time_secret is not None:
+        response.update(
+            {
+                "webhook_signing_secret": one_time_secret,
+                "webhook_secret_version": secret_version,
+                "message": "Save the webhook signing secret now; it will not be shown again.",
+            }
+        )
+    return response
+
+
+@app.post("/admin/organization/webhook-secret/rotate", tags=["Admin - Organization"])
+async def rotate_organization_webhook_secret(
+    body: dict,
+    auth: dict = Depends(require_api_scope("admin")),
+    database: Database = Depends(get_db),
+):
+    """Rotate the tenant webhook signing secret and reveal it exactly once."""
+
+    org_id = auth["org_id"]
+    raw_approval_reference = body.get("approval_reference")
+    if not isinstance(raw_approval_reference, str) or not raw_approval_reference.strip():
+        raise HTTPException(status_code=400, detail="approval_reference is required")
+    approval_reference = raw_approval_reference.strip()
+    if len(approval_reference) > 255:
+        raise HTTPException(
+            status_code=400,
+            detail="approval_reference must be at most 255 characters",
+        )
+    signing_secret = generate_webhook_signing_secret()
+    encrypted_secret = encrypt_webhook_signing_secret(
+        signing_secret,
+        org_id,
+        SERVER_SECRET,
+    )
+    result = await database.rotate_organization_webhook_secret(
+        org_id,
+        encrypted_secret,
+        actor=f"org_admin:{org_id}",
+        approval_reference=approval_reference,
+    )
+    if result is None:
+        raise HTTPException(status_code=404, detail="Organization not found")
+    rotated_at = result["webhook_secret_rotated_at"]
+    return {
+        "webhook_signing_secret": signing_secret,
+        "webhook_secret_version": int(result["webhook_secret_version"]),
+        "rotated_at": rotated_at.isoformat(),
+        "message": "Save this webhook signing secret now; it will not be shown again.",
+    }
+
+
+@app.get("/admin/organization/webhook-deliveries", tags=["Admin - Organization"])
+async def list_organization_webhook_deliveries(
+    delivery_status: str | None = Query(None, alias="status"),
+    limit: int = Query(50, ge=1, le=100),
+    auth: dict = Depends(require_api_scope("read")),
+    database: Database = Depends(get_db),
+):
+    """List recent delivery and dead letter state for the authenticated tenant."""
+
+    allowed_statuses = {"pending", "delivering", "retrying", "delivered", "dead_letter"}
+    if delivery_status is not None and delivery_status not in allowed_statuses:
+        raise HTTPException(status_code=400, detail="Invalid webhook delivery status")
+    deliveries = await database.list_webhook_deliveries(
+        auth["org_id"],
+        status_filter=delivery_status,
+        limit=limit,
+    )
+    return {"deliveries": deliveries}
 
 
 # =============================================================================
@@ -3826,7 +4304,7 @@ async def create_organization_endpoint(
         name           (str, required) — organization display name
         contact_email  (str, required) — primary contact email
         billing_tier   (str, optional) — "free" | "starter" | "professional" | "enterprise", default "free"
-        webhook_url    (str, optional) — http(s) URL for verdict callbacks
+        webhook_url    (str, optional) — public HTTPS URL for verdict callbacks
 
     Returns:
         organization_id, api_key (PLAINTEXT, shown once), key_id, key_prefix
@@ -3846,20 +4324,13 @@ async def create_organization_endpoint(
             detail="billing_tier must be one of: free, starter, professional, enterprise",
         )
     if webhook_url is not None:
-        webhook_url = str(webhook_url).strip()
-        if webhook_url and (
-            not webhook_url.startswith(("http://", "https://")) or len(webhook_url) > 2048
-        ):
-            raise HTTPException(
-                status_code=400,
-                detail="webhook_url must be an http(s) URL under 2048 chars",
-            )
-        webhook_url = webhook_url or None
+        webhook_url = await _validated_webhook_url(webhook_url)
 
     raw_key = f"inntris_live_sk_{secrets.token_urlsafe(32)}"
     key_hash = hashlib.sha256(raw_key.encode()).digest()
     key_prefix = _api_key_prefix(raw_key)
 
+    webhook_signing_secret: str | None = None
     async with database.acquire() as conn, conn.transaction():
         org_id = await conn.fetchval(
             """
@@ -3871,6 +4342,25 @@ async def create_organization_endpoint(
                 """,
             name, contact_email, billing_tier, key_hash, webhook_url,
         )
+        if webhook_url:
+            webhook_signing_secret = generate_webhook_signing_secret()
+            encrypted_webhook_secret = encrypt_webhook_signing_secret(
+                webhook_signing_secret,
+                org_id,
+                SERVER_SECRET,
+            )
+            await conn.execute(
+                """
+                UPDATE organizations
+                SET webhook_secret_ciphertext = $2,
+                    webhook_secret_version = 1,
+                    webhook_secret_rotated_at = NOW(),
+                    updated_at = NOW()
+                WHERE id = $1
+                """,
+                org_id,
+                encrypted_webhook_secret,
+            )
         key_id = await conn.fetchval(
             """
                 INSERT INTO api_keys (
@@ -3893,5 +4383,16 @@ async def create_organization_endpoint(
         "key_id": str(key_id),
         "key_prefix": key_prefix,
         "api_key": raw_key,
+        **(
+            {
+                "webhook_signing_secret": webhook_signing_secret,
+                "webhook_secret_version": 1,
+                "webhook_message": (
+                    "Save this webhook signing secret now; it will never be shown again."
+                ),
+            }
+            if webhook_signing_secret is not None
+            else {}
+        ),
         "message": "Save this api_key now — it will never be shown again.",
     }

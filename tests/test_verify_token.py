@@ -11,7 +11,7 @@ from uuid import uuid4
 from fastapi.testclient import TestClient
 
 from api.crypto import CryptoService
-from api.main import SERVER_SECRET, app, get_db_optional, get_redis
+from api.main import SERVER_SECRET, app, get_db_optional
 
 client = TestClient(app)
 
@@ -113,22 +113,6 @@ class TestVerifyToken:
         assert body["action_hash_matches"] is False
 
 
-class _FakeRedis:
-    """Minimal async Redis stub supporting ``SET key val EX nx`` and ``DELETE``."""
-
-    def __init__(self):
-        self.store: dict[str, str] = {}
-
-    async def set(self, key, value, ex=None, nx=False):  # noqa: ARG002 — mirrors redis signature
-        if nx and key in self.store:
-            return None
-        self.store[key] = value
-        return True
-
-    async def delete(self, key):
-        return 1 if self.store.pop(key, None) is not None else 0
-
-
 class _FakeDatabase:
     """Database stub for the token-consumption audit write.
 
@@ -137,17 +121,22 @@ class _FakeDatabase:
     ``fail_insert=True`` simulates a DB outage during the audit write.
     """
 
-    def __init__(self, trust_score=50, fail_insert=False):
+    def __init__(self, trust_score=50, fail_insert=False, metadata=None):
         self.trust_score = trust_score
         self.fail_insert = fail_insert
+        self.metadata = metadata or {}
         self.entries = []
+        self.consumed_token_ids: set[str] = set()
+        self.consumed_token_digests: set[bytes] = set()
 
     def acquire(self):
         db = self
 
         class _Conn:
-            async def fetchval(self, query, *args):  # noqa: ARG002
-                return db.trust_score
+            async def fetchrow(self, query, *args):  # noqa: ARG002
+                if db.trust_score is None:
+                    return None
+                return {"trust_score": db.trust_score, "metadata": db.metadata}
 
         class _Ctx:
             async def __aenter__(self):
@@ -158,10 +147,24 @@ class _FakeDatabase:
 
         return _Ctx()
 
-    async def insert_audit_log(self, entry, *, derive_chain_hash=False):
+    async def insert_token_consumption(
+        self,
+        entry,
+        *,
+        token_id,
+        token_digest,
+        approved_action_hash,  # noqa: ARG002
+    ):
         if self.fail_insert:
             raise RuntimeError("simulated database outage")
-        self.entries.append((entry, derive_chain_hash))
+        if (
+            token_id in self.consumed_token_ids
+            or token_digest in self.consumed_token_digests
+        ):
+            return None
+        self.consumed_token_ids.add(token_id)
+        self.consumed_token_digests.add(token_digest)
+        self.entries.append((entry, True))
         return uuid4()
 
 
@@ -173,20 +176,18 @@ def _consume_body():
     }
 
 
-def _with_overrides(redis=None, db=None):
-    if redis is not None:
-        app.dependency_overrides[get_redis] = lambda: redis
+def _with_overrides(db=None):
     if db is not None:
         app.dependency_overrides[get_db_optional] = lambda: db
 
 
 def test_consume_makes_token_single_use():
-    fake_redis = _FakeRedis()
     fake_db = _FakeDatabase()
-    _with_overrides(redis=fake_redis, db=fake_db)
+    body = _consume_body()
+    _with_overrides(db=fake_db)
     try:
-        first = client.post("/verify-token", json=_consume_body())
-        second = client.post("/verify-token", json=_consume_body())
+        first = client.post("/verify-token", json=body)
+        second = client.post("/verify-token", json=body)
     finally:
         app.dependency_overrides.clear()
     assert first.status_code == 200 and first.json()["valid"] is True
@@ -195,9 +196,8 @@ def test_consume_makes_token_single_use():
 
 
 def test_consume_records_anchored_audit_event():
-    fake_redis = _FakeRedis()
     fake_db = _FakeDatabase()
-    _with_overrides(redis=fake_redis, db=fake_db)
+    _with_overrides(db=fake_db)
     try:
         resp = client.post("/verify-token", json=_consume_body())
     finally:
@@ -224,6 +224,55 @@ def test_consume_records_anchored_audit_event():
     assert "test_request" not in entry.metadata
 
 
+def test_consume_requires_complete_action_parameters_before_state_change():
+    fake_db = _FakeDatabase()
+    _with_overrides(db=fake_db)
+    try:
+        resp = client.post(
+            "/verify-token",
+            json={"approval_token": _token(), "consume": True},
+        )
+    finally:
+        app.dependency_overrides.clear()
+    body = resp.json()
+    assert body["valid"] is False
+    assert "requires action_type" in (body["reason"] or "")
+    assert fake_db.entries == []
+
+
+def test_currently_sandboxed_agent_cannot_consume_execution_token():
+    fake_db = _FakeDatabase(metadata={"sandbox": True})
+    _with_overrides(db=fake_db)
+    try:
+        resp = client.post("/verify-token", json=_consume_body())
+    finally:
+        app.dependency_overrides.clear()
+    assert resp.json()["valid"] is False
+    assert resp.json()["sandbox"] is True
+    assert fake_db.entries == []
+
+
+def test_sandbox_claim_cannot_be_consumed_after_agent_promotion():
+    sandbox_token = CryptoService.generate_approval_token(
+        agent_id=AGENT_ID,
+        action_hash=_action_hash(),
+        verdict="approved",
+        server_secret=SERVER_SECRET,
+        sandbox=True,
+    )
+    body = _consume_body()
+    body["approval_token"] = sandbox_token
+    fake_db = _FakeDatabase(metadata={"sandbox": False})
+    _with_overrides(db=fake_db)
+    try:
+        resp = client.post("/verify-token", json=body)
+    finally:
+        app.dependency_overrides.clear()
+    assert resp.json()["valid"] is False
+    assert resp.json()["sandbox"] is True
+    assert fake_db.entries == []
+
+
 def test_bare_check_stays_stateless():
     # Without consume, the endpoint must not touch the database at all.
     fake_db = _FakeDatabase()
@@ -238,19 +287,19 @@ def test_bare_check_stays_stateless():
     assert fake_db.entries == []
 
 
-def test_consume_without_cache_fails_closed():
-    # No redis override -> get_redis returns the (None) module pool, so single-use
-    # cannot be enforced and the gate must refuse rather than allow a double-spend.
-    resp = client.post("/verify-token", json={"approval_token": _token(), "consume": True})
+def test_consume_does_not_depend_on_cache_state():
+    fake_db = _FakeDatabase()
+    _with_overrides(db=fake_db)
+    try:
+        resp = client.post("/verify-token", json=_consume_body())
+    finally:
+        app.dependency_overrides.clear()
     assert resp.status_code == 200
-    assert resp.json()["valid"] is False
+    assert resp.json()["valid"] is True
 
 
 def test_consume_without_database_fails_closed_without_burning_token():
-    # Cache is up but the DB is down: the consumption cannot be recorded, so it
-    # must be refused before the single-use key is written.
-    fake_redis = _FakeRedis()
-    _with_overrides(redis=fake_redis)
+    # The durable database is the single-use authority.
     try:
         resp = client.post("/verify-token", json=_consume_body())
     finally:
@@ -258,17 +307,16 @@ def test_consume_without_database_fails_closed_without_burning_token():
     body = resp.json()
     assert body["valid"] is False
     assert "database" in (body["reason"] or "").lower()
-    assert fake_redis.store == {}, "token must not be burned when recording is unavailable"
 
 
-def test_consume_audit_write_failure_fails_closed_and_releases_token():
-    fake_redis = _FakeRedis()
-    _with_overrides(redis=fake_redis, db=_FakeDatabase(fail_insert=True))
+def test_consume_audit_write_failure_fails_closed_without_claiming_token():
+    body = _consume_body()
+    _with_overrides(db=_FakeDatabase(fail_insert=True))
     try:
-        failed = client.post("/verify-token", json=_consume_body())
-        # DB recovers: the token was released, so consumption now succeeds.
+        failed = client.post("/verify-token", json=body)
+        # DB recovers: no transaction committed, so the same token can retry.
         app.dependency_overrides[get_db_optional] = lambda: _FakeDatabase()
-        retried = client.post("/verify-token", json=_consume_body())
+        retried = client.post("/verify-token", json=body)
     finally:
         app.dependency_overrides.clear()
     assert failed.json()["valid"] is False
@@ -278,16 +326,13 @@ def test_consume_audit_write_failure_fails_closed_and_releases_token():
 
 def test_consume_unknown_agent_fails_closed():
     # Agent row gone (e.g. never provisioned in this environment): the
-    # consumption event cannot be attributed, so the consume is refused and
-    # the token released.
-    fake_redis = _FakeRedis()
-    _with_overrides(redis=fake_redis, db=_FakeDatabase(trust_score=None))
+    # consumption event cannot be attributed, so the consume is refused.
+    _with_overrides(db=_FakeDatabase(trust_score=None))
     try:
         resp = client.post("/verify-token", json=_consume_body())
     finally:
         app.dependency_overrides.clear()
     assert resp.json()["valid"] is False
-    assert fake_redis.store == {}
 
 
 def test_dual_secret_rotation_accepts_old_secret():

@@ -199,8 +199,8 @@ class VerifyTokenRequest(BaseModel):
         None,
         description="If provided, must match the agent_id embedded in the token",
     )
-    # Optional action parameters. When all are provided, the server recomputes
-    # the action hash and confirms the token authorizes exactly this action.
+    # Optional for a stateless authenticity check. All four are mandatory when
+    # consume=true because execution must bind to the complete approved action.
     action_type: str | None = Field(None, max_length=100)
     payload: dict[str, Any] | None = None
     nonce: str | None = Field(None, max_length=64)
@@ -210,8 +210,9 @@ class VerifyTokenRequest(BaseModel):
         default=False,
         description=(
             "If true, atomically mark this token used (single-use). A second "
-            "consume of the same token returns valid:false. Use this in the "
-            "execution gate so one approval cannot authorize two executions."
+            "consume of the same token returns valid:false. action_type, payload, "
+            "nonce, and timestamp are required. Use this in the execution gate "
+            "so one approval cannot authorize two executions."
         ),
     )
 
@@ -233,9 +234,16 @@ class VerifyTokenResponse(BaseModel):
     consumption_audit_id: str | None = Field(
         None,
         description=(
-            "Audit ID of the anchored token_consumed event, set only when "
-            "consume=true succeeded. Fetch its public receipt as proof the "
-            "pre-execution check happened."
+            "Audit ID of the token_consumed event, set only when consume=true "
+            "succeeded. Fetch its public receipt as proof the pre-execution "
+            "check happened. Sandbox consumption remains unanchored."
+        ),
+    )
+    sandbox: bool | None = Field(
+        None,
+        description=(
+            "Sandbox state embedded in the token. A consumed execution token is "
+            "valid only when this is false and the current agent is production eligible."
         ),
     )
 
@@ -314,6 +322,27 @@ class RotateAgentKeyRequest(BaseModel):
         max_length=500,
         description="Why the key is being rotated (recorded for audit).",
     )
+
+
+class PromoteAgentRequest(BaseModel):
+    """Explicit approval to move a sandbox agent into production."""
+
+    model_config = ConfigDict(strict=False)
+
+    approval_reference: str = Field(
+        ...,
+        min_length=1,
+        max_length=255,
+        description="Organisation approval, change, or ticket reference.",
+    )
+
+    @field_validator("approval_reference")
+    @classmethod
+    def normalise_approval_reference(cls, value: str) -> str:
+        reference = value.strip()
+        if not reference:
+            raise ValueError("approval_reference cannot be blank")
+        return reference
 
 
 class UpdateAgentRequest(BaseModel):
@@ -410,7 +439,10 @@ class PublicRegisterAgentRequest(BaseModel):
     )
     sandbox: bool = Field(
         default=True,
-        description="Create a sandbox agent — decisions are signed and verifiable but never anchored on-chain. Defaults true for self-serve registration.",
+        description=(
+            "Accepted for backwards compatibility but ignored. Public registration "
+            "always creates a sandbox agent that cannot anchor on chain."
+        ),
     )
 
 
