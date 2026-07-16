@@ -153,7 +153,7 @@ def main():
     print("\n" + "=" * 70)
     print("  DEMO COMPLETE")
     print("=" * 70)
-    print(f"""
+    print("""
 What happened:
   1. Fetched the organization for your admin API key
   2. Generated an Ed25519 keypair (private key stays with the agent)
