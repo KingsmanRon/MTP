@@ -62,7 +62,7 @@ def _get(url: str) -> dict:
     # blocked by some CDNs/WAFs (e.g. Cloudflare returns 403 error 1010).
     safe_url = _network_url(url)
     # _network_url rejects file and other local-resource schemes above.
-    req = urllib.request.Request(  # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
+    req = urllib.request.Request(
         safe_url,
         headers={
             "Accept": "application/json",
@@ -70,7 +70,7 @@ def _get(url: str) -> dict:
         },
     )
     try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        with urllib.request.urlopen(req, timeout=30) as resp:  # nosemgrep
             return json.loads(resp.read().decode())
     except urllib.error.HTTPError as exc:
         body = exc.read().decode(errors="replace")

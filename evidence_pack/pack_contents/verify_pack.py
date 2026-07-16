@@ -356,12 +356,12 @@ def _network_url(url: str) -> str:
 def _rpc_call(rpc_url: str, method: str, params: list[Any]) -> Any:
     body = json.dumps({"jsonrpc": "2.0", "id": 1, "method": method, "params": params})
     # _network_url rejects file and other local-resource schemes above.
-    req = urllib.request.Request(  # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
+    req = urllib.request.Request(
         _network_url(rpc_url),
         data=body.encode("utf-8"),
         headers={"Content-Type": "application/json"},
     )
-    with urllib.request.urlopen(req, timeout=30) as resp:
+    with urllib.request.urlopen(req, timeout=30) as resp:  # nosemgrep
         reply = json.loads(resp.read().decode())
     if "error" in reply:
         raise RuntimeError(f"RPC error: {reply['error']}")

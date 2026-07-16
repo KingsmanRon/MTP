@@ -81,7 +81,7 @@ jobs:
       - name: pytest
         # The service backed tests cover GDPR, RLS, Redis abuse limits, and
         # sandbox exclusion from the real Postgres anchoring selection query.
-        run: pytest -q
+        run: python -m pytest -q
 
   frontend:
     name: frontend (jest + typecheck + build)

@@ -500,8 +500,8 @@ def moonpay_execute(payload: dict, gate: dict) -> None:
     verdict_line(f"MoonPay execution [LIVE] — {found}")
     try:
         # shell is disabled and every payload substitution is validated above.
-        out = subprocess.run(  # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-tainted-env-args.dangerous-subprocess-use-tainted-env-args
-            cmd_args,
+        out = subprocess.run(
+            cmd_args,  # nosemgrep
             capture_output=True,
             text=True,
             timeout=60,

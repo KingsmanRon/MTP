@@ -128,3 +128,8 @@ public/build/
 .next/
 out/
 *.tsbuildinfo
+
+# -----------------------------------------------------------------------------
+# graphify (local knowledge-graph tooling — NEVER commit; local-only artifacts)
+# -----------------------------------------------------------------------------
+graphify-out/
