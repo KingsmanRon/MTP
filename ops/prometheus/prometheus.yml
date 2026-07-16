@@ -20,3 +20,12 @@ scrape_configs:
           - anchor-worker:9100
         labels:
           service: inntris-anchor-worker
+
+  - job_name: inntris-api
+    metrics_path: /metrics
+    scheme: http
+    static_configs:
+      - targets:
+          - api:8000
+        labels:
+          service: inntris-api

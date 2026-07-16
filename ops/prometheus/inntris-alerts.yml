@@ -1,4 +1,28 @@
 groups:
+  - name: inntris_api
+    rules:
+      - alert: InntrisApiScrapeDown
+        expr: up{job="inntris-api"} == 0 or absent(up{job="inntris-api"})
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: Inntris API metrics endpoint is unavailable
+          description: The API cannot be observed and may not be serving verifications.
+
+      - alert: InntrisVerifyFailClosedUnavailable
+        # /verify fails closed when Redis (abuse limits, signature slots,
+        # nonce replay cache) is unreachable, so any refusal here means real
+        # verification traffic is being turned away with HTTP 503.
+        expr: increase(inntris_verify_unavailable_total[5m]) > 0
+        labels:
+          severity: critical
+        annotations:
+          summary: Inntris /verify is refusing requests fail-closed
+          description: >-
+            The {{ $labels.component }} security dependency was unavailable and
+            verification requests received HTTP 503. Check Redis health first.
+
   - name: inntris_anchor_worker
     rules:
       - alert: InntrisAnchorWorkerScrapeDown

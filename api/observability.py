@@ -217,6 +217,12 @@ if _HAS_PROMETHEUS:
         "Wall time for /verify end-to-end, seconds.",
         buckets=(0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10),
     )
+    verify_unavailable_total = Counter(
+        "inntris_verify_unavailable_total",
+        "Total /verify requests refused fail-closed because a security "
+        "dependency (Redis) was unavailable. Any increase is an outage.",
+        ["component"],  # abuse_limiter | agent_limiter | signature_slots | nonce_cache
+    )
 else:  # pragma: no cover — exercised in stub mode
     verify_requests_total = _NoopMetric()
     signature_failures_total = _NoopMetric()
@@ -233,6 +239,7 @@ else:  # pragma: no cover — exercised in stub mode
     rpc_breaker_rejected_total = _NoopMetric()
     rpc_breaker_state = _NoopMetric()
     verify_latency_seconds = _NoopMetric()
+    verify_unavailable_total = _NoopMetric()
 
 
 async def metrics_endpoint() -> Response:

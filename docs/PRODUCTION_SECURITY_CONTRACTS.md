@@ -22,6 +22,16 @@ registered agent acted.
 5. An invalid signature must not insert an audit row, reserve a nonce, evaluate
    policy, change trust, change activity counters, dispatch a webhook, issue an
    approval token, or create an anchor eligible receipt.
+6. Source identity must reflect the true caller. A proxied deployment enables
+   `TRUST_PROXY_HEADERS` with an accurate `TRUSTED_PROXY_HOPS` so the source
+   budget and forensic `request_ip` key on the caller rather than the platform
+   edge. Only the entries a trusted proxy appended to `X-Forwarded-For` are
+   used; an unparseable header falls back to the socket peer. Never enable
+   this on a listener that is reachable without passing through that chain.
+7. Every fail closed refusal increments
+   `inntris_verify_unavailable_total{component=...}` and the corresponding
+   alert rule pages the operator. A nonce replay is a caller error (HTTP 401)
+   and is never reported as unavailability.
 
 The forensic execution chain begins only after successful authentication.
 

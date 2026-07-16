@@ -7,6 +7,13 @@ Repository configuration is not proof that a control is live. Complete this
 checklist from the environment being discussed and attach the evidence to the
 review packet. Never paste secrets into the packet.
 
+The database-backed checks (promotion evidence, paused webhooks, dead
+letters, anchor backlog) can be executed in one read-only command against the
+production runtime DSN:
+
+    DATABASE_URL=postgresql://inntris_worker:...@host/db \
+    python scripts/production_readback.py
+
 ## Review Header
 
 | Field | Value |
@@ -17,12 +24,16 @@ review packet. Never paste secrets into the packet.
 | Application commit | `[sha]` |
 | Frontend deployment | `[deployment id / url]` |
 | API deployment | `[deployment id / url]` |
-| Database migration version | `0011_durable_security_state / [evidence]` |
+| Database migration version | `0012_erasure_idempotency / [evidence]` |
 | Contract address and chain | `[address / chain id]` |
 
 ## 1. Public Service And Receipt Evidence
 
 - [ ] `GET /health` returns the expected environment state.
+- [ ] `TRUST_PROXY_HEADERS` and `TRUSTED_PROXY_HOPS` match the deployment's
+      real proxy chain: two requests from different networks produce different
+      `source_id` values in the API logs, and a new audit row records the
+      caller's address in `request_ip`, not the platform edge's.
 - [ ] Canonical PASS receipt loads and all expected checks resolve.
 - [ ] Canonical BLOCK receipt loads and all expected checks resolve.
 - [ ] Receipt chain ID and block-explorer destination are correct.
@@ -131,7 +142,7 @@ The second query must return zero.
 - [ ] Cross-tenant read and write tests fail as expected.
 - [ ] Audit-log UPDATE and DELETE restrictions are active.
 - [ ] Anchor worker can update only required Merkle reference fields.
-- [ ] A clean database replay reaches `0011_durable_security_state`.
+- [ ] A clean database replay reaches `0012_erasure_idempotency`.
 - [ ] The selected sandbox smoke audit row has both `sandbox=true` and
       `test_request=true`, remains unanchored after a worker cycle, and returns
       sandbox proof status publicly.
@@ -183,7 +194,7 @@ SELECT has_function_privilege(
        ) AS worker_can_erase;
 ```
 
-The migration result must be `0011_durable_security_state`; the two
+The migration result must be `0012_erasure_idempotency`; the two
 privilege values must be false. Save pre-erasure hashes or an approved export
 so the preserved forensic fields can be compared rather than inferred.
 
@@ -232,6 +243,9 @@ Evidence:
 - [ ] Prometheus has an active `inntris-anchor-worker` target and the worker
       `/metrics` scrape contains heartbeat, last-success, cycle, backlog, and
       submission series.
+- [ ] Prometheus has an active `inntris-api` target and a controlled Redis
+      stop trips `InntrisVerifyFailClosedUnavailable` (verification refusals
+      must page the operator, not be discovered by customers).
 - [ ] `ops/prometheus/inntris-alerts.yml` is loaded and all four worker rules
       are visible through the Prometheus rules API.
 - [ ] A controlled warning and critical test alert reached the intended
