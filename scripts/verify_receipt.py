@@ -36,16 +36,33 @@ import hashlib
 import json
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 
 BASE_MAINNET_CHAIN_ID = 8453
 
 
+def _network_url(url: str) -> str:
+    parsed = urllib.parse.urlparse(url)
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        raise SystemExit("network URL must use http or https and include a host")
+    if parsed.username or parsed.password:
+        raise SystemExit("network URL must not contain embedded credentials")
+    if parsed.scheme == "http" and parsed.hostname.lower() not in {
+        "localhost",
+        "127.0.0.1",
+        "::1",
+    }:
+        raise SystemExit("non-local network URLs must use https")
+    return url
+
+
 def _get(url: str) -> dict:
     # A descriptive User-Agent: the default "Python-urllib/x.y" signature is
     # blocked by some CDNs/WAFs (e.g. Cloudflare returns 403 error 1010).
+    safe_url = _network_url(url)
     req = urllib.request.Request(
-        url,
+        safe_url,
         headers={
             "Accept": "application/json",
             "User-Agent": "inntris-verify-receipt/1.0 (+https://inntris.com)",
@@ -56,9 +73,9 @@ def _get(url: str) -> dict:
             return json.loads(resp.read().decode())
     except urllib.error.HTTPError as exc:
         body = exc.read().decode(errors="replace")
-        raise SystemExit(f"HTTP {exc.code} for {url}: {body}")
+        raise SystemExit(f"HTTP {exc.code} for {safe_url}: {body}")
     except urllib.error.URLError as exc:
-        raise SystemExit(f"network error for {url}: {exc}")
+        raise SystemExit(f"network error for {safe_url}: {exc}")
 
 
 def _load_keccak():
