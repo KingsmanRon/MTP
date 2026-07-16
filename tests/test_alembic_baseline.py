@@ -66,6 +66,12 @@ _WRAPPER_REVISIONS = [
         "0010_agent_prod_approval",
         "015_durable_security_state.sql",
     ),
+    (
+        _REPO / "alembic" / "versions" / "0012_gdpr_erasure_idempotency.py",
+        "0012_erasure_idempotency",
+        "0011_durable_security_state",
+        "016_gdpr_erasure_idempotency.sql",
+    ),
 ]
 
 
