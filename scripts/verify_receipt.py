@@ -61,7 +61,8 @@ def _get(url: str) -> dict:
     # A descriptive User-Agent: the default "Python-urllib/x.y" signature is
     # blocked by some CDNs/WAFs (e.g. Cloudflare returns 403 error 1010).
     safe_url = _network_url(url)
-    req = urllib.request.Request(
+    # _network_url rejects file and other local-resource schemes above.
+    req = urllib.request.Request(  # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
         safe_url,
         headers={
             "Accept": "application/json",

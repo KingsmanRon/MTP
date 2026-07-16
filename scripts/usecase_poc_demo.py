@@ -499,8 +499,8 @@ def moonpay_execute(payload: dict, gate: dict) -> None:
     cmd_args = [found, *(arg.format(**substitutions) for arg in template_args[1:])]
     verdict_line(f"MoonPay execution [LIVE] — {found}")
     try:
-        # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-tainted-env-args.dangerous-subprocess-use-tainted-env-args -- shell is disabled and every payload substitution is validated above.
-        out = subprocess.run(
+        # shell is disabled and every payload substitution is validated above.
+        out = subprocess.run(  # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-tainted-env-args.dangerous-subprocess-use-tainted-env-args
             cmd_args,
             capture_output=True,
             text=True,
