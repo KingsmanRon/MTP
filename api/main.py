@@ -68,6 +68,7 @@ from api.models import (
     VerifyTokenResponse,
 )
 from api.policy import PolicyEngine, TrustScorer, canonical_policy_hash
+from api.proxy_headers import MAX_TRUSTED_PROXY_HOPS, TrustedProxyClientMiddleware
 from api.schemas.admin import (
     AgentDetail,
     AgentSummary,
@@ -176,6 +177,23 @@ VERIFY_AGENT_SIGNATURE_CONCURRENCY = _positive_int_setting(
 )
 if VERIFY_AGENT_SIGNATURE_CONCURRENCY > 500:
     raise RuntimeError("VERIFY_AGENT_SIGNATURE_CONCURRENCY must be between 1 and 500")
+
+# Behind a platform edge (Railway, a load balancer) the socket peer is the
+# proxy, so per-source abuse budgets and forensic request_ip would all key on
+# one shared address. Enabling TRUST_PROXY_HEADERS derives the caller from
+# X-Forwarded-For instead; TRUSTED_PROXY_HOPS is the number of proxies the
+# deployment guarantees sit in front (rightmost-Nth entry, spoof-proof as long
+# as the count matches reality). Never enable on a directly reachable listener.
+TRUST_PROXY_HEADERS = os.getenv("TRUST_PROXY_HEADERS", "").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+}
+TRUSTED_PROXY_HOPS = _positive_int_setting("TRUSTED_PROXY_HOPS", 1)
+if TRUSTED_PROXY_HOPS > MAX_TRUSTED_PROXY_HOPS:
+    raise RuntimeError(
+        f"TRUSTED_PROXY_HOPS must be between 1 and {MAX_TRUSTED_PROXY_HOPS}"
+    )
 AGENT_LIFECYCLE_METADATA_KEYS = {
     "production_approval_reference",
     "production_approved_at",
@@ -351,6 +369,16 @@ app.add_middleware(
 from api.observability import RequestIdMiddleware, metrics_endpoint  # noqa: E402
 
 app.add_middleware(RequestIdMiddleware)
+
+# Added last so it wraps outermost: every consumer of request.client — abuse
+# limiters, source-identity hashing, audit request_ip — sees the derived
+# caller address, never the proxy's.
+if TRUST_PROXY_HEADERS:
+    app.add_middleware(TrustedProxyClientMiddleware, hops=TRUSTED_PROXY_HOPS)
+    logger.info(
+        "Trusting X-Forwarded-For from %s proxy hop(s) for client identity",
+        TRUSTED_PROXY_HOPS,
+    )
 
 # Phase 2C: Prometheus scrape endpoint. Unauthenticated by design — the
 # operator is expected to expose /metrics only on an internal network or
@@ -680,6 +708,23 @@ def _request_source_id(request: Request) -> str:
     return hashlib.sha256(source.encode("utf-8")).hexdigest()[:24]
 
 
+def _verify_unavailable(component: str) -> HTTPException:
+    """Count one fail-closed /verify refusal and build the uniform 503.
+
+    Redis is part of the verification security boundary, so its outage is a
+    product outage. The counter exists so the Prometheus rule
+    ``InntrisVerifyFailClosedUnavailable`` pages the operator instead of the
+    customers discovering it first.
+    """
+    from api.observability import verify_unavailable_total
+
+    verify_unavailable_total.labels(component=component).inc()
+    return HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail="Verification service temporarily unavailable. Please retry.",
+    )
+
+
 async def _increment_expiring_counters(
     redis_conn: redis.Redis,
     keys: tuple[str, ...],
@@ -708,10 +753,7 @@ async def _check_verify_abuse_limits(
     """
     if redis_conn is None:
         logger.error("SECURITY: Redis unavailable for verification abuse limits")
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Verification service temporarily unavailable. Please retry.",
-        )
+        raise _verify_unavailable("abuse_limiter")
 
     source_id = _request_source_id(request)
     minute_bucket = int(time.time()) // VERIFY_ABUSE_WINDOW_SECONDS
@@ -724,10 +766,7 @@ async def _check_verify_abuse_limits(
         )
     except Exception as exc:
         logger.error("SECURITY: verification abuse limiter failed closed: %s", exc)
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Verification service temporarily unavailable. Please retry.",
-        ) from exc
+        raise _verify_unavailable("abuse_limiter") from exc
 
     if source_count > VERIFY_SOURCE_ATTEMPTS_PER_MINUTE:
         from api.observability import rate_limit_trips_total
@@ -751,10 +790,7 @@ async def _check_authenticated_agent_limit(
 ) -> None:
     """Reserve an agent attempt only after its signature has authenticated it."""
     if redis_conn is None:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Verification service temporarily unavailable. Please retry.",
-        )
+        raise _verify_unavailable("agent_limiter")
 
     minute_bucket = int(time.time()) // VERIFY_ABUSE_WINDOW_SECONDS
     agent_key = f"inntris:verify:authenticated:agent:{agent_id}:{minute_bucket}"
@@ -766,10 +802,7 @@ async def _check_authenticated_agent_limit(
         )
     except Exception as exc:
         logger.error("SECURITY: authenticated agent limiter failed closed: %s", exc)
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Verification service temporarily unavailable. Please retry.",
-        ) from exc
+        raise _verify_unavailable("agent_limiter") from exc
 
     if agent_count > VERIFY_AGENT_ATTEMPTS_PER_MINUTE:
         from api.observability import rate_limit_trips_total
@@ -792,10 +825,7 @@ async def _acquire_agent_signature_slot(
 ) -> str:
     """Acquire a crash bounded concurrency slot for expensive signature work."""
     if redis_conn is None:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Verification service temporarily unavailable. Please retry.",
-        )
+        raise _verify_unavailable("signature_slots")
     slot_key = f"inntris:verify:signature_slots:{agent_id}"
     try:
         slot_count = int(await redis_conn.incr(slot_key))
@@ -815,10 +845,7 @@ async def _acquire_agent_signature_slot(
         raise
     except Exception as exc:
         logger.error("SECURITY: signature concurrency limiter failed closed: %s", exc)
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Verification service temporarily unavailable. Please retry.",
-        ) from exc
+        raise _verify_unavailable("signature_slots") from exc
 
 
 async def _release_agent_signature_slot(
@@ -1726,28 +1753,24 @@ async def verify_action(
         # If Redis is unavailable, we MUST block the request to prevent replay attacks
         if not redis_conn:
             logger.error("SECURITY: Redis unavailable, cannot verify nonce - blocking request")
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="Verification service temporarily unavailable. Please retry.",
-            )
+            raise _verify_unavailable("nonce_cache")
 
         nonce_key = f"inntris:nonce:{agent.id}:{request_data.nonce}"
+        # Only the Redis call may map to 503: a detected replay is a caller
+        # error (401) and must not be reported as service unavailability.
         try:
             nonce_set = await redis_conn.set(nonce_key, "1", ex=600, nx=True)
-            if not nonce_set:
-                # Phase 2C — count before raising. A replay attempt is a
-                # security-relevant event; we want the metric even if the
-                # raised HTTPException short-circuits the rest of the handler.
-                from api.observability import nonce_replays_total, verify_requests_total
-                nonce_replays_total.inc()
-                verify_requests_total.labels(verdict="replay").inc()
-                raise HTTPException(status_code=401, detail="Nonce already used - possible replay attack")
         except Exception as e:
             logger.error(f"SECURITY: Redis error during nonce check: {e} - blocking request")
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="Verification service temporarily unavailable. Please retry.",
-            )
+            raise _verify_unavailable("nonce_cache") from e
+        if not nonce_set:
+            # Phase 2C — count before raising. A replay attempt is a
+            # security-relevant event; we want the metric even if the
+            # raised HTTPException short-circuits the rest of the handler.
+            from api.observability import nonce_replays_total, verify_requests_total
+            nonce_replays_total.inc()
+            verify_requests_total.labels(verdict="replay").inc()
+            raise HTTPException(status_code=401, detail="Nonce already used - possible replay attack")
 
         # STEP 4: Policy Check - Full PolicyEngine evaluation
         # Get current limits from database
