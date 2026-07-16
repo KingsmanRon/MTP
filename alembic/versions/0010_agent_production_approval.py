@@ -1,0 +1,38 @@
+"""Require explicit approval for production agents.
+
+Revision ID: 0010_agent_prod_approval
+Revises: 0009_webhook_security
+Create Date: 2026-07-11
+"""
+
+from __future__ import annotations
+
+from collections.abc import Sequence
+from pathlib import Path
+
+from alembic import op
+
+revision: str = "0010_agent_prod_approval"
+down_revision: str | None = "0009_webhook_security"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
+
+_SQL_FILE = (
+    Path(__file__).resolve().parents[2]
+    / "database"
+    / "migrations"
+    / "014_agent_production_approval.sql"
+)
+
+
+def upgrade() -> None:
+    if not _SQL_FILE.is_file():
+        raise FileNotFoundError(f"migration source missing: {_SQL_FILE}")
+    op.execute(_SQL_FILE.read_text(encoding="utf-8"))
+
+
+def downgrade() -> None:
+    raise NotImplementedError(
+        "Removing production approval evidence would weaken the security contract. "
+        "Write a forward migration instead."
+    )

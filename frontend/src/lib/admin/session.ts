@@ -10,6 +10,8 @@ import * as crypto from "crypto";
 const COOKIE_NAME = "inntris_admin_session";
 const SESSION_TTL = 3600; // 1 hour sliding window
 const MAX_SESSION_AGE = 7200; // 2 hours absolute ceiling
+const GCM_IV_LENGTH = 12;
+const GCM_AUTH_TAG_LENGTH = 16;
 
 // ---------------------------------------------------------------------------
 // Startup validation — ensure the encryption secret is strong enough.
@@ -41,9 +43,11 @@ interface SessionPayload {
 
 function encrypt(payload: SessionPayload): string {
   const key = getEncryptionKey();
-  const iv = crypto.randomBytes(12);
+  const iv = crypto.randomBytes(GCM_IV_LENGTH);
   const plaintext = JSON.stringify(payload);
-  const cipher = crypto.createCipheriv("aes-256-gcm", key, iv);
+  const cipher = crypto.createCipheriv("aes-256-gcm", key, iv, {
+    authTagLength: GCM_AUTH_TAG_LENGTH,
+  });
   const encrypted = Buffer.concat([
     cipher.update(plaintext, "utf8"),
     cipher.final(),
@@ -58,10 +62,16 @@ function decrypt(token: string): SessionPayload | null {
   try {
     const key = getEncryptionKey();
     const combined = Buffer.from(token, "base64url");
-    const iv = combined.subarray(0, 12);
-    const authTag = combined.subarray(12, 28);
-    const ciphertext = combined.subarray(28);
-    const decipher = crypto.createDecipheriv("aes-256-gcm", key, iv);
+    if (combined.length <= GCM_IV_LENGTH + GCM_AUTH_TAG_LENGTH) return null;
+    const iv = combined.subarray(0, GCM_IV_LENGTH);
+    const authTag = combined.subarray(
+      GCM_IV_LENGTH,
+      GCM_IV_LENGTH + GCM_AUTH_TAG_LENGTH
+    );
+    const ciphertext = combined.subarray(GCM_IV_LENGTH + GCM_AUTH_TAG_LENGTH);
+    const decipher = crypto.createDecipheriv("aes-256-gcm", key, iv, {
+      authTagLength: GCM_AUTH_TAG_LENGTH,
+    });
     decipher.setAuthTag(authTag);
     const decrypted = Buffer.concat([
       decipher.update(ciphertext),

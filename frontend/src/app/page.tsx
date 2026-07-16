@@ -129,8 +129,8 @@ export default async function InntrisCoreDarkPreview() {
             </div>
           </div>
           <nav className="hidden items-center gap-5 text-[15px] text-[#C4CFDE] md:flex lg:gap-7">
-            <a className="transition hover:text-white" href="/#overview">Overview</a>
-            <a className="transition hover:text-white" href="/#modules">Modules</a>
+            <Link className="transition hover:text-white" href="/#overview">Overview</Link>
+            <Link className="transition hover:text-white" href="/#modules">Modules</Link>
             <Link className="transition hover:text-white" href="/pilot">14-day Pilot</Link>
             <Link className="transition hover:text-white" href="/docs">Docs</Link>
             <Link className="transition hover:text-white" href="/verify">Verify</Link>
@@ -565,8 +565,8 @@ export default async function InntrisCoreDarkPreview() {
               Control and proof for high-risk AI agent actions.
             </p>
             <div className="flex items-center gap-6 text-[#7F8CA3]">
-              <a href="/docs" className="text-sm transition-colors hover:text-white">Docs</a>
-              <a href="/verify" className="text-sm transition-colors hover:text-white">Verify</a>
+              <Link href="/docs" className="text-sm transition-colors hover:text-white">Docs</Link>
+              <Link href="/verify" className="text-sm transition-colors hover:text-white">Verify</Link>
             </div>
             <p className="text-xs text-[#7F8CA3]/60">
               &copy; 2026 Inntris, Inc.

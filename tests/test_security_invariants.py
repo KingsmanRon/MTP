@@ -8,12 +8,7 @@ import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
-from api.main import (
-    _api_key_prefix,
-    app,
-    get_db,
-    require_api_scope,
-)
+from api.main import _api_key_prefix, app, get_db, get_redis, require_api_scope
 from api.models import AgentRecord, AgentStatus
 
 client = TestClient(app)
@@ -66,16 +61,71 @@ def _agent_record(agent_id, org_id):
     )
 
 
-def test_malformed_signature_returns_401_and_writes_audit_row():
+class _RedisPipeline:
+    def __init__(self, redis):
+        self.redis = redis
+        self.operations = []
+
+    def incr(self, key):
+        self.operations.append(("incr", key, None))
+        return self
+
+    def expire(self, key, seconds):
+        self.operations.append(("expire", key, seconds))
+        return self
+
+    async def execute(self):
+        results = []
+        for operation, key, value in self.operations:
+            if operation == "incr":
+                self.redis.values[key] = self.redis.values.get(key, 0) + 1
+                results.append(self.redis.values[key])
+            else:
+                self.redis.expiries[key] = value
+                results.append(True)
+        return results
+
+
+class _RedisTelemetryStub:
+    def __init__(self):
+        self.values = {}
+        self.expiries = {}
+
+    def pipeline(self, transaction=True):
+        assert transaction is True
+        return _RedisPipeline(self)
+
+    async def incr(self, key):
+        self.values[key] = self.values.get(key, 0) + 1
+        return self.values[key]
+
+    async def expire(self, key, ttl):
+        self.expiries[key] = ttl
+        return True
+
+    async def decr(self, key):
+        self.values[key] = self.values.get(key, 0) - 1
+        return self.values[key]
+
+    async def delete(self, key):
+        self.values.pop(key, None)
+        self.expiries.pop(key, None)
+        return 1
+
+
+def test_malformed_signature_is_bounded_attack_telemetry_only():
     agent_id = uuid4()
     org_id = uuid4()
-    audit_id = uuid4()
     db = MagicMock()
     db.get_agent_by_id = AsyncMock(return_value=_agent_record(agent_id, org_id))
-    db.insert_audit_log = AsyncMock(return_value=audit_id)
+    db.insert_audit_log = AsyncMock()
     db.update_agent_after_verification = AsyncMock()
+    db.reserve_rate_and_spend = AsyncMock()
+    db.create_security_alert = AsyncMock()
+    redis_stub = _RedisTelemetryStub()
 
     app.dependency_overrides[get_db] = lambda: db
+    app.dependency_overrides[get_redis] = lambda: redis_stub
     try:
         with patch("api.main._dispatch_verdict_webhook", new_callable=AsyncMock):
             response = client.post(
@@ -94,11 +144,15 @@ def test_malformed_signature_returns_401_and_writes_audit_row():
         app.dependency_overrides.clear()
 
     assert response.status_code == 401
-    db.insert_audit_log.assert_awaited_once()
-    entry = db.insert_audit_log.await_args.args[0]
-    assert entry.verdict.value == "signature_invalid"
-    assert entry.signature.startswith(b"INVALID_SIGNATURE:")
-    assert entry.policy_hash != "c" * 64
-    assert entry.metadata["client_policy_hash"] == "c" * 64
-    db.update_agent_after_verification.assert_awaited_once()
-    assert db.update_agent_after_verification.await_args.args[1] == 30
+    assert response.json()["audit_id"] is None
+    db.insert_audit_log.assert_not_called()
+    db.update_agent_after_verification.assert_not_called()
+    db.reserve_rate_and_spend.assert_not_called()
+    db.create_security_alert.assert_awaited_once()
+
+    attack_keys = [
+        key for key in redis_stub.values
+        if ":security:signature_invalid:" in key
+    ]
+    assert len(attack_keys) == 2
+    assert all(redis_stub.expiries[key] <= 3600 for key in attack_keys)

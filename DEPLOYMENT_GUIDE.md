@@ -84,7 +84,8 @@ openssl rand -base64 32
    ```bash
    alembic upgrade head
    ```
-3. **Verify**: You should see Alembic apply revisions through `0005_ci_guard_security_invariants`.
+3. **Verify**: `SELECT version_num FROM alembic_version;` must return
+   `0011_durable_security_state`.
 4. **Confirm tables created**:
    ```sql
    SELECT table_name FROM information_schema.tables
@@ -92,14 +93,18 @@ openssl rand -base64 32
    ORDER BY table_name;
    ```
    Expected tables:
+   - `administrative_audit_events`
    - `agents`
    - `api_keys`
+   - `approval_token_consumptions`
    - `audit_logs`
+   - `erasure_requests`
    - `merkle_proofs`
    - `organizations`
    - `policy_rules`
    - `rate_limit_windows`
    - `security_alerts`
+   - `webhook_deliveries`
 
 ### 2.4 Get Connection Details
 1. Go to **Project Settings** → **Database**
@@ -305,7 +310,19 @@ WORKERS=4
 
 #### RPC Circuit Breaker Observability
 
-The anchor worker exposes three Prometheus metrics for the circuit breaker. Scrape the worker's `/metrics` endpoint to observe breaker health:
+The anchor worker serves Prometheus metrics on `ANCHOR_METRICS_PORT` (default `9100`). Scrape `/metrics` to observe its heartbeat, failed proof backlog, submissions, and circuit breaker health. Start from `ops/prometheus/prometheus.yml`, which uses the alert rules in `ops/prometheus/inntris-alerts.yml` and the required job name `inntris-anchor-worker`. Route alerts using `ops/prometheus/alertmanager.yml`; mount the real receiver URL as the referenced secret file rather than committing it.
+
+Before rollout, validate the files and confirm the target, rules, and receiver are
+live:
+
+```bash
+promtool check config ops/prometheus/prometheus.yml
+promtool check rules ops/prometheus/inntris-alerts.yml
+amtool check-config ops/prometheus/alertmanager.yml
+curl -fsS http://PROMETHEUS_HOST:9090/api/v1/targets
+curl -fsS http://PROMETHEUS_HOST:9090/api/v1/rules
+curl -fsS http://ALERTMANAGER_HOST:9093/api/v2/status
+```
 
 | Metric | Type | Meaning |
 |---|---|---|
@@ -376,24 +393,22 @@ curl https://YOUR_RAILWAY_URL.up.railway.app/health
 
 ### 5.2 Create First Organization
 ```bash
-# Use the test script (see Step 6)
-cd ./tests
-./production_test.sh
+# Use the sandbox smoke script (see Step 6)
+./tests/production_test.sh "$API_URL" "$MASTER_ADMIN_KEY"
 ```
 
 Manually (requires `MASTER_ADMIN_KEY` set on the backend):
 ```bash
-curl -X POST https://YOUR_RAILWAY_URL.up.railway.app/admin/organizations \
+curl -X POST "$API_URL/admin/organizations" \
   -H "Content-Type: application/json" \
-  -H "X-Master-Key: YOUR_MASTER_ADMIN_KEY" \
+  -H "X-Master-Key: $MASTER_ADMIN_KEY" \
   -d '{
     "name": "Test Organization",
     "contact_email": "admin@example.com",
-    "billing_tier": "professional",
-    "webhook_url": "https://your-server.com/webhooks/inntris"
+    "billing_tier": "professional"
   }'
 
-# RESPONSE (201) - SAVE THE api_key!
+# RESPONSE (201) - SAVE THE ONE-TIME API KEY!
 {
   "organization_id": "uuid-here",
   "key_id": "uuid-here",
@@ -402,6 +417,39 @@ curl -X POST https://YOUR_RAILWAY_URL.up.railway.app/admin/organizations \
   "message": "Save this api_key now — it will never be shown again."
 }
 ```
+
+Configure the webhook as a separate privileged change with an approved change
+or ticket reference:
+
+```bash
+curl -X PATCH "$API_URL/admin/organization" \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: $INNTRIS_API_KEY" \
+  -d '{
+    "webhook_url": "https://your-server.com/webhooks/inntris",
+    "approval_reference": "CHANGE-1234"
+  }'
+```
+
+The response shows the initial `webhook_signing_secret` exactly once. Store it
+directly in the receiver's secret manager. The destination must use public
+HTTPS on port 443. Inntris resolves and pins public addresses, rechecks DNS at
+connection time, disables redirects, and signs the exact request body with the
+organisation secret. Confirm the matching `organization.webhook_url_changed`
+row in `administrative_audit_events` and follow
+`docs/runbooks/webhooks.md`.
+
+Webhook-secret rotation also requires approval evidence:
+
+```bash
+curl -X POST "$API_URL/admin/organization/webhook-secret/rotate" \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: $INNTRIS_API_KEY" \
+  -d '{"approval_reference":"INCIDENT-1234"}'
+```
+
+Capture the replacement secret from the one-time response, update the receiver,
+and confirm the `organization.webhook_secret_rotated` administrative event.
 
 If you see `503 Organization provisioning disabled`, set the
 `MASTER_ADMIN_KEY` env var on the backend and redeploy.
@@ -414,17 +462,17 @@ from nacl.signing import SigningKey
 import base64
 
 signing_key = SigningKey.generate()
-private_key_b64 = base64.b64encode(signing_key._signing_key).decode()
-public_key_b64 = base64.b64encode(signing_key.verify_key._key).decode()
+private_key_b64 = base64.b64encode(bytes(signing_key)).decode()
+public_key_b64 = base64.b64encode(bytes(signing_key.verify_key)).decode()
 
 print(f"Private Key (save securely): {private_key_b64}")
 print(f"Public Key: {public_key_b64}")
 EOF
 
 # Register agent
-curl -X POST https://YOUR_RAILWAY_URL.up.railway.app/admin/agents \
+curl -X POST "$API_URL/admin/agents" \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: YOUR_ORG_API_KEY" \
+  -H "X-API-Key: $INNTRIS_API_KEY" \
   -d '{
     "org_id": "YOUR_ORG_UUID",
     "name": "Test Agent",
@@ -438,14 +486,32 @@ curl -X POST https://YOUR_RAILWAY_URL.up.railway.app/admin/agents \
 {
   "agent_id": "agent-uuid-here",
   "public_key_fingerprint": "sha256-hex-fingerprint",
-  "status": "pending_verification"
+  "status": "pending_verification",
+  "sandbox": true
 }
 ```
 
 Or skip the curl and use the admin console: log in to `/admin/login`,
 go to **Agents → Register Agent**, and paste the public key.
 
-### 5.4 Test Action Verification
+### 5.4 Approve the Agent for Production
+
+Registration never grants mainnet eligibility. Record the real change or
+approval reference, then promote with an organisation key that has `admin`
+scope:
+
+```bash
+curl -X POST "$API_URL/admin/agents/$AGENT_ID/promote" \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: $INNTRIS_API_KEY" \
+  -d '{"approval_reference":"CHANGE-1234"}'
+```
+
+Migration `014_agent_production_approval.sql` also moves legacy agents without
+complete approval evidence into sandbox. Review and promote each intended
+production agent after the migration.
+
+### 5.5 Test Action Verification
 ```bash
 # Run the demo script with your agent's private key + agent_id:
 python scripts/demo_verification.py \
@@ -458,7 +524,7 @@ verdict `approved` and a populated `audit_id` — that's a receipt.
 
 ---
 
-## 🔍 STEP 6: Run Production Test Suite
+## 🔍 STEP 6: Run Production Sandbox Smoke Test
 
 ### 6.1 Run Automated Tests
 ```bash
@@ -467,12 +533,20 @@ chmod +x tests/production_test.sh
 ./tests/production_test.sh https://YOUR_RAILWAY_URL.up.railway.app YOUR_MASTER_ADMIN_KEY
 ```
 
+The script deliberately leaves its generated agent in sandbox. It submits a
+signed sandbox action and requires the public proof endpoint to return
+`status: sandbox`. It does not exercise production promotion or create a
+mainnet-eligible receipt. A pass proves only these deployment smoke controls;
+complete `docs/trust/PRODUCTION_READBACK_CHECKLIST.md` before approving the
+environment.
+
 Expected output:
 ```
 ✅ Health check passed
 ✅ Organization created
-✅ Agent registered
-✅ Action verification passed
+✅ Sandbox agent registered
+✅ Sandbox action verification passed
+✅ Sandbox receipt is excluded from anchoring
 ✅ Public agent info retrieved
 ✅ All tests passed!
 ```
@@ -504,7 +578,10 @@ Expected output:
 ### 7.4 Set Up Alerts
 1. Railway: Go to **"Settings"** → **"Integrations"**
 2. Add **Slack** or **Discord** webhook for deployment alerts
-3. Add **PagerDuty** for critical errors (optional)
+3. Load `ops/prometheus/alertmanager.yml`, provide the real receiver URLs
+   through `/etc/alertmanager/secrets/inntris_operations_webhook_url` and
+   `/etc/alertmanager/secrets/inntris_pager_webhook_url`, and send controlled
+   warning and critical test alerts to confirm both destinations.
 
 ---
 
@@ -654,7 +731,8 @@ If you encounter issues during deployment:
 
 ## ✅ POST-DEPLOYMENT CHECKLIST
 
-After completing all steps above:
+After completing all steps above, record evidence for each item. None of these
+checks alone constitutes production approval:
 
 - ⬜ API health check returns 200
 - ⬜ Worker logs show "Monitoring for audit logs"
@@ -669,10 +747,11 @@ After completing all steps above:
 - ⬜ Tested rate limiting
 - ⬜ Reviewed security settings
 
-**Congratulations! Your Inntris Core is now live in production! 🎉**
+Complete `docs/trust/PRODUCTION_READBACK_CHECKLIST.md` and obtain the named
+approver's decision before describing this environment as production ready.
 
 ---
 
-**Last Updated**: 2026-03-18
+**Last Updated**: 2026-07-13
 **Version**: 1.0.0
-**Status**: Production Ready
+**Status**: Deployment guide; environment approval requires live readback

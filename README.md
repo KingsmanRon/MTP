@@ -171,7 +171,7 @@ print(f'Public Key (B64): {base64.b64encode(bytes(sk.verify_key)).decode()}')
 # Register agent with the public key
 curl -X POST http://localhost:8000/admin/agents \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: YOUR_API_KEY" \
+  -H "X-API-Key: $INNTRIS_API_KEY" \
   -d '{
     "org_id": "YOUR_ORG_ID",
     "name": "My AI Agent",
@@ -179,6 +179,12 @@ curl -X POST http://localhost:8000/admin/agents \
     "daily_limit_usd": 500,
     "per_action_limit_usd": 100
   }'
+
+# Registration is sandbox only. Promote after recording a real approval.
+curl -X POST "http://localhost:8000/admin/agents/$AGENT_ID/promote" \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: $INNTRIS_API_KEY" \
+  -d '{"approval_reference":"CHANGE-1234"}'
 ```
 
 ### Alternative: self-serve agent (no admin key)
@@ -203,7 +209,7 @@ curl -X POST https://api.inntris.com/public/agents/register \
   -d '{ "email": "you@example.com", "public_key": "BASE64_PUBLIC_KEY_HERE" }'
 ```
 
-Self-serve agents are **sandbox by default** (never anchored on-chain — see
+Self-serve agents are **sandbox only** (never anchored on-chain — see
 [Sandbox / test mode](#sandbox--test-mode)) and start with `allowed_actions =
 ["tool_call", "api_call"]` and default limits — enough for your first verified
 call. To enable `financial_transaction`, higher limits, or AI-PR-Guard action
@@ -289,12 +295,13 @@ on-chain** and are kept out of the production decision set (each audit row is
 written with `test_request=true`, which the anchor worker skips). Such receipts
 report `integrity_status: "sandbox"` and `sandbox: true`.
 
-- **Self-serve agents are sandbox by default.** `POST /public/agents/register`
-  creates a sandbox agent unless you pass `"sandbox": false` — the safe way for a
-  partner to run first integration tests.
-- **Provisioned (admin) agents are production by default** and anchor to Base
-  mainnet. To give a provisioned partner a sandbox agent, set `metadata.sandbox`
-  to `true` at registration or via `PATCH /admin/agents/{id}`.
+- **Self-serve agents are always sandboxed.** `POST /public/agents/register`
+  ignores attempts to clear sandbox or supply lifecycle approval metadata.
+- **Authenticated registration is also sandboxed.** `POST /admin/agents`
+  separates registration from production approval.
+- **Production requires explicit approval.** An organisation API key with the
+  `admin` scope must call `POST /admin/agents/{id}/promote` with a nonblank
+  `approval_reference`. Generic agent updates cannot clear sandbox.
 
 ```bash
 # Sign and POST /verify exactly as in production — same verdict, same signed
@@ -378,8 +385,10 @@ validation error includes a stable `"error": "validation_error"` code and a
 level (financial 30, email 20, api/tool 10, data_export 40), but higher-risk
 types require more: `admin_action` 70, and `ci_workflow_change`,
 `protected_branch_merge`, `production_deployment` 80. Trust accrues +1 per
-approval (−20 on a bad signature). To promote a vetted agent immediately,
-`PATCH /admin/agents/{id}` with `{ "trust_score": 85 }`.
+approval. An invalid signature is treated as unauthenticated attack telemetry
+and cannot change agent trust or counters. An admin can adjust action trust with
+`PATCH /admin/agents/{id}`, but production eligibility is separate and requires
+`POST /admin/agents/{id}/promote` with an approval reference.
 
 ### GET `/public/agent/{agent_id}`
 
@@ -406,9 +415,11 @@ All admin endpoints require the `X-API-Key` header.
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/admin/agents` | GET | List all agents for organization |
+| `/admin/agents` | GET | List all agents for organisation |
+| `/admin/agents` | POST | Register a sandbox agent |
 | `/admin/agents/{id}` | GET | Get specific agent details |
 | `/admin/agents/{id}` | PATCH | Update agent configuration |
+| `/admin/agents/{id}/promote` | POST | Approve a sandbox agent for production |
 | `/admin/agents/{id}/status` | PATCH | Update agent status |
 | `/admin/alerts` | GET | List security alerts |
 | `/admin/alerts/{id}/acknowledge` | POST | Acknowledge an alert |
@@ -417,7 +428,10 @@ All admin endpoints require the `X-API-Key` header.
 | `/admin/audit/{id}` | GET | Get specific audit log |
 | `/admin/audit/{id}/proof` | GET | Get Merkle proof for verification |
 | `/admin/usage` | GET | Get usage metrics |
-| `/admin/organization` | GET | Get organization info |
+| `/admin/organization` | GET | Get organisation info |
+| `/admin/organization` | PATCH | Configure a safe HTTPS webhook destination |
+| `/admin/organization/webhook-secret/rotate` | POST | Rotate the tenant webhook secret |
+| `/admin/organization/webhook-deliveries` | GET | Inspect retries and dead letters |
 | `/admin/api-keys` | GET | List API keys |
 | `/admin/api-keys/rotate` | POST | Rotate API key |
 | `/admin/api-keys/{prefix}` | DELETE | Revoke API key |

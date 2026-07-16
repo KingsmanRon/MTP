@@ -18,14 +18,14 @@ Usage:
     python scripts/seed_production.py --org-name "My Company"
 """
 
-import asyncio
 import argparse
-import json
-import secrets
+import asyncio
 import hashlib
+import json
 import os
+import secrets
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import uuid4
 
 # Add parent directory to path for imports
@@ -56,7 +56,7 @@ def generate_api_key() -> tuple[str, bytes, str]:
 async def seed_database(
     database_url: str,
     org_name: str = "Inntris Admin",
-    create_demo_agent: bool = True,
+    create_demo_agent: bool = False,
 ):
     """Seed the production database."""
 
@@ -65,7 +65,7 @@ async def seed_database(
     print(f"{'='*60}\n")
 
     # Connect to database
-    print(f"Connecting to database...")
+    print("Connecting to database...")
     try:
         conn = await asyncpg.connect(database_url)
         print("Connected successfully!\n")
@@ -99,7 +99,7 @@ async def seed_database(
                 "enterprise",
                 "admin@inntris.com",
                 key_hash,
-                datetime.now(timezone.utc),
+                datetime.now(UTC),
             )
             print(f"Created organization: {org_name}")
             print(f"  ID: {org_id}")
@@ -127,11 +127,11 @@ async def seed_database(
                 "Production Admin Key",
                 ["admin", "read", "write", "verify"],
                 True,
-                datetime.now(timezone.utc),
+                datetime.now(UTC),
             )
-            print(f"\nCreated API key:")
-            print(f"  Name: Production Admin Key")
-            print(f"  Scopes: admin, read, write, verify")
+            print("\nCreated API key:")
+            print("  Name: Production Admin Key")
+            print("  Scopes: admin, read, write, verify")
 
         # Create demo agent if requested
         if create_demo_agent:
@@ -167,22 +167,28 @@ async def seed_database(
                     "Demo Agent",
                     demo_public_key,
                     public_key_fingerprint,
-                    "active",
-                    85,  # Starting trust score
+                    "pending_verification",
+                    50,
                     10000,  # Daily limit USD
                     1000,  # Per action limit USD
                     60,  # Rate limit per minute
                     ["financial_transaction", "api_call", "email_send", "data_export"],
                     ["admin_action"],
-                    json.dumps({"description": "Demo agent for testing", "environment": "production"}),
+                    json.dumps(
+                        {
+                            "description": "Sandbox demo agent for testing",
+                            "environment": "sandbox",
+                            "sandbox": True,
+                        }
+                    ),
                     0,
                     0,
-                    datetime.now(timezone.utc),
+                    datetime.now(UTC),
                 )
-                print(f"\nCreated demo agent:")
+                print("\nCreated demo agent:")
                 print(f"  ID: {agent_id}")
-                print(f"  Name: Demo Agent")
-                print(f"  Trust Score: 85")
+                print("  Name: Demo Agent")
+                print("  Lifecycle: Sandbox, pending verification")
 
         print(f"\n{'='*60}")
         print("IMPORTANT: Save this API key securely!")
@@ -209,9 +215,9 @@ def main():
         help="Organization name (default: Inntris Admin)"
     )
     parser.add_argument(
-        "--no-demo-agent",
+        "--create-demo-agent",
         action="store_true",
-        help="Skip creating demo agent"
+        help="Create an optional sandbox demo agent"
     )
     parser.add_argument(
         "--database-url",
@@ -229,7 +235,7 @@ def main():
     asyncio.run(seed_database(
         database_url=args.database_url,
         org_name=args.org_name,
-        create_demo_agent=not args.no_demo_agent,
+        create_demo_agent=args.create_demo_agent,
     ))
 
 

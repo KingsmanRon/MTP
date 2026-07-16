@@ -119,7 +119,7 @@ def test_update_agent_metadata_is_merged_not_replaced():
         "rate_limit_per_minute": 60, "last_action_at": None,
         "total_actions_count": 0, "total_blocked_count": 0,
         # The real DB || merge keeps "source"; the mock returns the merged shape.
-        "metadata": {"source": "public_registration", "sandbox": True},
+        "metadata": {"source": "public_registration", "customer_label": "finance"},
         "created_at": now, "updated_at": now,
     }
     conn = AsyncMock()
@@ -131,7 +131,8 @@ def test_update_agent_metadata_is_merged_not_replaced():
     app.dependency_overrides[verify_api_key] = lambda: {"org_id": org_id, "scopes": ["write"]}
     try:
         response = client.patch(
-            f"/admin/agents/{agent_id}", json={"metadata": {"sandbox": True}}
+            f"/admin/agents/{agent_id}",
+            json={"metadata": {"customer_label": "finance"}},
         )
     finally:
         app.dependency_overrides.clear()
@@ -140,7 +141,10 @@ def test_update_agent_metadata_is_merged_not_replaced():
     # The UPDATE must MERGE metadata (|| operator), not overwrite it.
     query_used = conn.fetchrow.await_args.args[0]
     assert "COALESCE(metadata, '{}'::jsonb) ||" in query_used
-    assert response.json()["metadata"] == {"source": "public_registration", "sandbox": True}
+    assert response.json()["metadata"] == {
+        "source": "public_registration",
+        "customer_label": "finance",
+    }
 
 
 def test_update_agent_rejects_per_action_limit_above_resulting_daily_limit():

@@ -73,12 +73,12 @@ export default function PortalPreviewPage() {
           </p>
 
           <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
-            <a
+            <Link
               href="/#contact"
               className="rounded-lg bg-[#28C281] px-6 py-3 text-sm font-medium text-white transition-opacity hover:opacity-90"
             >
               Request Access
-            </a>
+            </Link>
             <Link
               href="/verify"
               className="rounded-lg border border-[#22314D] bg-[#0D1728] px-6 py-3 text-sm font-medium text-[#F5F7FB] transition hover:bg-[#101C31]"

@@ -47,9 +47,9 @@ A receipt does not independently prove:
 | Action policy | Explicit allowlist and blocklist, with block taking precedence |
 | Emergency stop | Suspended and revoked agents fail policy evaluation before execution |
 | Spend controls | Per-action and daily USD limits |
-| Traffic controls | Per-agent verification request limit per minute |
+| Traffic controls | Preauthentication source and agent budgets plus authenticated per-agent limits |
 | Approval evidence | Short-lived HMAC approval token for approved actions |
-| Audit evidence | Approved and rejected decisions are written to the audit trail |
+| Audit evidence | Authenticated approved and rejected decisions are written to the audit trail; invalid signatures remain separate bounded security telemetry |
 | Receipt integrity | Canonical fingerprint plus optional policy-hash binding |
 | Public anchoring | Merkle roots submitted to Base L2 and independently queryable |
 | Admin session | API key held server-side behind an encrypted HTTP-only session cookie |
@@ -99,7 +99,7 @@ personal data, signatures, and secrets are not written on-chain.
 
 ## Failure Behavior
 
-- Invalid signatures are blocked and recorded as security events.
+- Invalid signatures are blocked and recorded only as bounded security telemetry. They do not change agent state or enter the agent audit chain.
 - Replayed nonces are blocked.
 - `/verify` fails closed when Redis is unavailable for nonce verification.
 - Suspended agents are blocked before action execution.
@@ -142,10 +142,12 @@ execution boundary.
 - A customer integration can defeat prevention if it permits direct execution
   without validating the Inntris approval result.
 - Service and anchor keys are not yet proven to use KMS or HSM custody.
-- Security scanning currently reports findings but some jobs are configured as
-  report-only rather than hard release blockers.
+- High severity dependency findings, detected secrets, Semgrep error findings,
+  and Trivy configuration or secret findings block the security workflow.
 - Inntris does not currently claim SOC 2, ISO 27001, or another formal
   certification.
 
 For engineering detail and residual risks, see
 [`docs/THREAT_MODEL.md`](../THREAT_MODEL.md).
+The normative implementation invariants are in
+[`docs/PRODUCTION_SECURITY_CONTRACTS.md`](../PRODUCTION_SECURITY_CONTRACTS.md).

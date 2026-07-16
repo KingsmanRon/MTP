@@ -21,6 +21,8 @@ interface AgentInfo {
   trust_score: number;
   status: 'active' | 'suspended' | 'revoked' | 'pending_verification';
   is_verified: boolean;
+  sandbox: boolean;
+  production_approved: boolean;
   verified_since: string | null;
   total_actions: number;
   last_action_at: string | null;
@@ -74,6 +76,11 @@ const styles = {
     backgroundColor: '#fffbeb',
     borderColor: '#f59e0b',
     color: '#d97706',
+  },
+  sandbox: {
+    backgroundColor: '#eff6ff',
+    borderColor: '#3b82f6',
+    color: '#1d4ed8',
   },
   loading: {
     backgroundColor: '#f3f4f6',
@@ -211,6 +218,7 @@ export const TrustBadge: React.FC<TrustBadgeProps> = ({
     if (loading) return styles.loading;
     if (error || !agentInfo) return styles.unverified;
     if (agentInfo.is_verified) return styles.verified;
+    if (agentInfo.sandbox) return styles.sandbox;
     if (agentInfo.status === 'pending_verification') return styles.pending;
     return styles.unverified;
   };
@@ -246,6 +254,8 @@ export const TrustBadge: React.FC<TrustBadgeProps> = ({
           ? 'Loading agent verification status'
           : agentInfo?.is_verified
             ? `Verified agent: ${agentInfo.name}`
+            : agentInfo?.sandbox
+              ? `Sandbox agent: ${agentInfo.name}`
             : 'Unverified agent'
       }
     >
@@ -266,6 +276,8 @@ export const TrustBadge: React.FC<TrustBadgeProps> = ({
             ? 'Unverified'
             : agentInfo?.is_verified
               ? 'Inntris Verified'
+              : agentInfo?.sandbox
+                ? 'Inntris Sandbox'
               : agentInfo?.status === 'pending_verification'
                 ? 'Pending'
                 : 'Not Verified'}
@@ -291,6 +303,7 @@ export const TrustBadge: React.FC<TrustBadgeProps> = ({
           <div style={{ opacity: 0.8 }}>{agentInfo.organization_name}</div>
           <div style={{ marginTop: '8px', borderTop: '1px solid #374151', paddingTop: '8px' }}>
             <div>Trust Score: {agentInfo.trust_score}/100</div>
+            <div>Environment: {agentInfo.sandbox ? 'Sandbox' : 'Production'}</div>
             <div>Total Actions: {agentInfo.total_actions.toLocaleString()}</div>
             <div>Verified Since: {formatDate(agentInfo.verified_since)}</div>
             <div>Last Active: {formatDate(agentInfo.last_action_at)}</div>

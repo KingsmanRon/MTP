@@ -44,6 +44,7 @@ import hashlib
 import json
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 import zipfile
 from pathlib import Path
@@ -337,14 +338,30 @@ def recompute_merkle_root(
 # =============================================================================
 
 
+def _network_url(url: str) -> str:
+    parsed = urllib.parse.urlparse(url)
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        raise ValueError("network URL must use http or https and include a host")
+    if parsed.username or parsed.password:
+        raise ValueError("network URL must not contain embedded credentials")
+    if parsed.scheme == "http" and parsed.hostname.lower() not in {
+        "localhost",
+        "127.0.0.1",
+        "::1",
+    }:
+        raise ValueError("non-local network URLs must use https")
+    return url
+
+
 def _rpc_call(rpc_url: str, method: str, params: list[Any]) -> Any:
     body = json.dumps({"jsonrpc": "2.0", "id": 1, "method": method, "params": params})
+    # _network_url rejects file and other local-resource schemes above.
     req = urllib.request.Request(
-        rpc_url,
+        _network_url(rpc_url),
         data=body.encode("utf-8"),
         headers={"Content-Type": "application/json"},
     )
-    with urllib.request.urlopen(req, timeout=30) as resp:
+    with urllib.request.urlopen(req, timeout=30) as resp:  # nosemgrep
         reply = json.loads(resp.read().decode())
     if "error" in reply:
         raise RuntimeError(f"RPC error: {reply['error']}")

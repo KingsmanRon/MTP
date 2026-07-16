@@ -170,13 +170,13 @@ risk tag (see §4 if relevant).
 **I4. Audit-log PII in verdict reasons.** Raw payloads in `audit_logs.payload` may contain PII the customer shipped; verdict reasons may echo portions of it.
 - `payload` is JSONB stored alongside the verdict (`database/schemas.sql:134`). Access is gated by the admin auth/org checks (§I2).
 - Public verify only exposes a fixed safe field set (`api/main.py:690-713`, `PublicVerificationRecord` in `api/models.py:313-351`), never the raw payload.
-- A forensic-integrity-preserving erasure function and operator wrapper exist (`database/migrations/006_gdpr_erasure.sql`, `api/erasure.py`).
-- **Residual**: production activation, backup erasure, external logs, and caches remain deployment and operator responsibilities; see §4.R4.
+- A guarded erasure function, ledger, trigger capability, and operator wrapper exist (`database/migrations/012_gdpr_erasure_guard.sql`, `api/erasure.py`).
+- Clean PostgreSQL replay and end-to-end erasure tests run in CI. Backup erasure, external logs, and caches remain deployment and operator responsibilities; see §4.R4.
 
 **I5. Server-secret exposure in config.** Leaked `SERVER_SECRET` forges approval tokens.
 - Production startup hard-fails if missing or <32 chars (`api/main.py:83-87`).
 - Approval tokens are HMAC-SHA-256 keyed by `SERVER_SECRET` and include an absolute `exp` (`api/crypto.py:293-335`); verifier uses `hmac.compare_digest` (`api/crypto.py:363-364`).
-- **Residual**: no rotation story. Deferred (not in current approved queue).
+- `SERVER_SECRET_PREVIOUS` provides a bounded dual-key verification window, and encrypted per-organisation webhook secrets rotate independently. Secret-manager custody and session-secret rotation remain operator responsibilities.
 
 ### D — Denial of service
 
@@ -191,6 +191,7 @@ risk tag (see §4 if relevant).
 - **Residual**: fail-**open** on Redis outage (`api/main.py:242-243`). Registration is treated as an availability-over-correctness surface. Operators should monitor org/agent churn and page on anomaly.
 
 **D3. Replay flood against `/verify`.** Attacker captures a valid signed request and replays it to exhaust rate limits, trust, or spend.
+- Source and claimed-agent attempt budgets are reserved before agent lookup or signature work and fail closed when Redis is unavailable (`api/main.py`).
 - Nonce uniqueness enforced in Redis via `SET … NX EX 600` (`api/main.py:920-924`).
 - Fail-closed when Redis is unavailable — `/verify` returns 503, not a permissive path (`api/main.py:911-930`).
 
@@ -239,6 +240,15 @@ risk tag (see §4 if relevant).
 - `Pausable` circuit breaker for emergency halts (`contracts/AnchorRegistry.sol:28, 252-262`).
 - `DEFAULT_ADMIN_ROLE` is bootstrapped to the deployer-supplied `admin` address (`contracts/AnchorRegistry.sol:125-135`). **Residual**: admin role is a single EOA today — multisig/timelock is **Phase 3.3** in the queue.
 
+**E7. Webhook SSRF or DNS rebinding.** A tenant attempts to make Inntris call an internal service or changes DNS after validation.
+- Only canonical HTTPS destinations on port 443 are accepted. Unsafe literal and resolved addresses are rejected.
+- DNS is checked before delivery and again at connection time. The transport pins a public address, validates TLS for the original host, and verifies the connected peer.
+- Redirects and proxy environment variables are disabled, responses are bounded, delivery state is durable, and each organisation has a rotatable encrypted signing secret (`api/webhooks.py`, `database/migrations/013_webhook_security.sql`).
+
+**E8. Registration bypasses production approval.** A caller attempts to clear sandbox during registration or a generic update.
+- Public and authenticated registration both force sandbox, and the database default and constraint fail closed.
+- Only the tenant-scoped admin promotion endpoint can install complete approval evidence and clear sandbox. Migration `014_agent_production_approval.sql` sandboxes legacy rows without that evidence.
+
 ---
 
 ## 4. Residual risks
@@ -251,13 +261,12 @@ in-repo control exists yet. Each should map to a queued or backlog phase.
 | R1 | Hot-wallet key theft (Phase 2 roadmap: KMS/Vault) allows arbitrary Merkle-root submission until the submitter role is revoked. | D → E | **Deferred**: KMS/Vault custody. Paging workflow on anomalous submission batches to compensate meanwhile. |
 | R2 | Tenant RLS policies exist, but a production deployment using the wrong runtime role or missing migrations can fall back to handler-layer isolation. | D | Require production role, migration, and cross-tenant readback evidence before claiming RLS enforcement. |
 | R3 | Smart-contract admin is a single EOA. A compromised admin can grant `SUBMITTER_ROLE` to attacker, or unpause after an emergency. | E | **Phase 3.3** — migrate admin to a Gnosis Safe + timelock. |
-| R4 | Forensic-preserving erasure exists, but production activation, backups, external logs, and caches may retain pre-erasure data. | D → B | Verify the erasure procedure per deployment and document backup/cache handling. |
+| R4 | Guarded erasure is release tested, but backups, external logs, and caches may retain pre-erasure data. | D → B | Verify retention and deletion in every external system and backup tier. |
 | R5 | Chain reorg handling: a deep Base reorg could invalidate `block_number`/`tx_hash` already surfaced to users as "verified." | D → E | **Deferred** (roadmap) — worker confirmation-depth wait + receipt `integrity_status=pending_anchor` until depth threshold. |
 | R6 | Public-register rate limit is fail-open on Redis outage. | B | Backlog — evaluate severity; current model is availability > correctness here. |
 | R7 | Dev-key bypass depends entirely on `ENVIRONMENT != "development"`. | D → E | Backlog — add second gate `INNTRIS_ALLOW_DEV_KEYS=1` required to reach the dev path. |
 | R9 | CORS still accepts wildcard in non-dev (with credentials forced off). | D | **Phase 2D.2** — lock to explicit allow-list, reject `*` in prod. |
-| R10 | `SERVER_SECRET` / `ADMIN_SESSION_SECRET` have no rotation story. | D | Backlog — dual-key verifier window for rotation. |
-| R11 | SAST, SCA, and filesystem scanning exist, but several findings are report-only and do not block release. | D | Review current findings and tighten release gates after the baseline is clean. |
+| R10 | `SERVER_SECRET` has a dual-key window, but `ADMIN_SESSION_SECRET` rotation still invalidates sessions without an overlap window. | D | Rotate during a controlled session reset or add a dual-key session-cookie verifier. |
 | R12 | No load-test evidence for pool exhaustion or burst behaviour. | D | **Phase 5.1** — k6. |
 
 ---
@@ -270,7 +279,7 @@ enterprise-readiness track and do not block the phase queue:
 - **KMS / Vault for the hot wallet** (relates to R1). Production anchoring still uses a plain env-var private key; acceptance relies on compensating monitoring and the contract-side revoke/pause controls at `contracts/AnchorRegistry.sol:238-262`.
 - **Production RLS activation evidence** (relates to R2). Policies and integration tests exist, but each deployment must prove the required migrations, runtime role, and tenant-scoped connection path are active.
 - **Base L2 reorg protection** (relates to R5). No confirmation-depth queue; a receipt is marked `verified` as soon as the anchor tx is mined. Base's reorg depth is empirically ~1 block but this is not a guarantee.
-- **Docker-backed integration tests, Helm/Terraform, paid vendor items** — not in this repo, not in scope.
+- **Helm/Terraform and paid vendor items** — not in this repo, not in scope.
 
 ---
 

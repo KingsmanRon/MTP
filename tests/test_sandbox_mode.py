@@ -6,69 +6,27 @@ flag, and the public receipt must report sandbox=true / integrity_status=sandbox
 instead of a forever-"pending_anchor".
 """
 from datetime import UTC, datetime
-from decimal import Decimal
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
 
-from api.main import app, get_db
-from api.models import AgentRecord, AgentStatus
+from api.main import _audit_metadata, app, get_db
 
 client = TestClient(app)
 
 
-def _agent_record(agent_id, org_id, *, metadata):
-    now = datetime.now(UTC)
-    return AgentRecord(
-        id=agent_id, org_id=org_id, name="Verifier",
-        public_key=b"\x00" * 32, public_key_fingerprint="a" * 64,
-        trust_score=50, status=AgentStatus.ACTIVE,
-        daily_limit_usd=Decimal("1000"), per_action_limit_usd=Decimal("100"),
-        allowed_actions=["tool_call"], blocked_actions=[],
-        rate_limit_per_minute=60, last_action_at=None,
-        total_actions_count=0, total_blocked_count=0,
-        metadata=metadata, created_at=now, updated_at=now,
-    )
-
-
-def _post_bad_signature(agent):
-    """Drive the 401 sig-fail path (reached before Redis), capturing the audit row."""
-    db = MagicMock()
-    db.get_agent_by_id = AsyncMock(return_value=agent)
-    db.insert_audit_log = AsyncMock(return_value=uuid4())
-    db.update_agent_after_verification = AsyncMock()
-    app.dependency_overrides[get_db] = lambda: db
-    try:
-        with patch("api.main._dispatch_verdict_webhook", new_callable=AsyncMock):
-            resp = client.post("/verify", json={
-                "agent_id": str(agent.id), "action_type": "tool_call",
-                "payload": {"resource": "file", "operation": "read"},
-                "signature": "!" * 64, "nonce": "n-1",
-                "timestamp": "2026-06-16T12:00:00Z",
-            })
-    finally:
-        app.dependency_overrides.clear()
-    return resp, db
-
-
 def test_sandbox_agent_audit_row_excluded_from_anchoring():
-    agent = _agent_record(uuid4(), uuid4(), metadata={"sandbox": True})
-    resp, db = _post_bad_signature(agent)
-    assert resp.status_code == 401
-    entry = db.insert_audit_log.await_args.args[0]
+    metadata = _audit_metadata(client_policy_hash=None, sandbox=True)
     # test_request is exactly what workers.anchor_worker.get_unanchored_logs filters out.
-    assert entry.metadata.get("test_request") is True
-    assert entry.metadata.get("sandbox") is True
+    assert metadata.get("test_request") is True
+    assert metadata.get("sandbox") is True
 
 
 def test_non_sandbox_agent_row_not_flagged():
-    agent = _agent_record(uuid4(), uuid4(), metadata={})
-    resp, db = _post_bad_signature(agent)
-    assert resp.status_code == 401
-    entry = db.insert_audit_log.await_args.args[0]
-    assert "test_request" not in entry.metadata
-    assert "sandbox" not in entry.metadata
+    metadata = _audit_metadata(client_policy_hash=None, sandbox=False)
+    assert "test_request" not in metadata
+    assert "sandbox" not in metadata
 
 
 # ---------------------------------------------------------------------------

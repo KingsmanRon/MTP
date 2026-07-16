@@ -1,0 +1,63 @@
+groups:
+  - name: inntris_anchor_worker
+    rules:
+      - alert: InntrisAnchorWorkerScrapeDown
+        expr: up{job="inntris-anchor-worker"} == 0 or absent(up{job="inntris-anchor-worker"})
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: Inntris anchor worker metrics endpoint is unavailable
+          description: The anchor worker cannot be observed and may not be processing proofs.
+
+      - alert: InntrisAnchorWorkerHeartbeatStale
+        expr: time() - inntris_anchor_worker_heartbeat_timestamp_seconds > 120 or absent(inntris_anchor_worker_heartbeat_timestamp_seconds)
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: Inntris anchor worker heartbeat is stale
+          description: The worker process has not reported liveness within 2 minutes.
+
+      - alert: InntrisAnchorWorkerLastSuccessStale
+        expr: time() - inntris_anchor_worker_last_success_timestamp_seconds > 900 or absent(inntris_anchor_worker_last_success_timestamp_seconds)
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: Inntris anchor worker has not completed a successful cycle
+          description: No complete worker processing cycle has succeeded within 15 minutes.
+
+      - alert: InntrisAnchorWorkerProcessingErrors
+        expr: increase(inntris_anchor_worker_cycles_total{outcome="error"}[10m]) > 0
+        labels:
+          severity: critical
+        annotations:
+          summary: Inntris anchor worker processing failed
+          description: At least one complete anchor processing cycle raised an error.
+
+      - alert: InntrisAnchorWorkerLockContention
+        expr: increase(inntris_anchor_worker_cycles_total{outcome="lock_contended"}[10m]) > 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: Multiple Inntris anchor workers are competing for one database
+          description: A worker skipped processing because another process held the advisory lock.
+
+      - alert: InntrisAnchorProofBacklog
+        expr: inntris_anchor_proof_backlog{status=~"failed|dead_letter"} > 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: Inntris has failed anchor proofs
+          description: Proofs in status {{ $labels.status }} require operator attention.
+
+      - alert: InntrisAnchorSubmissionFailure
+        expr: increase(inntris_anchor_submissions_total{outcome=~"failed|dead_letter"}[10m]) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: Inntris anchor submission failed
+          description: At least one proof submission failed or entered the dead letter queue.

@@ -111,7 +111,7 @@ Frontend will be available at: `http://localhost:3000`
 # Create organization
 curl -X POST http://localhost:8000/admin/organizations \
   -H "Content-Type: application/json" \
-  -H "X-Admin-Key: YOUR_MASTER_ADMIN_KEY" \
+  -H "X-Master-Key: $MASTER_ADMIN_KEY" \
   -d '{
     "name": "Test Organization",
     "contact_email": "admin@test.com",
@@ -136,7 +136,7 @@ print(f'PUBLIC_KEY={base64.b64encode(bytes(sk.verify_key)).decode()}')
 # Create agent (use your org_id and API key)
 curl -X POST http://localhost:8000/admin/agents \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: YOUR_API_KEY" \
+  -H "X-API-Key: $INNTRIS_API_KEY" \
   -d '{
     "org_id": "YOUR_ORG_ID",
     "name": "Test Agent",
@@ -145,6 +145,12 @@ curl -X POST http://localhost:8000/admin/agents \
     "per_action_limit_usd": 100,
     "allowed_actions": ["financial_transaction", "email_send", "api_call"]
   }'
+
+# Registration is sandbox only. Promote after recording a real approval.
+curl -X POST "http://localhost:8000/admin/agents/$AGENT_ID/promote" \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: $INNTRIS_API_KEY" \
+  -d '{"approval_reference":"LOCAL-APPROVAL-1"}'
 ```
 
 ---

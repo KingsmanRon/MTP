@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { TrustScore } from "@/components/trust-score";
@@ -84,9 +85,9 @@ export default function PortalDashboard() {
         title="No Agents Found"
         description="Register an agent in the Admin Console to use the Portal."
         action={
-          <a href="/admin/agents" className="text-sm font-medium underline">
+          <Link href="/admin/agents" className="text-sm font-medium underline">
             Go to Admin Console
-          </a>
+          </Link>
         }
       />
     );

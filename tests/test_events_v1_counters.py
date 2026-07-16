@@ -18,7 +18,7 @@ client = TestClient(app)
 EVENT_BODY = {"event_type": "page_view", "data": {"path": "/pricing"}}
 
 
-def _make_db_mock(existing_agent_id=None):
+def _make_db_mock(existing_agent_id=None, *, existing_agent_metadata=None):
     """Database-like mock for the /v1/events path.
 
     ``acquire()`` yields a shared ``conn`` whose ``fetchrow`` answers the
@@ -41,11 +41,22 @@ def _make_db_mock(existing_agent_id=None):
             "expires_at": None,
         }
     )
-    # fetchval is called twice per request: (1) the events-agent lookup in
-    # _get_or_create_events_agent, and (2) the counter UPDATE ... RETURNING
-    # trust_score in the handler. The second must be an int trust score, not a
-    # UUID, so the AuditLogEntry validates.
-    conn.fetchval = AsyncMock(side_effect=[existing_agent_id, 73])
+    conn.fetchval = AsyncMock(return_value=existing_agent_id)
+    conn.fetchrow = AsyncMock(
+        side_effect=[
+            {
+                "id": key_id,
+                "org_id": org_id,
+                "scopes": ["verify"],
+                "is_active": True,
+                "expires_at": None,
+            },
+            {
+                "trust_score": 73,
+                "metadata": existing_agent_metadata or {"sandbox": True},
+            },
+        ]
+    )
     conn.execute = AsyncMock(return_value="UPDATE 1")
 
     # acquire() must be a sync callable returning an async context manager.
@@ -94,6 +105,7 @@ class TestEventsV1Counters:
         assert resp.json()["status"] == "accepted"
         # Agent was created and immediately promoted to active.
         db_mock.create_agent.assert_awaited_once()
+        assert db_mock.create_agent.await_args.kwargs["metadata"]["sandbox"] is True
         assert "status = 'active'" in _executed_sql(conn)
 
     def test_activity_is_recorded_by_audit_insert_not_manual_counter_update(self):
@@ -153,6 +165,24 @@ class TestEventsV1Truthfulness:
         assert entry.metadata.get("attestation_type") == "unsigned_ingestion"
         assert entry.metadata.get("non_cryptographic") is True
         assert entry.metadata.get("source") == "events_v1"
+        assert entry.metadata.get("sandbox") is True
+        assert entry.metadata.get("test_request") is True
+
+    def test_promoted_same_name_agent_cannot_make_unsigned_event_anchorable(self):
+        db_mock, _conn = _make_db_mock(
+            existing_agent_id=uuid4(),
+            existing_agent_metadata={
+                "source": "events_v1_bootstrap",
+                "non_cryptographic": True,
+                "sandbox": False,
+                "production_approval_reference": "legacy-approval",
+            },
+        )
+        resp = _post_event(db_mock)
+        assert resp.status_code == 201, resp.text
+        entry = db_mock.insert_audit_log.await_args.args[0]
+        assert entry.metadata.get("sandbox") is True
+        assert entry.metadata.get("test_request") is True
 
     def test_chain_hash_derived_atomically(self):
         # derive_chain_hash=True routes the insert through the per-agent

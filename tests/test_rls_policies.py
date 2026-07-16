@@ -223,12 +223,12 @@ async def test_audit_logs_are_tenant_scoped_via_agent(db: Database) -> None:
                 """
                 INSERT INTO audit_logs (
                     agent_id, action_type, action_hash, payload,
-                    verdict, signature, signature_valid
+                    verdict, signature, signature_valid, trust_score_at_time
                 )
-                VALUES ($1, 'api_call', $2, '{}'::jsonb, 'approved', $3, true)
+                VALUES ($1, 'api_call', $2, '{}'::jsonb, 'approved', $3, true, 50)
                 """,
                 agent_id,
-                secrets.token_bytes(32),
+                secrets.token_hex(32),
                 secrets.token_bytes(64),
             )
 

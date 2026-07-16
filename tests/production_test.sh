@@ -1,9 +1,12 @@
 #!/bin/bash
 
 ##############################################################################
-# Inntris Core - Production Testing Script
+# Inntris Core - Production Sandbox Smoke Test
 #
-# This script validates the entire Inntris deployment end-to-end.
+# This script checks a deployed API through a sandbox-only workflow. It does
+# not promote the generated agent and it verifies that the generated receipt
+# reports sandbox status, so this smoke run cannot create anchor-eligible
+# evidence. Passing this script is not a production-readiness decision.
 #
 # Usage:
 #   ./production_test.sh <API_URL> <MASTER_ADMIN_KEY>
@@ -15,11 +18,11 @@
 #   ✅ API health check
 #   ✅ Organization creation
 #   ✅ Agent registration
-#   ✅ Action verification (with Ed25519 signatures)
+#   ✅ Sandbox action verification (with Ed25519 signatures)
+#   ✅ Sandbox proof exclusion
 #   ✅ Public agent info retrieval
-#   ✅ Rate limiting
 #   ✅ Invalid signature detection
-#   ✅ Policy enforcement
+#   ✅ API key rotation and old-key rejection
 #
 ##############################################################################
 
@@ -63,12 +66,12 @@ TESTS_FAILED=0
 # Helper function for test output
 pass_test() {
     echo -e "${GREEN}✅ $1${NC}"
-    ((TESTS_PASSED++))
+    TESTS_PASSED=$((TESTS_PASSED + 1))
 }
 
 fail_test() {
     echo -e "${RED}❌ $1${NC}"
-    ((TESTS_FAILED++))
+    TESTS_FAILED=$((TESTS_FAILED + 1))
 }
 
 warn_test() {
@@ -110,7 +113,7 @@ CREATE_ORG_RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "$API_URL/admin/organi
     -H "Content-Type: application/json" \
     -H "X-Master-Key: $MASTER_ADMIN_KEY" \
     -d '{
-        "name": "Test Organization - '"$(date +%s)"'",
+        "name": "Sandbox Smoke Organization - '"$(date +%s)"'",
         "contact_email": "test@mtp-testing.local",
         "billing_tier": "professional"
     }')
@@ -140,8 +143,8 @@ import base64
 import json
 
 signing_key = SigningKey.generate()
-private_key_b64 = base64.b64encode(signing_key._signing_key).decode()
-public_key_b64 = base64.b64encode(signing_key.verify_key._key).decode()
+private_key_b64 = base64.b64encode(bytes(signing_key)).decode()
+public_key_b64 = base64.b64encode(bytes(signing_key.verify_key)).decode()
 
 print(json.dumps({
     "private_key": private_key_b64,
@@ -177,10 +180,30 @@ AGENT_BODY=$(echo "$REGISTER_AGENT_RESPONSE" | head -n-1)
 
 if [ "$HTTP_CODE" = "201" ]; then
     AGENT_ID=$(echo "$AGENT_BODY" | python3 -c "import sys, json; print(json.load(sys.stdin)['agent_id'])")
-    pass_test "Agent registered (ID: ${AGENT_ID:0:8}...)"
+    AGENT_SANDBOX=$(echo "$AGENT_BODY" | python3 -c "import sys, json; print(str(json.load(sys.stdin).get('sandbox', False)).lower())")
+    if [ "$AGENT_SANDBOX" != "true" ]; then
+        fail_test "Agent registration did not return sandbox=true"
+        exit 1
+    fi
+    pass_test "Sandbox agent registered (ID: ${AGENT_ID:0:8}...)"
 else
     fail_test "Agent registration failed (HTTP $HTTP_CODE)"
     echo "$AGENT_BODY"
+    exit 1
+fi
+
+# An active status is required to exercise policy evaluation. This endpoint
+# does not clear sandbox metadata or install production approval evidence.
+ACTIVATE_AGENT_RESPONSE=$(curl -s -w "\n%{http_code}" -X PATCH \
+    "$API_URL/admin/agents/$AGENT_ID/status?new_status=active" \
+    -H "X-API-Key: $API_KEY")
+HTTP_CODE=$(echo "$ACTIVATE_AGENT_RESPONSE" | tail -n1)
+ACTIVATE_BODY=$(echo "$ACTIVATE_AGENT_RESPONSE" | head -n-1)
+if [ "$HTTP_CODE" = "200" ]; then
+    pass_test "Sandbox agent activated without production promotion"
+else
+    fail_test "Sandbox agent activation failed (HTTP $HTTP_CODE)"
+    echo "$ACTIVATE_BODY"
     exit 1
 fi
 
@@ -213,10 +236,10 @@ action_type = "financial_transaction"
 payload = {
     "amount": 50.00,
     "currency": "USD",
-    "description": "Test transaction from production test suite"
+    "description": "Sandbox transaction from deployment smoke test"
 }
 nonce = sec.token_urlsafe(32)
-timestamp = datetime.now(timezone.utc)
+timestamp = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 # Compute hash
 payload_canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
@@ -227,7 +250,7 @@ signing_data = {
     "action_type": action_type,
     "payload_hash": payload_hash,
     "nonce": nonce,
-    "timestamp": timestamp.isoformat(),
+    "timestamp": timestamp,
 }
 signing_canonical = json.dumps(signing_data, sort_keys=True, separators=(",", ":"))
 action_hash = hashlib.sha256(signing_canonical.encode("utf-8")).hexdigest()
@@ -246,7 +269,8 @@ response = requests.post(
         "payload": payload,
         "signature": signature,
         "nonce": nonce,
-        "timestamp": timestamp.isoformat(),
+        "timestamp": timestamp,
+        "sig_version": 2,
     }
 )
 
@@ -265,7 +289,22 @@ if [ "$VERIFY_STATUS" = "200" ]; then
     TRUST_SCORE=$(echo "$VERIFY_BODY" | python3 -c "import sys, json; print(json.load(sys.stdin).get('trust_score', 0))")
 
     if [ "$VERDICT" = "approved" ]; then
-        pass_test "Action verification passed (Verdict: $VERDICT, Trust: $TRUST_SCORE/100)"
+        AUDIT_ID=$(echo "$VERIFY_BODY" | python3 -c "import sys, json; print(json.load(sys.stdin).get('audit_id', ''))")
+        if [ -z "$AUDIT_ID" ] || [ "$AUDIT_ID" = "None" ]; then
+            fail_test "Sandbox verification returned no audit_id"
+        else
+            pass_test "Sandbox action verification passed (Verdict: $VERDICT, Trust: $TRUST_SCORE/100)"
+
+            PROOF_RESPONSE=$(curl -s -w "\n%{http_code}" "$API_URL/public/verify/$AUDIT_ID/proof")
+            PROOF_HTTP_CODE=$(echo "$PROOF_RESPONSE" | tail -n1)
+            PROOF_BODY=$(echo "$PROOF_RESPONSE" | head -n-1)
+            PROOF_STATUS=$(echo "$PROOF_BODY" | python3 -c "import sys, json; print(json.load(sys.stdin).get('status', 'unknown'))" 2>/dev/null || echo "invalid")
+            if [ "$PROOF_HTTP_CODE" = "200" ] && [ "$PROOF_STATUS" = "sandbox" ]; then
+                pass_test "Sandbox receipt is excluded from anchoring"
+            else
+                fail_test "Sandbox receipt did not report sandbox proof status (HTTP $PROOF_HTTP_CODE, status $PROOF_STATUS)"
+            fi
+        fi
     else
         fail_test "Action blocked unexpectedly (Verdict: $VERDICT)"
     fi
@@ -315,7 +354,7 @@ if [ "$HTTP_CODE" = "200" ]; then
         pass_test "Public info retrieved (Verified: Yes, Trust: $AGENT_TRUST/100)"
     else
         warn_test "Agent exists but not verified yet (Trust: $AGENT_TRUST/100)"
-        ((TESTS_PASSED++))
+        TESTS_PASSED=$((TESTS_PASSED + 1))
     fi
 else
     fail_test "Public info retrieval failed (HTTP $HTTP_CODE)"
@@ -340,13 +379,17 @@ if [ "$HTTP_CODE" = "200" ]; then
     if [ "$NEW_API_KEY" != "N/A" ] && [ "$NEW_API_KEY" != "$API_KEY" ]; then
         pass_test "API key rotation successful (New key: ${NEW_API_KEY:0:20}...)"
 
-        # Verify old key is deactivated
-        OLD_KEY_TEST=$(curl -s -w "%{http_code}" -X GET "$API_URL/health" \
-            -H "X-API-Key: $API_KEY" | tail -n1)
+        OLD_KEY_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            "$API_URL/admin/api-keys" -H "X-API-Key: $API_KEY")
+        NEW_KEY_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            "$API_URL/admin/api-keys" -H "X-API-Key: $NEW_API_KEY")
 
-        # Note: health endpoint doesn't require API key, so we can't test this way
-        # Just verify new key works
-        pass_test "Old key deactivated, new key active"
+        if [ "$OLD_KEY_STATUS" = "401" ] && [ "$NEW_KEY_STATUS" = "200" ]; then
+            pass_test "Old API key is rejected and new API key is active"
+            API_KEY=$NEW_API_KEY
+        else
+            fail_test "API key rotation readback failed (old HTTP $OLD_KEY_STATUS, new HTTP $NEW_KEY_STATUS)"
+        fi
     else
         fail_test "API key rotation returned unexpected response"
     fi
@@ -369,13 +412,13 @@ TOTAL_TESTS=$((TESTS_PASSED + TESTS_FAILED))
 if [ $TESTS_FAILED -eq 0 ]; then
     echo -e "${GREEN}✅ ALL TESTS PASSED!${NC} ($TESTS_PASSED/$TOTAL_TESTS)"
     echo ""
-    echo -e "${GREEN}🎉 Your Inntris deployment is PRODUCTION READY!${NC}"
+    echo -e "${GREEN}Sandbox deployment smoke controls passed.${NC}"
     echo ""
     echo "Next steps:"
     echo "  1. Save the organization ID and API key"
     echo "  2. Monitor the /health endpoint"
-    echo "  3. Check worker logs for blockchain anchoring"
-    echo "  4. Set up MCP server for your agents"
+    echo "  3. Complete docs/trust/PRODUCTION_READBACK_CHECKLIST.md"
+    echo "  4. Promote only an explicitly approved production agent outside this smoke test"
     echo ""
     exit 0
 else

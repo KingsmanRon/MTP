@@ -42,6 +42,36 @@ _WRAPPER_REVISIONS = [
         "0004_supabase_compat",
         "009_ci_guard_security_invariants.sql",
     ),
+    (
+        _REPO / "alembic" / "versions" / "0008_gdpr_erasure_guard.py",
+        "0008_gdpr_erasure_guard",
+        "0007_agent_key_rotation",
+        "012_gdpr_erasure_guard.sql",
+    ),
+    (
+        _REPO / "alembic" / "versions" / "0009_webhook_security.py",
+        "0009_webhook_security",
+        "0008_gdpr_erasure_guard",
+        "013_webhook_security.sql",
+    ),
+    (
+        _REPO / "alembic" / "versions" / "0010_agent_production_approval.py",
+        "0010_agent_prod_approval",
+        "0009_webhook_security",
+        "014_agent_production_approval.sql",
+    ),
+    (
+        _REPO / "alembic" / "versions" / "0011_durable_security_state.py",
+        "0011_durable_security_state",
+        "0010_agent_prod_approval",
+        "015_durable_security_state.sql",
+    ),
+    (
+        _REPO / "alembic" / "versions" / "0012_gdpr_erasure_idempotency.py",
+        "0012_erasure_idempotency",
+        "0011_durable_security_state",
+        "016_gdpr_erasure_idempotency.sql",
+    ),
 ]
 
 
@@ -99,8 +129,7 @@ def test_revision_ids_fit_alembic_version_column() -> None:
     for path in versions_dir.glob("0*.py"):
         module = _load_revision(path)
         assert len(module.revision) <= 32, (
-            f"{path.name}: revision id '{module.revision}' "
-            f"is {len(module.revision)} chars (max 32)"
+            f"{path.name}: revision id '{module.revision}' is {len(module.revision)} chars (max 32)"
         )
 
 

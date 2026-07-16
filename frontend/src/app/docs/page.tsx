@@ -215,7 +215,7 @@ export default function DocsPage() {
               {
                 step: "1",
                 title: "Register Your Agent",
-                body: "You generate an Ed25519 keypair locally and register the public key. Your private key never leaves your environment — Inntris only ever stores the public key.",
+                body: "You generate an Ed25519 keypair locally and register the public key. Registration is sandbox only. A tenant admin must record an approval reference before production use. Your private key never leaves your environment — Inntris only ever stores the public key.",
                 code: `POST /admin/organizations   (operator-only, X-Master-Key)
 {
   "name": "Acme Corp",
@@ -227,6 +227,11 @@ POST /admin/agents          (X-API-Key)
   "org_id": "<org-uuid>",
   "name": "PaymentBot",
   "public_key": "<base64-ed25519-public-key>"
+}
+
+POST /admin/agents/{agent_id}/promote   (admin scope)
+{
+  "approval_reference": "CHANGE-1234"
 }`,
               },
               {

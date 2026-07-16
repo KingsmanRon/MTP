@@ -1,7 +1,7 @@
 """GDPR / CCPA erasure with forensic-integrity preservation (Phase 4B).
 
 The DB function ``app.erase_personal_data`` does the heavy lifting (see
-``database/migrations/006_gdpr_erasure.sql``). This module is a typed
+``database/migrations/012_gdpr_erasure_guard.sql``). This module is a typed
 Python wrapper so the operator-facing admin endpoint does not have to
 hand-build the SQL every time, and so we have a unit-test surface for
 the preservation invariants.
@@ -14,10 +14,11 @@ Design contract:
     so the anchor worker's filter still excludes dev rows).
   * Re-running erasure on an already-tombstoned row is a no-op.
 
-The wrapper validates inputs, opens a transaction on the caller's
-connection, and returns the UUID of the recorded erasure_request row
-— the caller must persist this id in their ticketing system so the
-chain of custody (request -> redaction -> row count) is auditable.
+The wrapper validates inputs and invokes the atomic database function on a
+caller-supplied connection. That connection must use the dedicated erasure
+role, never the ordinary API or worker role. The caller must persist the
+returned request id in its ticketing system so the chain of custody from
+request to redaction to row count remains auditable.
 """
 
 from __future__ import annotations
@@ -33,11 +34,13 @@ logger = logging.getLogger(__name__)
 # Legal bases we accept. An unknown value is rejected rather than
 # silently written to the ledger — a typo ("gdpr_17", "art17") would
 # make future auditing of the ledger harder.
-_ALLOWED_LEGAL_BASES = frozenset({
-    "gdpr_art17",
-    "ccpa_1798_105",
-    "operator_request",
-})
+_ALLOWED_LEGAL_BASES = frozenset(
+    {
+        "gdpr_art17",
+        "ccpa_1798_105",
+        "operator_request",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -55,7 +58,7 @@ async def erase_personal_data(
     agent_id: UUID | None = None,
     reason: str | None = None,
 ) -> ErasureResult:
-    """Run the erasure function and return the audit record."""
+    """Run the erasure function through an authorised operator connection."""
     if legal_basis not in _ALLOWED_LEGAL_BASES:
         raise ValueError(
             f"unsupported legal_basis {legal_basis!r}; must be one of "

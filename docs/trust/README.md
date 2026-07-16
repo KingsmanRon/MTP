@@ -1,6 +1,6 @@
 # Inntris Trust Pack
 
-**Last reviewed:** June 8, 2026
+**Last reviewed:** July 12, 2026
 
 This directory is the buyer-facing entry point for evaluating Inntris security,
 control boundaries, and evidence. It separates three different kinds of claims:
@@ -19,6 +19,7 @@ to execute without a valid Inntris PASS decision.
 | Document | Audience | Purpose |
 | --- | --- | --- |
 | [Security overview](SECURITY_OVERVIEW.md) | Buyer, security, governance | Plain-language security and data-handling summary |
+| [Production security contracts](../PRODUCTION_SECURITY_CONTRACTS.md) | Engineering, security review | Normative verification, registration, webhook, erasure, execution, and release invariants |
 | [Production readback checklist](PRODUCTION_READBACK_CHECKLIST.md) | Operator, security review | Evidence required before claiming live controls |
 | [14-day pilot SOW](../pilot/AGENT_ACTION_PROOF_PILOT_SOW.md) | Buyer, sponsor, procurement | Fixed-scope pilot template |
 | [Pilot evidence-pack template](../pilot/PILOT_EVIDENCE_PACK_TEMPLATE.md) | Pilot team, buyer | Repeatable final pilot artifact |

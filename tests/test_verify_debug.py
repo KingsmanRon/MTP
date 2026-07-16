@@ -128,17 +128,26 @@ def test_verify_401_echoes_expected_action_hash_and_keeps_detail_string():
     org_id = uuid4()
     sk = SigningKey.generate()
     public_key = bytes(sk.verify_key.encode(RawEncoder))
-    audit_id = uuid4()
     payload = {"resource": "file", "operation": "read"}
 
     db = MagicMock()
     db.get_agent_by_id = AsyncMock(return_value=_agent_record(agent_id, org_id, public_key))
-    db.insert_audit_log = AsyncMock(return_value=audit_id)
+    db.insert_audit_log = AsyncMock()
     db.update_agent_after_verification = AsyncMock()
 
     app.dependency_overrides[get_db] = lambda: db
     try:
-        with patch("api.main._dispatch_verdict_webhook", new_callable=AsyncMock):
+        with (
+            patch("api.main._check_verify_abuse_limits", new_callable=AsyncMock),
+            patch(
+                "api.main._acquire_agent_signature_slot",
+                new_callable=AsyncMock,
+                return_value="test-slot",
+            ),
+            patch("api.main._release_agent_signature_slot", new_callable=AsyncMock),
+            patch("api.main._record_invalid_signature_telemetry", new_callable=AsyncMock),
+            patch("api.main._dispatch_verdict_webhook", new_callable=AsyncMock),
+        ):
             resp = client.post(
                 "/verify",
                 json={
@@ -168,6 +177,6 @@ def test_verify_401_echoes_expected_action_hash_and_keeps_detail_string():
         timestamp="2026-06-16T12:00:00Z",
         sig_version=2,
     )
-    assert data["audit_id"] == str(audit_id)
-    # The real endpoint still records the forensic row (unlike /verify/debug).
-    db.insert_audit_log.assert_awaited_once()
+    assert data["audit_id"] is None
+    db.insert_audit_log.assert_not_called()
+    db.update_agent_after_verification.assert_not_called()

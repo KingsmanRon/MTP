@@ -1,23 +1,21 @@
 """
 Generate PASS and BLOCK receipts on the live mainnet-anchored API.
 
-This version creates the agent directly via the database (Supabase),
-then submits verifications through the API.
+The agent is registered and explicitly promoted through the audited admin API,
+then verifications are submitted through the public API.
 
 Usage:
-    python scripts/generate_mainnet_receipts.py --api-url https://api.inntris.com --database-url "postgresql://..."
+    export INNTRIS_ADMIN_API_KEY="inntris_live_sk_..."
+    python scripts/generate_mainnet_receipts.py --api-url https://api.inntris.com
 
-Get your DATABASE_URL from Supabase → Project Settings → Database → Connection String (URI).
+The admin key must belong to the organisation that will own the receipts.
 """
 
 import argparse
-import asyncio
+import base64
 import hashlib
-import json
 import os
 import sys
-from datetime import datetime, timezone
-from uuid import uuid4
 
 # Allow `import api...` when run as `python scripts/generate_mainnet_receipts.py`.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -25,13 +23,11 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 try:
     import requests
     from nacl.signing import SigningKey
-    import asyncpg
 except ImportError:
-    print("Missing dependencies. Run: pip install requests pynacl asyncpg")
+    print("Missing dependencies. Run: pip install requests pynacl")
     sys.exit(1)
 
 from api.agent_client import build_signed_verify_request
-
 
 # Demo policy for the canonical homepage receipts. Per the architectural rule
 # the backend never sees the raw YAML — only the SHA-256 hex of it. Computing
@@ -83,77 +79,93 @@ def submit_verification(api_url: str, agent_id: str, signing_key: SigningKey,
         sys.exit(1)
 
 
-async def setup_agent(database_url: str, signing_key: SigningKey) -> str:
-    """Create an agent directly in the database and return its ID."""
-    conn = await asyncpg.connect(database_url)
-    try:
-        # Find the first org
-        org = await conn.fetchrow("SELECT id, name FROM organizations LIMIT 1")
-        if not org:
-            print("  ERROR: No organizations found in database")
-            sys.exit(1)
-        print(f"  Using org: {org['name']} ({org['id']})")
-
-        public_key = bytes(signing_key.verify_key)
-        fingerprint = hashlib.sha256(public_key).hexdigest()
-        agent_id = uuid4()
-
-        await conn.execute(
-            """
-            INSERT INTO agents (
-                id, org_id, name, public_key, public_key_fingerprint,
-                status, trust_score,
-                daily_limit_usd, per_action_limit_usd, rate_limit_per_minute,
-                allowed_actions, blocked_actions, metadata,
-                total_actions_count, total_blocked_count,
-                created_at, updated_at
-            )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $16)
-            """,
-            agent_id,
-            org["id"],
-            "Mainnet Receipt Agent",
-            public_key,
-            fingerprint,
-            "active",
-            85,
-            500,     # daily limit
-            50,      # per-action limit ($50 so $75 triggers BLOCK)
-            60,      # rate limit per minute
-            ["financial_transaction", "api_call"],
-            [],
-            json.dumps({"description": "Agent for mainnet receipt generation"}),
-            0, 0,
-            datetime.now(timezone.utc),
-        )
-        print(f"  Created agent: {agent_id}")
-        return str(agent_id)
-    finally:
-        await conn.close()
+def _require(response, operation: str, expected: tuple[int, ...] = (200,)) -> dict:
+    if response.status_code not in expected:
+        print(f"  ERROR: {operation} failed ({response.status_code}): {response.text}")
+        sys.exit(1)
+    return response.json()
 
 
-async def fetch_latest_audit_id(database_url: str, agent_id: str, verdict: str) -> str:
-    """Fetch the most recent audit log ID for an agent with a given verdict."""
-    conn = await asyncpg.connect(database_url)
-    try:
-        row = await conn.fetchrow(
-            "SELECT id FROM audit_logs WHERE agent_id = $1 AND verdict = $2 ORDER BY timestamp DESC LIMIT 1",
-            __import__("uuid").UUID(agent_id),
-            verdict,
-        )
-        if not row:
-            print(f"  ERROR: No {verdict} audit log found for agent {agent_id}")
-            sys.exit(1)
-        return str(row["id"])
-    finally:
-        await conn.close()
+def setup_agent(api_url: str, api_key: str, signing_key: SigningKey) -> str:
+    """Register, configure and explicitly approve the receipt agent."""
+    headers = {"Content-Type": "application/json", "X-API-Key": api_key}
+    org = _require(
+        requests.get(f"{api_url}/admin/organization", headers=headers, timeout=15),
+        "resolve organisation",
+    )
+    public_key = base64.b64encode(bytes(signing_key.verify_key)).decode("ascii")
+    created = _require(
+        requests.post(
+            f"{api_url}/admin/agents",
+            headers=headers,
+            json={
+                "org_id": org["id"],
+                "name": "Mainnet Receipt Agent",
+                "public_key": public_key,
+                "daily_limit_usd": 500,
+                "per_action_limit_usd": 50,
+                "allowed_actions": ["financial_transaction", "api_call"],
+                "metadata": {"description": "Agent for mainnet receipt generation"},
+            },
+            timeout=15,
+        ),
+        "register agent",
+        (200, 201),
+    )
+    agent_id = created["agent_id"]
+    _require(
+        requests.patch(
+            f"{api_url}/admin/agents/{agent_id}",
+            headers=headers,
+            json={"trust_score": 85, "rate_limit_per_minute": 60},
+            timeout=15,
+        ),
+        "configure agent",
+    )
+    _require(
+        requests.post(
+            f"{api_url}/admin/agents/{agent_id}/promote",
+            headers=headers,
+            json={"approval_reference": f"mainnet-receipt-generation:{agent_id}"},
+            timeout=15,
+        ),
+        "promote agent",
+    )
+    print(f"  Created and production-approved agent: {agent_id}")
+    return agent_id
+
+
+def fetch_latest_audit_id(
+    api_url: str, api_key: str, agent_id: str, verdict: str
+) -> str:
+    """Fetch the most recent audit log ID through the tenant admin API."""
+    result = _require(
+        requests.get(
+            f"{api_url}/admin/audit/search",
+            headers={"X-API-Key": api_key},
+            params={"agent_id": agent_id, "verdict": verdict, "limit": 1},
+            timeout=15,
+        ),
+        "fetch audit receipt",
+    )
+    logs = result.get("logs") or []
+    if not logs:
+        print(f"  ERROR: No {verdict} audit log found for agent {agent_id}")
+        sys.exit(1)
+    return str(logs[0]["id"])
 
 
 def main():
     parser = argparse.ArgumentParser(description="Generate mainnet PASS and BLOCK receipts")
     parser.add_argument("--api-url", required=True, help="e.g. https://api.inntris.com")
-    parser.add_argument("--database-url", required=True, help="Supabase connection string")
+    parser.add_argument(
+        "--api-key",
+        default=os.getenv("INNTRIS_ADMIN_API_KEY", ""),
+        help="Admin-scoped organisation key (or INNTRIS_ADMIN_API_KEY)",
+    )
     args = parser.parse_args()
+    if not args.api_key:
+        parser.error("--api-key or INNTRIS_ADMIN_API_KEY is required")
 
     api_url = args.api_url.rstrip("/")
 
@@ -167,12 +179,12 @@ def main():
 
     # --- Generate keypair ---
     signing_key = SigningKey.generate()
-    print(f"\nGenerated Ed25519 keypair")
+    print("\nGenerated Ed25519 keypair")
     print(f"Demo policy hash: {DEMO_POLICY_HASH}")
 
-    # --- Create agent in database ---
-    print("Setting up agent in database...")
-    agent_id = asyncio.run(setup_agent(args.database_url, signing_key))
+    # --- Register and approve agent through the audited admin API ---
+    print("Setting up agent through the admin API...")
+    agent_id = setup_agent(api_url, args.api_key, signing_key)
 
     # --- PASS receipt: $25 transaction (under $50 limit) ---
     print("\nSubmitting PASS verification ($25 transaction)...")
@@ -209,9 +221,11 @@ def main():
     if block_detail:
         print(f"  Reason: {block_detail}")
 
-    # Fetch the BLOCK audit_id from database (most recent blocked entry for this agent)
-    print("  Fetching BLOCK audit ID from database...")
-    block_audit_id = asyncio.run(fetch_latest_audit_id(args.database_url, agent_id, "blocked"))
+    # Fetch the BLOCK audit_id through the tenant admin API.
+    print("  Fetching BLOCK audit ID from admin audit search...")
+    block_audit_id = fetch_latest_audit_id(
+        api_url, args.api_key, agent_id, "blocked"
+    )
     print(f"  Audit ID: {block_audit_id}")
 
     # --- Summary ---
@@ -224,10 +238,10 @@ def main():
     print(f"\n  BLOCK receipt: {block_audit_id}")
     print(f"    Verdict:     {block_verdict}")
     print(f"    Verify URL:  https://inntris.com/verify/{block_audit_id}")
-    print(f"\n  NOTE: Receipts will be anchored on-chain within ~60 minutes")
-    print(f"        (next anchor worker batch run).")
-    print(f"        After anchoring, verify pages will show BaseScan links")
-    print(f"        pointing to basescan.org (Base Mainnet).")
+    print("\n  NOTE: Receipts will be anchored on-chain within ~60 minutes")
+    print("        (next anchor worker batch run).")
+    print("        After anchoring, verify pages will show BaseScan links")
+    print("        pointing to basescan.org (Base Mainnet).")
     print("=" * 60 + "\n")
 
 

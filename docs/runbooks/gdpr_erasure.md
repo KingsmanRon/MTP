@@ -1,122 +1,173 @@
-# GDPR / CCPA erasure
+# GDPR and CCPA erasure
 
-Phase 4B — operator procedure for honoring a right-to-erasure request
-without invalidating the forensic Merkle proofs that back our audit
-logs.
+This procedure honours an approved right to erasure request without changing
+the cryptographic evidence needed to verify an existing receipt.
 
-## What erasure does and does not change
+Migration `012_gdpr_erasure_guard.sql`, applied by Alembic revision
+`0008_gdpr_erasure_guard`, is the active contract. It is a forward repair for
+the earlier migration. Do not edit or replay an already applied migration by
+hand.
 
-| Field | Touched? | Why |
-|-------|----------|-----|
-| `audit_logs.action_hash` | **No** | Merkle leaf value; on-chain proofs depend on it. |
-| `audit_logs.signature` | **No** | Ed25519 signature; preserves non-repudiation for parties who still hold the original payload. |
-| `audit_logs.signature_valid` | **No** | Historical fact. |
-| `audit_logs.merkle_root_id` | **No** | Links to the on-chain anchor. |
-| `audit_logs.merkle_leaf_index` | **No** | Position in the Merkle tree. |
-| `audit_logs.chain_previous_hash` | **No** | Local hash-chain ordering. |
-| `audit_logs.policy_hash` | **No** | Historical fact; does not identify a person. |
-| `audit_logs.action_type`, `verdict`, `timestamp`, `trust_score_at_time` | **No** | Categorical / aggregate; no PII. |
-| `audit_logs.payload` | **Replaced** with `{erased: true, erased_at, erasure_request_id}` |
-| `audit_logs.metadata` | **Replaced** with `{erased: true}` (retains `test_request=true` if set) |
-| `audit_logs.request_ip` | **NULLed** |
-| `audit_logs.request_user_agent` | **NULLed** |
+## Security contract
 
-After erasure, a row is proof-of-existence only. Anyone holding the
-original payload out-of-band (e.g. the data subject themselves) can
-re-compute SHA-256 and match it against `action_hash`; that is the
-legal carve-out we rely on under GDPR Art. 17(3)(e).
+The only supported entry point is
+`app.erase_personal_data(UUID, UUID, TEXT, TEXT, TEXT)`.
 
-## Procedure
+The function creates a pending row in `erasure_requests`, issues an internal
+transaction scoped capability for that ledger row, writes exact tombstones,
+clears the capability, and completes the ledger row. The audit trigger rejects
+an erasure when the ledger reference is missing, complete, for another tenant,
+or for another agent.
 
-1. **Receive and classify the request.** Confirm it is a GDPR Art. 17
-   or CCPA 1798.105 request (or operator-initiated cleanup). Out-of-
-   scope requests go to legal; we do not redact forensic data on a
-   whim.
+Application roles `inntris_api` and `inntris_worker` cannot insert ledger rows
+or execute the erasure function. Never grant them that access. Never set
+`app.erasure_request_id` manually or update `audit_logs` directly.
 
-2. **Identify the scope.** One organization, and optionally one agent
-   within it. We do not support per-row erasure — a data subject
-   request maps to the agent(s) that logged on their behalf.
+The function may change only these fields:
 
-3. **Run the erasure.** From an admin shell connected to Postgres
-   under a role that has been granted `EXECUTE` on
-   `app.erase_personal_data(...)`:
+| Field | Result |
+| --- | --- |
+| `audit_logs.payload` | Exact `{erased, erased_at, erasure_request_id}` tombstone |
+| `audit_logs.metadata` | Exact `{erased: true}` tombstone, with `test_request: true` retained when present |
+| `audit_logs.request_ip` | Set to `NULL` |
+| `audit_logs.request_user_agent` | Set to `NULL` |
 
-   ```sql
-   SELECT app.erase_personal_data(
-       p_org_id        := '00000000-0000-0000-0000-000000000000',
-       p_agent_id      := NULL,                -- or a specific agent UUID
-       p_requested_by  := 'dpo@inntris.com',
-       p_legal_basis   := 'gdpr_art17',        -- or ccpa_1798_105, operator_request
-       p_reason        := 'DSR ticket #4821'
-   );
+Every other audit field remains byte for byte unchanged, including the action
+hash, signature, verdict, timestamps, policy hash, chain hash, and Merkle
+fields. Merkle fields retain their separate one time anchoring transition from
+`NULL` to a value.
+
+## Before the change window
+
+1. Confirm legal or privacy approval and record the DSR ticket.
+
+2. Identify one organisation and, when appropriate, one agent in that
+   organisation. The function does not erase arbitrary individual rows.
+
+3. Confirm the agent belongs to the organisation. The database rejects a
+   mismatched organisation and agent pair.
+
+4. Confirm the deployment is at Alembic head:
+
+   ```shell
+   alembic current
+   alembic upgrade head
    ```
 
-   The return value is the `erasure_requests.id` — record it in the
-   ticket. The accompanying row counts `rows_affected`.
+5. Take the required operational backup and record its retention policy. A
+   backup may still contain data that existed before the erasure.
 
-4. **Confirm**. Query `erasure_requests` and a representative sample
-   of the affected `audit_logs` rows to verify payload tombstoning
-   and NULLed IP/UA.
+## Grant a controlled execution window
 
-5. **Respond to the data subject.** Include the `erasure_requests.id`
-   and the count of redacted entries. Explain that cryptographic
-   proofs of existence remain because the law requires retaining
-   records necessary for "establishment, exercise or defence of
-   legal claims" (Art. 17(3)(e)).
-
-## From Python
-
-For endpoints exposed to operators, use the wrapper in
-`api/erasure.py` rather than hand-building the SQL:
-
-```python
-from api.erasure import erase_personal_data
-
-async with db.acquire_as_tenant(org_id) as conn:
-    result = await erase_personal_data(
-        conn,
-        organization_id=org_id,
-        requested_by="dpo@inntris.com",
-        legal_basis="gdpr_art17",
-        reason="DSR #4821",
-    )
-# result.request_id, result.rows_affected
-```
-
-The wrapper whitelists `legal_basis`, trims `requested_by`, and emits a
-structured log line (`gdpr.erasure.completed`) for operator audit.
-
-## Idempotency
-
-Re-running erasure for the same scope is a no-op on already-tombstoned
-rows. The `erasure_requests` row is still created (with
-`rows_affected = 0`), which is the correct record: the operator
-attempted an erasure, and zero additional rows needed redaction.
-
-## Granting execute rights
-
-By default the function is not executable by any role (the migration
-REVOKEs from PUBLIC). Grant to a named admin role only when an
-erasure process is approved:
+Use a dedicated NOLOGIN role that operators assume through your normal
+privileged access process. The migration leaves execution denied by default.
 
 ```sql
+GRANT USAGE ON SCHEMA app TO inntris_erasure_admin;
 GRANT EXECUTE ON FUNCTION app.erase_personal_data(UUID, UUID, TEXT, TEXT, TEXT)
     TO inntris_erasure_admin;
 ```
 
-Revoke immediately after the window closes. The grant itself should
-be logged — Postgres will record it in the server log if
-`log_statement = ddl` is set.
+Record the grant in the change ticket. Configure PostgreSQL DDL logging so the
+grant and revoke are retained in server audit logs.
 
-## What this procedure does NOT cover
+## Execute
 
-* **Backups.** Point-in-time backups of Postgres may still contain
-  the pre-erasure payload. Erasure of backups requires either
-  restoring + re-erasing + re-backing-up, or waiting out the backup
-  retention window. Document the choice per compliance obligation.
-* **External caches / logs.** Application logs, error traces, and
-  Redis snapshots may contain payload data. Cache rotation is
-  separate.
-* **On-chain data.** We deliberately never write PII to the chain —
-  only Merkle roots, which are SHA-256 hashes and not reversible.
-  Erasure does not require any on-chain action.
+Run from a connection whose active role is `inntris_erasure_admin`:
+
+```sql
+SELECT app.erase_personal_data(
+    p_org_id       := '00000000-0000-0000-0000-000000000000',
+    p_agent_id     := NULL,
+    p_requested_by := 'dpo@inntris.com',
+    p_legal_basis  := 'gdpr_art17',
+    p_reason       := 'DSR ticket 4821'
+);
+```
+
+`p_agent_id := NULL` covers every agent in the organisation. Otherwise provide
+one agent UUID. Accepted legal bases are `gdpr_art17`, `ccpa_1798_105`, and
+`operator_request`.
+
+Record the returned erasure request UUID immediately.
+
+## Verify
+
+Check the immutable ledger entry:
+
+```sql
+SELECT id, organization_id, subject_agent_id, requested_by, legal_basis,
+       reason, rows_affected, created_at, completed_at
+FROM erasure_requests
+WHERE id = '00000000-0000-0000-0000-000000000000';
+```
+
+`completed_at` must be populated. `rows_affected` is the number of newly
+tombstoned audit rows. A repeated approved request may legitimately report
+zero because already tombstoned rows are not changed again.
+
+Inspect a representative sample and confirm the tombstone has only the allowed
+keys:
+
+```sql
+SELECT id, payload, metadata, request_ip, request_user_agent,
+       action_hash, signature, merkle_root_id, merkle_leaf_index
+FROM audit_logs
+WHERE payload->>'erasure_request_id' =
+      '00000000-0000-0000-0000-000000000000';
+```
+
+Compare retained proof fields with the pre change evidence recorded in the DSR
+ticket. Close the request only when the ledger and representative rows match
+the contract.
+
+## Revoke access
+
+End the execution window even when no rows were changed:
+
+```sql
+REVOKE EXECUTE ON FUNCTION app.erase_personal_data(UUID, UUID, TEXT, TEXT, TEXT)
+    FROM inntris_erasure_admin;
+```
+
+## Python operator tooling
+
+`api.erasure.erase_personal_data` validates inputs and returns both the ledger
+UUID and affected row count. Pass it a connection authenticated as the
+dedicated erasure role. Do not use a normal tenant or worker connection.
+
+```python
+from api.erasure import erase_personal_data
+
+result = await erase_personal_data(
+    erasure_admin_connection,
+    organization_id=org_id,
+    agent_id=agent_id,
+    requested_by="dpo@inntris.com",
+    legal_basis="gdpr_art17",
+    reason="DSR ticket 4821",
+)
+```
+
+## Deployment proof
+
+The integration test creates a clean temporary PostgreSQL database, replays
+the complete Alembic chain, tests rejected bypasses, performs a legitimate
+erasure, and verifies that all forensic fields remain unchanged.
+
+```shell
+INNTRIS_DB_INTEGRATION=1 \
+ALEMBIC_DATABASE_URL=postgresql://migration_admin:secret@localhost/postgres \
+python -m pytest tests/test_gdpr_erasure.py -q
+```
+
+The configured migration role must be allowed to create and drop a temporary
+database. Use a disposable CI PostgreSQL service, not a production cluster.
+
+## Outside this procedure
+
+This database function does not erase point in time backups, application logs,
+error traces, Redis snapshots, third party exports, or support attachments.
+Track each relevant system in the DSR ticket. Inntris writes only Merkle roots
+on chain, not payload data, so no blockchain mutation is part of this
+procedure.
