@@ -1,0 +1,5 @@
+# Inntris evidence pack signing keys — mirrors github.com/Inntris/inntris-verify/KEYS.md
+ipk-2026-01 PENDING-PUBLICATION-DO-NOT-PIN active 2026-07-XX
+# Published verifier file hashes — mirrors github.com/Inntris/inntris-verify/SHA256SUMS
+verify_pack.py sha256 332928c85e25149810a068cfe21f9d15aca31f083469bc9ee3d958f67165a366
+METHODOLOGY.md sha256 4ca88e1630b922fef65abac38cf2a8708a7f04be1de473925f3b17eec4fe0801
