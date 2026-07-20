@@ -266,6 +266,17 @@ def load_ed25519_verify():
 
         return _nacl_verify, "pynacl"
     except ImportError:
+        # RFC 8032 §7.1 TEST 3 known answer, checked at startup like the
+        # keccak fallback above (plus a bit-flipped negative control).
+        pk = bytes.fromhex("fc51cd8e6218a1a38da47ed00230f0580816ed13ba3303ac5deb911548908025")
+        msg = bytes.fromhex("af82")
+        sig = bytes.fromhex(
+            "6291d657deec24024827e69c3abe01a30ce548a284743a445e3680d7db5ac3ac"
+            "18ff9b538d16f290ae67f760984dc6594a7c15e9716ed28dc027beceea1ec40a"
+        )
+        assert pure_ed25519_verify(pk, msg, sig) and not pure_ed25519_verify(
+            pk, msg, sig[:-1] + bytes([sig[-1] ^ 0x01])
+        ), "pure-Python Ed25519 self-test failed"
         return pure_ed25519_verify, "pure-python (RFC 8032)"
 
 

@@ -1,0 +1,10 @@
+# Pins for the publicly published verifier files.
+#
+# These SHA-256 hashes must match both the embedded copies below and the
+# copies published at github.com/Inntris/inntris-verify (SHA256SUMS). CI
+# fails on any drift, so a change to the verifier or the methodology forces
+# a conscious re-publication: bump this file, the inntris-verify repo, and
+# the inntris.com .well-known mirror in the same sitting, then tag a release
+# there (see that repo's CHANGELOG.md for the full procedure).
+332928c85e25149810a068cfe21f9d15aca31f083469bc9ee3d958f67165a366  evidence_pack/pack_contents/verify_pack.py
+4ca88e1630b922fef65abac38cf2a8708a7f04be1de473925f3b17eec4fe0801  evidence_pack/pack_contents/METHODOLOGY.md

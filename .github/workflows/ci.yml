@@ -202,3 +202,22 @@ jobs:
 
       - name: forge test
         run: forge test -vvv
+
+  verify-publication:
+    name: verifier publication drift check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      # The offline verifier and methodology are published out-of-band at
+      # github.com/Inntris/inntris-verify and must stay byte-identical to
+      # the embedded copies. verify_publication.lock pins the hashes; any
+      # drift fails CI so a verifier change forces a conscious
+      # re-publication (see the inntris-verify CHANGELOG for the procedure).
+      - name: check embedded verifier matches published pins
+        run: |
+          if ! grep -v '^#' verify_publication.lock | sha256sum --check --strict -; then
+            echo "::error::evidence_pack/pack_contents drifted from verify_publication.lock."
+            echo "::error::Update the lock file AND re-publish Inntris/inntris-verify (SHA256SUMS, CHANGELOG, release tag, .well-known mirror) in the same change."
+            exit 1
+          fi
