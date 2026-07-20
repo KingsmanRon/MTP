@@ -14,7 +14,10 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 LOCK_PATH = Path("verify_publication.lock")
-MIRROR_PATH = Path("frontend/public/.well-known/inntris-keys.txt")
+MIRROR_PATH = Path("frontend/public/inntris-keys.txt")
+NEXT_CONFIG_PATH = Path("frontend/next.config.mjs")
+WELL_KNOWN_SOURCE = "/.well-known/inntris-keys.txt"
+WELL_KNOWN_DESTINATION = "/inntris-keys.txt"
 GITATTRIBUTES_PATH = Path(".gitattributes")
 PENDING_MARKER = "PENDING-PUBLICATION-DO-NOT-PIN"
 
@@ -26,7 +29,7 @@ REQUIRED_ATTRIBUTES = {
     "evidence_pack/pack_contents/verify_pack.py text eol=lf",
     "evidence_pack/pack_contents/METHODOLOGY.md text eol=lf",
     "verify_publication.lock text eol=lf",
-    "frontend/public/.well-known/inntris-keys.txt text eol=lf",
+    "frontend/public/inntris-keys.txt text eol=lf",
 }
 
 _LOCK_ENTRY = re.compile(r"^(?P<digest>[0-9a-f]{64})  (?P<path>\S+)$")
@@ -101,6 +104,18 @@ def check_pinned_files(root: Path, pins: dict[Path, str]) -> None:
             )
 
 
+def check_public_route(root: Path) -> None:
+    """Require the stable well-known URL to map to the deployable public file."""
+    next_config = (root / NEXT_CONFIG_PATH).read_text(encoding="utf-8")
+    source_entry = f"source: '{WELL_KNOWN_SOURCE}'"
+    destination_entry = f"destination: '{WELL_KNOWN_DESTINATION}'"
+    if source_entry not in next_config or destination_entry not in next_config:
+        raise PublicationCheckError(
+            "the public key mirror must be exposed at "
+            f"{WELL_KNOWN_SOURCE} via {WELL_KNOWN_DESTINATION}"
+        )
+
+
 def check_mirror(root: Path, pins: dict[Path, str]) -> list[tuple[str, str]]:
     """Validate the public key and verifier hashes in the website mirror."""
     mirror_lines = [
@@ -157,6 +172,7 @@ def validate_publication(root: Path = PROJECT_ROOT) -> list[str]:
     pins = load_pins(root)
     check_attributes(root)
     check_pinned_files(root, pins)
+    check_public_route(root)
     published_keys = check_mirror(root, pins)
     messages = [
         f"pinned {path.as_posix()} {digest}" for path, digest in sorted(pins.items())

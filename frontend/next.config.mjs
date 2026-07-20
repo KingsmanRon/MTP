@@ -10,9 +10,13 @@ const nextConfig = {
     NEXT_PUBLIC_ANCHOR_CONTRACT: process.env.NEXT_PUBLIC_ANCHOR_CONTRACT || '',
   },
 
-  // Rewrites for API proxying in development
+  // Rewrites for the public verifier registry and API proxying in development
   async rewrites() {
     return [
+      {
+        source: '/.well-known/inntris-keys.txt',
+        destination: '/inntris-keys.txt',
+      },
       {
         source: '/api/v1/:path*',
         destination: `${process.env.API_URL || 'http://localhost:8000'}/:path*`,

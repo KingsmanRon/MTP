@@ -44,6 +44,15 @@ def test_publication_checker_rejects_wrong_key_fingerprint(tmp_path: Path) -> No
         check_verify_publication.check_mirror(tmp_path, {})
 
 
+def test_publication_checker_rejects_missing_well_known_rewrite(tmp_path: Path) -> None:
+    next_config_path = tmp_path / check_verify_publication.NEXT_CONFIG_PATH
+    next_config_path.parent.mkdir(parents=True)
+    next_config_path.write_text("const nextConfig = {};\n", encoding="utf-8")
+
+    with pytest.raises(check_verify_publication.PublicationCheckError, match="must be exposed"):
+        check_verify_publication.check_public_route(tmp_path)
+
+
 def test_derive_pubkey_prints_only_public_material(tmp_path: Path, capsys) -> None:
     seed_hex = "00" * 32
     seed_path = tmp_path / "signing.key"

@@ -1,4 +1,4 @@
 evidence_pack/pack_contents/verify_pack.py text eol=lf
 evidence_pack/pack_contents/METHODOLOGY.md text eol=lf
 verify_publication.lock text eol=lf
-frontend/public/.well-known/inntris-keys.txt text eol=lf
+frontend/public/inntris-keys.txt text eol=lf
