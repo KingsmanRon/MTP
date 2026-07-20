@@ -42,6 +42,11 @@ _PACK_CONTENTS_DIR = Path(__file__).parent / "pack_contents"
 _RESERVED_ARCNAMES = {MANIFEST_ARCNAME, SIGNATURE_ARCNAME, "custody_log.json"}
 
 
+def _read_embedded_text(name: str) -> bytes:
+    """Return the canonical UTF-8/LF bytes published for an embedded text file."""
+    return (_PACK_CONTENTS_DIR / name).read_text(encoding="utf-8").encode("utf-8")
+
+
 @dataclass(frozen=True)
 class BuildResult:
     zip_path: Path
@@ -131,8 +136,8 @@ class EvidencePackBuilder:
 
         # Embedded verifier + methodology: shipped in every pack so a
         # verifier needs nothing from Inntris.
-        entries["verify_pack.py"] = (_PACK_CONTENTS_DIR / "verify_pack.py").read_bytes()
-        entries["METHODOLOGY.md"] = (_PACK_CONTENTS_DIR / "METHODOLOGY.md").read_bytes()
+        entries["verify_pack.py"] = _read_embedded_text("verify_pack.py")
+        entries["METHODOLOGY.md"] = _read_embedded_text("METHODOLOGY.md")
 
         custody_log = {
             "pack_name": self.pack_name,

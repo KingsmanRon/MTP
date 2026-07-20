@@ -27,6 +27,7 @@ import pytest
 from nacl.encoding import RawEncoder
 from nacl.signing import SigningKey
 
+import evidence_pack.builder as builder_module
 from evidence_pack import (
     CustodyIntegrityError,
     DeterministicZipError,
@@ -228,6 +229,20 @@ class TestPackDeterminism:
         listed = {entry["path"] for entry in manifest["files"]}
         assert listed == names - {"manifest.json", "manifest.sig.json"}
         assert {"verify_pack.py", "METHODOLOGY.md", "custody_log.json"} <= listed
+
+    def test_embedded_publication_text_is_canonical_lf(self, tmp_path, monkeypatch):
+        pack_contents = tmp_path / "pack_contents"
+        pack_contents.mkdir()
+        (pack_contents / "verify_pack.py").write_bytes(b"first\r\nsecond\r\n")
+        (pack_contents / "METHODOLOGY.md").write_bytes(b"alpha\r\nbeta\r\n")
+        monkeypatch.setattr(builder_module, "_PACK_CONTENTS_DIR", pack_contents)
+
+        builder = EvidencePackBuilder(pack_name="line-endings", snapshot_time=SNAPSHOT)
+        result = builder.build(tmp_path / "pack.zip", SigningKey(b"\x55" * 32))
+
+        with zipfile.ZipFile(result.zip_path) as zf:
+            assert zf.read("verify_pack.py") == b"first\nsecond\n"
+            assert zf.read("METHODOLOGY.md") == b"alpha\nbeta\n"
 
 
 # =============================================================================
