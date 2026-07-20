@@ -32,6 +32,18 @@ def test_publication_checker_rejects_pending_key_marker(tmp_path: Path) -> None:
         check_verify_publication.check_mirror(tmp_path, {})
 
 
+def test_publication_checker_rejects_wrong_key_fingerprint(tmp_path: Path) -> None:
+    mirror_path = tmp_path / check_verify_publication.MIRROR_PATH
+    mirror_path.parent.mkdir(parents=True)
+    mirror_path.write_text(
+        f"ipk-2026-01 {ZERO_SEED_PUBLIC_KEY} sha256 {'0' * 64} active 2026-07-20\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(check_verify_publication.PublicationCheckError, match="fingerprint mismatch"):
+        check_verify_publication.check_mirror(tmp_path, {})
+
+
 def test_derive_pubkey_prints_only_public_material(tmp_path: Path, capsys) -> None:
     seed_hex = "00" * 32
     seed_path = tmp_path / "signing.key"

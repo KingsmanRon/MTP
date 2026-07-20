@@ -36,6 +36,7 @@ _MIRROR_HASH = re.compile(
 _KEY_ENTRY = re.compile(
     r"^(?P<key_id>ipk-\d{4}-\d{2}) "
     r"(?P<public_key>[0-9a-f]{64}) "
+    r"sha256 (?P<fingerprint>[0-9a-f]{64}) "
     r"(?P<status>active|retired) "
     r"(?P<effective_date>\d{4}-\d{2}-\d{2})$"
 )
@@ -123,6 +124,8 @@ def check_mirror(root: Path, pins: dict[Path, str]) -> list[tuple[str, str]]:
                 raise PublicationCheckError("the published Ed25519 public key must not be all zeroes")
             date.fromisoformat(key_match.group("effective_date"))
             fingerprint = hashlib.sha256(public_key).hexdigest()
+            if fingerprint != key_match.group("fingerprint"):
+                raise PublicationCheckError(f"fingerprint mismatch for {key_id}")
             key_entries[key_id] = (key_match.group("status"), fingerprint)
             continue
 
