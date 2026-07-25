@@ -186,7 +186,7 @@ export interface PublicVerificationRecord {
   trust_score: number;
   risk_level: string | null;
   violations: string[];
-  policy_hash: string | null;
+  effective_controls_hash: string | null;
   action_hash: string;
   signature_valid: boolean;
   merkle_root: string | null;

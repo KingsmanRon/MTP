@@ -541,8 +541,23 @@ class PublicVerificationRecord(BaseModel):
     risk_level: str | None = Field(None, description="Risk level from payload")
     violations: list[str] = Field(default_factory=list, description="Policy violations if any")
 
-    # Policy binding
-    policy_hash: str | None = Field(None, description="SHA-256 hash of policy file at verification time")
+    # Policy binding.
+    #
+    # This is the hash of the agent's *effective controls* at decision time —
+    # status, allowlists, blocklists, spend limits, rate limit, trust score —
+    # derived by the server. It is NOT the hash of the registered .inntris.yml
+    # document; that is the registered policy hash, carried separately on
+    # agent_policies and exposed as registered_policy_hash. The two used to
+    # share the name policy_hash, which made receipts read as though they
+    # bound a policy document when they bound a control snapshot.
+    effective_controls_hash: str | None = Field(
+        None,
+        description=(
+            "SHA-256 over the agent's effective controls at verification time "
+            "(status, allow/block lists, limits, rate limit, trust score). Not "
+            "a policy document hash — see registered_policy_hash."
+        ),
+    )
 
     # On-chain proof
     action_hash: str = Field(..., description="SHA-256 hash of the action")
@@ -587,7 +602,10 @@ class PublicProofResponse(BaseModel):
     anchored_at: str | None = Field(None, description="ISO 8601 timestamp of on-chain anchor")
     submitter: str | None = Field(None, description="Wallet address that submitted the Merkle root")
     receipt_fingerprint: str | None = Field(None, description="SHA-256 receipt fingerprint from the audit log")
-    policy_hash: str | None = Field(None, description="Policy hash bound to this receipt, if any")
+    effective_controls_hash: str | None = Field(
+        None,
+        description="Effective-controls hash bound to this receipt, if any (not a policy document hash)",
+    )
     timestamp: str | None = Field(None, description="ISO 8601 timestamp of the original verification event")
 
 
@@ -705,5 +723,6 @@ class AuditLogEntry(BaseModel):
     response_time_ms: int | None
     trust_score_at_time: int
     chain_previous_hash: str | None
-    policy_hash: str | None = None
+    # Derived effective-controls hash, not the registered policy document hash.
+    effective_controls_hash: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)

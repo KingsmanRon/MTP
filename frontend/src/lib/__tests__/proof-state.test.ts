@@ -1,6 +1,6 @@
 import {
   signatureCheckStatus,
-  policyHashCheckStatus,
+  effectiveControlsHashCheckStatus,
   anchorCheckStatus,
   deriveIntegrityStatus,
   isSupportedSchemaVersion,
@@ -13,12 +13,16 @@ import {
 
 describe("proof-state helpers (PR1 §1.4)", () => {
   describe("schema version support", () => {
-    it("accepts v1 and v2", () => {
+    it("accepts v1, v2 and v3", () => {
       expect(isSupportedSchemaVersion("v1")).toBe(true);
       expect(isSupportedSchemaVersion("v2")).toBe(true);
+      // v3 renamed policy_hash to effective_controls_hash. Receipts issued
+      // under the older versions stay renderable — a rename must not orphan
+      // a receipt someone already holds.
+      expect(isSupportedSchemaVersion("v3")).toBe(true);
     });
     it("rejects unknown / null", () => {
-      expect(isSupportedSchemaVersion("v3")).toBe(false);
+      expect(isSupportedSchemaVersion("v4")).toBe(false);
       expect(isSupportedSchemaVersion(null)).toBe(false);
       expect(isSupportedSchemaVersion(undefined)).toBe(false);
       expect(isSupportedSchemaVersion("")).toBe(false);
@@ -38,23 +42,23 @@ describe("proof-state helpers (PR1 §1.4)", () => {
     const goodHash = "a".repeat(64);
 
     it("renders VERIFIED when hash present and valid", () => {
-      expect(policyHashCheckStatus(goodHash)).toBe("verified");
+      expect(effectiveControlsHashCheckStatus(goodHash)).toBe("verified");
     });
     it("renders NOT APPLICABLE when receipt has no policy bound", () => {
-      expect(policyHashCheckStatus(null)).toBe("not_applicable");
-      expect(policyHashCheckStatus(undefined)).toBe("not_applicable");
-      expect(policyHashCheckStatus("")).toBe("not_applicable");
-      expect(checkStatusUiLabel(policyHashCheckStatus(null))).toBe("NOT APPLICABLE");
+      expect(effectiveControlsHashCheckStatus(null)).toBe("not_applicable");
+      expect(effectiveControlsHashCheckStatus(undefined)).toBe("not_applicable");
+      expect(effectiveControlsHashCheckStatus("")).toBe("not_applicable");
+      expect(checkStatusUiLabel(effectiveControlsHashCheckStatus(null))).toBe("NOT APPLICABLE");
     });
     it("renders FAILED when hash is present but does not validate", () => {
-      expect(policyHashCheckStatus("not-a-hash")).toBe("failed");
-      expect(policyHashCheckStatus("a".repeat(63))).toBe("failed");
-      expect(policyHashCheckStatus("A".repeat(64))).toBe("failed"); // uppercase rejected
+      expect(effectiveControlsHashCheckStatus("not-a-hash")).toBe("failed");
+      expect(effectiveControlsHashCheckStatus("a".repeat(63))).toBe("failed");
+      expect(effectiveControlsHashCheckStatus("A".repeat(64))).toBe("failed"); // uppercase rejected
     });
     it("never reports NOT INCLUDED for any input", () => {
       const inputs = [null, undefined, "", "a", "z".repeat(64), goodHash];
       for (const v of inputs) {
-        const s = policyHashCheckStatus(v);
+        const s = effectiveControlsHashCheckStatus(v);
         expect(s).not.toBe("not_included" as unknown);
         expect(checkStatusUiLabel(s)).not.toBe("NOT INCLUDED");
       }
@@ -135,47 +139,47 @@ describe("proof-state helpers (PR1 §1.4)", () => {
   // sides together — otherwise every public receipt will report
   // "Fingerprint mismatch — receipt may be tampered".
   describe("canonical fingerprint", () => {
-    const v2Record: FingerprintableRecord = {
+    const v3Record: FingerprintableRecord = {
       action_hash:
         "b913fee92806720122d84285c779582172446c1c1c03645cb865f93fc36b8b5b",
       action_type: "financial_transaction",
       agent_id: "11111111-2222-3333-4444-555555555555",
       audit_id: "d8dd0902-4750-42d2-9516-92bf6362e815",
-      policy_hash:
+      effective_controls_hash:
         "b5e687b5bd9878f561f8050e994fbd8632fec823503fa4bd8c047a3e3b14f686",
       timestamp: "2026-04-07T22:22:25Z",
       verdict: "approved",
     };
 
     it("canonicalStringify produces compact, key-sorted JSON (no spaces)", () => {
-      const s = canonicalStringify(canonicalFingerprintPayload(v2Record));
+      const s = canonicalStringify(canonicalFingerprintPayload(v3Record));
       expect(s).toBe(
         '{"action_hash":"b913fee92806720122d84285c779582172446c1c1c03645cb865f93fc36b8b5b",' +
           '"action_type":"financial_transaction",' +
           '"agent_id":"11111111-2222-3333-4444-555555555555",' +
           '"audit_id":"d8dd0902-4750-42d2-9516-92bf6362e815",' +
-          '"policy_hash":"b5e687b5bd9878f561f8050e994fbd8632fec823503fa4bd8c047a3e3b14f686",' +
+          '"effective_controls_hash":"b5e687b5bd9878f561f8050e994fbd8632fec823503fa4bd8c047a3e3b14f686",' +
           '"timestamp":"2026-04-07T22:22:25Z",' +
           '"verdict":"approved"}',
       );
     });
 
     it("pins SHA-256 of a v2 receipt to the backend-canonical value", async () => {
-      const hex = await computeReceiptFingerprint(v2Record);
+      const hex = await computeReceiptFingerprint(v3Record);
       expect(hex).toBe(
-        "2fc29223fb1265448f2da2afd730628d228bcf3b09bb29b7006d5b19ce30bf63",
+        "51d1f4afecd9e10a83edc1779ee2a3f70301bf2b951ffe59dc51cdcc28570c0c",
       );
     });
 
-    it("pins SHA-256 of a v1 receipt (null policy_hash, blocked verdict)", async () => {
-      const v1Record: FingerprintableRecord = {
-        ...v2Record,
-        policy_hash: null,
+    it("pins SHA-256 of a receipt with a null effective_controls_hash, blocked verdict", async () => {
+      const nullHashRecord: FingerprintableRecord = {
+        ...v3Record,
+        effective_controls_hash: null,
         verdict: "blocked",
       };
-      const hex = await computeReceiptFingerprint(v1Record);
+      const hex = await computeReceiptFingerprint(nullHashRecord);
       expect(hex).toBe(
-        "7085431bb41614f6d847cddbf0f579d38550caeb77720de27bc78f5faa7f3c7c",
+        "1aafd28570dd0cf98651172fd6fa23f7040fc0c677da06ba1e76bcd7cd86eac7",
       );
     });
 
@@ -186,12 +190,12 @@ describe("proof-state helpers (PR1 §1.4)", () => {
       // really do hash to different values so any future regression on
       // either side is caught loudly.
       const legacyRecord: FingerprintableRecord = {
-        ...v2Record,
+        ...v3Record,
         timestamp: "2026-04-07T22:22:25+00:00",
       };
       const legacyHex = await computeReceiptFingerprint(legacyRecord);
       expect(legacyHex).not.toBe(
-        "2fc29223fb1265448f2da2afd730628d228bcf3b09bb29b7006d5b19ce30bf63",
+        "51d1f4afecd9e10a83edc1779ee2a3f70301bf2b951ffe59dc51cdcc28570c0c",
       );
     });
   });

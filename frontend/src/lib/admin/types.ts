@@ -121,7 +121,7 @@ export interface MappedAuditLog {
   transaction_hash?: string | null;
   chain_id?: number | null;
   response_time_ms?: number | null;
-  policy_hash?: string | null;
+  effective_controls_hash?: string | null;
 }
 
 export interface MappedAuditSearchResult {
@@ -155,7 +155,7 @@ export interface MappedAuditDetail {
   merkle_root_id?: string | null;
   merkle_leaf_index?: number | null;
   response_time_ms?: number | null;
-  policy_hash?: string | null;
+  effective_controls_hash?: string | null;
   metadata?: Record<string, unknown> | null;
 }
 

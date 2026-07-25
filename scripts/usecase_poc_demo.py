@@ -356,7 +356,7 @@ def show_receipt(audit_id: str | None) -> dict | None:
     kv("action_type", rec.get("action_type"))
     kv("agent_id", rec.get("agent_id"))
     kv("signature_valid", rec.get("signature_valid"))
-    kv("policy_hash", rec.get("policy_hash"))
+    kv("effective_controls_hash", rec.get("effective_controls_hash"))
     kv("action_hash", rec.get("action_hash"))
     kv("receipt_fingerprint", rec.get("receipt_fingerprint"))
     kv("schema_version", rec.get("schema_version"))
@@ -387,7 +387,8 @@ def recompute_fingerprint(rec: dict) -> str:
     Mirrors the server's canonical field set + encoding exactly
     (api/main.py: fingerprint_payload). The timestamp on the wire is already in
     canonical UTC (``Z``) form, so it is used verbatim. Any change to who
-    (agent_id), what (action_hash/action_type), which policy (policy_hash), the
+    (agent_id), what (action_hash/action_type), which controls
+    (effective_controls_hash), the
     verdict, or the time breaks the match — that is the tamper-evidence.
     """
     fp_payload = {
@@ -395,7 +396,7 @@ def recompute_fingerprint(rec: dict) -> str:
         "action_type": rec["action_type"],
         "agent_id": str(rec["agent_id"]),
         "audit_id": str(rec["audit_id"]),
-        "policy_hash": rec.get("policy_hash"),
+        "effective_controls_hash": rec.get("effective_controls_hash"),
         "timestamp": rec["timestamp"],
         "verdict": rec["verdict"],
     }

@@ -584,7 +584,19 @@ def _decode_signature_for_audit(signature_b64: str) -> bytes:
     return f"EMPTY_SIGNATURE:{digest}".encode("ascii")
 
 
-def _effective_policy_hash(agent: Any) -> str:
+def _effective_controls_hash(agent: Any) -> str:
+    """Hash the agent's effective controls at decision time.
+
+    This is NOT the registered policy document hash. It commits to the control
+    snapshot the decision was actually evaluated against — status, allow/block
+    lists, spend limits, rate limit, trust score — which is a different claim
+    from "this action was allowed under registered policy version N". Both are
+    useful; conflating them under the name ``policy_hash`` made a receipt look
+    like it bound a policy document when it bound a control snapshot.
+
+    The registered document hash lives on ``agent_policies.policy_hash`` and is
+    surfaced separately as ``registered_policy_hash``.
+    """
     policy_payload = {
         "version": "effective_agent_policy_v1",
         "agent_id": str(agent.id),
@@ -993,7 +1005,7 @@ RECEIPT_SCHEMA_V1 = {
         "trust_score": {"type": "integer", "minimum": 0, "maximum": 100},
         "risk_level": {"type": ["string", "null"]},
         "violations": {"type": "array", "items": {"type": "string"}},
-        "policy_hash": {"type": ["string", "null"], "pattern": "^[a-f0-9]{64}$", "description": "SHA-256 hash of the adapter-specific governing policy contract at verification time. Meaning depends on the adapter (e.g. .inntris.yml for the default adapter, a promptfoo config hash for the promptfoo adapter)."},
+        "effective_controls_hash": {"type": ["string", "null"], "pattern": "^[a-f0-9]{64}$", "description": "SHA-256 over the agent's effective controls at verification time — status, allow/block lists, spend limits, rate limit, trust score. This is a snapshot of the controls the decision was evaluated against, NOT the hash of a registered policy document; for that see registered_policy_hash. Named policy_hash before receipt schema v3."},
         "action_hash": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
         "signature_valid": {"type": "boolean"},
         "signature_b64": {"type": ["string", "null"], "description": "Base64 Ed25519 signature over the action hash, for independent re-verification (null unless a 64-byte signature was supplied)."},
@@ -1003,7 +1015,7 @@ RECEIPT_SCHEMA_V1 = {
         "block_number": {"type": ["integer", "null"]},
         "chain_id": {"type": "integer", "default": 8453, "description": "Chain ID. Public receipts are always 8453 (Base Mainnet)."},
         "anchored_at": {"type": ["string", "null"], "format": "date-time"},
-        "schema_version": {"type": "string", "enum": ["v1", "v2"]},
+        "schema_version": {"type": "string", "enum": ["v1", "v2", "v3"]},
         "receipt_fingerprint": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
         "integrity_status": {"type": "string", "enum": ["verified", "pending_anchor", "failed", "sandbox"]},
         "sandbox": {"type": "boolean", "default": False, "description": "True for sandbox/test receipts that never anchor on-chain."},
@@ -1378,7 +1390,7 @@ async def get_public_verification_record(
         "action_type": row["action_type"],
         "agent_id": str(row["agent_id"]),
         "audit_id": str(row["id"]),
-        "policy_hash": row.get("policy_hash"),
+        "effective_controls_hash": row.get("effective_controls_hash"),
         "timestamp": canonical_wire_timestamp(row["timestamp"]),
         "verdict": row["verdict"],
     }
@@ -1387,17 +1399,17 @@ async def get_public_verification_record(
 
     # Receipt schema versioning.
     #
-    # v2: policy_hash is part of the canonical JSON used to compute the receipt
-    #     fingerprint for any policy-evaluated decision. The presence of a
-    #     non-null policy_hash on the audit row marks the receipt as a v2
-    #     receipt — the policy was evaluated and is bound to the decision.
-    # v1: legacy receipts that pre-date the v2 cutover, where policy_hash may
-    #     or may not have been bound. Old receipts remain valid under their
-    #     own version; their fingerprint already includes the same field set.
+    # v3: the derived hash is named effective_controls_hash. Same seven-field
+    #     fingerprint, same sort position — only the key name changed, because
+    #     policy_hash claimed more than the value delivers: it commits to the
+    #     agent's control snapshot, not to a registered policy document.
+    # v2: policy_hash present and bound. Superseded by v3.
+    # v1: legacy receipts predating the v2 cutover, where the derived hash may
+    #     or may not have been bound.
     #
-    # The fingerprint field set itself is identical across v1 and v2 — what
-    # changes is the *guarantee*: a v2 receipt is asserted to bind a policy.
-    schema_version = "v2" if row.get("policy_hash") else "v1"
+    # v1 and v2 receipts remain valid and verifiable under their own version;
+    # verify_pack.py branches on this field to pick the right fingerprint key.
+    schema_version = "v3" if row.get("effective_controls_hash") else "v1"
 
     # Expose the raw signature + public key so a third party can re-verify the
     # Ed25519 signature over the action hash, rather than trusting signature_valid.
@@ -1434,7 +1446,7 @@ async def get_public_verification_record(
         trust_score=row["trust_score_at_time"],
         risk_level=risk_level,
         violations=violations,
-        policy_hash=row.get("policy_hash"),
+        effective_controls_hash=row.get("effective_controls_hash"),
         action_hash=row["action_hash"],
         signature_valid=row["signature_valid"],
         signature_b64=signature_b64,
@@ -1478,7 +1490,7 @@ async def get_public_proof(
         log_row = await conn.fetchrow(
             """
             SELECT al.id, al.action_hash, al.merkle_root_id,
-                   al.merkle_leaf_index, al.policy_hash,
+                   al.merkle_leaf_index, al.effective_controls_hash,
                    al.timestamp, al.metadata
             FROM audit_logs al
             WHERE al.id = $1
@@ -1509,7 +1521,7 @@ async def get_public_proof(
             anchored_at=None,
             submitter=None,
             receipt_fingerprint=None,
-            policy_hash=log_row["policy_hash"],
+            effective_controls_hash=log_row["effective_controls_hash"],
             timestamp=canonical_wire_timestamp(log_row["timestamp"]) if log_row["timestamp"] else None,
         )
 
@@ -1538,7 +1550,7 @@ async def get_public_proof(
             anchored_at=None,
             submitter=proof_row.get("submitted_by"),
             receipt_fingerprint=None,
-            policy_hash=log_row["policy_hash"],
+            effective_controls_hash=log_row["effective_controls_hash"],
             timestamp=canonical_wire_timestamp(log_row["timestamp"]) if log_row["timestamp"] else None,
         )
 
@@ -1556,7 +1568,7 @@ async def get_public_proof(
             anchored_at=None,
             submitter=None,
             receipt_fingerprint=None,
-            policy_hash=log_row["policy_hash"],
+            effective_controls_hash=log_row["effective_controls_hash"],
             timestamp=canonical_wire_timestamp(log_row["timestamp"]) if log_row["timestamp"] else None,
         )
 
@@ -1582,7 +1594,7 @@ async def get_public_proof(
         anchored_at=proof_row["confirmed_at"].isoformat() if proof_row["confirmed_at"] else None,
         submitter=proof_row.get("submitted_by"),
         receipt_fingerprint=None,
-        policy_hash=log_row["policy_hash"],
+        effective_controls_hash=log_row["effective_controls_hash"],
         timestamp=canonical_wire_timestamp(log_row["timestamp"]) if log_row["timestamp"] else None,
     )
 
@@ -1746,7 +1758,7 @@ async def verify_action(
         # Only authenticated agent actions enter execution policy, usage, trust,
         # forensic audit, webhook, or anchoring paths.
         await _check_authenticated_agent_limit(redis_conn, agent.id)
-        effective_policy_hash = _effective_policy_hash(agent)
+        effective_controls_hash = _effective_controls_hash(agent)
         audit_signature = _decode_signature_for_audit(request_data.signature)
 
         # STEP 4: Replay Check (Nonce) - FAIL-CLOSED
@@ -1844,7 +1856,7 @@ async def verify_action(
                 response_time_ms=int((time.time() - start_time) * 1000),
                 trust_score_at_time=agent.trust_score,
                 chain_previous_hash=None,
-                policy_hash=effective_policy_hash,
+                effective_controls_hash=effective_controls_hash,
                 metadata=_audit_metadata(
                     client_policy_hash=request_data.policy_hash,
                     key_fingerprint=agent.public_key_fingerprint,
@@ -1949,7 +1961,7 @@ async def verify_action(
                 response_time_ms=int((time.time() - start_time) * 1000),
                 trust_score_at_time=agent.trust_score,
                 chain_previous_hash=None,
-                policy_hash=effective_policy_hash,
+                effective_controls_hash=effective_controls_hash,
                 metadata=_audit_metadata(
                     client_policy_hash=request_data.policy_hash,
                     key_fingerprint=agent.public_key_fingerprint,
@@ -2021,7 +2033,7 @@ async def verify_action(
             response_time_ms=int((time.time() - start_time) * 1000),
             trust_score_at_time=agent.trust_score,
             chain_previous_hash=None,
-            policy_hash=effective_policy_hash,
+            effective_controls_hash=effective_controls_hash,
             metadata=_audit_metadata(
                 client_policy_hash=request_data.policy_hash,
                 key_fingerprint=agent.public_key_fingerprint,
@@ -2242,7 +2254,7 @@ async def _record_token_consumption(
         response_time_ms=None,
         trust_score_at_time=trust_score,
         chain_previous_hash=None,
-        policy_hash=None,
+        effective_controls_hash=None,
         metadata=_audit_metadata(
             client_policy_hash=None,
             sandbox=is_sandbox,
@@ -2789,7 +2801,7 @@ async def ingest_event_v1(
         response_time_ms=0,
         trust_score_at_time=agent_trust_score,
         chain_previous_hash=None,
-        policy_hash=None,
+        effective_controls_hash=None,
         metadata=_audit_metadata(
             client_policy_hash=None,
             sandbox=True,
@@ -3535,7 +3547,7 @@ async def get_audit_log(
         "violations": policy_context["violations"],
         "merkle_root_id": str(row["merkle_root_id"]) if row["merkle_root_id"] else None,
         "merkle_leaf_index": row["merkle_leaf_index"],
-        "policy_hash": row["policy_hash"],
+        "effective_controls_hash": row["effective_controls_hash"],
         "metadata": policy_context["metadata"],
     }
 

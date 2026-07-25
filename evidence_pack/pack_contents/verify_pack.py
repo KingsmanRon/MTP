@@ -313,14 +313,31 @@ class PackReader:
 # =============================================================================
 
 
+def fingerprint_hash_field(receipt: dict[str, Any]) -> str:
+    """Which key carries the derived control hash, per receipt schema version.
+
+    v3 renamed ``policy_hash`` to ``effective_controls_hash``. The old name
+    claimed more than the value delivers: it commits to the agent's control
+    snapshot at decision time, not to a registered policy document. The field
+    set and its sort position are unchanged, so only the key name differs.
+
+    v1 and v2 receipts keep verifying under their own name — a pack issued
+    before the rename must not stop verifying because of it.
+    """
+    if receipt.get("schema_version") == "v3":
+        return "effective_controls_hash"
+    return "policy_hash"
+
+
 def recompute_fingerprint(receipt: dict[str, Any]) -> str:
     """The seven-field canonical fingerprint contract, byte-for-byte."""
+    hash_field = fingerprint_hash_field(receipt)
     payload = {
         "action_hash": receipt["action_hash"],
         "action_type": receipt["action_type"],
         "agent_id": receipt["agent_id"],
         "audit_id": receipt["audit_id"],
-        "policy_hash": receipt.get("policy_hash"),
+        hash_field: receipt.get(hash_field),
         "timestamp": receipt["timestamp"],
         "verdict": receipt["verdict"],
     }

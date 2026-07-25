@@ -26,7 +26,7 @@ export type CheckStatus =
   | "failed"
   | "not_applicable";
 
-export const SUPPORTED_SCHEMA_VERSIONS = new Set(["v1", "v2"]);
+export const SUPPORTED_SCHEMA_VERSIONS = new Set(["v1", "v2", "v3"]);
 
 export function isSupportedSchemaVersion(v: string | null | undefined): boolean {
   return v != null && SUPPORTED_SCHEMA_VERSIONS.has(v);
@@ -36,13 +36,13 @@ export function signatureCheckStatus(signatureValid: boolean): CheckStatus {
   return signatureValid ? "verified" : "failed";
 }
 
-export function policyHashCheckStatus(
-  policyHash: string | null | undefined,
+export function effectiveControlsHashCheckStatus(
+  effectiveControlsHash: string | null | undefined,
 ): CheckStatus {
-  if (policyHash == null || policyHash === "") {
+  if (effectiveControlsHash == null || effectiveControlsHash === "") {
     return "not_applicable";
   }
-  if (/^[a-f0-9]{64}$/.test(policyHash)) {
+  if (/^[a-f0-9]{64}$/.test(effectiveControlsHash)) {
     return "verified";
   }
   return "failed";
@@ -113,7 +113,7 @@ export interface FingerprintableRecord {
   action_type: string;
   agent_id: string;
   audit_id: string;
-  policy_hash: string | null;
+  effective_controls_hash: string | null;
   timestamp: string;
   verdict: string;
 }
@@ -131,7 +131,7 @@ export function canonicalFingerprintPayload(
     action_type: record.action_type,
     agent_id: record.agent_id,
     audit_id: record.audit_id,
-    policy_hash: record.policy_hash,
+    effective_controls_hash: record.effective_controls_hash,
     timestamp: record.timestamp,
     verdict: record.verdict,
   };

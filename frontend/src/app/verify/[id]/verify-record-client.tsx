@@ -22,7 +22,7 @@ import { InntrisLogo } from "@/components/inntris-logo";
 import { verdictLabel, isPassVerdict, isEscalateVerdict } from "@/lib/verdict";
 import {
   signatureCheckStatus,
-  policyHashCheckStatus,
+  effectiveControlsHashCheckStatus,
   anchorCheckStatus,
   isSupportedSchemaVersion,
   checkStatusUiLabel,
@@ -206,7 +206,7 @@ function ProofCompletenessChecks({ record }: { record: PublicVerificationRecord 
     computeReceiptFingerprint(record).then((computed) => {
       const frontendMatch = computed === record.receipt_fingerprint;
       const nextSignatureCheck = signatureCheckStatus(record.signature_valid);
-      const nextPolicyHashCheck = policyHashCheckStatus(record.policy_hash);
+      const nextEffectiveControlsHashCheck = effectiveControlsHashCheckStatus(record.effective_controls_hash);
       const nextAnchorCheck = anchorCheckStatus(
         record.tx_hash,
         record.block_number,
@@ -216,7 +216,7 @@ function ProofCompletenessChecks({ record }: { record: PublicVerificationRecord 
       setIntegrityStatus(
         deriveIntegrityStatus(
           nextSignatureCheck,
-          nextPolicyHashCheck,
+          nextEffectiveControlsHashCheck,
           nextAnchorCheck,
           frontendMatch,
           record.integrity_status,
@@ -230,7 +230,7 @@ function ProofCompletenessChecks({ record }: { record: PublicVerificationRecord 
 
   // Pure deterministic checks (see lib/proof-state.ts).
   const signatureCheck: CheckStatus = signatureCheckStatus(record.signature_valid);
-  const policyHashCheck: CheckStatus = policyHashCheckStatus(record.policy_hash);
+  const effectiveControlsHashCheck: CheckStatus = effectiveControlsHashCheckStatus(record.effective_controls_hash);
   const anchorCheck: CheckStatus = anchorCheckStatus(
     record.tx_hash,
     record.block_number,
@@ -279,11 +279,11 @@ function ProofCompletenessChecks({ record }: { record: PublicVerificationRecord 
     },
     {
       label: "Policy hash",
-      status: policyHashCheck,
+      status: effectiveControlsHashCheck,
       sublabel:
-        policyHashCheck === "verified"
+        effectiveControlsHashCheck === "verified"
           ? "Policy file hash bound to record"
-          : policyHashCheck === "not_applicable"
+          : effectiveControlsHashCheck === "not_applicable"
           ? "Receipt does not bind a policy"
           : "Policy hash present but did not validate",
     },
@@ -591,11 +591,11 @@ export function VerifyRecordView({ record }: { record: PublicVerificationRecord 
               <CopyableHash value={record.action_hash} />
             </div>
 
-            {/* policy_hash */}
+            {/* effective_controls_hash */}
             <div className="rounded-2xl border border-white/6 bg-[#101C31]/70 p-4">
               <p className="text-xs text-[#7F8CA3] mb-1">Policy hash (SHA-256)</p>
-              {record.policy_hash ? (
-                <CopyableHash value={record.policy_hash} />
+              {record.effective_controls_hash ? (
+                <CopyableHash value={record.effective_controls_hash} />
               ) : (
                 <span className="text-sm font-mono text-[#7F8CA3]">Not applicable</span>
               )}

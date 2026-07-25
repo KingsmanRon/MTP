@@ -201,7 +201,7 @@ function PolicySection({ record }: { record: MappedAuditDetail }) {
     record.policy_rule_triggered !== undefined ||
     record.risk_level !== undefined ||
     Boolean(record.verdict_reason) ||
-    Boolean(record.policy_hash) ||
+    Boolean(record.effective_controls_hash) ||
     (record.violations && record.violations.length > 0);
 
   if (hasPolicyData) {
@@ -246,10 +246,10 @@ function PolicySection({ record }: { record: MappedAuditDetail }) {
             </p>
           </div>
         )}
-        {record.policy_hash && (
+        {record.effective_controls_hash && (
           <div className="flex items-center justify-between gap-4 rounded-lg border border-[#22314D] bg-[#101C31] px-4 py-3">
             <span className="text-xs text-[#7F8CA3]">Policy Hash</span>
-            <CopyableMonoValue value={record.policy_hash} />
+            <CopyableMonoValue value={record.effective_controls_hash} />
           </div>
         )}
       </div>

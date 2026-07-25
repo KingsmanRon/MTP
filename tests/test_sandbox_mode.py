@@ -73,7 +73,7 @@ def test_receipt_surfaces_sandbox():
         "signature": None, "agent_public_key": None,
         "merkle_root": None, "tx_hash": None, "block_number": None,
         "chain_id": 8453, "anchored_at": None, "merkle_root_id": None,
-        "policy_hash": None, "metadata": {"sandbox": True, "test_request": True},
+        "effective_controls_hash": None, "metadata": {"sandbox": True, "test_request": True},
     }
     db = _receipt_db(row)
     app.dependency_overrides[get_db] = lambda: db

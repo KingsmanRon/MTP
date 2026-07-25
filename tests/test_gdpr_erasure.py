@@ -324,7 +324,7 @@ async def test_integration_erasure_is_scoped_and_preserves_forensics(
                 verdict_reason, signature, signature_valid,
                 request_ip, request_user_agent, response_time_ms,
                 trust_score_at_time, merkle_root_id, merkle_leaf_index,
-                chain_previous_hash, policy_hash, metadata
+                chain_previous_hash, effective_controls_hash, metadata
             ) VALUES (
                 $1, 'web_fetch', repeat('a', 64), $2::jsonb, 'approved',
                 'policy allowed', $3, true,
@@ -370,7 +370,7 @@ async def test_integration_erasure_is_scoped_and_preserves_forensics(
             id, agent_id, timestamp, action_type, action_hash, verdict,
             verdict_reason, signature, signature_valid, response_time_ms,
             trust_score_at_time, merkle_root_id, merkle_leaf_index,
-            chain_previous_hash, policy_hash
+            chain_previous_hash, effective_controls_hash
         """
         before = dict(
             await conn.fetchrow(

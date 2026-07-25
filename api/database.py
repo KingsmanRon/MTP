@@ -912,7 +912,7 @@ class Database:
                     agent_id, action_type, action_hash, payload, verdict,
                     verdict_reason, signature, signature_valid, request_ip,
                     request_user_agent, response_time_ms, trust_score_at_time,
-                    chain_previous_hash, policy_hash, metadata
+                    chain_previous_hash, effective_controls_hash, metadata
                 )
                 VALUES (
                     $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
@@ -945,7 +945,7 @@ class Database:
                     entry.request_user_agent,
                     entry.response_time_ms,
                     entry.trust_score_at_time,
-                    entry.policy_hash,
+                    entry.effective_controls_hash,
                     json.dumps(entry.metadata),
                 )
             return log_id
@@ -955,7 +955,7 @@ class Database:
                 agent_id, action_type, action_hash, payload, verdict,
                 verdict_reason, signature, signature_valid, request_ip,
                 request_user_agent, response_time_ms, trust_score_at_time,
-                chain_previous_hash, policy_hash, metadata
+                chain_previous_hash, effective_controls_hash, metadata
             )
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
             RETURNING id
@@ -976,7 +976,7 @@ class Database:
                 entry.response_time_ms,
                 entry.trust_score_at_time,
                 entry.chain_previous_hash,
-                entry.policy_hash,
+                entry.effective_controls_hash,
                 json.dumps(entry.metadata),
             )
 
@@ -1002,7 +1002,7 @@ class Database:
                 agent_id, action_type, action_hash, payload, verdict,
                 verdict_reason, signature, signature_valid, request_ip,
                 request_user_agent, response_time_ms, trust_score_at_time,
-                chain_previous_hash, policy_hash, metadata
+                chain_previous_hash, effective_controls_hash, metadata
             )
             VALUES (
                 $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
@@ -1042,7 +1042,7 @@ class Database:
                     entry.request_user_agent,
                     entry.response_time_ms,
                     entry.trust_score_at_time,
-                    entry.policy_hash,
+                    entry.effective_controls_hash,
                     json.dumps(entry.metadata),
                 )
                 await conn.execute(

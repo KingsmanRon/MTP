@@ -164,7 +164,11 @@ CREATE TABLE audit_logs (
     merkle_root_id UUID,  -- Set when batched into merkle tree
     merkle_leaf_index INTEGER,  -- Position in the merkle tree
     chain_previous_hash VARCHAR(64),  -- Hash of previous log entry (local chain)
-    policy_hash CHAR(64),  -- SHA-256 hash of .inntris.yml policy file at verification time
+    -- SHA-256 over the agent's effective controls at verification time:
+    -- status, allow/block lists, spend limits, rate limit, trust score.
+    -- NOT the hash of a registered .inntris.yml document — that lives on
+    -- agent_policies.policy_hash. Named policy_hash before migration 017.
+    effective_controls_hash CHAR(64),
     metadata JSONB DEFAULT '{}',
 
     CONSTRAINT audit_action_hash_format CHECK (LENGTH(action_hash) = 64),
@@ -352,13 +356,13 @@ BEGIN
                 OLD.verdict, OLD.verdict_reason, OLD.signature, OLD.signature_valid,
                 OLD.request_ip, OLD.request_user_agent, OLD.response_time_ms,
                 OLD.trust_score_at_time, OLD.chain_previous_hash, OLD.metadata,
-                OLD.timestamp, OLD.policy_hash)
+                OLD.timestamp, OLD.effective_controls_hash)
             IS DISTINCT FROM
                (NEW.id, NEW.agent_id, NEW.action_type, NEW.action_hash, NEW.payload,
                 NEW.verdict, NEW.verdict_reason, NEW.signature, NEW.signature_valid,
                 NEW.request_ip, NEW.request_user_agent, NEW.response_time_ms,
                 NEW.trust_score_at_time, NEW.chain_previous_hash, NEW.metadata,
-                NEW.timestamp, NEW.policy_hash) THEN
+                NEW.timestamp, NEW.effective_controls_hash) THEN
                 RAISE EXCEPTION 'SECURITY VIOLATION: Only merkle_root_id and merkle_leaf_index can be updated, and only when NULL.';
                 RETURN NULL;
             END IF;

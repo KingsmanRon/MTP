@@ -15,7 +15,13 @@ ZERO_SEED_PUBLIC_KEY = "3b6a27bcceb6a42d62a3a8d02a6f0d73653215771de243a63ac048a1
 def test_current_publication_contract_is_complete() -> None:
     messages = check_verify_publication.validate_publication(PROJECT_ROOT)
 
-    assert any("verify_pack.py 332928c8" in message for message in messages)
+    # Bumped for receipt schema v3: verify_pack.py branches the fingerprint key
+    # on schema_version so v1/v2 packs keep verifying after the
+    # policy_hash -> effective_controls_hash rename. Any edit to the verifier
+    # changes this digest and requires the full republication cascade — the
+    # lock, the .well-known mirror, and inntris-verify's SHA256SUMS, workflow
+    # expected_files, README block and CHANGELOG, in one sitting.
+    assert any("verify_pack.py b6d95e74" in message for message in messages)
     assert any("METHODOLOGY.md 4ca88e16" in message for message in messages)
     assert any("fingerprint 089c7611" in message for message in messages)
 

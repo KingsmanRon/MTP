@@ -6,7 +6,7 @@ Given a public ``audit_id`` (or a ``0x`` transaction hash), this script:
   1. Recomputes the ``receipt_fingerprint`` over the canonical core fields and
      confirms it matches the value the server returned. This detects any change
      to the bound verdict fields (verdict, action_hash, agent_id, timestamp,
-     policy_hash, action_type, audit_id).
+     effective_controls_hash, action_type, audit_id).
   1b. Re-verifies the Ed25519 signature over the action hash against the public
      key published in the receipt, so you do not have to trust ``signature_valid``
      (needs pynacl; skipped if the receipt does not expose the material).
@@ -102,7 +102,7 @@ def recompute_fingerprint(rec: dict) -> str:
         "action_type": rec["action_type"],
         "agent_id": rec["agent_id"],
         "audit_id": rec["audit_id"],
-        "policy_hash": rec.get("policy_hash"),
+        "effective_controls_hash": rec.get("effective_controls_hash"),
         "timestamp": rec["timestamp"],  # wire value is already canonical (...Z)
         "verdict": rec["verdict"],
     }

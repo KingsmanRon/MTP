@@ -21,7 +21,7 @@ def _log_row(anchored: bool):
         "action_hash": "b" * 64,
         "merkle_root_id": FAKE_PROOF_ID if anchored else None,
         "merkle_leaf_index": 0 if anchored else None,
-        "policy_hash": None,
+        "effective_controls_hash": None,
     }
     m = MagicMock()
     m.__getitem__ = lambda _self, k: row[k]
@@ -89,7 +89,7 @@ class TestPublicProofEndpoint:
             "action_hash": "b" * 64,
             "merkle_root_id": None,
             "merkle_leaf_index": None,
-            "policy_hash": None,
+            "effective_controls_hash": None,
             "metadata": {"sandbox": True, "test_request": True},
         }
         m = MagicMock()
