@@ -175,3 +175,31 @@ class TestBothLayersFailTogether:
 
         assert not signature_holds, "agent signature layer did not reject the swap"
         assert not leaf_holds, "anchored leaf layer did not reject the swap"
+
+
+class TestSolidityParityVectors:
+    """The constants hard-coded in the Solidity parity suite still hold.
+
+    ``test/contracts/PolicyBoundLeafParity.t.sol`` asserts Python's roots and
+    proofs on-chain, but Solidity only runs under ``forge`` — which is not
+    installed everywhere and, in some environments, cannot be. Without this
+    test a preimage change would silently invalidate those constants and only
+    surface in the contracts CI job, framed as a Solidity failure rather than
+    as the Python change that actually caused it.
+    """
+
+    # Keep in lockstep with test/contracts/PolicyBoundLeafParity.t.sol.
+    # Regenerate both with scripts/generate_leaf_parity_vectors.py.
+    EXPECTED_ROOT = "373fe712c363e2661fd8197c80c54dcabdadf17925212fcf0261555be376d3a6"
+    EXPECTED_LEAF_0 = "2cb722cd85514fade08eaffa4c78fbd1419ce723e9226bfbfec79dd963caf484"
+    EXPECTED_OTHER_POLICY_LEAF = (
+        "4b4ee0bd537754c16de5fc7e980aace849fb5d080bc353f7e19176842945f188"
+    )
+
+    def test_vectors_match_the_solidity_constants(self) -> None:
+        from scripts.generate_leaf_parity_vectors import action_hash
+
+        leaves = [action_hash(i, "1" * 64) for i in range(3)]
+        assert leaves[0] == self.EXPECTED_LEAF_0
+        assert compute_merkle_root(leaves) == self.EXPECTED_ROOT
+        assert action_hash(0, "2" * 64) == self.EXPECTED_OTHER_POLICY_LEAF
