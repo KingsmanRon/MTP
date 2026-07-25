@@ -1,5 +1,35 @@
 # Binding execution to the approval (don't authorize the claim — authorize the act)
 
+## What this cannot do
+
+**Inntris is an API enforcement primitive, not a transparent proxy.**
+
+It gates and records an authorization at a checkpoint your code calls. It does
+not sit in the network path, it cannot observe what your executor does after
+the check, and **it cannot prevent an agent from reaching the underlying API by
+another route** — a second set of credentials, a different SDK, a shell, a
+sidecar service. If the agent can reach the payment rail without passing
+through your executor, Inntris never sees that call and has nothing to say
+about it.
+
+What that means in practice:
+
+* An approval proves an action was *authorized*, not that it was *performed* —
+  and not that nothing else was performed.
+* Coverage is a property of **your** integration, not of Inntris. Every path to
+  a guarded API has to route through the checkpoint, or the guarantee has a
+  hole exactly the shape of the path that doesn't.
+* An evidence pack is complete with respect to the calls that reached the
+  checkpoint. It cannot attest to calls that bypassed it.
+
+This is stated first because it is the limitation most likely to be missed, and
+because the rest of this document describes real guarantees that are easy to
+over-read as broader than they are. Everything below holds — within that
+boundary.
+
+---
+
+
 `POST /verify` approves the action the agent **declared** (its signed `payload`,
 including the `amount`). It does not and cannot see what your executor actually
 does next. So an approval, on its own, says *"this agent was allowed to do the

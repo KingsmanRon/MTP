@@ -129,6 +129,11 @@ class InntrisClient:
             if response.status_code == 200:
                 result = response.json()
                 logger.info(f"Action APPROVED: {action_type} (audit_id: {result.get('audit_id')})")
+                # An approval is not execution authority. Spend it here, in the
+                # same call, so no reusable credential ever reaches the model.
+                consumption = await self._consume_approval(result, request_body)
+                result["consumption_audit_id"] = consumption.get("consumption_audit_id")
+                result.pop("approval_token", None)
                 return result
 
             elif response.status_code == 401:
@@ -178,6 +183,104 @@ class InntrisClient:
             )
 
 
+    async def _consume_approval(
+        self,
+        verify_result: dict[str, Any],
+        request_body: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Spend the approval token via ``/verify-token`` with ``consume=true``.
+
+        Why this exists: ``/verify`` approves the action an agent *declared*.
+        It is not, on its own, permission to execute — the single-use gate is
+        ``/verify-token``. This adapter used to return the approval token to the
+        model along with "You may proceed", which made the whole MCP path
+        advisory while presenting as an enforcement boundary.
+
+        The token is consumed here, in the same round trip, and never returned.
+        A model cannot re-present a credential it was never given, and the
+        consumption is recorded in the per-agent hash chain, so the
+        approve-then-execute ordering is provable after the fact.
+
+        Fails closed on every outcome that is not an explicit success: timeout,
+        transport error, non-2xx status, malformed body, or ``valid: false``.
+        There is no path through this method that returns without either a
+        recorded consumption or a raised error.
+
+        What this does NOT do — see docs/EXECUTION_BINDING.md — is guarantee the
+        model then performs that exact action, or refrains from reaching the
+        underlying API another way. Inntris is an API enforcement primitive, not
+        a transparent proxy.
+        """
+        token = verify_result.get("approval_token")
+        if not token:
+            raise InntrisVerificationError(
+                verdict="error",
+                reason=(
+                    "Approval carried no token, so execution cannot be gated. "
+                    "Refusing to report success."
+                ),
+            )
+
+        consume_body = {
+            "approval_token": token,
+            "agent_id": request_body["agent_id"],
+            "action_type": request_body["action_type"],
+            "payload": request_body["payload"],
+            "nonce": request_body["nonce"],
+            "timestamp": request_body["timestamp"],
+            "sig_version": request_body["sig_version"],
+            "consume": True,
+        }
+        if "policy_hash" in request_body:
+            consume_body["policy_hash"] = request_body["policy_hash"]
+
+        try:
+            response = await self._http_client.post(
+                f"{self.api_url}/verify-token",
+                json=consume_body,
+            )
+        except httpx.RequestError as exc:
+            logger.error(f"Execution gate unreachable: {exc}")
+            raise InntrisVerificationError(
+                verdict="blocked",
+                reason=f"Execution gate unreachable, failing closed: {exc}",
+            )
+
+        if response.status_code != 200:
+            logger.error(
+                f"Execution gate returned {response.status_code}: {response.text}"
+            )
+            raise InntrisVerificationError(
+                verdict="blocked",
+                reason=(
+                    f"Execution gate returned HTTP {response.status_code}; "
+                    "the action is not authorized."
+                ),
+            )
+
+        try:
+            body = response.json()
+        except ValueError as exc:
+            raise InntrisVerificationError(
+                verdict="blocked",
+                reason=f"Execution gate returned an unreadable body: {exc}",
+            )
+
+        if body.get("valid") is not True:
+            reason = body.get("reason") or "token rejected"
+            logger.warning(f"Execution gate refused the token: {reason}")
+            raise InntrisVerificationError(
+                verdict="blocked",
+                reason=f"Execution gate refused the approval: {reason}",
+            )
+
+        logger.info(
+            "Approval consumed (single-use); consumption audit_id="
+            f"{body.get('consumption_audit_id')}"
+        )
+        return body
+
+
 class InntrisVerificationError(Exception):
     """Exception raised when Inntris verification fails."""
 
@@ -213,8 +316,17 @@ async def list_tools() -> list[Tool]:
             name="inntris_guard",
             description="""CRITICAL: You MUST call this tool before executing any financial transaction or sending external emails. Failure to call this tool will result in liability.
 
-This tool verifies your action with Inntris Core before execution.
-If verification fails, you MUST NOT proceed with the action.
+This tool verifies your action with Inntris Core and, on approval, immediately
+spends the single-use execution approval. It returns no approval token: the
+authorization is consumed server-side, once, for the exact action you
+described. If verification or consumption fails for any reason, you MUST NOT
+proceed.
+
+LIMITATION, stated before the capabilities: this is an API enforcement
+primitive, not a transparent proxy. It records and gates an authorization; it
+cannot observe what you do next, and it cannot stop you reaching the underlying
+API by another route. An approval here authorizes exactly the action described
+in this call and nothing else.
 
 Required for:
 - Any financial transaction (payments, transfers, purchases)
@@ -390,18 +502,20 @@ async def handle_inntris_guard(arguments: dict[str, Any]) -> CallToolResult:
         result = await client.verify_action(action_type, payload)
 
         # Format success response
-        response_text = f"""APPROVED: Action verified successfully.
+        response_text = f"""APPROVED: Action verified and the approval has been consumed.
 
 Verdict: {result['verdict']}
 Trust Score: {result['trust_score']}/100
 Audit ID: {result['audit_id']}
-Approval Token: {result.get('approval_token', 'N/A')[:50]}...
+Consumption Audit ID: {result.get('consumption_audit_id', 'N/A')}
 
 Limits Remaining:
 - Daily: ${result.get('limits_remaining', {}).get('daily_remaining_usd', 'N/A')}
 - Per Action: ${result.get('limits_remaining', {}).get('per_action_limit_usd', 'N/A')}
 
-You may proceed with the action."""
+The single-use approval for THIS action is now spent. No approval token is
+returned, and this authorization cannot be replayed for a second action.
+Perform only the action described above."""
 
         return CallToolResult(
             content=[TextContent(type="text", text=response_text)],

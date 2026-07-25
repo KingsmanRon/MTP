@@ -143,6 +143,18 @@ class InntrisAgentClient:
         Does not raise on a BLOCKED/RATE_LIMITED verdict — the caller inspects
         the status (200 approved, 403 blocked, 429 rate-limited, 401 bad
         signature, 404 unknown agent).
+
+        .. warning::
+           A 200 here is **not** permission to execute. It approves the action
+           you *declared*; the single-use execution gate is :meth:`consume`.
+           The ``approval_token`` in the body is an unspent credential — if
+           your code performs the side effect on the strength of this call
+           alone, the approval is advisory and nothing prevents one approval
+           authorizing two executions.
+
+           This client cannot close that gap for you, because it does not own
+           your side effect. Call :meth:`consume` at the point where the
+           irreversible thing happens. See docs/EXECUTION_BINDING.md.
         """
         body = build_signed_verify_request(
             agent_id=self.agent_id,
@@ -162,3 +174,60 @@ class InntrisAgentClient:
             return resp.status_code, resp.json()
         except ValueError:
             return resp.status_code, {"detail": resp.text}
+
+    def consume(
+        self,
+        approval_token: str,
+        action_type: str,
+        payload: dict[str, Any],
+        nonce: str,
+        timestamp: str,
+        *,
+        policy_hash: str | None = None,
+    ) -> tuple[bool, dict[str, Any]]:
+        """Spend an approval at the execution boundary. Returns ``(ok, body)``.
+
+        Call this immediately before the irreversible side effect, with the
+        **exact** values that were signed. ``ok`` is true only when the server
+        confirmed a single-use consumption; every other outcome — transport
+        failure, timeout, non-2xx, unreadable body, ``valid: false`` — returns
+        false, and false means do not execute.
+
+        Binding all four action fields is what turns "approve $10 / execute
+        $10,000" into a hard failure: a tampered payload recomputes a different
+        action hash and the consumption is refused.
+        """
+        body: dict[str, Any] = {
+            "approval_token": approval_token,
+            "agent_id": str(self.agent_id),
+            "action_type": action_type,
+            "payload": payload,
+            "nonce": nonce,
+            "timestamp": timestamp,
+            "sig_version": self.sig_version,
+            "consume": True,
+        }
+        if policy_hash is not None:
+            body["policy_hash"] = policy_hash
+
+        try:
+            resp = self._requests.post(
+                f"{self.api_url}/verify-token",
+                headers={"Content-Type": "application/json"},
+                json=body,
+                timeout=self.timeout,
+            )
+        except Exception as exc:  # transport, DNS, timeout — all fail closed
+            return False, {"valid": False, "reason": f"execution gate unreachable: {exc}"}
+
+        if resp.status_code != 200:
+            return False, {
+                "valid": False,
+                "reason": f"execution gate returned HTTP {resp.status_code}",
+            }
+        try:
+            parsed = resp.json()
+        except ValueError:
+            return False, {"valid": False, "reason": "execution gate body was unreadable"}
+
+        return parsed.get("valid") is True, parsed
