@@ -10,16 +10,42 @@ executed.
 
 | Item | State |
 |---|---|
-| **Step 0** — v1 regression fixture | ✅ Done. `tests/fixtures/packs/v1/`, §12.4 |
-| **A4** — `/metrics` 500 | ✅ Fixed. Root cause and regression test in §2 |
-| **A5** — test-count claim | ✅ Done. Dated, sourced figures in `README.md` |
-| **A6** — Solidity suite | ✅ Passing. 19/0/0 in CI run 55. Foundry cannot be installed locally — the installer host is blocked by this environment's proxy policy, so CI is the execution record |
-| **A7** — `<100ms` claim | ✅ Removed from `frontend/src/app/page.tsx` |
-| **A8** — payload encryption comment | ✅ Corrected in `database/schemas.sql` |
-| **G1** — skipped integration tests | ✅ **Already met.** CI reports zero skips; see below |
-| **A1 / A2** | ⛔ Blocked on access to the `ipk-2026-01` signing seed |
-| **A3** | ❓ No `demo_recording/` in the tree — needs confirmation, not code |
-| **A9** — registry reconciliation | Open. §12.1 |
+| **Step 0** — v1 regression fixture | Done. `tests/fixtures/packs/v1/`, §12.4 |
+| **A4** `/metrics` · **A5** test counts · **A6** Solidity · **A7** latency claim · **A8** payload comment | Done |
+| **B2.1** effective_controls_hash rename | Done. Receipt schema v2 → v3 |
+| **B2.2** registered policy on receipts | Done. Migration 018 |
+| **B2.3 / B2.4** policy bound into envelope + anchored leaf | Done. One change — the leaf *is* the action hash |
+| **B2.5** Solidity parity | Done. Python-derived vectors, real contract |
+| **B2.6** two-layer binding test | Done |
+| **B3.1** JCS default · **B3.2** delete v1/v2 · **B3.3** cross-language vectors | Done |
+| **D1** MCP token consumption · **D2** adapter audit · **D3** bypass boundary | Done |
+| **G1** skipped integration tests | Already met — CI reports zero skips |
+| **A1 / A2** | Blocked on the `ipk-2026-01` signing seed |
+| **A3** | No `demo_recording/` in tree — needs confirmation, not code |
+| **B1.2 / B1.3 / B1.4** | **Deliberately not started** — gated on the tenant signing decision |
+| **B1.1 / B1.5 / B1.6 / B1.8** | Partly delivered as a side effect; see below |
+| **A9** registry reconciliation · **Block C** · **Block E** · **D4** | Not started |
+
+**What B1 got for free.** B1.1's verifier half is done — `verify_pack.py` branches
+the fingerprint key on `schema_version`, so v1/v2 packs keep verifying after the
+rename, and the frozen fixture proves it. B1.5/B1.6 are satisfied at the *receipt*
+layer by B2.2, but **not yet in the pack manifest**, which is where the spec puts
+them. The manifest still emits `format_version: "1.0"` with no `schema_version`,
+`tenant_id`, `signer_scope`, `key_id` or `key_version`. Finishing B1 properly means
+doing it alongside B1.2–B1.4, which are gated — so the remaining manifest work
+should wait for the founder decision rather than be done twice.
+
+**Two cascades, not one.** The plan originally called for batching every
+`verify_pack.py` edit into a single republication. That is not achievable:
+`check_verify_publication.py` fails the moment the verifier's bytes differ from the
+lock, so a change cannot be staged. B2.1 needed a verifier change, and deferring it
+would have left the shipped verifier unable to reproduce fingerprints for any new
+receipt for the whole of Block B — a broken end-to-end path. The cascade was spent
+there instead. Block E will need a second one.
+
+**Current verifier digest:** `b6d95e7497c87858a3c403830251880df0e3ae6b3554b5976172f4606935d00f`.
+`inntris-verify` must update `SHA256SUMS`, `verify.yml` → `expected_files`, the
+README digest block and `CHANGELOG` to match, or its integrity job stays red.
 
 **G1 is closed by measurement, not by work.** CI run 55 reported `446 passed` with **no
 skip count at all** — zero skipped — against `postgres:16.14` and `redis:7.4.7` service
