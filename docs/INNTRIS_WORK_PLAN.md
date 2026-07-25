@@ -197,6 +197,10 @@ mirrors `KEYS.md`; `scripts/check_verify_publication.py` runs in CI and fails on
 **Plan:** prepare the artifacts and update the lock and the `.well-known` mirror in this
 repo; hand the `inntris-verify` push to the founder or request scope for that repo.
 
+`inntris-verify` has since been audited from a parallel session. Its findings, and the
+resulting changes to B1.3, B1.4, B1.7, E2 and E4, are consolidated in **§12**. Read that
+section before designing any manifest v2 key or scope field.
+
 ---
 
 ## 3. Block A — Truth-up
@@ -239,8 +243,8 @@ New fields, all inside the signed manifest and therefore covered by the Ed25519 
 |---|---|---|
 | `schema_version` | literal `2` | verifier branches on it; v1 path retained (B1.1) |
 | `tenant_id` | organisation context | **not currently plumbed** — see below |
-| `signer_scope` | key registry | declares what the key may sign |
-| `key_id`, `key_version` | key registry | `ipk-2026-01` is an id; version is new |
+| `signer_scope` | `KEYS.md` col 5 — **already exists** (`Evidence pack manifests`); see §12 | declares what the key may sign |
+| `key_id`, `key_version` | key registry | `ipk-2026-01` is an id; version is new. **Do not parse `-01` as a month** — §12 |
 | `registered_policy_version`, `registered_policy_hash` | `agent_policies` (migration 010) | the *registered* document, not derived controls |
 
 **B1.2 has a plumbing gap.** `scripts/build_evidence_pack.py` is CLI-driven from a ledger
@@ -250,10 +254,16 @@ argument or a new receipt field. A new receipt field is better — it makes the 
 derivable from evidence rather than asserted by whoever runs the build. Add `org_id` to
 `PublicVerificationRecord` in the same release.
 
-**B1.4** — `key_version` needs a registry to resolve against. That registry is F1, which is
-gated on a founder decision. Interim: emit `key_version: 1` for `ipk-2026-01` and keep the
-`.well-known` file as the registry of record until Block F lands. Flag in the manifest
-schema that the field's authority moves when F1 ships.
+**B1.3 / B1.4 — the registry has two incompatible published shapes.** `KEYS.md` and the
+`.well-known` mirror carry *different field sets*, neither a superset of the other, and the
+verifier reads neither. This is the single most consequential finding from the
+`inntris-verify` audit; the full analysis and the resulting design constraint are in
+**§12.1**. Design these two fields against that section, not against either file alone.
+
+Interim for `key_version`: emit `1` for `ipk-2026-01` and note in the published schema that
+the field's authority relocates to the F1 registry. **Do not derive the version by parsing
+`ipk-2026-01` as a date** — the `-01` is a sequence number and its effective date is
+2026-07-20.
 
 **B1.8 determinism** is already protected: `evidence_pack/deterministic_zip.py` pins entry
 order, timestamps and compression; the manifest sorts files by UTF-8 byte order
@@ -263,6 +273,14 @@ and extend it to v2.
 
 **Additions folded in from Block E** (see §2): add `nonce` to the public receipt, and give
 the builder a path for consumption receipts.
+
+**B1.7 is a six-location coordinated change, not a two-location one.** Both repos enforce
+exact-set equality on their pinned-file lists, so publishing the manifest v2 schema as a
+third pinned artifact touches six places. Enumerated in **§12.2**.
+
+**⚠️ Generate the v1 regression fixture before starting B1.** It does not exist in either
+repo and cannot be honestly created after the format break. See **§12.4** — this is the one
+item on the whole plan with a hard deadline.
 
 Size: **L**.
 
@@ -365,14 +383,27 @@ run still exits 0.
 | # | Work | Note |
 |---|---|---|
 | **E1** | `--strict` flag; any skipped required check becomes a failure | Reporter needs a skip **counter** and a required/optional classification per check. |
-| **E2** | Required under strict: pinned pubkey, per-receipt signature material, proof reconstruction for every anchored receipt, `registered_policy_version` + `registered_policy_hash`, nonce uniqueness, consumption evidence | **Blocked on B1 schema additions** — nonce and consumption evidence are not on receipts today (§2). |
+| **E2** | Required under strict: pinned pubkey, per-receipt signature material, proof reconstruction for every anchored receipt, `registered_policy_version` + `registered_policy_hash`, nonce uniqueness, consumption evidence | **Blocked on B1 schema additions** — nonce and consumption evidence are not on receipts today (§2). Also a **scope expansion**: a *registry* pin is more than a key pin — see below. |
 | **E3** | `PASSED (3 of 9 checks skipped)` in every non-strict success | Falls out of E1's counter. |
-| **E4** | Pin verifier version + methodology hash | Machinery exists: `verify_publication.lock`, `scripts/check_verify_publication.py`, `.well-known` mirror. The `KEYS.md` half needs `inntris-verify` scope (§2). |
+| **E4** | Pin verifier version + methodology hash | **There is no verifier version to pin** — it has to be invented first. See §12.3. The methodology half is already free. |
+
+**E2's "registry-pinned public key" is larger than it reads.** `--pubkey` takes 32 raw
+bytes and nothing else — `verify_pack.py` never reads `key_id`, never reads `KEYS.md`, and
+has no concept of key identity at all, only key *bytes*. Scope, version, status and
+effective dates live in a registry the verifier has never seen. So "registry-pinned"
+requires giving the verifier a registry input.
+
+Recommended: add `--registry <path to KEYS.md>` as a sibling to `--pubkey` — both supplied
+by the operator out-of-band, no network, so **Invariant 6 holds unchanged** — and make it
+mandatory under `--strict`. The alternative, baking a registry copy into `verify_pack.py`,
+makes every key rotation trigger the full six-location republication cascade (§12.2).
 
 Note the discipline this repo already enforces: any edit to `verify_pack.py` changes its
 SHA-256, which fails `check_verify_publication.py` in CI until the lock, the
 `inntris-verify` repo, and the `.well-known` mirror are all updated together. Budget for
-that three-way update on **every** Block E commit.
+that update on **every** Block E commit — and see §12.5 for two CI contracts in
+`inntris-verify` that a reporting-layer rewrite will break if you are not watching for
+them.
 
 Size: **M**.
 
@@ -421,8 +452,12 @@ drill, depends F2) are procedural and unblocked by code.
 
 ## 10. Recommended execution order
 
+0. **⚠️ Generate and commit the v1 regression fixture pack** (§12.4). Hard deadline: it must
+   exist before any Block B code lands, and it cannot be honestly produced afterwards.
+   Independent of every open decision — start it today.
 1. **Session bootstrap** — venv + Foundry, ideally as a `SessionStart` hook. Blocks A5, A6, B2.5, B3.3, G.
 2. **Block A**, minus A1/A2 if the signing seed is not yet accessible. A4/A7/A8 are one commit.
+   Add A9: reconcile the two registry schemas (§12.1) — it is a truth-up item.
 3. **G1 verification** — read a CI run, confirm the skip count. Needs no decisions.
 4. **Founder decision: tenant signing model.** Gates B1.2–B1.4 and all of F.
 5. **Block B as one release.** Suggested internal order: B1 schema (including the nonce and consumption additions folded in from E) → B2.1 rename → B2.3/B2.4 preimage → B2.5 Solidity → B3 envelope → B1.7 schema publication.
@@ -445,9 +480,209 @@ path from day one — it gates B1.2–B1.4, which sit at the front of the Block 
 | 2 | Invariant 2 scope: one *envelope* canonicalisation, or one canonicalisation full stop? | B3.2 | Roughly 2× the work. Recommend the strict reading — it is free now and expensive later. |
 | 3 | Is the "297 tests" claim in the published deck/site rather than the repo? | A5 | It is not in this repository; the fix has no target without this |
 | 4 | Was `demo_recording/` already removed, or does it live elsewhere? | A3 | Same — no target in this tree |
-| 5 | Can this session get scope on `inntris-verify`, or does the founder push? | B1.7, E4 | Only `kingsmanron/mtp` is granted |
+| 5 | ~~Scope on `inntris-verify`~~ — **resolved.** Repo confirmed public at `Inntris/inntris-verify`; a parallel session holds push (not admin). Coordinated changes need MTP added *there*, or split by repo. | B1.7, E4 | — |
 | 6 | Is the `ipk-2026-01` private seed accessible now? | A1, and therefore A2 | A1 is the first item in the plan and cannot start without it |
 | 7 | `test_production_readback.py` under G1's "zero skips" — carve-out or dedicated environment? | G1 | Needs a live production database |
+| 8 | Registry reconciliation: extend the mirror to carry `scope`, extend `KEYS.md` to carry `status`, or define an explicit projection between them? | B1.3, E2, A9 | §12.1 — neither file is a superset of the other, so there is no default |
+| 9 | Is `https://inntris.com/.well-known/inntris-keys.txt` serving current bytes? | A-block truth-up | **Still open** — network-blocked in *both* sessions (403 at the agent proxy). Needs an unrestricted machine or an allowlist. |
 
-Items 3, 4, and 6 are quick confirmations. Items 1 and 2 are real decisions and are on the
-critical path.
+Items 3, 4, and 6 are quick confirmations. Items 1, 2, and 8 are real decisions on the
+critical path. Item 9 needs an environment change, not a decision.
+
+---
+
+## 12. The cross-repo publication contract
+
+Audited from a parallel session with read access to `Inntris/inntris-verify`. Everything
+below was verified against that repo's files, CI, and git history — not inferred.
+
+**Location confirmed.** `https://github.com/Inntris/inntris-verify`, public, Apache-2.0,
+default branch `main`. Owner is a **User account, not an Organization**, which limits
+branch protection and team access — relevant if Block B wants enforced review on
+republication commits.
+
+**Integrity confirmed clean.** `sha256sum -c SHA256SUMS` passes there, and both digests
+match this repo's `verify_publication.lock` exactly
+(`332928c8…a366` / `4ca88e16…801`). The key fingerprint recomputes correctly. **No Block A
+truth-up item from drift** — the two repos agree today.
+
+But they agree *by coincidence of discipline, not by construction*: this repo's CI validates
+local files against the local lock, and that repo's CI validates local files against the
+local `SHA256SUMS`. Both stay green while drifting from each other. Closure is cheap and
+one-directional — since `inntris-verify` is public, add a job to **this** repo's CI that
+fetches raw `SHA256SUMS` and diffs it against the lock. No secrets, no new scope.
+
+⚠️ One ordering caveat: the documented procedure updates this repo's lock (step 2) *before*
+copying into `inntris-verify` (step 3), so a hard-failing fetch job would leave an MTP pull
+request red between those steps and block the merge. Run it as a **hard fail on `push` to
+main, non-blocking on `pull_request`**.
+
+### 12.1 The registry has two incompatible published shapes
+
+`KEYS.md` is the canonical registry. `frontend/public/.well-known/inntris-keys.txt` is
+described as its mirror. They carry **different field sets, neither a superset of the
+other**:
+
+| Field | `KEYS.md` (canonical) | `.well-known` mirror |
+|---|---|---|
+| key_id, public key, fingerprint, effective date | ✓ | ✓ |
+| **scope** | ✓ column 5 — `Evidence pack manifests` | ✗ absent |
+| **status** | ✗ structural (`## Active` / `## Retired` heading) | ✓ field 5 — `active\|retired` |
+
+Both sides pin their own shape by regex and reject anything else
+(`scripts/check_verify_publication.py:36` here; `.github/workflows/verify.yml` there).
+
+Three consequences:
+
+**a. `KEYS.md`'s own guarantee is unenforceable by construction.** It states: *"This file is
+the single canonical registry. Copies elsewhere (inntris.com) mirror it; on any
+discrepancy, treat verification as failed."* The mirror is not a copy — different schema,
+not diffable. No automated discrepancy check exists, or can exist, until the shapes are
+reconciled. **This is a Block A truth-up item** (tracked as A9): either correct the wording
+or make the claim true.
+
+**b. `signer_scope` (B1.3) already has a canonical source, and the mirror drops it.**
+`KEYS.md` column 5 *is* the scope. But under Invariant 6 the verifier is offline and cannot
+fetch it — so a manifest asserting `signer_scope` has nothing to check against. This drives
+the `--registry` recommendation in §7.
+
+**c. Both representations break at first rotation, differently.** The mirror carries
+`status` but has no field for a retirement date; `KEYS.md`'s `## Retired` table is literally
+`(none)` with no header row, while the rotation policy promises retired rows carry a
+retirement date — a sixth column that no regex on either side accepts. Pin both shapes now;
+doing it mid-incident during a real rotation is materially worse.
+
+**Also relevant to B1.4:** `verify_pack.py` contains **zero references to `key_id`,
+`KEYS.md`, or any version**. It does a raw byte comparison of `--pubkey` against the
+embedded `public_key_b64`. `KEYS.md` is a human-and-CI artifact today, with no machine
+consumer. Adding `key_id` / `key_version` to the manifest gives the verifier its first
+awareness of key *identity* as distinct from key *bytes*.
+
+**Trap:** `ipk-2026-01` has effective date **2026-07-20**. The `-01` is a sequence number,
+not a month. Anything parsing it as January 2026 is silently wrong. State this explicitly
+in the published manifest v2 schema.
+
+### 12.2 B1.7 touches six locations, not two
+
+Both repos enforce **exact-set equality** on their pinned-file lists — this repo's
+`load_pins` raises on any mismatch against `PINNED_PATHS`, and `inntris-verify`'s CI raises
+on `set(pins) != expected_files`. Neither is open-ended. Publishing the manifest v2 schema
+as a third pinned artifact therefore requires:
+
+1. `PINNED_PATHS` (this repo)
+2. `verify_publication.lock` (this repo)
+3. `SHA256SUMS` (`inntris-verify`)
+4. `.github/workflows/verify.yml` → `expected_files` (`inntris-verify`)
+5. `README.md` — the "Integrity of this repository" block inlines both digests verbatim
+6. `frontend/public/.well-known/inntris-keys.txt` (this repo)
+
+`.gitattributes` is safe on both sides — the checks are subset checks, so a new LF rule is
+additive.
+
+⚠️ **Location 5 is unvalidated today.** Nothing compares README's inlined digests against
+`SHA256SUMS`; it is an existing silent-drift surface and B1.7 doubles it. Fold the fix into
+Block B: have the integrity job assert every `digest  name` line appears verbatim in
+`README.md`. The documented release procedure also omits this step — correct the procedure
+at the same time.
+
+### 12.3 E4 begins by inventing versioning
+
+Exhaustively confirmed absent in `inntris-verify`: no `__version__`, no `--version` flag
+(argparse has exactly `pack`, `--pubkey`, `--rpc`, `--contract`), zero case-insensitive
+matches for `version` in `verify_pack.py`, zero for `version` or `schema` in
+`METHODOLOGY.md`, empty `git tag -l`, empty releases API, empty tags API.
+
+The only version string anywhere is the CHANGELOG heading `## v1.0.0 — 2026-07-20`. Step 5
+of the documented procedure — *"Tag a release here"* — **has never been executed.** v1.0.0
+is prose.
+
+Recommended sequence:
+
+1. **Tag `v1.0.0` at current `main` now.** Free: changes no bytes, triggers no
+   republication, and it exactly describes the currently-published `SHA256SUMS`. Closes a
+   procedure step that has never run and makes the CHANGELOG's "auditable through tags"
+   promise true.
+2. Ship `__version__` + `--version` as part of the **first E-block commit that already
+   modifies `verify_pack.py`** — adding them changes the file's bytes and triggers the full
+   cascade, so it should never get a standalone republication.
+3. That commit ships as `v1.1.0`.
+
+The methodology-hash half of E4 is already satisfied: `4ca88e16…801` exists and is stable.
+
+### 12.4 ⚠️ The v1 regression fixture — act before Block B
+
+`git log --all --diff-filter=A --name-only` in `inntris-verify` returns the same 10 paths as
+`git ls-files`: **no fixture, sample pack, or test directory has ever existed there**, not
+even as a deleted file. This repo has only canonicalization and classification vectors. So
+the v1 regression corpus **does not exist in either repo**, and B1.1 ("the v2 verifier still
+verifies v1 packs") currently has nothing to test against.
+
+The container is reproducible from METHODOLOGY.md §2–3 and §10. **The signature is not.**
+Regenerating a signed v1 pack later would require the live `ipk-2026-01` key, and re-signing
+a synthetic pack with the production key manufactures a genuine-looking production
+artifact — the exact hazard Block A3 exists to prevent. A late fixture is therefore not just
+inconvenient, it is not a genuine v1 pack in the sense B1.1 needs.
+
+Do this now, while the v1 builder is still `HEAD`:
+
+- Generate and commit a small v1 pack.
+- Sign it with a **dedicated test key — never `ipk-2026-01`**.
+- Keep that test key **out of `KEYS.md`**; publishing it in the canonical registry makes it
+  pinnable. The test passes `--pubkey` explicitly instead.
+- **Place it in this repo, at `tests/fixtures/packs/v1/`, and keep it out of the publication
+  contract.** It is a test artifact, not a published one — no third party pins it, so adding
+  it to `SHA256SUMS` or the lock would trigger the §12.2 six-location cascade for no
+  external benefit, and vendoring it across repos creates a fourth thing that can drift.
+  This repo is where it is generated, where the format break happens, and where the test
+  runs. If `inntris-verify` wants an end-to-end test to close the §12.5 gap, it should
+  generate its own pack; two independently-generated valid v1 packs are a feature.
+
+**Once E2 lands, this fixture must fail `--strict`** — it has no `registered_policy_version`,
+no nonce, no consumption evidence, and a non-registry key. So the regression test asserts
+both directions: passes non-strict with an explicit `--pubkey`, fails under `--strict`. That
+makes one fixture cover B1.1, E1, and E2.
+
+### 12.5 Two `inntris-verify` CI contracts an E-block rewrite will break
+
+That repo has CI but **no test suite** — no pytest, no `tests/`, no runner.
+`.github/workflows/verify.yml` runs two jobs on `pull_request` and `push` to `main`:
+
+- **`integrity`** — parses `SHA256SUMS` with `^([0-9a-f]{64})  (\S+)$` (two spaces, exact),
+  rejects malformed / duplicate / unexpected paths, recomputes both digests, checks four
+  required `.gitattributes` LF rules, rejects the `PENDING-PUBLICATION-DO-NOT-PIN` marker,
+  parses key rows, rejects all-zero public keys, recomputes each fingerprint, validates the
+  date via `date.fromisoformat`.
+- **`fallbacks`** (matrix 3.10 / 3.11 / 3.12) — monkeypatches `builtins.__import__` to block
+  `eth_hash`, `nacl`, and `web3`, then asserts the pure-Python implementation strings.
+
+Constraints this places on E1–E3, none of them obvious from reading `verify_pack.py`:
+
+1. `load_keccak256()` and `load_ed25519_verify()` must keep those exact names, stay
+   module-level, and keep returning a `(callable, implementation_string)` 2-tuple.
+2. The implementation strings are compared with `!=` against exact literals —
+   `"pure-python"` and `"pure-python (RFC 8032)"`. A reporting-layer rewrite must not touch
+   them; even `"pure-python (RFC 8032 verify-only)"` fails CI.
+3. `import verify_pack` must stay side-effect-safe — the fallbacks job imports at module
+   level, so no startup self-test may `sys.exit`, and `main()` must stay behind
+   `if __name__ == "__main__"` (it currently does).
+
+Worth stating plainly: **no CI anywhere runs an actual pack verification.** Both jobs are
+integrity and import checks. That is the §12.4 gap seen from the other side — the verifier
+is published, hash-pinned, and cross-mirrored, but nothing anywhere proves it can verify a
+pack.
+
+### 12.6 Still open
+
+`https://inntris.com/.well-known/inntris-keys.txt` could not be fetched from **either**
+session — both hit `403` at the agent proxy on `CONNECT` (a policy denial, not a site
+failure). Every repo-side input to that mirror is verified correct, so if it is stale it is
+a deploy-pipeline defect, not a source-of-truth one.
+
+Note the mirror is a **composite** file: it carries both the key registry and the
+`SHA256SUMS` digests. A stale deploy therefore breaks third-party key pinning and hash
+cross-checking simultaneously. To close, from an unrestricted machine:
+
+```bash
+curl -sS https://inntris.com/.well-known/inntris-keys.txt | sha256sum
+sha256sum frontend/public/.well-known/inntris-keys.txt
+```
