@@ -169,6 +169,12 @@ CREATE TABLE audit_logs (
     -- NOT the hash of a registered .inntris.yml document — that lives on
     -- agent_policies.policy_hash. Named policy_hash before migration 017.
     effective_controls_hash CHAR(64),
+    -- The registered .inntris.yml policy in force at decision time. Written
+    -- here rather than joined from agent_policies at read time, so a later
+    -- policy change cannot re-label historical receipts. NULL means no policy
+    -- was registered for the agent, not "unknown".
+    registered_policy_version INTEGER,
+    registered_policy_hash CHAR(64),
     metadata JSONB DEFAULT '{}',
 
     CONSTRAINT audit_action_hash_format CHECK (LENGTH(action_hash) = 64),

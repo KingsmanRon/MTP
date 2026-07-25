@@ -562,6 +562,22 @@ class PublicVerificationRecord(BaseModel):
             "a policy document hash — see registered_policy_hash."
         ),
     )
+    registered_policy_version: int | None = Field(
+        None,
+        description=(
+            "Version of the registered .inntris.yml policy in force when this "
+            "action was evaluated. Null when no policy was registered for the "
+            "agent — which is not the same as unknown."
+        ),
+    )
+    registered_policy_hash: str | None = Field(
+        None,
+        description=(
+            "Canonical hash of the registered policy document in force at "
+            "evaluation time. Bound into the action hash under envelope v3, so "
+            "the agent signature and the anchored Merkle leaf both commit to it."
+        ),
+    )
 
     # On-chain proof
     action_hash: str = Field(..., description="SHA-256 hash of the action")
@@ -729,4 +745,7 @@ class AuditLogEntry(BaseModel):
     chain_previous_hash: str | None
     # Derived effective-controls hash, not the registered policy document hash.
     effective_controls_hash: str | None = None
+    # The registered policy document in force at decision time.
+    registered_policy_version: int | None = None
+    registered_policy_hash: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)

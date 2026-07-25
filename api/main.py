@@ -1005,6 +1005,8 @@ RECEIPT_SCHEMA_V1 = {
         "trust_score": {"type": "integer", "minimum": 0, "maximum": 100},
         "risk_level": {"type": ["string", "null"]},
         "violations": {"type": "array", "items": {"type": "string"}},
+        "registered_policy_version": {"type": ["integer", "null"], "description": "Version of the registered .inntris.yml policy in force when this action was evaluated. Null means no policy was registered for the agent — not that the version is unknown."},
+        "registered_policy_hash": {"type": ["string", "null"], "pattern": "^[a-f0-9]{64}$", "description": "Canonical hash of the registered policy document in force at evaluation time. Bound into the action hash under signing envelope v3, so the agent signature and the anchored Merkle leaf both commit to it."},
         "effective_controls_hash": {"type": ["string", "null"], "pattern": "^[a-f0-9]{64}$", "description": "SHA-256 over the agent's effective controls at verification time — status, allow/block lists, spend limits, rate limit, trust score. This is a snapshot of the controls the decision was evaluated against, NOT the hash of a registered policy document; for that see registered_policy_hash. Named policy_hash before receipt schema v3."},
         "action_hash": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
         "signature_valid": {"type": "boolean"},
@@ -1447,6 +1449,8 @@ async def get_public_verification_record(
         risk_level=risk_level,
         violations=violations,
         effective_controls_hash=row.get("effective_controls_hash"),
+        registered_policy_version=row.get("registered_policy_version"),
+        registered_policy_hash=row.get("registered_policy_hash"),
         action_hash=row["action_hash"],
         signature_valid=row["signature_valid"],
         signature_b64=signature_b64,
@@ -1491,6 +1495,7 @@ async def get_public_proof(
             """
             SELECT al.id, al.action_hash, al.merkle_root_id,
                    al.merkle_leaf_index, al.effective_controls_hash,
+                   al.registered_policy_version, al.registered_policy_hash,
                    al.timestamp, al.metadata
             FROM audit_logs al
             WHERE al.id = $1
@@ -1815,6 +1820,17 @@ async def verify_action(
         registered_policy = await database.get_active_agent_policy(agent.id)
         policy_binding_state = "registered" if registered_policy else "unregistered"
 
+        # Captured now, written onto every audit row this request produces.
+        # Recording it at decision time is the whole point: agent_policies
+        # holds the *current* active policy, so resolving it at read time
+        # would re-label historical receipts whenever the policy changes.
+        registered_policy_version = (
+            registered_policy.version if registered_policy else None
+        )
+        registered_policy_hash = (
+            registered_policy.policy_hash if registered_policy else None
+        )
+
         # Parse timestamp from request
         request_timestamp = request_data.timestamp
         if isinstance(request_timestamp, str):
@@ -1866,6 +1882,8 @@ async def verify_action(
                 trust_score_at_time=agent.trust_score,
                 chain_previous_hash=None,
                 effective_controls_hash=effective_controls_hash,
+                registered_policy_version=registered_policy_version,
+                registered_policy_hash=registered_policy_hash,
                 metadata=_audit_metadata(
                     client_policy_hash=request_data.policy_hash,
                     key_fingerprint=agent.public_key_fingerprint,
@@ -1971,6 +1989,8 @@ async def verify_action(
                 trust_score_at_time=agent.trust_score,
                 chain_previous_hash=None,
                 effective_controls_hash=effective_controls_hash,
+                registered_policy_version=registered_policy_version,
+                registered_policy_hash=registered_policy_hash,
                 metadata=_audit_metadata(
                     client_policy_hash=request_data.policy_hash,
                     key_fingerprint=agent.public_key_fingerprint,
@@ -2043,6 +2063,8 @@ async def verify_action(
             trust_score_at_time=agent.trust_score,
             chain_previous_hash=None,
             effective_controls_hash=effective_controls_hash,
+            registered_policy_version=registered_policy_version,
+            registered_policy_hash=registered_policy_hash,
             metadata=_audit_metadata(
                 client_policy_hash=request_data.policy_hash,
                 key_fingerprint=agent.public_key_fingerprint,

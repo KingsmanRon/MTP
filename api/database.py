@@ -912,7 +912,8 @@ class Database:
                     agent_id, action_type, action_hash, payload, verdict,
                     verdict_reason, signature, signature_valid, request_ip,
                     request_user_agent, response_time_ms, trust_score_at_time,
-                    chain_previous_hash, effective_controls_hash, metadata
+                    chain_previous_hash, effective_controls_hash, metadata,
+                    registered_policy_version, registered_policy_hash
                 )
                 VALUES (
                     $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
@@ -922,7 +923,7 @@ class Database:
                         ORDER BY chain_sequence DESC
                         LIMIT 1
                     ),
-                    $13, $14
+                    $13, $14, $15, $16
                 )
                 RETURNING id
             """
@@ -947,6 +948,8 @@ class Database:
                     entry.trust_score_at_time,
                     entry.effective_controls_hash,
                     json.dumps(entry.metadata),
+                    entry.registered_policy_version,
+                    entry.registered_policy_hash,
                 )
             return log_id
 
@@ -955,9 +958,10 @@ class Database:
                 agent_id, action_type, action_hash, payload, verdict,
                 verdict_reason, signature, signature_valid, request_ip,
                 request_user_agent, response_time_ms, trust_score_at_time,
-                chain_previous_hash, effective_controls_hash, metadata
+                chain_previous_hash, effective_controls_hash, metadata,
+                registered_policy_version, registered_policy_hash
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
             RETURNING id
         """
         async with self.acquire() as conn:
@@ -978,6 +982,8 @@ class Database:
                 entry.chain_previous_hash,
                 entry.effective_controls_hash,
                 json.dumps(entry.metadata),
+                entry.registered_policy_version,
+                entry.registered_policy_hash,
             )
 
         return log_id
@@ -1002,11 +1008,12 @@ class Database:
                 agent_id, action_type, action_hash, payload, verdict,
                 verdict_reason, signature, signature_valid, request_ip,
                 request_user_agent, response_time_ms, trust_score_at_time,
-                chain_previous_hash, effective_controls_hash, metadata
+                chain_previous_hash, effective_controls_hash, metadata,
+                registered_policy_version, registered_policy_hash
             )
             VALUES (
                 $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
-                NULL, $13, $14
+                NULL, $13, $14, $15, $16
             )
             RETURNING id
         """
@@ -1044,6 +1051,8 @@ class Database:
                     entry.trust_score_at_time,
                     entry.effective_controls_hash,
                     json.dumps(entry.metadata),
+                    entry.registered_policy_version,
+                    entry.registered_policy_hash,
                 )
                 await conn.execute(
                     """
