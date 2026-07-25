@@ -28,7 +28,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from fastapi import Response
+    from fastapi import Request, Response
 
 try:
     from prometheus_client import (
@@ -242,12 +242,20 @@ else:  # pragma: no cover — exercised in stub mode
     verify_unavailable_total = _NoopMetric()
 
 
-async def metrics_endpoint() -> Response:
+async def metrics_endpoint(_request: Request) -> Response:
     """FastAPI handler that returns the Prometheus exposition payload.
 
     Deliberately a free function (not a class) so ``api/main.py`` can wire
     it with ``app.add_route("/metrics", metrics_endpoint)`` without
     importing Starlette here.
+
+    The request parameter is required even though it is unused. ``add_route``
+    passes a plain function through Starlette's ``request_response()``, which
+    invokes it as ``func(request)``; a zero-argument handler raised
+    ``TypeError`` on every scrape and the endpoint served 500 in production
+    while unit tests that awaited the function directly still passed. The
+    regression test in ``tests/test_observability.py`` now goes through a
+    mounted route so the calling convention itself is covered.
     """
     from fastapi import Response  # local import keeps this module import-light
 

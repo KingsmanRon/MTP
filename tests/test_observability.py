@@ -14,9 +14,12 @@ The observability module has three concerns and the tests mirror them:
 from __future__ import annotations
 
 import asyncio
+import importlib
 import json
 import logging
 from io import StringIO
+
+import pytest
 
 from api.observability import (
     JsonFormatter,
@@ -212,12 +215,52 @@ def test_expected_metric_names_are_exported() -> None:
     assert hasattr(obs, "verify_latency_seconds")
 
 
-def test_metrics_endpoint_returns_prometheus_text() -> None:
+def _mounted_metrics_client():
+    """Mount /metrics exactly as api/main.py does, and return a test client.
+
+    Wiring matters here: ``app.add_route`` routes a plain function through
+    Starlette's ``request_response()``, which calls it as ``func(request)``.
+    Awaiting the handler directly bypasses that and cannot catch a signature
+    mismatch — which is how a 500 on every live scrape shipped while this
+    module's tests stayed green.
+    """
+    from starlette.applications import Starlette
+    from starlette.testclient import TestClient
+
     from api.observability import metrics_endpoint
 
-    resp = asyncio.run(metrics_endpoint())
-    assert resp.status_code == 200
-    ctype = resp.media_type or resp.headers.get("content-type", "")
-    # Accept either the prometheus text-format content-type or the 501
-    # stub if the module happened to import in no-prom mode in this env.
+    app = Starlette()
+    app.add_route("/metrics", metrics_endpoint, methods=["GET"])
+    return TestClient(app, raise_server_exceptions=False)
+
+
+def test_metrics_endpoint_returns_prometheus_text() -> None:
+    """The mounted route serves, rather than raising into a 500."""
+    resp = _mounted_metrics_client().get("/metrics")
+
+    # 200 with prometheus_client installed; 501 stub without it. A 500 means
+    # the handler could not be invoked at all.
+    assert resp.status_code in (200, 501), (
+        f"/metrics returned {resp.status_code}; the route is not callable"
+    )
+    ctype = resp.headers.get("content-type", "")
     assert "text/plain" in ctype or "prometheus" in ctype.lower()
+
+
+def test_metrics_endpoint_exposes_the_verify_latency_histogram() -> None:
+    """A4: the scrape payload parses and carries the verify latency histogram."""
+    obs = importlib.import_module("api.observability")
+    if not obs._HAS_PROMETHEUS:
+        pytest.skip("prometheus_client not installed")
+
+    resp = _mounted_metrics_client().get("/metrics")
+    assert resp.status_code == 200
+    body = resp.text
+
+    assert "inntris_verify_latency_seconds_bucket" in body
+    assert "# TYPE inntris_verify_latency_seconds histogram" in body
+    # Every non-comment line must be parseable as `name{labels} value`.
+    for line in body.splitlines():
+        if not line or line.startswith("#"):
+            continue
+        assert " " in line, f"unparseable exposition line: {line!r}"

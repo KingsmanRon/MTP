@@ -146,7 +146,13 @@ CREATE TABLE audit_logs (
     timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     action_type VARCHAR(100) NOT NULL,
     action_hash VARCHAR(64) NOT NULL,  -- SHA-256 of payload for integrity verification
-    payload JSONB NOT NULL,  -- Full action details (encrypted sensitive fields)
+    -- Full action details, stored as submitted. NOT encrypted: the /verify
+    -- request path inserts this column directly. Field-level encryption in
+    -- this schema currently covers webhook signing secrets only
+    -- (organizations.webhook_secret_ciphertext, migration 013). Envelope
+    -- encryption for this column is planned; until it ships, treat every
+    -- payload field as readable at the database layer.
+    payload JSONB NOT NULL,
     verdict action_verdict NOT NULL,
     verdict_reason TEXT,
     signature BYTEA NOT NULL,  -- Original Ed25519 signature from agent

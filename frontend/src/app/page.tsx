@@ -208,11 +208,15 @@ export default async function InntrisCoreDarkPreview() {
                 See live verification
               </a>
             </div>
-            {/* Dividers only when all four stats share a row; stacked 2x2 on
-                phones the divide-x borders land in odd places. */}
-            <div className="grid grid-cols-2 gap-y-6 border-t border-[#22314D] pt-7 md:grid-cols-4 md:gap-y-0 md:divide-x md:divide-[#22314D]">
+            {/* Dividers only when all three stats share a row; stacked on
+                phones the divide-x borders land in odd places.
+
+                A "<100ms verification latency" stat used to lead this row. It
+                was removed because no measurement backed it. Restore a latency
+                stat only once the load test lands a dated p50/p95/p99 — and
+                quote the measured figure, not a ceiling. */}
+            <div className="grid grid-cols-2 gap-y-6 border-t border-[#22314D] pt-7 md:grid-cols-3 md:gap-y-0 md:divide-x md:divide-[#22314D]">
               {[
-                { value: "<100ms", label: "Verification latency" },
                 { value: "Ed25519", label: "Signing algorithm" },
                 { value: "Base L2", label: "Audit anchor" },
                 { value: "Fail-closed", label: "Default policy mode" },
