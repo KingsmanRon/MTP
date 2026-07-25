@@ -3,8 +3,33 @@
 Working plan derived from the *Inntris Technical Work Specification* handoff, reconciled
 against the repository as it actually stands at `7e0bf71`.
 
-This document is planning only. No behaviour has been changed. Every claim below about
-current state was checked against the code and, where runnable, executed.
+Every claim below about current state was checked against the code and, where runnable,
+executed.
+
+## Status — 2026-07-25
+
+| Item | State |
+|---|---|
+| **Step 0** — v1 regression fixture | ✅ Done. `tests/fixtures/packs/v1/`, §12.4 |
+| **A4** — `/metrics` 500 | ✅ Fixed. Root cause and regression test in §2 |
+| **A5** — test-count claim | ✅ Done. Dated, sourced figures in `README.md` |
+| **A6** — Solidity suite | ✅ Passing. 19/0/0 in CI run 55. Foundry cannot be installed locally — the installer host is blocked by this environment's proxy policy, so CI is the execution record |
+| **A7** — `<100ms` claim | ✅ Removed from `frontend/src/app/page.tsx` |
+| **A8** — payload encryption comment | ✅ Corrected in `database/schemas.sql` |
+| **G1** — skipped integration tests | ✅ **Already met.** CI reports zero skips; see below |
+| **A1 / A2** | ⛔ Blocked on access to the `ipk-2026-01` signing seed |
+| **A3** | ❓ No `demo_recording/` in the tree — needs confirmation, not code |
+| **A9** — registry reconciliation | Open. §12.1 |
+
+**G1 is closed by measurement, not by work.** CI run 55 reported `446 passed` with **no
+skip count at all** — zero skipped — against `postgres:16.14` and `redis:7.4.7` service
+containers. Locally the same suite is 431 passed / 15 skipped. 431 + 15 = 446 exactly, so
+all 15 integration cases named in G1 — tenant RLS, GDPR erasure, Redis abuse limits,
+release environment checks, anchoring selection — already run and pass on every push.
+`test_production_readback.py` runs against the CI Postgres rather than production, so the
+carve-out the plan anticipated is not needed either. **Residual G1 work is the guard only:**
+assert in CI that the skip count stays zero, so a future skip cannot creep back in
+silently. Decision 7 is closed.
 
 ---
 
@@ -482,7 +507,7 @@ path from day one — it gates B1.2–B1.4, which sit at the front of the Block 
 | 4 | Was `demo_recording/` already removed, or does it live elsewhere? | A3 | Same — no target in this tree |
 | 5 | ~~Scope on `inntris-verify`~~ — **resolved.** Repo confirmed public at `Inntris/inntris-verify`; a parallel session holds push (not admin). Coordinated changes need MTP added *there*, or split by repo. | B1.7, E4 | — |
 | 6 | Is the `ipk-2026-01` private seed accessible now? | A1, and therefore A2 | A1 is the first item in the plan and cannot start without it |
-| 7 | `test_production_readback.py` under G1's "zero skips" — carve-out or dedicated environment? | G1 | Needs a live production database |
+| 7 | ~~`test_production_readback.py` under G1's "zero skips"~~ — **resolved.** It runs against the CI Postgres, not production. CI already reports zero skips; no carve-out needed. | G1 | — |
 | 8 | Registry reconciliation: extend the mirror to carry `scope`, extend `KEYS.md` to carry `status`, or define an explicit projection between them? | B1.3, E2, A9 | §12.1 — neither file is a superset of the other, so there is no default |
 | 9 | Is `https://inntris.com/.well-known/inntris-keys.txt` serving current bytes? | A-block truth-up | **Still open** — network-blocked in *both* sessions (403 at the agent proxy). Needs an unrestricted machine or an allowlist. |
 
