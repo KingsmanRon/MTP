@@ -29,7 +29,7 @@ def _action_hash():
         payload=PAYLOAD,
         nonce=NONCE,
         timestamp=TIMESTAMP,
-        sig_version=2,
+        sig_version=3,
     )
 
 

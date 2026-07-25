@@ -81,6 +81,7 @@ def build_signed_verify_request(
         payload=payload,
         nonce=nonce,
         timestamp=canonical_ts,
+        registered_policy_hash=policy_hash,
         sig_version=sig_version,
     )
     signature = sk.sign(bytes.fromhex(action_hash)).signature

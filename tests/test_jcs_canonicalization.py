@@ -17,6 +17,7 @@ language is a bug in that SDK, not in the vectors.
 
 from __future__ import annotations
 
+import hashlib
 import json
 from datetime import UTC, datetime
 from pathlib import Path
@@ -95,20 +96,41 @@ class TestSigVersion3:
     NONCE = "nonce-0xdeadbeef"
     TS = datetime(2026, 4, 17, 12, 0, 0, tzinfo=UTC)
 
-    def test_jcs_and_current_hashes_differ(self) -> None:
-        # A payload that contains an integer-valued float is the easiest
-        # way to see JCS and sort-keys diverge: Python's json serializes
-        # 1.0 as "1.0"; JCS emits "1".
+    def test_jcs_diverges_from_python_sorted_json(self) -> None:
+        """Why versions 1 and 2 had to go, stated as an assertion.
+
+        An integer-valued float is the cheapest way to see the divergence:
+        Python's json serializes 1.0 as "1.0"; JCS emits "1". The old
+        envelopes hashed the former, so a Node or Go signer producing correct
+        JCS bytes would have failed verification here with no diagnosable
+        cause. The envelope now hashes only the JCS form.
+        """
         payload = {"amount": 1.0}
-        current = CryptoService.compute_action_hash(
-            self.AGENT_ID, self.ACTION, payload, self.NONCE, self.TS,
-            sig_version=CryptoService.SIG_VERSION_CURRENT,
-        )
-        jcs_hash = CryptoService.compute_action_hash(
-            self.AGENT_ID, self.ACTION, payload, self.NONCE, self.TS,
-            sig_version=CryptoService.SIG_VERSION_JCS,
-        )
-        assert current != jcs_hash
+        legacy_canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+        assert legacy_canonical == '{"amount":1.0}'
+        assert jcs.canonicalize(payload) == b'{"amount":1}'
+        assert hashlib.sha256(legacy_canonical.encode()).hexdigest() != jcs.sha256_hex(payload)
+
+    def test_legacy_envelope_versions_are_rejected(self) -> None:
+        """Versions 1 and 2 are deleted, not merely non-default."""
+        for dead in (1, 2):
+            with pytest.raises(CryptoError, match="Only 3"):
+                CryptoService.compute_action_hash(
+                    self.AGENT_ID, self.ACTION, {"a": 1}, self.NONCE, self.TS,
+                    sig_version=dead,
+                )
+
+    def test_registered_policy_hash_is_bound_into_the_envelope(self) -> None:
+        """B2.3/B2.4: the signature — and so the anchored leaf — covers policy."""
+        args = (self.AGENT_ID, self.ACTION, {"a": 1}, self.NONCE, self.TS)
+        unbound = CryptoService.compute_action_hash(*args)
+        bound = CryptoService.compute_action_hash(*args, registered_policy_hash="a" * 64)
+        other = CryptoService.compute_action_hash(*args, registered_policy_hash="b" * 64)
+        assert unbound != bound != other
+        assert unbound != other
+        # Explicit None and omission must agree, or callers diverge on the
+        # common unregistered-policy case.
+        assert CryptoService.compute_action_hash(*args, registered_policy_hash=None) == unbound
 
     def test_jcs_is_insertion_order_independent(self) -> None:
         a = {"b": 2, "a": 1}
@@ -137,3 +159,45 @@ class TestSigVersion3:
                 self.AGENT_ID, self.ACTION, {"ok": 1},
                 self.NONCE, self.TS, sig_version=99,
             )
+
+
+class TestEnvelopeV3CrossLanguageContract:
+    """B3.3: envelope v3 is byte-identical across implementations.
+
+    The vectors in ``envelope_v3_vectors.json`` are asserted from Python here
+    and from Node in ``github-action/index.test.js``. Both suites pin the same
+    hex, so a divergence in either canonicalizer fails loudly on both sides
+    rather than surfacing as an unexplainable signature rejection in
+    production.
+
+    ``1.0`` in the payload is deliberate: it is the cheapest input that
+    separates JCS from Python's sorted-JSON, and the case the deleted v1/v2
+    envelopes got wrong.
+    """
+
+    VECTORS = json.loads(
+        (
+            Path(__file__).parent
+            / "fixtures"
+            / "canonicalization"
+            / "envelope_v3_vectors.json"
+        ).read_text()
+    )
+
+    def test_every_vector_reproduces(self) -> None:
+        for case in self.VECTORS["cases"]:
+            assert jcs.sha256_hex(case["payload"]) == case["payload_hash"], case["name"]
+            computed = CryptoService.compute_action_hash(
+                agent_id=self.VECTORS["agent_id"],
+                action_type=case["action_type"],
+                payload=case["payload"],
+                nonce=self.VECTORS["nonce"],
+                timestamp=self.VECTORS["timestamp"],
+                registered_policy_hash=case["registered_policy_hash"],
+            )
+            assert computed == case["action_hash"], case["name"]
+
+    def test_vectors_cover_both_policy_states(self) -> None:
+        """A contract that only covers the bound case misses the common one."""
+        states = {case["registered_policy_hash"] is None for case in self.VECTORS["cases"]}
+        assert states == {True, False}

@@ -141,19 +141,24 @@ class CryptoService:
             iso = iso[:-6] + "Z"
         return iso
 
-    # Current (default) signing-envelope version. Kept here so callers that
-    # want to pin an explicit version without importing models.py don't have
-    # to hard-code an integer at every site.
+    # The signing envelope. Exactly one version exists.
     #
-    # Phase 1B.1 introduces SIG_VERSION_JCS (3) which swaps the payload
-    # hash from Python's sort_keys serializer to strict RFC 8785 JCS so
-    # non-Python SDKs can produce byte-identical canonical forms. The
-    # default remains SIG_VERSION_CURRENT (2) because deployed agents
-    # still sign with it; servers accept all three.
-    SIG_VERSION_LEGACY = 1
-    SIG_VERSION_CURRENT = 2
+    # Versions 1 and 2 are deleted, not deprecated. Both canonicalized with
+    # Python's ``json.dumps(sort_keys=True)``, which is a Python
+    # implementation detail rather than a cross-language contract: it orders
+    # keys by Unicode code point where JCS requires UTF-16 code units, emits
+    # "1.0" where JCS requires "1", and accepts NaN/Infinity which JCS
+    # forbids. An SDK in any other language could not reliably reproduce
+    # those bytes, so signatures produced elsewhere would fail to verify
+    # here for reasons no error message could explain.
+    #
+    # v3 is RFC 8785 JCS throughout, and additionally binds
+    # ``registered_policy_hash`` into the envelope so the agent's signature
+    # covers the policy in force. Because the action hash *is* the anchored
+    # Merkle leaf (see workers/anchor_worker.py), that single change commits
+    # the on-chain leaf to the policy as well.
     SIG_VERSION_JCS = 3
-    SIG_VERSION_DEFAULT = SIG_VERSION_CURRENT
+    SIG_VERSION_DEFAULT = SIG_VERSION_JCS
 
     @staticmethod
     def compute_action_hash(
@@ -162,6 +167,7 @@ class CryptoService:
         payload: dict[str, Any],
         nonce: str,
         timestamp: "datetime | str",
+        registered_policy_hash: "str | None" = None,
         sig_version: int = SIG_VERSION_DEFAULT,
     ) -> str:
         """
@@ -180,56 +186,47 @@ class CryptoService:
                        emitted as ``YYYY-MM-DDTHH:MM:SS[.ffffff]Z`` before
                        hashing, so two callers representing the same instant
                        always produce identical hashes.
-            sig_version: Signing-envelope version negotiated with the client.
-                         ``1`` = pre-Phase-0.3 form: the raw input timestamp
-                         (stringified via ``.isoformat()`` for datetimes) is
-                         embedded verbatim. ``2`` = current form: timestamp is
-                         routed through ``canonicalize_timestamp`` first.
+            registered_policy_hash: Hash of the governing policy document the
+                         caller ran under, or ``None`` when the action type has
+                         no registered policy. Binding it here means the agent's
+                         signature covers the policy in force, and — because
+                         this hash is the anchored Merkle leaf — so does the
+                         on-chain commitment.
+            sig_version: Signing-envelope version. Only 3 (RFC 8785 JCS) exists.
 
         Returns:
             Lowercase hexadecimal SHA-256 hash.
         """
-        if sig_version == CryptoService.SIG_VERSION_LEGACY:
-            # Preserved for signatures produced by SDKs that predate
-            # Phase 0.3. The server still needs to be able to verify those
-            # signatures until all deployed agents are upgraded. Do not use
-            # this path for new hashing — it is ambiguous across timezones.
-            ts_repr = (
-                timestamp
-                if isinstance(timestamp, str)
-                else timestamp.isoformat()
-            )
-            payload_hash = CryptoService.compute_payload_hash(payload)
-            outer_hash = CryptoService.compute_payload_hash
-        elif sig_version == CryptoService.SIG_VERSION_CURRENT:
-            ts_repr = CryptoService.canonicalize_timestamp(timestamp)
-            payload_hash = CryptoService.compute_payload_hash(payload)
-            outer_hash = CryptoService.compute_payload_hash
-        elif sig_version == CryptoService.SIG_VERSION_JCS:
-            # RFC 8785 JCS for both the inner payload hash and the outer
-            # signing envelope. Non-Python SDKs can only match this path
-            # byte-for-byte. See tests/fixtures/canonicalization/jcs_vectors.json
-            # for the cross-language contract.
-            try:
-                payload_hash = jcs.sha256_hex(payload)
-                ts_repr = CryptoService.canonicalize_timestamp(timestamp)
-                outer_hash = jcs.sha256_hex
-            except jcs.JCSError as exc:
-                raise CryptoError(f"JCS canonicalization failed: {exc}") from exc
-        else:
+        if sig_version != CryptoService.SIG_VERSION_JCS:
             raise CryptoError(
-                f"Unsupported sig_version: {sig_version!r}. "
-                f"Expected {CryptoService.SIG_VERSION_LEGACY}, "
-                f"{CryptoService.SIG_VERSION_CURRENT}, or "
-                f"{CryptoService.SIG_VERSION_JCS}."
+                f"Unsupported sig_version: {sig_version!r}. Only "
+                f"{CryptoService.SIG_VERSION_JCS} (RFC 8785 JCS) is supported; "
+                "versions 1 and 2 were removed because their Python-sorted-JSON "
+                "canonicalization was not reproducible across languages."
             )
 
+        # RFC 8785 JCS for both the inner payload hash and the outer signing
+        # envelope. See tests/fixtures/canonicalization/jcs_vectors.json for
+        # the cross-language contract every SDK must reproduce.
+        try:
+            payload_hash = jcs.sha256_hex(payload)
+            ts_repr = CryptoService.canonicalize_timestamp(timestamp)
+            outer_hash = jcs.sha256_hex
+        except jcs.JCSError as exc:
+            raise CryptoError(f"JCS canonicalization failed: {exc}") from exc
+
+        # ``registered_policy_hash`` is always present in the envelope, carrying
+        # JSON null when the action type has no registered policy. An absent key
+        # and a null-valued key canonicalize differently, so pinning the key as
+        # mandatory is what keeps Python and any other implementation in
+        # agreement on the common unregistered case.
         signing_data = {
             "agent_id": str(agent_id),
             "action_type": action_type,
             "payload_hash": payload_hash,
             "nonce": nonce,
             "timestamp": ts_repr,
+            "registered_policy_hash": registered_policy_hash,
         }
         return outer_hash(signing_data)
 

@@ -1,0 +1,24 @@
+{
+  "_comment": "Cross-language contract for signing envelope v3 (RFC 8785 JCS + registered_policy_hash). Any SDK in any language MUST reproduce action_hash exactly for each case, or its signatures will not verify server-side. Asserted from Python in tests/test_jcs_canonicalization.py and from Node in github-action/index.test.js.",
+  "agent_id": "4f0e4fd5-5e2f-4e95-a2d5-78b0a7b0d66a",
+  "nonce": "nonce-0xdeadbeef",
+  "timestamp": "2026-04-17T12:00:00Z",
+  "cases": [
+    {
+      "name": "no registered policy (the common case) — null, not omitted",
+      "action_type": "repo_change",
+      "payload": {"amount": 1.0, "currency": "USD", "nested": {"b": 2, "a": [1, 2.5, null]}},
+      "registered_policy_hash": null,
+      "payload_hash": "4dd161c9b96012e39e02eb3e6e6adf13c604aeaac151072421171cc11c3aeb21",
+      "action_hash": "8a1f85b6c325de959da3754e67227e837d3bc3a8b497bf71df3465472178d9b1"
+    },
+    {
+      "name": "policy bound — same inputs, different hash",
+      "action_type": "repo_change",
+      "payload": {"amount": 1.0, "currency": "USD", "nested": {"b": 2, "a": [1, 2.5, null]}},
+      "registered_policy_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "payload_hash": "4dd161c9b96012e39e02eb3e6e6adf13c604aeaac151072421171cc11c3aeb21",
+      "action_hash": "df0a180dfd42accb7e8b3ff1494b0fa796ad5236ef84d394bc0ed186567feaa0"
+    }
+  ]
+}

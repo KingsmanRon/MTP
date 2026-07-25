@@ -175,7 +175,7 @@ def test_verify_401_echoes_expected_action_hash_and_keeps_detail_string():
         payload=payload,
         nonce="n-1",
         timestamp="2026-06-16T12:00:00Z",
-        sig_version=2,
+        sig_version=3,
     )
     assert data["audit_id"] is None
     db.insert_audit_log.assert_not_called()

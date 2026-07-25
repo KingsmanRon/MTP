@@ -466,12 +466,18 @@ async function verifyOne({ apiUrl, agentId, privateKeyB64, actionType, payload, 
   const timestamp = new Date().toISOString();
   const nonce = newNonce();
   const payloadHash = sha256Hex(stableStringify(payload));
+  // Envelope v3. registered_policy_hash is always present, carrying null when
+  // the action type has no registered policy — an absent key and a null-valued
+  // key canonicalize differently, so the key is mandatory on both sides. This
+  // is what makes the agent's signature (and, since the action hash is the
+  // anchored Merkle leaf, the on-chain commitment) cover the policy in force.
   const signingData = {
     agent_id: agentId,
     action_type: actionType,
     payload_hash: payloadHash,
     nonce,
     timestamp,
+    registered_policy_hash: policyHashHex ?? null,
   };
   const actionHash = sha256Hex(stableStringify(signingData));
   const signature = signActionHash(privateKeyB64, actionHash);
@@ -483,7 +489,7 @@ async function verifyOne({ apiUrl, agentId, privateKeyB64, actionType, payload, 
     signature,
     nonce,
     timestamp,
-    sig_version: 2,
+    sig_version: 3,
     policy_hash: policyHashHex,
   };
 

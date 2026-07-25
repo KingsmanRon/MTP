@@ -14,6 +14,8 @@ const {
   computeRiskFlags,
   resolveFailClosed,
   decidePlan,
+  stableStringify,
+  sha256Hex,
 } = require("./index.js");
 
 const POLICY_PATH = path.join(__dirname, "..", ".inntris.yml");
@@ -286,4 +288,50 @@ test("decidePlan classifies a reliable, non-empty change set", () => {
     decidePlan({ hasPolicy: true, reliable: true, fileCount: 3, failClosed: true }),
     "classify",
   );
+});
+
+
+// ---------------------------------------------------------------------------
+// Signing envelope v3 — cross-language contract (B3.3)
+// ---------------------------------------------------------------------------
+// These vectors are asserted from Python too, in
+// tests/test_jcs_canonicalization.py, against the same JSON file. Both suites
+// pin identical hex, so a divergence between this canonicalizer and the
+// server's fails loudly in CI rather than surfacing in production as a
+// signature rejection nobody can explain.
+
+const ENVELOPE_VECTORS = JSON.parse(
+  fs.readFileSync(
+    path.join(__dirname, "..", "tests", "fixtures", "canonicalization", "envelope_v3_vectors.json"),
+    "utf8",
+  ),
+);
+
+test("envelope v3 reproduces every cross-language vector", () => {
+  for (const c of ENVELOPE_VECTORS.cases) {
+    const payloadHash = sha256Hex(stableStringify(c.payload));
+    assert.equal(payloadHash, c.payload_hash, `payload_hash for: ${c.name}`);
+
+    const signingData = {
+      agent_id: ENVELOPE_VECTORS.agent_id,
+      action_type: c.action_type,
+      payload_hash: payloadHash,
+      nonce: ENVELOPE_VECTORS.nonce,
+      timestamp: ENVELOPE_VECTORS.timestamp,
+      registered_policy_hash: c.registered_policy_hash,
+    };
+    assert.equal(
+      sha256Hex(stableStringify(signingData)),
+      c.action_hash,
+      `action_hash for: ${c.name}`,
+    );
+  }
+});
+
+test("a null registered_policy_hash is emitted, not dropped", () => {
+  // normalise() strips undefined but must keep null: an absent key and a
+  // null-valued key canonicalize differently, and the unregistered-policy
+  // case is the common one.
+  const canonical = stableStringify({ a: 1, registered_policy_hash: null });
+  assert.equal(canonical, '{"a":1,"registered_policy_hash":null}');
 });

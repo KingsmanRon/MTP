@@ -95,13 +95,15 @@ class TestActionHashIsTimezoneIndependent:
 
 
 class TestSigVersion:
-    """Phase 0.4 — signing-envelope versioning.
+    """The signing envelope. Exactly one version exists.
 
-    sig_version=1 preserves the pre-Phase-0.3 wire format so legacy
-    agent SDKs that signed with a naive .isoformat() can still verify.
-    sig_version=2 is the current UTC-normalized form. The two forms
-    MUST hash differently for the same inputs, and sig_version=2 MUST
-    be the default when the field is omitted.
+    Versions 1 and 2 are deleted. Both canonicalized with Python's
+    ``json.dumps(sort_keys=True)``, which no other language reproduces
+    reliably, and there were no deployed clients to keep working. What these
+    tests pin is that the deletion is real — a request pinning a dead version
+    is refused rather than silently falling back — and that the surviving
+    envelope is timezone-stable, which is why version 2 replaced version 1 in
+    the first place.
     """
 
     AGENT_ID = "4f0e4fd5-5e2f-4e95-a2d5-78b0a7b0d66a"
@@ -123,32 +125,29 @@ class TestSigVersion:
             sig_version=sig_version,
         )
 
-    def test_default_matches_version_2(self) -> None:
+    def test_default_is_jcs(self) -> None:
         ts = datetime(2026, 4, 17, 12, 0, 0, tzinfo=UTC)
-        assert self._hash(ts) == self._hash(ts, sig_version=2)
+        assert CryptoService.SIG_VERSION_DEFAULT == CryptoService.SIG_VERSION_JCS == 3
+        assert self._hash(ts) == self._hash(ts, sig_version=3)
 
-    def test_legacy_and_current_envelopes_hash_differently_for_offset_tz(
-        self,
-    ) -> None:
-        # A client in Paris that signs with the legacy envelope embeds
-        # "...+02:00"; the current envelope embeds the UTC-normalized "...Z".
-        # These must hash to different values so a server cannot confuse the
-        # two versions.
-        paris = timezone(timedelta(hours=2))
-        ts = datetime(2026, 4, 17, 14, 0, 0, tzinfo=paris)
-        legacy = self._hash(ts, sig_version=1)
-        current = self._hash(ts, sig_version=2)
-        assert legacy != current
+    def test_deleted_envelope_versions_are_refused(self) -> None:
+        ts = datetime(2026, 4, 17, 12, 0, 0, tzinfo=UTC)
+        for dead in (1, 2):
+            with pytest.raises(CryptoError, match="Only 3"):
+                self._hash(ts, sig_version=dead)
 
-    def test_legacy_envelope_is_timezone_dependent_by_design(self) -> None:
-        # This test pins the *old* ambiguous behavior so we remember why we
-        # added sig_version=2 in the first place. Two representations of
-        # the same instant hash differently under sig_version=1.
+    def test_surviving_envelope_is_timezone_stable(self) -> None:
+        """The property version 1 lacked: same instant, same hash.
+
+        Under the deleted version 1 these two representations of one instant
+        hashed differently, so a Paris client and a UTC client signing the
+        same action produced different signatures.
+        """
         utc_ts = datetime(2026, 4, 17, 12, 0, 0, tzinfo=UTC)
         paris_ts = datetime(
             2026, 4, 17, 14, 0, 0, tzinfo=timezone(timedelta(hours=2))
         )
-        assert self._hash(utc_ts, sig_version=1) != self._hash(paris_ts, sig_version=1)
+        assert self._hash(utc_ts) == self._hash(paris_ts)
 
     def test_unknown_sig_version_raises(self) -> None:
         ts = datetime(2026, 4, 17, 12, 0, 0, tzinfo=UTC)

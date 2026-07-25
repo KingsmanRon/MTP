@@ -1649,17 +1649,26 @@ async def verify_action(
         is_sandbox = bool(agent_meta.get("sandbox"))
 
         # STEP 3: Verify Ed25519 Signature
-        # The signing envelope version is echoed from the client so legacy
-        # agents signing with sig_version=1 continue to verify. New agents
-        # should pin sig_version=2 (the default), which normalizes the
-        # timestamp to canonical UTC. See Phase 0.3 / 0.4 in the
-        # enterprise-readiness plan.
+        #
+        # The envelope binds the caller's asserted registered_policy_hash, so
+        # the agent's signature covers the policy it claims to have run under.
+        # The asserted value is used here rather than the registered one
+        # because the signature must be checked before the policy record is
+        # loaded — a stale assertion would otherwise surface as
+        # signature_invalid (and a -20 trust penalty) instead of the accurate
+        # POLICY_HASH_MISMATCH. _check_policy_binding closes the loop below by
+        # rejecting any assertion that is not the registered document hash, so
+        # an approved action's hash always commits to the registered policy.
+        #
+        # That hash is also the anchored Merkle leaf, so this binding reaches
+        # on-chain with no contract change.
         action_hash = CryptoService.compute_action_hash(
             agent_id=str(request_data.agent_id),
             action_type=request_data.action_type,
             payload=request_data.payload,
             nonce=request_data.nonce,
             timestamp=request_data.timestamp,
+            registered_policy_hash=request_data.policy_hash,
             sig_version=request_data.sig_version,
         )
         signature_slot = await _acquire_agent_signature_slot(redis_conn, agent.id)
@@ -2135,6 +2144,7 @@ async def verify_debug(
             payload=request_data.payload,
             nonce=request_data.nonce,
             timestamp=request_data.timestamp,
+            registered_policy_hash=request_data.policy_hash,
             sig_version=request_data.sig_version,
         )
     except Exception as exc:
@@ -2373,6 +2383,7 @@ async def verify_token(
                 payload=request_data.payload,
                 nonce=request_data.nonce,
                 timestamp=request_data.timestamp,
+                registered_policy_hash=request_data.policy_hash,
                 sig_version=request_data.sig_version,
             )
         except Exception:

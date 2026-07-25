@@ -56,6 +56,11 @@ class VerifyActionRequest(BaseModel):
     ## Minimum Required Fields (checked at model level)
     - agent_id, action_type, payload, signature, nonce, timestamp, policy_hash
 
+    ``policy_hash`` is the caller's assertion of the registered policy document
+    it ran under. It is bound into the signing envelope, so the signature
+    covers it; the server separately rejects a value that does not match the
+    policy registered for the agent.
+
     ## Expected Payload Sub-fields (not enforced at model level, adapter-specific)
     The ``payload`` dict is adapter-specific. For the standard runtime envelope,
     the following keys are expected:
@@ -114,30 +119,24 @@ class VerifyActionRequest(BaseModel):
         description="SHA-256 hash of .inntris.yml policy file"
     )
 
-    # Signing-envelope version. Phase 0.4 introduced this field so the wire
-    # format of ``compute_action_hash`` can evolve without silently breaking
-    # older SDKs. Clients should pin the version they signed with; the
-    # server uses it to select the matching canonicalization.
+    # Signing-envelope version. Exactly one version exists: 3, RFC 8785 JCS
+    # for both the payload hash and the outer envelope, with
+    # registered_policy_hash bound in so the signature covers the policy in
+    # force. See tests/fixtures/canonicalization/jcs_vectors.json for the
+    # cross-language contract.
     #
-    #   1 = legacy form: timestamp embedded verbatim via ``.isoformat()`` with
-    #       no tz normalization (pre-Phase-0.3 behavior).
-    #   2 = current form: timestamp normalized to UTC with a ``Z`` suffix by
-    #       ``CryptoService.canonicalize_timestamp``; see Phase 0.3.
-    #   3 = JCS form (Phase 1B.1): payload + signing envelope canonicalized
-    #       via RFC 8785. Required for byte-identical hashes from non-Python
-    #       SDKs. See tests/fixtures/canonicalization/jcs_vectors.json.
-    #
-    # Requests without ``sig_version`` are treated as version 2 — matching the
-    # current reference implementation.
+    # Versions 1 and 2 were removed rather than deprecated. Both used Python's
+    # json.dumps(sort_keys=True), which is not a cross-language contract, and
+    # there were no deployed clients on them to keep working.
     sig_version: int = Field(
-        2,
-        ge=1,
+        3,
+        ge=3,
         le=3,
         description=(
-            "Signing-envelope version. 3 = RFC 8785 JCS (Phase 1B.1). "
-            "2 = UTC-normalized timestamp (current default). "
-            "1 = legacy isoformat without tz normalization. "
-            "Defaults to 2 when omitted."
+            "Signing-envelope version. 3 (RFC 8785 JCS) is the only version. "
+            "Versions 1 and 2 canonicalized with Python's sorted-JSON, which no "
+            "other language can reliably reproduce; they were removed rather "
+            "than deprecated. A request pinning 1 or 2 is rejected."
         ),
     )
 
@@ -205,7 +204,12 @@ class VerifyTokenRequest(BaseModel):
     payload: dict[str, Any] | None = None
     nonce: str | None = Field(None, max_length=64)
     timestamp: str | None = None
-    sig_version: int = Field(2, ge=1, le=3)
+    # Must carry the same value the agent signed. Envelope v3 binds
+    # registered_policy_hash into the action hash, so omitting it here
+    # recomputes a different hash and the consume is refused — which is the
+    # correct outcome, but the caller needs the field to succeed legitimately.
+    policy_hash: str | None = Field(None, max_length=64)
+    sig_version: int = Field(3, ge=3, le=3)
     consume: bool = Field(
         default=False,
         description=(
