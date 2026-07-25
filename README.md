@@ -585,14 +585,45 @@ black --check .
 Backend unit tests live in `tests/` and run against the Python package with `PYTHONPATH=.`:
 
 ```bash
-# Python unit tests
+# Python unit + integration tests
 PYTHONPATH=. pytest tests/
 
 # Frontend (Jest — type-check, lint, invariant & unit tests)
 cd frontend && npm test
+
+# GitHub Action bundle
+cd github-action && npm test
+
+# Solidity contracts (requires Foundry)
+forge test
 ```
 
-Integration tests (end-to-end against a real Postgres + Redis + anchored chain) and blockchain-specific test suites are not included in this repository yet — see `docs/ENTERPRISE_READINESS_ASSESSMENT.md` for the planned rollout.
+#### Test counts
+
+Measured on CI run [#56](https://github.com/KingsmanRon/MTP/actions/runs/30152396405),
+commit `1c2dd54`, **2026-07-25**. Every figure below comes from that run, not from an
+estimate — reproduce it with the commands above.
+
+| Suite | Runner | Result |
+|---|---|---|
+| Python (`api`, `workers`, `evidence_pack`, `scripts`) | pytest 9.1 / Python 3.12 | 447 passed, 0 skipped |
+| Solidity (`contracts/`) | forge | 19 passed, 0 failed, 0 skipped |
+| Frontend | Jest, 10 suites | 70 passed |
+| GitHub Action | node:test | 19 passed, 0 failed |
+
+Quote this figure with its date, or re-run and quote your own. A bare test count with no
+date and no scope is not evidence of anything.
+
+The Python integration cases — tenant RLS, GDPR erasure, Redis abuse limits, release
+environment checks, and the anchoring selection query — need live Postgres and Redis. CI
+provides both as service containers (`postgres:16.14`, `redis:7.4.7`) with
+`INNTRIS_DB_INTEGRATION=1` and `INNTRIS_REDIS_INTEGRATION=1`, so they run on every push and
+the CI run reports **zero skips**. Locally, without those services, the same run reports
+432 passed and 15 skipped; see `docs/LOCAL_DEVELOPMENT.md` to run them against a local
+stack.
+
+Not covered by any suite: end-to-end tests against a live anchored chain. See
+`docs/ENTERPRISE_READINESS_ASSESSMENT.md`.
 
 ---
 
