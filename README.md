@@ -600,13 +600,12 @@ forge test
 
 #### Test counts
 
-Measured on CI run [#56](https://github.com/KingsmanRon/MTP/actions/runs/30152396405),
-commit `1c2dd54`, **2026-07-25**. Every figure below comes from that run, not from an
-estimate — reproduce it with the commands above.
+Read from CI run [#55](https://github.com/KingsmanRon/MTP/actions/runs/30151740038),
+commit `ddf0327`, **2026-07-25**. Reproduce with the commands above.
 
 | Suite | Runner | Result |
 |---|---|---|
-| Python (`api`, `workers`, `evidence_pack`, `scripts`) | pytest 9.1 / Python 3.12 | 447 passed, 0 skipped |
+| Python (`api`, `workers`, `evidence_pack`, `scripts`) | pytest 9.1 / Python 3.12 | 446 passed, 0 skipped |
 | Solidity (`contracts/`) | forge | 19 passed, 0 failed, 0 skipped |
 | Frontend | Jest, 10 suites | 70 passed |
 | GitHub Action | node:test | 19 passed, 0 failed |
@@ -618,9 +617,12 @@ The Python integration cases — tenant RLS, GDPR erasure, Redis abuse limits, r
 environment checks, and the anchoring selection query — need live Postgres and Redis. CI
 provides both as service containers (`postgres:16.14`, `redis:7.4.7`) with
 `INNTRIS_DB_INTEGRATION=1` and `INNTRIS_REDIS_INTEGRATION=1`, so they run on every push and
-the CI run reports **zero skips**. Locally, without those services, the same run reports
-432 passed and 15 skipped; see `docs/LOCAL_DEVELOPMENT.md` to run them against a local
-stack.
+the CI run reports **zero skips**. Locally, without those services, the same suite reports
+431 passed and 15 skipped at that commit; see `docs/LOCAL_DEVELOPMENT.md` to run them
+against a local stack.
+
+Commits after `ddf0327` add tests, so the counts above are a floor, not a running total.
+Re-read them from the latest CI run before quoting them anywhere public.
 
 Not covered by any suite: end-to-end tests against a live anchored chain. See
 `docs/ENTERPRISE_READINESS_ASSESSMENT.md`.
