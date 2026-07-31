@@ -117,10 +117,12 @@ export default async function InntrisCoreDarkPreview() {
       />
     <LandingHash />
     <div className="theme-light min-h-screen bg-background text-foreground">
-      <header className="sticky top-0 z-30 border-b border-border bg-background/90 backdrop-blur">
+      <header className="sticky top-0 z-30 border-b border-border bg-muted/95 backdrop-blur">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4 lg:px-8">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-tileLine bg-tile">
+            {/* White against the grey header — the tile always flips against
+                its ground, and bg-tile is the same value as bg-muted. */}
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-tileLine bg-card">
               <InntrisLogo className="h-6 w-6" />
             </div>
             <div>
