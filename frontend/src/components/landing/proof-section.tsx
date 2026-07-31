@@ -5,24 +5,26 @@ import { Reveal, RevealGroup } from "@/components/landing/reveal";
 import { cn } from "@/lib/utils";
 
 /**
- * Proof — the two public repositories whose pull requests Inntris blocked.
+ * Proof — the two public Inntris repositories.
  *
  * Everything in this section is static and public on purpose, so it links
- * straight out rather than proxying anything through the API.
+ * straight out rather than proxying anything through the API. Each card's copy
+ * is taken from that repository's own README, so it stays true if someone
+ * clicks through.
  */
 
 const repositories = [
   {
-    name: "Inntris/agent-orchestrator-guardrails",
-    label: "Live demo",
-    body: "Action-level governance for AI agent pull requests. When an agent opens a PR, Inntris evaluates it against your policy, issues a signed PASS or BLOCK verdict, and anchors a cryptographic receipt on-chain.",
-    href: "https://github.com/Inntris/agent-orchestrator-guardrails",
+    name: "Inntris/inntris-verify",
+    label: "Offline verifier",
+    body: "The canonical, out-of-band publication channel for the evidence pack verifier and its signing keys. verify_pack.py checks the Ed25519 signature, every file hash, every receipt fingerprint, and every Merkle proof on stock Python with no network at all — verification that routes through the vendor of the evidence is circular.",
+    href: "https://github.com/Inntris/inntris-verify",
   },
   {
-    name: "Inntris/inntris-verify",
-    label: "GitHub Action",
-    body: "The Action that evaluates each pull request, classifies changed paths by risk, and issues the verdict. Workflow files and policy definitions are sensitive by default.",
-    href: "https://github.com/Inntris/inntris-verify",
+    name: "Inntris/inntris-x402-policy-adapter",
+    label: "Reference implementation",
+    body: "Inntris does not move money. It proves the exact payment was authorised by organisational policy before another system moves it. A rail-independent decision envelope and a fail-closed adapter for the official x402 TypeScript SDK, where blocked, expired, tampered, and replayed decisions never reach settlement.",
+    href: "https://github.com/Inntris/inntris-x402-policy-adapter",
   },
 ] as const;
 
