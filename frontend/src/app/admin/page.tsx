@@ -34,7 +34,7 @@ function DashboardContent() {
       {/* Page header */}
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
-        <p className="text-sm text-[#7F8CA3]">Operational overview</p>
+        <p className="text-sm text-muted-foreground">Operational overview</p>
       </div>
 
       {/* Summary cards */}
@@ -75,14 +75,14 @@ function DashboardContent() {
       )}
 
       {/* Recent activity */}
-      <Card className="border-[#22314D] bg-[#0D1728]">
+      <Card className="border-tileLine bg-tile">
         <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle className="text-base text-[#F5F7FB]">
+          <CardTitle className="text-base text-foreground">
             Recent Activity
           </CardTitle>
           <Link
             href="/admin/audit"
-            className="text-xs text-[#8FB8FF] hover:underline"
+            className="text-xs text-brandInk hover:underline"
           >
             View all
           </Link>
@@ -118,16 +118,16 @@ function SummaryCard({
 }) {
   return (
     <Link href={href}>
-      <Card className="border-[#22314D] bg-[#0D1728] transition-colors hover:bg-[#101C31]">
+      <Card className="border-tileLine bg-tile transition-colors hover:bg-card">
         <CardContent className="flex items-center gap-4 p-5">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-[#22314D] bg-[#101C31]">
-            <Icon className="h-5 w-5 text-[#8FB8FF]" />
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-tileLine bg-card">
+            <Icon className="h-5 w-5 text-brandInk" />
           </div>
           <div>
-            <p className="text-2xl font-semibold tabular-nums text-[#F5F7FB]">
+            <p className="text-2xl font-semibold tabular-nums text-foreground">
               {value}
             </p>
-            <p className="text-xs text-[#7F8CA3]">{label}</p>
+            <p className="text-xs text-muted-foreground">{label}</p>
           </div>
         </CardContent>
       </Card>
@@ -141,7 +141,7 @@ function SkeletonTable({ rows }: { rows: number }) {
       {Array.from({ length: rows }).map((_, i) => (
         <div
           key={i}
-          className="h-10 animate-pulse rounded-lg bg-[#101C31]"
+          className="h-10 animate-pulse rounded-lg bg-card"
         />
       ))}
     </div>

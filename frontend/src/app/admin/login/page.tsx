@@ -58,33 +58,33 @@ export default function AdminLoginPage() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-[#07111F] p-4">
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(76,141,255,0.10),transparent_40%)]" />
-      <Card className="relative w-full max-w-md border-[#22314D] bg-[#0D1728]">
+    <div className="flex min-h-screen items-center justify-center bg-background p-4">
+      <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-accent/50 via-transparent to-transparent" />
+      <Card className="relative w-full max-w-md border-tileLine bg-tile">
         <CardHeader className="text-center">
-          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl border border-[#22314D] bg-[#101C31]">
+          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl border border-tileLine bg-card">
             <InntrisLogo className="h-8 w-8" />
           </div>
-          <CardTitle className="text-xl text-[#F5F7FB]">Admin Console</CardTitle>
-          <CardDescription className="text-[#7F8CA3]">
+          <CardTitle className="text-xl text-foreground">Admin Console</CardTitle>
+          <CardDescription className="text-muted-foreground">
             Enter your admin API key to continue
           </CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
-              <label htmlFor="apiKey" className="text-sm font-medium text-[#C4CFDE]">
+              <label htmlFor="apiKey" className="text-sm font-medium text-muted-foreground">
                 API Key
               </label>
               <div className="relative">
-                <Key className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#7F8CA3]" />
+                <Key className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
                   id="apiKey"
                   type="password"
                   placeholder="ink_..."
                   value={apiKey}
                   onChange={(e) => setApiKey(e.target.value)}
-                  className="border-[#22314D] bg-[#101C31] pl-10 text-[#F5F7FB] placeholder:text-[#4A5568]"
+                  className="border-tileLine bg-card pl-10 text-foreground placeholder:text-muted-foreground"
                   autoComplete="off"
                   autoFocus
                 />
@@ -100,7 +100,7 @@ export default function AdminLoginPage() {
 
             <Button
               type="submit"
-              className="w-full bg-[#4C8DFF] text-white hover:bg-[#3A7AEE]"
+              className="w-full bg-primary text-white hover:bg-primary"
               disabled={isLoading}
             >
               {isLoading ? (

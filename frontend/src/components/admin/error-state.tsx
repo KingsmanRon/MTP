@@ -17,9 +17,9 @@ export function AdminErrorState({
       <div className="mb-4 rounded-full bg-red-500/10 p-4">
         <AlertTriangle className="h-8 w-8 text-red-400" />
       </div>
-      <p className="mb-1 text-sm font-medium text-[#F5F7FB]">{message}</p>
+      <p className="mb-1 text-sm font-medium text-foreground">{message}</p>
       {detail && (
-        <p className="mb-4 max-w-md text-xs text-[#7F8CA3]">{detail}</p>
+        <p className="mb-4 max-w-md text-xs text-muted-foreground">{detail}</p>
       )}
       {onRetry && (
         <Button variant="outline" size="sm" onClick={onRetry}>

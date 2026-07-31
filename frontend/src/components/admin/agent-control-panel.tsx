@@ -188,15 +188,15 @@ export function AgentControlPanel({
 
   return (
     <div className="space-y-6">
-      <section className="rounded-xl border border-[#22314D] bg-[#101C31]/60 p-5">
+      <section className="rounded-xl border border-tileLine bg-card/60 p-5">
         <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
           <div className="flex gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-[#22314D] bg-[#0D1728] text-[#8FB8FF]">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-tileLine bg-tile text-brandInk">
               <Power className="h-5 w-5" />
             </div>
             <div>
-              <h3 className="font-medium text-[#F5F7FB]">Emergency execution control</h3>
-              <p className="mt-1 text-sm leading-6 text-[#7F8CA3]">
+              <h3 className="font-medium text-foreground">Emergency execution control</h3>
+              <p className="mt-1 text-sm leading-6 text-muted-foreground">
                 Suspending an agent makes every new action fail closed before execution.
               </p>
             </div>
@@ -205,7 +205,7 @@ export function AgentControlPanel({
             <Button
               onClick={() => changeStatus("active")}
               disabled={changingStatus}
-              className="bg-[#28C281] text-white hover:bg-[#28C281]/90"
+              className="bg-primary text-white hover:bg-primary/90"
             >
               Activate agent
             </Button>
@@ -223,8 +223,8 @@ export function AgentControlPanel({
 
       <section>
         <div className="mb-3 flex items-center gap-2">
-          <SlidersHorizontal className="h-4 w-4 text-[#8FB8FF]" />
-          <h3 className="text-sm font-medium text-[#C4CFDE]">Control presets</h3>
+          <SlidersHorizontal className="h-4 w-4 text-brandInk" />
+          <h3 className="text-sm font-medium text-muted-foreground">Control presets</h3>
         </div>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
           {AGENT_CONTROL_PRESETS.map((preset) => (
@@ -232,14 +232,14 @@ export function AgentControlPanel({
               key={preset.id}
               type="button"
               onClick={() => applyPreset(preset.id)}
-              className="rounded-xl border border-[#22314D] bg-[#101C31] p-4 text-left transition hover:border-[#4C8DFF] hover:bg-[#4C8DFF]/5"
+              className="rounded-xl border border-tileLine bg-card p-4 text-left transition hover:border-primary hover:bg-primary/5"
             >
-              <p className="text-sm font-medium text-[#F5F7FB]">{preset.label}</p>
-              <p className="mt-2 text-xs leading-5 text-[#7F8CA3]">{preset.description}</p>
+              <p className="text-sm font-medium text-foreground">{preset.label}</p>
+              <p className="mt-2 text-xs leading-5 text-muted-foreground">{preset.description}</p>
             </button>
           ))}
         </div>
-        <p className="mt-2 text-xs text-[#7F8CA3]">
+        <p className="mt-2 text-xs text-muted-foreground">
           Presets stage changes only. Review the controls below, then save.
         </p>
       </section>
@@ -272,14 +272,14 @@ export function AgentControlPanel({
         />
       </section>
 
-      <section className="rounded-xl border border-[#22314D] bg-[#101C31]/60 p-5">
+      <section className="rounded-xl border border-tileLine bg-card/60 p-5">
         <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_220px] md:items-center">
           <div>
             <div className="flex items-center gap-2">
-              <Gauge className="h-4 w-4 text-[#8FB8FF]" />
-              <h3 className="text-sm font-medium text-[#F5F7FB]">Trust score override</h3>
+              <Gauge className="h-4 w-4 text-brandInk" />
+              <h3 className="text-sm font-medium text-foreground">Trust score override</h3>
             </div>
-            <p className="mt-2 text-xs leading-5 text-[#7F8CA3]">
+            <p className="mt-2 text-xs leading-5 text-muted-foreground">
               Trust is earned automatically (+1 per approved action) and decays toward 50 over
               time. Set it directly to promote a vetted agent to a higher-trust action, or to
               demote a suspicious one immediately. Runtime and code actions each require a
@@ -302,8 +302,8 @@ export function AgentControlPanel({
 
       <section>
         <div className="mb-3">
-          <h3 className="text-sm font-medium text-[#C4CFDE]">Action permissions</h3>
-          <p className="mt-1 text-xs text-[#7F8CA3]">
+          <h3 className="text-sm font-medium text-muted-foreground">Action permissions</h3>
+          <p className="mt-1 text-xs text-muted-foreground">
             Blocked actions receive no approval token and cannot proceed through the protected path.
           </p>
         </div>
@@ -311,10 +311,10 @@ export function AgentControlPanel({
           {CONTROLLED_ACTION_GROUPS.map((group) => (
             <div key={group.id}>
               <div className="mb-3">
-                <h4 className="text-xs font-medium uppercase tracking-wide text-[#AAB7CC]">
+                <h4 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                   {group.label}
                 </h4>
-                <p className="mt-1 text-xs leading-5 text-[#7F8CA3]">{group.description}</p>
+                <p className="mt-1 text-xs leading-5 text-muted-foreground">{group.description}</p>
               </div>
               <div className="grid gap-3 md:grid-cols-2">
                 {CONTROLLED_ACTIONS.filter((action) => action.group === group.id).map((action) => {
@@ -324,17 +324,17 @@ export function AgentControlPanel({
                       key={action.id}
                       className={`rounded-xl border p-4 ${
                         isAllowed
-                          ? "border-[#28C281]/30 bg-[#28C281]/5"
+                          ? "border-primary/30 bg-primary/5"
                           : "border-red-500/25 bg-red-500/5"
                       }`}
                     >
                       <div className="flex items-start justify-between gap-4">
                         <div>
-                          <p className="text-sm font-medium text-[#F5F7FB]">{action.label}</p>
-                          <p className="mt-1 text-xs leading-5 text-[#7F8CA3]">
+                          <p className="text-sm font-medium text-foreground">{action.label}</p>
+                          <p className="mt-1 text-xs leading-5 text-muted-foreground">
                             {action.description}
                           </p>
-                          <code className="mt-2 inline-block text-[11px] text-[#8FB8FF]">
+                          <code className="mt-2 inline-block text-[11px] text-brandInk">
                             {action.id}
                           </code>
                           <TrustGateHint actionId={action.id} isAllowed={isAllowed} trust={Number(trustScore)} />
@@ -345,7 +345,7 @@ export function AgentControlPanel({
                           onChange={(event) =>
                             setActionDecision(action.id, event.target.value as "allow" | "block")
                           }
-                          className="w-24 border-[#22314D] bg-[#0D1728] text-xs"
+                          className="w-24 border-tileLine bg-tile text-xs"
                         >
                           <option value="allow">Allow</option>
                           <option value="block">Block</option>
@@ -361,15 +361,15 @@ export function AgentControlPanel({
       </section>
 
       {customControls.length > 0 && (
-        <section className="rounded-xl border border-[#22314D] bg-[#101C31]/50 p-4">
-          <p className="text-xs font-medium uppercase tracking-wide text-[#7F8CA3]">
+        <section className="rounded-xl border border-tileLine bg-card/50 p-4">
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
             Custom controls preserved
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
             {Array.from(new Set(customControls)).map((action) => (
               <code
                 key={action}
-                className="rounded-md border border-[#22314D] bg-[#0D1728] px-2 py-1 text-xs text-[#AAB7CC]"
+                className="rounded-md border border-tileLine bg-tile px-2 py-1 text-xs text-muted-foreground"
               >
                 {action}
               </code>
@@ -382,12 +382,12 @@ export function AgentControlPanel({
         <div
           className={`flex items-start gap-3 rounded-xl border p-4 text-sm ${
             message.kind === "success"
-              ? "border-[#28C281]/30 bg-[#28C281]/10 text-[#C4CFDE]"
+              ? "border-primary/30 bg-primary/10 text-muted-foreground"
               : "border-red-500/30 bg-red-500/10 text-red-300"
           }`}
         >
           {message.kind === "success" ? (
-            <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-[#28C281]" />
+            <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
           ) : (
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-red-400" />
           )}
@@ -395,8 +395,8 @@ export function AgentControlPanel({
         </div>
       )}
 
-      <div className="flex justify-end border-t border-[#22314D] pt-5">
-        <Button onClick={savePolicy} disabled={saving} className="bg-[#4C8DFF] text-white">
+      <div className="flex justify-end border-t border-tileLine pt-5">
+        <Button onClick={savePolicy} disabled={saving} className="bg-primary text-white">
           <Save className="mr-2 h-4 w-4" />
           {saving ? "Saving controls..." : "Save controls"}
         </Button>
@@ -429,12 +429,12 @@ function ControlInput({
   const resolvedMin = min ?? (integer ? 1 : 0);
   const resolvedMax = max ?? (integer ? 10000 : undefined);
   return (
-    <div className="rounded-xl border border-[#22314D] bg-[#101C31]/60 p-4">
+    <div className="rounded-xl border border-tileLine bg-card/60 p-4">
       <div className="flex items-center gap-2">
-        <Icon className="h-4 w-4 text-[#8FB8FF]" />
-        <label className="text-sm font-medium text-[#F5F7FB]">{label}</label>
+        <Icon className="h-4 w-4 text-brandInk" />
+        <label className="text-sm font-medium text-foreground">{label}</label>
       </div>
-      <p className="mt-2 min-h-10 text-xs leading-5 text-[#7F8CA3]">{description}</p>
+      <p className="mt-2 min-h-10 text-xs leading-5 text-muted-foreground">{description}</p>
       <div className="mt-3 flex items-center gap-2">
         <Input
           aria-label={label}
@@ -444,9 +444,9 @@ function ControlInput({
           step={integer ? "1" : "0.01"}
           value={value}
           onChange={(event) => onChange(event.target.value)}
-          className="border-[#22314D] bg-[#0D1728] font-mono"
+          className="border-tileLine bg-tile font-mono"
         />
-        <span className="shrink-0 text-xs text-[#7F8CA3]">{suffix}</span>
+        <span className="shrink-0 text-xs text-muted-foreground">{suffix}</span>
       </div>
     </div>
   );
@@ -466,11 +466,11 @@ function TrustGateHint({
 }) {
   const threshold = ACTION_TRUST_THRESHOLDS[actionId];
   if (threshold === null) {
-    return <p className="mt-2 text-[11px] text-[#7F8CA3]">Pass-through · no trust gate</p>;
+    return <p className="mt-2 text-[11px] text-muted-foreground">Pass-through · no trust gate</p>;
   }
   const blockedByTrust = isAllowed && Number.isFinite(trust) && trust < threshold;
   return (
-    <p className={`mt-2 text-[11px] ${blockedByTrust ? "text-[#E0A100]" : "text-[#7F8CA3]"}`}>
+    <p className={`mt-2 text-[11px] ${blockedByTrust ? "text-warning" : "text-muted-foreground"}`}>
       Requires trust ≥ {threshold}
       {blockedByTrust ? ` · blocks at ${trust}` : ""}
     </p>

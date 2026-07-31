@@ -30,7 +30,7 @@ export function CopyableMonoValue({
   return (
     <button
       onClick={handleCopy}
-      className="group inline-flex items-center gap-1 font-mono text-xs text-[#AAB7CC] transition-colors hover:text-[#F5F7FB]"
+      className="group inline-flex items-center gap-1 font-mono text-xs text-muted-foreground transition-colors hover:text-foreground"
       title={value}
     >
       <span>{display}</span>

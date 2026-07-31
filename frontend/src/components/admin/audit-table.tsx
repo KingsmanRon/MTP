@@ -34,30 +34,30 @@ export function AuditTable({
   return (
     <Table>
       <TableHeader>
-        <TableRow className="border-[#22314D] hover:bg-transparent">
-          <TableHead className="text-[#7F8CA3]">Audit ID</TableHead>
-          <TableHead className="text-[#7F8CA3]">Time</TableHead>
+        <TableRow className="border-tileLine hover:bg-transparent">
+          <TableHead className="text-muted-foreground">Audit ID</TableHead>
+          <TableHead className="text-muted-foreground">Time</TableHead>
           {showAgentName && (
-            <TableHead className="text-[#7F8CA3]">Agent</TableHead>
+            <TableHead className="text-muted-foreground">Agent</TableHead>
           )}
-          <TableHead className="text-[#7F8CA3]">Action Type</TableHead>
-          <TableHead className="text-[#7F8CA3]">Verdict</TableHead>
-          <TableHead className="text-[#7F8CA3]">On-chain</TableHead>
-          <TableHead className="text-[#7F8CA3]">Receipt</TableHead>
+          <TableHead className="text-muted-foreground">Action Type</TableHead>
+          <TableHead className="text-muted-foreground">Verdict</TableHead>
+          <TableHead className="text-muted-foreground">On-chain</TableHead>
+          <TableHead className="text-muted-foreground">Receipt</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
         {logs.map((log) => (
-          <TableRow key={log.id} className="border-[#22314D]">
+          <TableRow key={log.id} className="border-tileLine">
             <TableCell>
               <Link
                 href={`/admin/audit/${log.id}`}
-                className="font-mono text-xs text-[#8FB8FF] hover:underline"
+                className="font-mono text-xs text-brandInk hover:underline"
               >
                 {log.id.slice(0, 8)}...
               </Link>
             </TableCell>
-            <TableCell className="font-mono text-xs text-[#AAB7CC]">
+            <TableCell className="font-mono text-xs text-muted-foreground">
               {log.timestamp ? formatDateTime(log.timestamp) : "—"}
             </TableCell>
             {showAgentName && (
@@ -65,17 +65,17 @@ export function AuditTable({
                 {log.agent_id ? (
                   <Link
                     href={`/admin/agents/${log.agent_id}`}
-                    className="text-sm text-[#8FB8FF] hover:underline"
+                    className="text-sm text-brandInk hover:underline"
                   >
                     {log.agent_name || log.agent_id.slice(0, 8)}
                   </Link>
                 ) : (
-                  <span className="text-sm text-[#7F8CA3]">—</span>
+                  <span className="text-sm text-muted-foreground">—</span>
                 )}
               </TableCell>
             )}
             <TableCell>
-              <span className="font-mono text-xs text-[#AAB7CC]">
+              <span className="font-mono text-xs text-muted-foreground">
                 {log.action_type || "—"}
               </span>
             </TableCell>
@@ -83,7 +83,7 @@ export function AuditTable({
               {log.verdict ? (
                 <AdminVerdictBadge verdict={log.verdict} />
               ) : (
-                <span className="text-xs text-[#7F8CA3]">—</span>
+                <span className="text-xs text-muted-foreground">—</span>
               )}
             </TableCell>
             <TableCell>
@@ -93,7 +93,7 @@ export function AuditTable({
                   Anchored
                 </span>
               ) : (
-                <span className="text-xs text-[#7F8CA3]">Pending</span>
+                <span className="text-xs text-muted-foreground">Pending</span>
               )}
             </TableCell>
             <TableCell>
@@ -101,7 +101,7 @@ export function AuditTable({
                 href={`/verify/${log.id}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 text-xs text-[#8FB8FF] hover:underline"
+                className="inline-flex items-center gap-1 text-xs text-brandInk hover:underline"
               >
                 View
                 <ExternalLink className="h-3 w-3" />

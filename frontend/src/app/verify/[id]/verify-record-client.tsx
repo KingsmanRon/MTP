@@ -35,13 +35,13 @@ const blockNumberFormatter = new Intl.NumberFormat("en-GB");
 
 function actionBadgeColor(action: string) {
   const map: Record<string, string> = {
-    financial_transaction: "border-[#f59e0b]/30 bg-[#f59e0b]/10 text-[#f59e0b]",
-    email_send: "border-[#8b5cf6]/30 bg-[#8b5cf6]/10 text-[#8b5cf6]",
-    data_export: "border-[#ec4899]/30 bg-[#ec4899]/10 text-[#ec4899]",
-    admin_action: "border-[#ef4444]/30 bg-[#ef4444]/10 text-[#ef4444]",
-    api_call: "border-[#4C8DFF]/30 bg-[#4C8DFF]/10 text-[#8FB8FF]",
+    financial_transaction: "border-warning/30 bg-warning/10 text-warning",
+    email_send: "border-primary/30 bg-primary/10 text-primary",
+    data_export: "border-primary/30 bg-primary/10 text-primary",
+    admin_action: "border-destructive/30 bg-destructive/10 text-destructive",
+    api_call: "border-primary/30 bg-primary/10 text-brandInk",
   };
-  return map[action] ?? "border-[#7F8CA3]/30 bg-[#7F8CA3]/10 text-[#AAB7CC]";
+  return map[action] ?? "border-[hsl(var(--muted-foreground))]/30 bg-[hsl(var(--muted-foreground))]/10 text-muted-foreground";
 }
 
 function truncateHash(hash: string, chars = 10) {
@@ -55,23 +55,23 @@ function truncateHash(hash: string, chars = 10) {
 
 function checkStatusColor(s: CheckStatus) {
   switch (s) {
-    case "verified": return "text-[#22c55e]";
-    case "pending": return "text-[#f59e0b]";
-    case "failed": return "text-[#ef4444]";
-    case "not_applicable": return "text-[#7F8CA3]";
+    case "verified": return "text-success";
+    case "pending": return "text-warning";
+    case "failed": return "text-destructive";
+    case "not_applicable": return "text-muted-foreground";
   }
 }
 
 function CheckIcon({ status }: { status: CheckStatus }) {
   switch (status) {
     case "verified":
-      return <CheckCircle2 className="h-5 w-5 text-[#22c55e]" />;
+      return <CheckCircle2 className="h-5 w-5 text-success" />;
     case "pending":
-      return <Clock className="h-5 w-5 text-[#f59e0b]" />;
+      return <Clock className="h-5 w-5 text-warning" />;
     case "failed":
-      return <XOctagon className="h-5 w-5 text-[#ef4444]" />;
+      return <XOctagon className="h-5 w-5 text-destructive" />;
     case "not_applicable":
-      return <ShieldCheck className="h-5 w-5 text-[#7F8CA3]" />;
+      return <ShieldCheck className="h-5 w-5 text-muted-foreground" />;
   }
 }
 
@@ -88,18 +88,18 @@ function CopyableHash({ value, label }: { value: string; label?: string }) {
   };
   return (
     <div className="flex items-center gap-2">
-      <code className="text-sm font-mono text-[#8FB8FF] break-all">
+      <code className="text-sm font-mono text-brandInk break-all">
         {label ?? value}
       </code>
       <button
         onClick={handleCopy}
-        className="flex-shrink-0 p-1 rounded hover:bg-white/5 transition-colors"
+        className="flex-shrink-0 p-1 rounded hover:bg-tile transition-colors"
         title="Copy to clipboard"
       >
         {copied ? (
-          <Check className="h-3.5 w-3.5 text-[#28C281]" />
+          <Check className="h-3.5 w-3.5 text-primary" />
         ) : (
-          <Copy className="h-3.5 w-3.5 text-[#7F8CA3]" />
+          <Copy className="h-3.5 w-3.5 text-muted-foreground" />
         )}
       </button>
     </div>
@@ -112,15 +112,15 @@ function CopyableHash({ value, label }: { value: string; label?: string }) {
 
 function Header({ onCopy, copied }: { onCopy: () => void; copied: boolean }) {
   return (
-    <header className="sticky top-0 z-20 border-b border-white/8 bg-[#07111F]/85 backdrop-blur">
+    <header className="sticky top-0 z-20 border-b border-tileLine bg-background/85 backdrop-blur">
       <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4 lg:px-8">
         <Link href="/" className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-[#22314D] bg-[#0D1728] shadow-[0_0_0_1px_rgba(255,255,255,0.02)]">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-tileLine bg-tile">
             <InntrisLogo className="h-6 w-6" />
           </div>
           <div>
-            <div className="text-lg font-semibold tracking-tight text-[#F5F7FB]">Inntris</div>
-            <div className="text-xs text-[#7F8CA3]">Verification receipt</div>
+            <div className="text-lg font-semibold tracking-tight text-foreground">Inntris</div>
+            <div className="text-xs text-muted-foreground">Verification receipt</div>
           </div>
         </Link>
         <div className="flex items-center gap-3">
@@ -128,10 +128,10 @@ function Header({ onCopy, copied }: { onCopy: () => void; copied: boolean }) {
             variant="outline"
             size="sm"
             onClick={onCopy}
-            className="border-[#22314D] bg-[#0D1728] text-[#F5F7FB] hover:bg-[#101C31] hover:text-white"
+            className="border-tileLine bg-tile text-foreground hover:bg-card hover:text-white"
           >
             {copied ? (
-              <Check className="h-4 w-4 mr-2 text-[#28C281]" />
+              <Check className="h-4 w-4 mr-2 text-primary" />
             ) : (
               <Copy className="h-4 w-4 mr-2" />
             )}
@@ -141,7 +141,7 @@ function Header({ onCopy, copied }: { onCopy: () => void; copied: boolean }) {
             <Button
               variant="outline"
               size="sm"
-              className="hidden border-[#22314D] bg-[#0D1728] text-[#F5F7FB] hover:bg-[#101C31] hover:text-white md:inline-flex"
+              className="hidden border-tileLine bg-tile text-foreground hover:bg-card hover:text-white md:inline-flex"
             >
               Verify another
             </Button>
@@ -165,20 +165,20 @@ export function VerifyRecordNotFound() {
   };
 
   return (
-    <div className="min-h-screen bg-[#07111F] text-[#F5F7FB]">
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(76,141,255,0.14),transparent_32%)] pointer-events-none" />
+    <div className="min-h-screen bg-background text-foreground">
+      <div className="absolute inset-0 bg-gradient-to-b from-accent/50 via-transparent to-transparent pointer-events-none" />
       <Header onCopy={handleCopy} copied={copied} />
       <main className="relative mx-auto max-w-lg px-6 py-20 text-center">
-        <div className="rounded-[28px] border border-[#22314D] bg-[#0D1728] p-10">
-          <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-full bg-[#ef4444]/15">
-            <XOctagon className="h-8 w-8 text-[#ef4444]" />
+        <div className="rounded-[28px] border border-tileLine bg-tile p-10">
+          <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-full bg-destructive/15">
+            <XOctagon className="h-8 w-8 text-destructive" />
           </div>
           <h1 className="text-2xl font-bold mb-2">Record not found</h1>
-          <p className="text-[#AAB7CC] mb-8">
+          <p className="text-muted-foreground mb-8">
             No verification record matches this ID or transaction hash. Check the value and try again.
           </p>
           <Link href="/verify">
-            <Button className="bg-[#4C8DFF] text-white hover:bg-[#6AA2FF]">
+            <Button className="bg-primary text-white hover:bg-brandInk">
               Back to verifier
             </Button>
           </Link>
@@ -262,9 +262,9 @@ function ProofCompletenessChecks({ record }: { record: PublicVerificationRecord 
   // Schema version gate
   if (!isSupportedSchemaVersion(record.schema_version)) {
     return (
-      <section className="mt-5 rounded-[28px] border border-[#f59e0b]/20 bg-[#f59e0b]/5 p-6 text-center">
-        <AlertTriangle className="mx-auto h-8 w-8 text-[#f59e0b] mb-3" />
-        <p className="text-sm text-[#f59e0b]">
+      <section className="mt-5 rounded-[28px] border border-warning/20 bg-warning/5 p-6 text-center">
+        <AlertTriangle className="mx-auto h-8 w-8 text-warning mb-3" />
+        <p className="text-sm text-warning">
           Unsupported schema version: {record.schema_version ?? "unknown"}
         </p>
       </section>
@@ -300,21 +300,21 @@ function ProofCompletenessChecks({ record }: { record: PublicVerificationRecord 
   ];
 
   return (
-    <section className="mt-5 rounded-[28px] border border-[#22314D] bg-[#0D1728] p-6 md:p-8">
+    <section className="mt-5 rounded-[28px] border border-tileLine bg-tile p-6 md:p-8">
       <div className="flex items-center gap-3 mb-5">
-        <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-[#22314D] bg-[#101C31] text-[#8FB8FF]">
+        <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-tileLine bg-card text-brandInk">
           <ShieldCheck className="h-5 w-5" />
         </div>
         <div>
           <h3 className="text-lg font-semibold">Proof completeness</h3>
-          <p className="text-xs text-[#7F8CA3]">
+          <p className="text-xs text-muted-foreground">
             Independent verification of receipt integrity
           </p>
         </div>
       </div>
 
       {record.integrity_status === "sandbox" && (
-        <div className="mb-5 rounded-2xl border border-[#f59e0b]/30 bg-[#f59e0b]/10 px-4 py-3 text-sm text-[#f59e0b]">
+        <div className="mb-5 rounded-2xl border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-warning">
           Sandbox receipt — this decision is cryptographically signed and
           independently verifiable, but is not anchored on-chain.
         </div>
@@ -324,12 +324,12 @@ function ProofCompletenessChecks({ record }: { record: PublicVerificationRecord 
         {checks.map((check) => (
           <div
             key={check.label}
-            className="flex items-center gap-4 rounded-2xl border border-white/6 bg-[#101C31]/70 p-4"
+            className="flex items-center gap-4 rounded-2xl border border-tileLine bg-card/70 p-4"
           >
             <CheckIcon status={check.status} />
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-[#F5F7FB]">{check.label}</p>
-              <p className="text-xs text-[#7F8CA3]">{check.sublabel}</p>
+              <p className="text-sm font-medium text-foreground">{check.label}</p>
+              <p className="text-xs text-muted-foreground">{check.sublabel}</p>
             </div>
             <span className={`text-xs font-bold ${checkStatusColor(check.status)}`}>
               {checkStatusUiLabel(check.status)}
@@ -361,8 +361,8 @@ export function VerifyRecordView({ record }: { record: PublicVerificationRecord 
     : null;
 
   return (
-    <div className="min-h-screen bg-[#07111F] text-[#F5F7FB]">
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(76,141,255,0.14),transparent_32%),radial-gradient(circle_at_80%_30%,rgba(143,184,255,0.08),transparent_24%)] pointer-events-none" />
+    <div className="min-h-screen bg-background text-foreground">
+      <div className="absolute inset-0 bg-gradient-to-b from-accent/50 via-transparent to-transparent pointer-events-none" />
 
       <Header onCopy={handleCopy} copied={copied} />
 
@@ -373,25 +373,25 @@ export function VerifyRecordView({ record }: { record: PublicVerificationRecord 
         <section
           className={`rounded-t-[28px] border border-b-0 p-8 text-center ${
             isPass
-              ? "border-[#22c55e]/20 bg-gradient-to-b from-[#22c55e]/10 to-[#0D1728]"
+              ? "border-success/20 bg-gradient-to-b from-success/10 to-tile"
               : isEscalate
-              ? "border-[#f59e0b]/20 bg-gradient-to-b from-[#f59e0b]/10 to-[#0D1728]"
-              : "border-[#ef4444]/20 bg-gradient-to-b from-[#ef4444]/10 to-[#0D1728]"
+              ? "border-warning/20 bg-gradient-to-b from-warning/10 to-tile"
+              : "border-destructive/20 bg-gradient-to-b from-destructive/10 to-tile"
           }`}
         >
           {/* Icon */}
           <div className="flex items-center justify-center mb-5">
             {isPass ? (
-              <div className="flex h-20 w-20 items-center justify-center rounded-full bg-[#22c55e]/15 ring-4 ring-[#22c55e]/10">
-                <CheckCircle2 className="h-10 w-10 text-[#22c55e]" />
+              <div className="flex h-20 w-20 items-center justify-center rounded-full bg-success/15 ring-4 ring-success/10">
+                <CheckCircle2 className="h-10 w-10 text-success" />
               </div>
             ) : isEscalate ? (
-              <div className="flex h-20 w-20 items-center justify-center rounded-full bg-[#f59e0b]/15 ring-4 ring-[#f59e0b]/10">
-                <AlertTriangle className="h-10 w-10 text-[#f59e0b]" />
+              <div className="flex h-20 w-20 items-center justify-center rounded-full bg-warning/15 ring-4 ring-warning/10">
+                <AlertTriangle className="h-10 w-10 text-warning" />
               </div>
             ) : (
-              <div className="flex h-20 w-20 items-center justify-center rounded-full bg-[#ef4444]/15 ring-4 ring-[#ef4444]/10">
-                <XOctagon className="h-10 w-10 text-[#ef4444]" />
+              <div className="flex h-20 w-20 items-center justify-center rounded-full bg-destructive/15 ring-4 ring-destructive/10">
+                <XOctagon className="h-10 w-10 text-destructive" />
               </div>
             )}
           </div>
@@ -399,12 +399,12 @@ export function VerifyRecordView({ record }: { record: PublicVerificationRecord 
           {/* Verdict text */}
           <h1
             className={`text-4xl font-bold tracking-tight mb-2 ${
-              isPass ? "text-[#22c55e]" : isEscalate ? "text-[#f59e0b]" : "text-[#ef4444]"
+              isPass ? "text-success" : isEscalate ? "text-warning" : "text-destructive"
             }`}
           >
             {verdictLabel(record.verdict)}
           </h1>
-          <p className="text-[#AAB7CC] mb-4">
+          <p className="text-muted-foreground mb-4">
             {record.verdict_reason ?? (isPass ? "All policy checks passed" : "Policy violation detected")}
           </p>
 
@@ -417,7 +417,7 @@ export function VerifyRecordView({ record }: { record: PublicVerificationRecord 
             >
               {record.action_type}
             </span>
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-[#101C31] px-3 py-1 text-xs text-[#AAB7CC]">
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-tileLine bg-card px-3 py-1 text-xs text-muted-foreground">
               <Clock className="h-3 w-3" />
               {formatDateTime(record.timestamp)}
             </span>
@@ -427,76 +427,76 @@ export function VerifyRecordView({ record }: { record: PublicVerificationRecord 
         {/* ============================================================ */}
         {/* 2. DetailsGrid — Agent card + Policy Decision card           */}
         {/* ============================================================ */}
-        <section className="border border-t-0 border-[#22314D] bg-[#0D1728] p-6 md:p-8">
+        <section className="border border-t-0 border-tileLine bg-tile p-6 md:p-8">
           <div className="grid gap-5 md:grid-cols-2">
             {/* Agent card */}
-            <div className="rounded-2xl border border-white/6 bg-[#101C31]/70 p-5">
+            <div className="rounded-2xl border border-tileLine bg-card/70 p-5">
               <div className="flex items-center gap-2 mb-4">
-                <Fingerprint className="h-4 w-4 text-[#8FB8FF]" />
-                <span className="text-sm font-semibold text-[#F5F7FB]">Agent</span>
+                <Fingerprint className="h-4 w-4 text-brandInk" />
+                <span className="text-sm font-semibold text-foreground">Agent</span>
               </div>
               <div className="space-y-3">
                 <div>
-                  <p className="text-xs text-[#7F8CA3]">Name</p>
+                  <p className="text-xs text-muted-foreground">Name</p>
                   <p className="text-sm font-medium">{record.agent_name}</p>
                 </div>
                 <div>
-                  <p className="text-xs text-[#7F8CA3]">Organization</p>
+                  <p className="text-xs text-muted-foreground">Organization</p>
                   <p className="text-sm font-medium">{record.organization_name}</p>
                 </div>
                 <div>
-                  <p className="text-xs text-[#7F8CA3]">Agent ID</p>
+                  <p className="text-xs text-muted-foreground">Agent ID</p>
                   <CopyableHash value={record.agent_id} />
                 </div>
               </div>
             </div>
 
             {/* Policy Decision card */}
-            <div className="rounded-2xl border border-white/6 bg-[#101C31]/70 p-5">
+            <div className="rounded-2xl border border-tileLine bg-card/70 p-5">
               <div className="flex items-center gap-2 mb-4">
-                <FileCheck2 className="h-4 w-4 text-[#8FB8FF]" />
-                <span className="text-sm font-semibold text-[#F5F7FB]">Policy decision</span>
+                <FileCheck2 className="h-4 w-4 text-brandInk" />
+                <span className="text-sm font-semibold text-foreground">Policy decision</span>
               </div>
               <div className="space-y-3">
                 <div>
-                  <p className="text-xs text-[#7F8CA3]">Verdict</p>
+                  <p className="text-xs text-muted-foreground">Verdict</p>
                   <span
                     className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-bold ${
                       isPass
-                        ? "border-[#22c55e]/30 bg-[#22c55e]/10 text-[#22c55e]"
+                        ? "border-success/30 bg-success/10 text-success"
                         : isEscalate
-                        ? "border-[#f59e0b]/30 bg-[#f59e0b]/10 text-[#f59e0b]"
-                        : "border-[#ef4444]/30 bg-[#ef4444]/10 text-[#ef4444]"
+                        ? "border-warning/30 bg-warning/10 text-warning"
+                        : "border-destructive/30 bg-destructive/10 text-destructive"
                     }`}
                   >
                     {verdictLabel(record.verdict)}
                   </span>
                 </div>
                 <div>
-                  <p className="text-xs text-[#7F8CA3]">Risk level</p>
+                  <p className="text-xs text-muted-foreground">Risk level</p>
                   <p className="text-sm font-medium">
                     {record.risk_level ? (
                       <span
                         className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-medium ${
                           record.risk_level === "critical"
-                            ? "border-[#ef4444]/30 bg-[#ef4444]/10 text-[#ef4444]"
+                            ? "border-destructive/30 bg-destructive/10 text-destructive"
                             : record.risk_level === "high"
-                            ? "border-[#f59e0b]/30 bg-[#f59e0b]/10 text-[#f59e0b]"
-                            : "border-[#7F8CA3]/30 bg-[#7F8CA3]/10 text-[#AAB7CC]"
+                            ? "border-warning/30 bg-warning/10 text-warning"
+                            : "border-[hsl(var(--muted-foreground))]/30 bg-[hsl(var(--muted-foreground))]/10 text-muted-foreground"
                         }`}
                       >
                         {record.risk_level}
                       </span>
                     ) : (
-                      <span className="text-[#7F8CA3]">—</span>
+                      <span className="text-muted-foreground">—</span>
                     )}
                   </p>
                 </div>
                 <div>
-                  <p className="text-xs text-[#7F8CA3]">Signature</p>
+                  <p className="text-xs text-muted-foreground">Signature</p>
                   <span
                     className={`inline-flex items-center gap-1 text-sm font-medium ${
-                      record.signature_valid ? "text-[#22c55e]" : "text-[#ef4444]"
+                      record.signature_valid ? "text-success" : "text-destructive"
                     }`}
                   >
                     {record.signature_valid ? (
@@ -512,12 +512,12 @@ export function VerifyRecordView({ record }: { record: PublicVerificationRecord 
                 </div>
                 {record.violations.length > 0 && (
                   <div>
-                    <p className="text-xs text-[#7F8CA3] mb-1.5">Violations</p>
+                    <p className="text-xs text-muted-foreground mb-1.5">Violations</p>
                     <ul className="space-y-1">
                       {record.violations.map((v, i) => (
                         <li
                           key={i}
-                          className="flex items-start gap-2 text-sm text-[#ef4444]"
+                          className="flex items-start gap-2 text-sm text-destructive"
                         >
                           <XOctagon className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
                           {v}
@@ -534,14 +534,14 @@ export function VerifyRecordView({ record }: { record: PublicVerificationRecord 
         {/* ============================================================ */}
         {/* 3. OnChainProof                                              */}
         {/* ============================================================ */}
-        <section className="rounded-b-[28px] border border-t-0 border-[#22314D] bg-[#0D1728] p-6 md:p-8">
+        <section className="rounded-b-[28px] border border-t-0 border-tileLine bg-tile p-6 md:p-8">
           <div className="flex items-center gap-3 mb-5">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-[#22314D] bg-[#101C31] text-[#8FB8FF]">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-tileLine bg-card text-brandInk">
               <Link2 className="h-5 w-5" />
             </div>
             <div>
               <h3 className="text-lg font-semibold">On-chain proof</h3>
-              <p className="text-xs text-[#7F8CA3]">
+              <p className="text-xs text-muted-foreground">
                 Anchored to Base L2 via Merkle tree
               </p>
             </div>
@@ -549,8 +549,8 @@ export function VerifyRecordView({ record }: { record: PublicVerificationRecord 
 
           <div className="space-y-3">
             {/* tx_hash */}
-            <div className="rounded-2xl border border-white/6 bg-[#101C31]/70 p-4">
-              <p className="text-xs text-[#7F8CA3] mb-1">Transaction hash</p>
+            <div className="rounded-2xl border border-tileLine bg-card/70 p-4">
+              <p className="text-xs text-muted-foreground mb-1">Transaction hash</p>
               {record.tx_hash ? (
                 <div className="flex items-center justify-between gap-3">
                   <CopyableHash value={record.tx_hash} />
@@ -564,7 +564,7 @@ export function VerifyRecordView({ record }: { record: PublicVerificationRecord 
                       <Button
                         size="sm"
                         variant="outline"
-                        className="border-[#22314D] bg-[#0D1728] text-[#8FB8FF] hover:bg-[#101C31] hover:text-white"
+                        className="border-tileLine bg-tile text-brandInk hover:bg-card hover:text-white"
                       >
                         <ExternalLink className="h-3.5 w-3.5 mr-1.5" />
                         BaseScan
@@ -573,53 +573,53 @@ export function VerifyRecordView({ record }: { record: PublicVerificationRecord 
                   )}
                 </div>
               ) : (
-                <p className="text-sm font-mono text-[#7F8CA3]">Pending anchoring…</p>
+                <p className="text-sm font-mono text-muted-foreground">Pending anchoring…</p>
               )}
             </div>
 
             {/* merkle_root */}
-            <div className="rounded-2xl border border-white/6 bg-[#101C31]/70 p-4">
-              <p className="text-xs text-[#7F8CA3] mb-1">Merkle root</p>
-              <code className="text-sm font-mono text-[#8FB8FF] break-all">
+            <div className="rounded-2xl border border-tileLine bg-card/70 p-4">
+              <p className="text-xs text-muted-foreground mb-1">Merkle root</p>
+              <code className="text-sm font-mono text-brandInk break-all">
                 {record.merkle_root ?? "Pending…"}
               </code>
             </div>
 
             {/* action_hash */}
-            <div className="rounded-2xl border border-white/6 bg-[#101C31]/70 p-4">
-              <p className="text-xs text-[#7F8CA3] mb-1">Action hash (SHA-256)</p>
+            <div className="rounded-2xl border border-tileLine bg-card/70 p-4">
+              <p className="text-xs text-muted-foreground mb-1">Action hash (SHA-256)</p>
               <CopyableHash value={record.action_hash} />
             </div>
 
             {/* policy_hash */}
-            <div className="rounded-2xl border border-white/6 bg-[#101C31]/70 p-4">
-              <p className="text-xs text-[#7F8CA3] mb-1">Policy hash (SHA-256)</p>
+            <div className="rounded-2xl border border-tileLine bg-card/70 p-4">
+              <p className="text-xs text-muted-foreground mb-1">Policy hash (SHA-256)</p>
               {record.policy_hash ? (
                 <CopyableHash value={record.policy_hash} />
               ) : (
-                <span className="text-sm font-mono text-[#7F8CA3]">Not applicable</span>
+                <span className="text-sm font-mono text-muted-foreground">Not applicable</span>
               )}
             </div>
 
             {/* Grid: block, chain, anchored */}
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              <div className="rounded-2xl border border-white/6 bg-[#101C31]/70 p-4">
-                <p className="text-xs text-[#7F8CA3] mb-1">Block</p>
-                <p className="text-sm font-mono text-[#F5F7FB]">
+              <div className="rounded-2xl border border-tileLine bg-card/70 p-4">
+                <p className="text-xs text-muted-foreground mb-1">Block</p>
+                <p className="text-sm font-mono text-foreground">
                   {record.block_number == null
                     ? "—"
                     : blockNumberFormatter.format(record.block_number)}
                 </p>
               </div>
-              <div className="rounded-2xl border border-white/6 bg-[#101C31]/70 p-4">
-                <p className="text-xs text-[#7F8CA3] mb-1">Chain</p>
-                <p className="text-sm font-mono text-[#F5F7FB]">
+              <div className="rounded-2xl border border-tileLine bg-card/70 p-4">
+                <p className="text-xs text-muted-foreground mb-1">Chain</p>
+                <p className="text-sm font-mono text-foreground">
                   Base Mainnet ({record.chain_id})
                 </p>
               </div>
-              <div className="rounded-2xl border border-white/6 bg-[#101C31]/70 p-4">
-                <p className="text-xs text-[#7F8CA3] mb-1">Anchored</p>
-                <p className="text-sm font-mono text-[#F5F7FB]">
+              <div className="rounded-2xl border border-tileLine bg-card/70 p-4">
+                <p className="text-xs text-muted-foreground mb-1">Anchored</p>
+                <p className="text-sm font-mono text-foreground">
                   {record.anchored_at ? formatDateTime(record.anchored_at) : "Pending"}
                 </p>
               </div>
@@ -630,19 +630,19 @@ export function VerifyRecordView({ record }: { record: PublicVerificationRecord 
         {/* ============================================================ */}
         {/* 3b. Trust score (advisory)                                   */}
         {/* ============================================================ */}
-        <section className="mt-3 rounded-2xl border border-white/6 bg-[#101C31]/70 p-4">
-          <p className="text-xs text-[#7F8CA3] mb-1">Trust score (advisory)</p>
+        <section className="mt-3 rounded-2xl border border-tileLine bg-card/70 p-4">
+          <p className="text-xs text-muted-foreground mb-1">Trust score (advisory)</p>
           <p
             className={`text-sm font-medium ${
               record.trust_score >= 70
-                ? "text-[#22c55e]"
+                ? "text-success"
                 : record.trust_score >= 40
-                ? "text-[#f59e0b]"
-                : "text-[#ef4444]"
+                ? "text-warning"
+                : "text-destructive"
             }`}
           >
             {record.trust_score}
-            <span className="text-xs text-[#7F8CA3]">/100</span>
+            <span className="text-xs text-muted-foreground">/100</span>
           </p>
         </section>
 
@@ -654,20 +654,20 @@ export function VerifyRecordView({ record }: { record: PublicVerificationRecord 
         {/* ============================================================ */}
         {/* 5. ConversionCTA                                             */}
         {/* ============================================================ */}
-        <section className="mt-8 rounded-[28px] border border-[#4C8DFF]/20 bg-gradient-to-b from-[#4C8DFF]/8 to-[#0D1728] p-8 text-center">
+        <section className="mt-8 rounded-[28px] border border-primary/20 bg-gradient-to-b from-primary/8 to-tile p-8 text-center">
           <h2 className="text-2xl font-semibold tracking-tight">
             Want PR protection for AI agent changes?
           </h2>
-          <p className="mx-auto mt-3 max-w-md text-base leading-7 text-[#AAB7CC]">
+          <p className="mx-auto mt-3 max-w-md text-base leading-7 text-muted-foreground">
             View the GitHub Actions example for PR protection. It shows how{" "}
-            <code className="font-mono text-[#8FB8FF]">inntris-verify</code>{" "}
+            <code className="font-mono text-brandInk">inntris-verify</code>{" "}
             runs as a required status check and records a PASS or BLOCK receipt.
           </p>
           <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
             <Link href="/ai-pr-protection">
               <Button
                 variant="outline"
-                className="border-[#22314D] bg-[#0D1728] text-[#F5F7FB] hover:bg-[#101C31] hover:text-white"
+                className="border-tileLine bg-tile text-foreground hover:bg-card hover:text-white"
               >
                 Learn more
               </Button>
@@ -677,13 +677,13 @@ export function VerifyRecordView({ record }: { record: PublicVerificationRecord 
       </main>
 
       {/* Footer */}
-      <footer className="border-t border-white/8 mt-12">
+      <footer className="border-t border-tileLine mt-12">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-8 lg:px-8">
           <div className="flex items-center gap-2">
             <InntrisLogo className="h-5 w-5" />
-            <span className="text-[#7F8CA3]">Inntris Core</span>
+            <span className="text-muted-foreground">Inntris Core</span>
           </div>
-          <p className="text-sm text-[#7F8CA3]">
+          <p className="text-sm text-muted-foreground">
             Cryptographic verification for AI agents
           </p>
         </div>

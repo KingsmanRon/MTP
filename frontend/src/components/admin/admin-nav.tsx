@@ -28,16 +28,16 @@ export function AdminNav() {
   };
 
   return (
-    <nav className="flex h-16 items-center justify-between border-b border-[#22314D] bg-[#07111F]/95 px-4 backdrop-blur sm:px-6">
+    <nav className="flex h-16 items-center justify-between border-b border-tileLine bg-background/95 px-4 backdrop-blur sm:px-6">
       <div className="flex items-center gap-3 sm:gap-8">
         {/* Brand */}
         <Link href="/admin" className="flex items-center gap-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-[#22314D] bg-[#0D1728]">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-tileLine bg-tile">
             <InntrisLogo className="h-5 w-5" />
           </div>
           <div className="leading-tight">
-            <div className="text-sm font-semibold text-[#F5F7FB]">Inntris</div>
-            <div className="text-[10px] text-[#7F8CA3]">Admin</div>
+            <div className="text-sm font-semibold text-foreground">Inntris</div>
+            <div className="text-[10px] text-muted-foreground">Admin</div>
           </div>
         </Link>
 
@@ -56,8 +56,8 @@ export function AdminNav() {
                 className={cn(
                   "flex items-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors",
                   isActive
-                    ? "bg-[#1A2744] text-[#F5F7FB]"
-                    : "text-[#7F8CA3] hover:bg-[#0D1728] hover:text-[#C4CFDE]"
+                    ? "bg-tile text-foreground"
+                    : "text-muted-foreground hover:bg-tile hover:text-muted-foreground"
                 )}
               >
                 <Icon className="h-4 w-4 shrink-0" />
@@ -75,7 +75,7 @@ export function AdminNav() {
         onClick={handleSignOut}
         disabled={signingOut}
         title="Sign Out"
-        className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-[#7F8CA3] transition-colors hover:bg-[#0D1728] hover:text-[#C4CFDE] disabled:opacity-50"
+        className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-tile hover:text-muted-foreground disabled:opacity-50"
       >
         <LogOut className="h-4 w-4 shrink-0" />
         <span className="hidden sm:inline">Sign Out</span>
