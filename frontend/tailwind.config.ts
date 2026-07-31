@@ -43,6 +43,11 @@ const config: Config = {
           DEFAULT: "hsl(var(--warning))",
           foreground: "hsl(var(--warning-foreground))",
         },
+        tile: "hsl(var(--tile))",
+        tileLine: "hsl(var(--tile-line))",
+        brandDeep: "hsl(var(--brand-deep))",
+        brandInk: "hsl(var(--brand-ink))",
+        vault: "hsl(var(--vault))",
       },
       borderRadius: {
         lg: "var(--radius)",
