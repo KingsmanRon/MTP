@@ -28,8 +28,10 @@ RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
 # Install Python dependencies
+# setuptools/wheel come from the base image's ensurepip and lag behind the
+# security-fixed releases, so upgrade them inside the venv before installing.
 COPY requirements.txt .
-RUN pip install --upgrade pip && \
+RUN pip install --upgrade pip 'setuptools>=78.1.1' wheel && \
     pip install -r requirements.txt
 
 # -----------------------------------------------------------------------------
@@ -55,6 +57,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Copy virtual environment from builder
 COPY --from=builder /opt/venv /opt/venv
+
+# Harden what the base image leaves behind. The image scan flags two packages
+# that only exist because the base image ships a full Python toolchain:
+#   * setuptools in the system site-packages, behind the fixed release.
+#   * msgpack, which pip vendors under pip/_vendor for its HTTP cache.
+# The service runs uvicorn out of /opt/venv and never installs anything at
+# runtime, so setuptools is upgraded where it is kept and both package
+# installers are removed. Must run after the venv is copied, since it strips
+# pip from the venv too. Explicit interpreter paths matter here: PATH puts the
+# venv first, so a bare `pip` would not reach the system copy.
+RUN /usr/local/bin/python -m pip install --no-cache-dir --upgrade 'setuptools>=78.1.1' \
+    && /usr/local/bin/python -m pip uninstall -y pip \
+    && /opt/venv/bin/python -m pip uninstall -y pip \
+    && rm -rf /root/.cache
 
 # Set working directory
 WORKDIR /app
