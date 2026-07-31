@@ -6,7 +6,7 @@ import { MobileMenu } from "@/components/mobile-menu";
 import ContactSection from "@/components/contact-section";
 import { ReceiptIdCopy } from "@/components/receipt-id-copy";
 import { LandingHash } from "@/components/landing-hash";
-import { Eyebrow, Num, Tile, IconTile, StepNumber, focusRing } from "@/components/landing/primitives";
+import { Eyebrow, Num, Tile, IconTile, focusRing } from "@/components/landing/primitives";
 import { cn } from "@/lib/utils";
 import { publicApi } from "@/lib/api";
 import { verdictLabel, isPassVerdict, isEscalateVerdict } from "@/lib/verdict";
@@ -162,12 +162,15 @@ export default async function InntrisCoreDarkPreview() {
         </div>
       </header>
       <main>
-        <section id="overview" className="scroll-mt-24 border-b border-border bg-background">
-          <div className="mx-auto grid max-w-7xl gap-12 px-6 pb-20 pt-10 lg:grid-cols-[1.15fr_0.85fr] lg:px-8 lg:pb-28">
+        <section
+          id="overview"
+          className="scroll-mt-24 bg-gradient-to-b from-accent/60 via-accent/10 to-background"
+        >
+          <div className="mx-auto grid max-w-7xl gap-12 px-6 pb-24 pt-14 lg:grid-cols-[1.1fr_0.9fr] lg:gap-16 lg:px-8">
           <div className="min-w-0 max-w-3xl">
-            <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-tileLine bg-tile px-3 py-1.5 font-mono text-xs text-brandInk">
+            <div className="mb-7 inline-flex items-center gap-2 rounded-full border border-primary/25 bg-card px-4 py-2 shadow-sm">
               <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-primary" />
-              Verification API live
+              <span className="text-sm text-brandInk">Verification API live</span>
             </div>
             <h1 className="max-w-3xl text-4xl font-semibold leading-[1.12] tracking-tight md:text-6xl mb-5">
               Stop unchecked AI-generated PRs from reaching{" "}
@@ -182,30 +185,38 @@ export default async function InntrisCoreDarkPreview() {
               allowed to make repo changes, edit CI/CD workflows, merge protected branches,
               or deploy.
             </p>
-            <ul className="flex flex-col gap-2 mb-8 max-w-lg">
+            {/* The lead-in term before the em dash is set in bold ink and the
+                rest stays muted. Splitting on " — " is presentation only — the
+                two halves rejoin to the original string exactly. */}
+            <ul className="flex flex-col gap-3.5 mb-8 max-w-xl">
               {[
                 "Cryptographic identity — Ed25519 signatures bind every action to its agent",
                 "Policy before execution — rate limits, spend caps, and allowlists enforced before the action runs",
                 "Tamper-evident audit — only logs anchored on Base L2 with receipt integrity you can verify yourself",
                 "Independently verifiable — anyone can check the receipt using the on-chain anchor alone. No Inntris account required.",
-              ].map((item) => (
-                <li
-                  key={item}
-                  className="text-sm text-muted-foreground pl-4 relative leading-relaxed before:content-[''] before:absolute before:left-0 before:top-[9px] before:w-1.5 before:h-px before:bg-primary"
-                >
-                  {item}
-                </li>
-              ))}
+              ].map((item) => {
+                const [term, ...rest] = item.split(" — ");
+                const detail = rest.join(" — ");
+                return (
+                  <li key={item} className="flex gap-3.5">
+                    <span aria-hidden="true" className="mt-3 h-0.5 w-3.5 shrink-0 rounded-full bg-primary" />
+                    <span className="text-[15px] leading-7 text-muted-foreground">
+                      <span className="font-semibold text-foreground">{term}</span>
+                      {detail ? <>{" — "}{detail}</> : null}
+                    </span>
+                  </li>
+                );
+              })}
             </ul>
             <p className="text-sm text-muted-foreground mb-8 max-w-lg leading-relaxed">
               Start with one risky workflow. In 14 days, Inntris instruments its control
               boundary and produces receipts for every allowed and blocked action.
             </p>
-            <div className="flex flex-wrap gap-3 mb-10">
+            <div className="flex flex-wrap gap-3">
               <Link
                 href="/pilot"
                 className={cn(
-                  "inline-flex min-h-11 items-center rounded-md bg-primary px-5 text-sm font-medium text-primary-foreground transition-colors hover:bg-brandDeep",
+                  "inline-flex min-h-12 items-center rounded-xl bg-primary px-6 text-[15px] font-semibold text-primary-foreground shadow-sm transition-colors hover:bg-brandDeep",
                   focusRing,
                 )}
               >
@@ -214,64 +225,78 @@ export default async function InntrisCoreDarkPreview() {
               <a
                 href="https://www.inntris.com/verify/d8dd0902-4750-42d2-9516-92bf6362e815"
                 className={cn(
-                  "inline-flex min-h-11 items-center rounded-md border border-input bg-background px-5 text-sm font-medium text-foreground transition-colors hover:bg-tile",
+                  "inline-flex min-h-12 items-center rounded-xl border border-tileLine bg-card px-6 text-[15px] font-semibold text-foreground shadow-sm transition-colors hover:bg-tile",
                   focusRing,
                 )}
               >
                 See live verification
               </a>
             </div>
-            {/* Dividers only when all four stats share a row; stacked 2x2 on
-                phones the divide-x borders land in odd places. */}
-            <div className="grid grid-cols-2 gap-y-6 border-t border-border pt-7 md:grid-cols-4 md:gap-y-0 md:divide-x md:divide-border">
-              {[
-                { value: "<100ms", label: "Verification latency" },
-                { value: "Ed25519", label: "Signing algorithm" },
-                { value: "Base L2", label: "Audit anchor" },
-                { value: "Fail-closed", label: "Default policy mode" },
-              ].map(({ value, label }) => (
-                <div key={label} className="pr-4 md:px-5 md:first:pl-0">
-                  <Num className="block text-lg font-semibold text-foreground mb-1">
-                    {value}
-                  </Num>
-                  <p className="text-[11px] uppercase tracking-widest text-muted-foreground">
-                    {label}
-                  </p>
-                </div>
-              ))}
-            </div>
           </div>
           <div className="min-w-0">
-            <div className="overflow-hidden rounded-lg border border-tileLine bg-tile">
-              <div className="border-b border-tileLine px-5 py-4">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <div className="text-sm font-medium text-foreground">Verification decision flow</div>
-                    <div className="mt-1 text-xs text-muted-foreground">Where Inntris sits in your stack</div>
+            <div className="overflow-hidden rounded-2xl border border-tileLine bg-card shadow-sm">
+              <div className="px-6 pt-6 pb-2">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-lg font-semibold tracking-tight text-foreground">Verification decision flow</div>
+                    <div className="mt-1 font-mono text-sm text-muted-foreground">Where Inntris sits in your stack</div>
                   </div>
-                  <div className="shrink-0 rounded-full bg-accent px-3 py-1 font-mono text-xs text-accent-foreground">
+                  <span className="inline-flex shrink-0 items-center gap-2 rounded-full bg-accent px-3 py-1.5 font-mono text-xs text-accent-foreground">
+                    <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-primary" />
                     live policy path
-                  </div>
+                  </span>
                 </div>
               </div>
-              <div className="space-y-3 p-5">
+              <div className="space-y-3 p-4">
                 {[
                   ["01", "Action requested", "Agent requests a code, data, API, or finance operation."],
                   ["02", "Policy evaluated", "Inntris checks permissions, risk, and execution context."],
                   ["03", "Decision signed", "Approved or blocked outcome is bound to the agent identity."],
                   ["04", "Proof recorded", "Evidence is written to the audit trail for later verification."],
                 ].map(([step, title, body]) => (
-                  <div key={step} className="flex gap-4 rounded-lg border border-tileLine bg-card p-4 transition duration-200 hover:-translate-y-1 hover:border-primary/40 hover:bg-tile hover:shadow-lg">
-                    <StepNumber>{step}</StepNumber>
+                  <div key={step} className="flex gap-4 rounded-xl bg-tile p-5 transition duration-200 hover:bg-accent">
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary">
+                      <Num className="text-xs font-semibold text-primary-foreground">{step}</Num>
+                    </span>
                     <div className="min-w-0">
-                      <div className="text-sm font-medium text-foreground">{title}</div>
-                      <div className="mt-1 text-sm leading-6 text-muted-foreground">{body}</div>
+                      <div className="font-semibold text-foreground">{title}</div>
+                      <div className="mt-1 text-[15px] leading-7 text-muted-foreground">{body}</div>
                     </div>
                   </div>
                 ))}
               </div>
             </div>
           </div>
+          </div>
+        </section>
+        {/* Full-bleed stat band: a 2px blue rule across the top, mono figures,
+            and one vertical divider between cells. */}
+        <section aria-label="Platform characteristics" className="border-t-2 border-primary bg-background">
+          <div className="mx-auto grid max-w-7xl grid-cols-2 px-6 lg:grid-cols-4 lg:px-8">
+            {[
+              { value: "<100ms", label: "Verification latency" },
+              { value: "Ed25519", label: "Signing algorithm" },
+              { value: "Base L2", label: "Audit anchor" },
+              { value: "Fail-closed", label: "Default policy mode" },
+            ].map(({ value, label }, i) => (
+              <div
+                key={label}
+                className={cn(
+                  "py-9 pr-6",
+                  // 2-up on phones: rule between the pair, rule above row two.
+                  i % 2 === 1 && "border-l border-border pl-6",
+                  i >= 2 && "border-t border-border",
+                  // 4-up from lg: one rule before every cell but the first.
+                  "lg:border-t-0",
+                  i === 0 ? "lg:pl-0" : "lg:border-l lg:border-border lg:pl-8",
+                )}
+              >
+                <Num className="block text-2xl font-semibold text-foreground md:text-3xl">
+                  {value}
+                </Num>
+                <p className="mt-2 text-sm text-muted-foreground">{label}</p>
+              </div>
+            ))}
           </div>
         </section>
         <section id="modules" className="scroll-mt-24 border-b border-border bg-muted">
