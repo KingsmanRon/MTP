@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import { cn } from "@/lib/utils";
 
 const FORMSPREE_ENDPOINT = "https://formspree.io/f/mpqjkbre";
 
@@ -12,6 +13,15 @@ const initialForm = {
   subject: "",
   message: "",
 };
+
+/** Shared focus treatment, matching the landing page primitives. */
+const focusRing =
+  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background";
+
+const fieldClasses =
+  "rounded-md border border-input bg-card px-4 py-3 font-sans text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground hover:border-primary/40 focus:border-primary focus:ring-2 focus:ring-ring/20";
+
+const labelClasses = "font-mono text-xs tracking-wide text-muted-foreground";
 
 /* ── Custom dropdown ────────────────────────────────────────────── */
 
@@ -66,12 +76,12 @@ function Dropdown({
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className="flex w-full items-center justify-between rounded-[12px] px-4 py-3 font-sans text-sm outline-none transition-all duration-200 hover:border-[#35507A] focus:border-[#4C8DFF] focus:ring-2 focus:ring-[#4C8DFF]/20"
-        style={{
-          background: "#0D1728",
-          border: open ? "1px solid #4C8DFF" : "1px solid #22314D",
-          color: selected ? "#F5F7FB" : "#7F8CA3",
-        }}
+        className={cn(
+          "flex w-full items-center justify-between rounded-md border bg-card px-4 py-3 font-sans text-sm transition-colors hover:border-primary/40",
+          open ? "border-primary" : "border-input",
+          selected ? "text-foreground" : "text-muted-foreground",
+          focusRing,
+        )}
         aria-haspopup="listbox"
         aria-expanded={open}
       >
@@ -81,10 +91,11 @@ function Dropdown({
           height="16"
           viewBox="0 0 16 16"
           fill="none"
-          className="shrink-0 transition-transform duration-200"
+          aria-hidden="true"
+          className="shrink-0 text-muted-foreground transition-transform duration-200"
           style={{ transform: open ? "rotate(180deg)" : "rotate(0deg)" }}
         >
-          <path d="M4 6L8 10L12 6" stroke="#7F8CA3" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+          <path d="M4 6L8 10L12 6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
       </button>
 
@@ -93,12 +104,7 @@ function Dropdown({
         <ul
           role="listbox"
           aria-activedescendant={value ? `${id}-opt-${value}` : undefined}
-          className="absolute left-0 right-0 z-50 mt-1 overflow-hidden rounded-[12px] py-1"
-          style={{
-            background: "#0D1728",
-            border: "1px solid #22314D",
-            boxShadow: "0 12px 32px rgba(0,0,0,0.45)",
-          }}
+          className="absolute left-0 right-0 z-50 mt-1 overflow-hidden rounded-md border border-tileLine bg-card py-1 shadow-lg"
         >
           {options.map((opt) => {
             const isSelected = opt.value === value;
@@ -112,28 +118,17 @@ function Dropdown({
                   onChange(name, opt.value);
                   setOpen(false);
                 }}
-                className="flex cursor-pointer items-center justify-between px-4 py-2.5 font-sans text-sm transition-colors duration-100"
-                style={{
-                  color: isSelected ? "#F5F7FB" : "#AAB7CC",
-                  background: isSelected ? "rgba(76,141,255,0.10)" : "transparent",
-                }}
-                onMouseEnter={(e) => {
-                  if (!isSelected) {
-                    e.currentTarget.style.background = "rgba(76,141,255,0.06)";
-                    e.currentTarget.style.color = "#F5F7FB";
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  if (!isSelected) {
-                    e.currentTarget.style.background = "transparent";
-                    e.currentTarget.style.color = "#AAB7CC";
-                  }
-                }}
+                className={cn(
+                  "flex cursor-pointer items-center justify-between px-4 py-2.5 font-sans text-sm transition-colors",
+                  isSelected
+                    ? "bg-accent text-foreground"
+                    : "text-muted-foreground hover:bg-tile hover:text-foreground",
+                )}
               >
                 <span>{opt.label}</span>
                 {isSelected && (
-                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                    <path d="M3.5 8.5L6.5 11.5L12.5 4.5" stroke="#4C8DFF" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true" className="text-primary">
+                    <path d="M3.5 8.5L6.5 11.5L12.5 4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
                   </svg>
                 )}
               </li>
@@ -205,26 +200,14 @@ export default function ContactSection() {
     }
   };
 
-  const inputStyles = {
-    background: "#0D1728",
-    border: "1px solid #22314D",
-    color: "#F5F7FB",
-  };
-
   return (
-    <section id="contact" className="px-6 py-24" style={{ background: "#07111F" }}>
+    <section id="contact" className="border-b border-border bg-background px-6 py-24">
       <div className="mx-auto max-w-5xl">
-        <p
-          className="mb-3 font-mono text-xs uppercase tracking-widest"
-          style={{ color: "#4C8DFF" }}
-        >
+        <p className="mb-3 border-l-[3px] border-primary pl-3 font-mono text-xs uppercase tracking-widest text-brandInk">
           Get in touch
         </p>
 
-        <h2
-          className="mb-12 font-sans text-3xl font-semibold"
-          style={{ color: "#F5F7FB" }}
-        >
+        <h2 className="mb-12 font-sans text-3xl font-semibold text-foreground">
           Talk to us about your agents.
         </h2>
 
@@ -232,47 +215,26 @@ export default function ContactSection() {
           <div>
             {status === "success" ? (
               <div
-                className="flex flex-col gap-4 rounded-[24px] p-8 shadow-[0_20px_60px_rgba(0,0,0,0.25)]"
-                style={{
-                  background:
-                    "linear-gradient(180deg, rgba(40,194,129,0.10) 0%, rgba(13,23,40,1) 40%)",
-                  border: "1px solid rgba(40,194,129,0.35)",
-                }}
+                className="flex flex-col gap-4 rounded-lg border border-success/30 bg-success/5 p-8"
                 aria-live="polite"
               >
                 <div className="flex items-center gap-3">
-                  <div
-                    className="flex h-10 w-10 items-center justify-center rounded-full"
-                    style={{
-                      background: "rgba(40,194,129,0.14)",
-                      border: "1px solid rgba(40,194,129,0.28)",
-                      color: "#28C281",
-                    }}
-                  >
+                  <div className="flex h-10 w-10 items-center justify-center rounded-full border border-success/30 bg-success/10 text-success">
                     ✓
                   </div>
                   <div>
-                    <p
-                      className="font-sans text-base font-semibold"
-                      style={{ color: "#F5F7FB" }}
-                    >
+                    <p className="font-sans text-base font-semibold text-foreground">
                       Message received
                     </p>
-                    <p className="font-sans text-sm" style={{ color: "#AAB7CC" }}>
+                    <p className="font-sans text-sm text-muted-foreground">
                       Thanks for reaching out. We will reply within 24 hours using the email
                       you provided.
                     </p>
                   </div>
                 </div>
 
-                <div
-                  className="rounded-[16px] px-4 py-3"
-                  style={{
-                    background: "rgba(13,23,40,0.78)",
-                    border: "1px solid rgba(40,194,129,0.18)",
-                  }}
-                >
-                  <p className="font-sans text-sm leading-relaxed" style={{ color: "#C4CFDE" }}>
+                <div className="rounded-md border border-tileLine bg-card px-4 py-3">
+                  <p className="font-sans text-sm leading-relaxed text-muted-foreground">
                     This inbox is used for design partner enquiries, technical questions, and
                     integration conversations. If your workflow is a fit, we will guide the
                     next step directly.
@@ -282,8 +244,10 @@ export default function ContactSection() {
                 <button
                   type="button"
                   onClick={() => setStatus("idle")}
-                  className="mt-1 w-fit text-sm font-sans underline underline-offset-4 transition-colors hover:opacity-90"
-                  style={{ color: "#4C8DFF" }}
+                  className={cn(
+                    "mt-1 w-fit rounded-sm font-sans text-sm text-brandInk underline underline-offset-4 transition-colors hover:text-brandDeep",
+                    focusRing,
+                  )}
                 >
                   Send another message
                 </button>
@@ -292,11 +256,7 @@ export default function ContactSection() {
               <form onSubmit={handleSubmit} className="flex flex-col gap-5">
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div className="flex flex-col gap-1.5">
-                    <label
-                      htmlFor="contact-name"
-                      className="font-mono text-xs tracking-wide"
-                      style={{ color: "#7F8CA3" }}
-                    >
+                    <label htmlFor="contact-name" className={labelClasses}>
                       Name
                     </label>
                     <input
@@ -307,17 +267,12 @@ export default function ContactSection() {
                       onChange={handleChange}
                       required
                       placeholder="Your name"
-                      className="rounded-[12px] px-4 py-3 font-sans text-sm outline-none transition-all duration-200 hover:border-[#35507A] focus:border-[#4C8DFF] focus:ring-2 focus:ring-[#4C8DFF]/20"
-                      style={inputStyles}
+                      className={fieldClasses}
                     />
                   </div>
 
                   <div className="flex flex-col gap-1.5">
-                    <label
-                      htmlFor="contact-email"
-                      className="font-mono text-xs tracking-wide"
-                      style={{ color: "#7F8CA3" }}
-                    >
+                    <label htmlFor="contact-email" className={labelClasses}>
                       Email
                     </label>
                     <input
@@ -328,19 +283,14 @@ export default function ContactSection() {
                       onChange={handleChange}
                       required
                       placeholder="you@company.com"
-                      className="rounded-[12px] px-4 py-3 font-sans text-sm outline-none transition-all duration-200 hover:border-[#35507A] focus:border-[#4C8DFF] focus:ring-2 focus:ring-[#4C8DFF]/20"
-                      style={inputStyles}
+                      className={fieldClasses}
                     />
                   </div>
                 </div>
 
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div className="flex flex-col gap-1.5">
-                    <label
-                      htmlFor="contact-framework"
-                      className="font-mono text-xs tracking-wide"
-                      style={{ color: "#7F8CA3" }}
-                    >
+                    <label htmlFor="contact-framework" className={labelClasses}>
                       Agent framework
                     </label>
                     <Dropdown
@@ -354,11 +304,7 @@ export default function ContactSection() {
                   </div>
 
                   <div className="flex flex-col gap-1.5">
-                    <label
-                      htmlFor="contact-risk"
-                      className="font-mono text-xs tracking-wide"
-                      style={{ color: "#7F8CA3" }}
-                    >
+                    <label htmlFor="contact-risk" className={labelClasses}>
                       What are your agents doing?
                     </label>
                     <Dropdown
@@ -373,11 +319,7 @@ export default function ContactSection() {
                 </div>
 
                 <div className="flex flex-col gap-1.5">
-                  <label
-                    htmlFor="contact-subject"
-                    className="font-mono text-xs tracking-wide"
-                    style={{ color: "#7F8CA3" }}
-                  >
+                  <label htmlFor="contact-subject" className={labelClasses}>
                     Subject
                   </label>
                   <input
@@ -388,17 +330,12 @@ export default function ContactSection() {
                     onChange={handleChange}
                     required
                     placeholder="e.g. Design partner inquiry / Technical question"
-                    className="rounded-[12px] px-4 py-3 font-sans text-sm outline-none transition-all duration-200 hover:border-[#35507A] focus:border-[#4C8DFF] focus:ring-2 focus:ring-[#4C8DFF]/20"
-                    style={inputStyles}
+                    className={fieldClasses}
                   />
                 </div>
 
                 <div className="flex flex-col gap-1.5">
-                  <label
-                    htmlFor="contact-message"
-                    className="font-mono text-xs tracking-wide"
-                    style={{ color: "#7F8CA3" }}
-                  >
+                  <label htmlFor="contact-message" className={labelClasses}>
                     Message
                   </label>
                   <textarea
@@ -409,13 +346,12 @@ export default function ContactSection() {
                     required
                     rows={5}
                     placeholder="Tell us about your agent stack, your use case, or any questions..."
-                    className="resize-none rounded-[12px] px-4 py-3 font-sans text-sm outline-none transition-all duration-200 hover:border-[#35507A] focus:border-[#4C8DFF] focus:ring-2 focus:ring-[#4C8DFF]/20"
-                    style={inputStyles}
+                    className={cn(fieldClasses, "resize-none")}
                   />
                 </div>
 
                 {status === "error" && (
-                  <p className="font-sans text-sm" style={{ color: "#ef4444" }}>
+                  <p className="font-sans text-sm text-destructive">
                     Something went wrong. Email us directly at sales@inntris.com
                   </p>
                 )}
@@ -423,12 +359,10 @@ export default function ContactSection() {
                 <button
                   type="submit"
                   disabled={status === "submitting"}
-                  className="w-fit rounded-[12px] px-6 py-3 font-sans text-sm font-medium transition-all duration-200 hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-50"
-                  style={{
-                    background: "#4C8DFF",
-                    color: "#F5F7FB",
-                    boxShadow: "0 10px 30px rgba(76, 141, 255, 0.18)",
-                  }}
+                  className={cn(
+                    "w-fit rounded-md bg-primary px-6 py-3 font-sans text-sm font-medium text-primary-foreground transition-colors hover:bg-brandDeep disabled:cursor-not-allowed disabled:opacity-50",
+                    focusRing,
+                  )}
                 >
                   {status === "submitting" ? "Sending..." : "Send message"}
                 </button>
@@ -444,64 +378,56 @@ export default function ContactSection() {
               </p>
               <div className="h-1.5" />
             </div>
-            <div
-              className="h-fit rounded-[12px] px-5 py-4"
-              style={{ background: "#0D1728", border: "1px solid #22314D" }}
-            >
-            <p className="font-sans text-sm leading-relaxed" style={{ color: "#AAB7CC" }}>
-              Whether you&apos;re exploring design partner opportunities, have technical
-              questions, or want to know how Inntris fits your agent stack, we respond
-              within 24 hours.
-            </p>
+            <div className="h-fit rounded-lg border border-tileLine bg-tile px-5 py-4">
+              <p className="font-sans text-sm leading-relaxed text-muted-foreground">
+                Whether you&apos;re exploring design partner opportunities, have technical
+                questions, or want to know how Inntris fits your agent stack, we respond
+                within 24 hours.
+              </p>
 
-            <div className="mt-3 flex flex-col gap-4">
-              <div className="flex flex-col gap-1">
-                <p
-                  className="font-mono text-xs uppercase tracking-wide"
-                  style={{ color: "#7F8CA3" }}
-                >
-                  Email
-                </p>
-                <a
-                  href="mailto:sales@inntris.com"
-                  className="w-fit font-mono text-sm underline-offset-4 transition-all duration-200 hover:underline focus:outline-none focus:ring-2 focus:ring-[#4C8DFF]/20"
-                  style={{ color: "#4C8DFF" }}
-                >
-                  sales@inntris.com
-                </a>
-              </div>
+              <div className="mt-3 flex flex-col gap-4">
+                <div className="flex flex-col gap-1">
+                  <p className="font-mono text-xs uppercase tracking-wide text-muted-foreground">
+                    Email
+                  </p>
+                  <a
+                    href="mailto:sales@inntris.com"
+                    className={cn(
+                      "w-fit rounded-sm font-mono text-sm text-brandInk underline-offset-4 transition-colors hover:underline",
+                      focusRing,
+                    )}
+                  >
+                    sales@inntris.com
+                  </a>
+                </div>
 
-              <div className="flex flex-col gap-1">
-                <p
-                  className="font-mono text-xs uppercase tracking-wide"
-                  style={{ color: "#7F8CA3" }}
-                >
-                  Response time
-                </p>
-                <p className="font-sans text-sm" style={{ color: "#C4CFDE" }}>
-                  Within 24 hours
-                </p>
+                <div className="flex flex-col gap-1">
+                  <p className="font-mono text-xs uppercase tracking-wide text-muted-foreground">
+                    Response time
+                  </p>
+                  <p className="font-sans text-sm text-foreground">
+                    Within 24 hours
+                  </p>
+                </div>
               </div>
             </div>
           </div>
-          </div>
         </div>
 
-        <div
-          className="mt-10 pt-6"
-          style={{ borderTop: "1px solid #22314D" }}
-        >
-          <p className="text-center font-sans text-sm leading-relaxed" style={{ color: "#7F8CA3" }}>
+        <div className="mt-10 border-t border-border pt-6">
+          <p className="text-center font-sans text-sm leading-relaxed text-muted-foreground">
             We respond within 24 hours. If you&apos;re running agents against code, data,
             or financial operations — that&apos;s our sweet spot.
           </p>
-          <p className="mt-3 text-center font-sans text-sm leading-relaxed" style={{ color: "#7F8CA3" }}>
+          <p className="mt-3 text-center font-sans text-sm leading-relaxed text-muted-foreground">
             For design partner discussions, platform reviews, and production agent
             deployments, contact{" "}
             <a
               href="mailto:sales@inntris.com"
-              className="font-mono underline-offset-4 hover:underline"
-              style={{ color: "#4C8DFF" }}
+              className={cn(
+                "rounded-sm font-mono text-brandInk underline-offset-4 hover:underline",
+                focusRing,
+              )}
             >
               sales@inntris.com
             </a>
