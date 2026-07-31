@@ -7,6 +7,8 @@ import ContactSection from "@/components/contact-section";
 import { ReceiptIdCopy } from "@/components/receipt-id-copy";
 import { LandingHash } from "@/components/landing-hash";
 import { Eyebrow, Num, Tile, IconTile, focusRing } from "@/components/landing/primitives";
+import { Reveal, RevealGroup } from "@/components/landing/reveal";
+import { ProofSection } from "@/components/landing/proof-section";
 import { cn } from "@/lib/utils";
 import { publicApi } from "@/lib/api";
 import { verdictLabel, isPassVerdict, isEscalateVerdict } from "@/lib/verdict";
@@ -167,9 +169,9 @@ export default async function InntrisCoreDarkPreview() {
           className="scroll-mt-24 bg-gradient-to-b from-accent/60 via-accent/10 to-background"
         >
           <div className="mx-auto grid max-w-7xl gap-12 px-6 pb-24 pt-14 lg:grid-cols-[1.1fr_0.9fr] lg:gap-16 lg:px-8">
-          <div className="min-w-0 max-w-3xl">
+          <RevealGroup className="min-w-0 max-w-3xl">
             <div className="mb-7 inline-flex items-center gap-2 rounded-full border border-primary/25 bg-card px-4 py-2 shadow-sm">
-              <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-primary" />
+              <span aria-hidden="true" className="live-dot h-1.5 w-1.5 rounded-full bg-primary text-primary" />
               <span className="text-sm text-brandInk">Verification API live</span>
             </div>
             <h1 className="max-w-3xl text-4xl font-semibold leading-[1.12] tracking-tight md:text-6xl mb-5">
@@ -232,8 +234,8 @@ export default async function InntrisCoreDarkPreview() {
                 See live verification
               </a>
             </div>
-          </div>
-          <div className="min-w-0">
+          </RevealGroup>
+          <Reveal className="min-w-0" delay={160}>
             <div className="overflow-hidden rounded-2xl border border-tileLine bg-card shadow-sm">
               <div className="px-6 pt-6 pb-2">
                 <div className="flex items-start justify-between gap-3">
@@ -242,19 +244,19 @@ export default async function InntrisCoreDarkPreview() {
                     <div className="mt-1 font-mono text-sm text-muted-foreground">Where Inntris sits in your stack</div>
                   </div>
                   <span className="inline-flex shrink-0 items-center gap-2 rounded-full bg-accent px-3 py-1.5 font-mono text-xs text-accent-foreground">
-                    <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-primary" />
+                    <span aria-hidden="true" className="live-dot h-1.5 w-1.5 rounded-full bg-primary text-primary" />
                     live policy path
                   </span>
                 </div>
               </div>
-              <div className="space-y-3 p-4">
+              <RevealGroup className="space-y-3 p-4">
                 {[
                   ["01", "Action requested", "Agent requests a code, data, API, or finance operation."],
                   ["02", "Policy evaluated", "Inntris checks permissions, risk, and execution context."],
                   ["03", "Decision signed", "Approved or blocked outcome is bound to the agent identity."],
                   ["04", "Proof recorded", "Evidence is written to the audit trail for later verification."],
                 ].map(([step, title, body]) => (
-                  <div key={step} className="flex gap-4 rounded-xl bg-tile p-5 transition duration-200 hover:bg-accent">
+                  <div key={step} className="flex gap-4 rounded-xl bg-tile p-5 transition duration-200 hover:translate-x-1 hover:bg-accent">
                     <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary">
                       <Num className="text-xs font-semibold text-primary-foreground">{step}</Num>
                     </span>
@@ -264,15 +266,15 @@ export default async function InntrisCoreDarkPreview() {
                     </div>
                   </div>
                 ))}
-              </div>
+              </RevealGroup>
             </div>
-          </div>
+          </Reveal>
           </div>
         </section>
         {/* Full-bleed stat band: a 2px blue rule across the top, mono figures,
             and one vertical divider between cells. */}
         <section aria-label="Platform characteristics" className="border-t-2 border-primary bg-background">
-          <div className="mx-auto grid max-w-7xl grid-cols-2 px-6 lg:grid-cols-4 lg:px-8">
+          <RevealGroup className="mx-auto grid max-w-7xl grid-cols-2 px-6 lg:grid-cols-4 lg:px-8">
             {[
               { value: "<100ms", label: "Verification latency" },
               { value: "Ed25519", label: "Signing algorithm" },
@@ -297,17 +299,17 @@ export default async function InntrisCoreDarkPreview() {
                 <p className="mt-2 text-sm text-muted-foreground">{label}</p>
               </div>
             ))}
-          </div>
+          </RevealGroup>
         </section>
         <section id="modules" className="scroll-mt-24 border-b border-border bg-muted">
           <div className="mx-auto max-w-7xl px-6 py-20 lg:px-8">
-          <div className="mb-8">
+          <Reveal className="mb-8">
             <Eyebrow>Product surface</Eyebrow>
             <h2 className="mt-4 text-2xl font-semibold tracking-tight md:text-3xl">
               One control plane. Four modules.
             </h2>
-          </div>
-          <div className="grid grid-cols-1 gap-x-5 sm:grid-cols-2 md:grid-cols-4">
+          </Reveal>
+          <RevealGroup className="grid grid-cols-1 gap-x-5 sm:grid-cols-2 md:grid-cols-4">
             <div className="hidden sm:col-span-2 sm:mb-2 sm:block">
               <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-brandInk">
                 Operate
@@ -323,11 +325,14 @@ export default async function InntrisCoreDarkPreview() {
               const label = (
                 <span className="mt-auto inline-flex items-center gap-2 pt-5 text-sm font-medium text-brandInk">
                   {item.cta}
-                  <ChevronRight className="h-4 w-4" aria-hidden="true" />
+                  <ChevronRight
+                    className="h-4 w-4 transition-transform duration-200 group-hover:translate-x-1"
+                    aria-hidden="true"
+                  />
                 </span>
               );
               return (
-                <Tile key={item.title} ground="tinted" className="mb-5 flex flex-col p-6">
+                <Tile key={item.title} ground="tinted" className="group mb-5 flex flex-col p-6">
                   <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-lg border border-tileLine bg-tile text-primary">
                     <Icon className="h-6 w-6" aria-hidden="true" />
                   </div>
@@ -346,15 +351,15 @@ export default async function InntrisCoreDarkPreview() {
                 </Tile>
               );
             })}
-          </div>
+          </RevealGroup>
           </div>
         </section>
         <section id="use-cases" className="scroll-mt-24 border-b border-border bg-background">
           <div className="mx-auto max-w-7xl px-6 py-16 lg:px-8">
-          <div className="mb-5">
+          <Reveal className="mb-5">
             <Eyebrow>Use cases</Eyebrow>
-          </div>
-          <div className="flex flex-wrap gap-3">
+          </Reveal>
+          <RevealGroup className="flex flex-wrap gap-3">
             {[
               "Pull request verification",
               "Sensitive data access",
@@ -363,18 +368,18 @@ export default async function InntrisCoreDarkPreview() {
             ].map((useCase) => (
               <span
                 key={useCase}
-                className="rounded-full border border-tileLine bg-tile px-4 py-2 text-sm text-muted-foreground"
+                className="rounded-full border border-tileLine bg-tile px-4 py-2 text-sm text-muted-foreground transition duration-200 hover:-translate-y-0.5 hover:border-primary/40 hover:text-foreground"
               >
                 {useCase}
               </span>
             ))}
-          </div>
+          </RevealGroup>
           </div>
         </section>
         {(receipt || passReceipt) && (
           <section className="border-b border-border bg-muted">
             <div className="mx-auto max-w-7xl px-6 py-20 lg:px-8">
-            <div className="mb-6">
+            <Reveal className="mb-6">
               <Eyebrow>Live proof</Eyebrow>
               <h2 className="mt-4 text-2xl font-semibold tracking-tight md:text-3xl">
                 A real verification receipt.
@@ -382,8 +387,8 @@ export default async function InntrisCoreDarkPreview() {
               <p className="mt-2 max-w-xl text-sm leading-6 text-muted-foreground">
                 Every receipt below is live, signed, anchored to Base L2, and independently verifiable. Click any receipt to inspect the full proof — signature, policy hash, and on-chain anchor.
               </p>
-            </div>
-            <div className="grid gap-5 md:grid-cols-2">
+            </Reveal>
+            <RevealGroup className="grid gap-5 md:grid-cols-2">
               {/* PASS card */}
               <a
                 href="https://www.inntris.com/verify/d8dd0902-4750-42d2-9516-92bf6362e815"
@@ -408,7 +413,7 @@ export default async function InntrisCoreDarkPreview() {
                   </div>
                   <span className="inline-flex items-center gap-2 text-sm font-medium text-brandInk">
                     View full receipt
-                    <ChevronRight className="h-4 w-4" aria-hidden="true" />
+                    <ChevronRight className="h-4 w-4 transition-transform duration-200 group-hover:translate-x-1" aria-hidden="true" />
                   </span>
                 </div>
                 <div className="mt-5 grid grid-cols-2 gap-x-6 gap-y-4 pt-5 border-t border-tileLine">
@@ -484,7 +489,7 @@ export default async function InntrisCoreDarkPreview() {
                     </div>
                     <span className="inline-flex items-center gap-2 text-sm font-medium text-brandInk">
                       View full receipt
-                      <ChevronRight className="h-4 w-4" aria-hidden="true" />
+                      <ChevronRight className="h-4 w-4 transition-transform duration-200 group-hover:translate-x-1" aria-hidden="true" />
                     </span>
                   </div>
                   <div className="mt-5 grid grid-cols-2 gap-x-6 gap-y-4 pt-5 border-t border-tileLine">
@@ -521,13 +526,18 @@ export default async function InntrisCoreDarkPreview() {
                   )}
                 </Link>
               )}
-            </div>
+            </RevealGroup>
             <p className="mt-4 text-center text-sm text-muted-foreground">
               Both receipts are independently verifiable. No Inntris access required.
             </p>
             </div>
           </section>
         )}
+
+        {/* ============================================================ */}
+        {/*  Proof — the two public repos and their blocked-PR receipts  */}
+        {/* ============================================================ */}
+        <ProofSection />
 
         {/* ============================================================ */}
         {/*  What a public receipt proves                                */}
@@ -538,6 +548,7 @@ export default async function InntrisCoreDarkPreview() {
           className="scroll-mt-24 border-b border-border bg-background"
         >
           <div className="mx-auto max-w-7xl px-6 py-16 lg:px-8">
+          <Reveal>
           <Tile ground="white" interactive={false} className="p-6 md:p-8">
             <h2
               id="what-a-receipt-proves-heading"
@@ -545,7 +556,7 @@ export default async function InntrisCoreDarkPreview() {
             >
               What a public receipt proves
             </h2>
-            <ul className="mt-4 grid gap-3 md:grid-cols-2">
+            <RevealGroup as="ul" className="mt-4 grid gap-3 md:grid-cols-2">
               {[
                 ["Which agent acted", "via Ed25519 signature validation"],
                 ["What decision was made", "PASS, BLOCK, or ESCALATE"],
@@ -563,13 +574,15 @@ export default async function InntrisCoreDarkPreview() {
                   </p>
                 </li>
               ))}
-            </ul>
+            </RevealGroup>
           </Tile>
+          </Reveal>
           </div>
         </section>
 
         <section id="product" className="scroll-mt-24 border-b border-border bg-muted">
           <div className="mx-auto max-w-7xl px-6 py-20 lg:px-8">
+          <Reveal>
           <Tile ground="tinted" interactive={false} className="p-7 lg:p-10">
             <Eyebrow>Core capability</Eyebrow>
             <h2 className="mt-4 text-2xl font-semibold tracking-tight md:text-3xl">
@@ -578,11 +591,11 @@ export default async function InntrisCoreDarkPreview() {
             <p className="mt-4 max-w-2xl text-base leading-7 text-muted-foreground">
               Every agent action passes through three layers: identity verification, policy enforcement, and immutable audit. Together they prove what was allowed to happen, and what actually happened.
             </p>
-            <div className="mt-8 grid gap-4 md:grid-cols-3">
+            <RevealGroup className="mt-8 grid gap-4 md:grid-cols-3">
               {capabilities.map((item) => {
                 const Icon = item.icon;
                 return (
-                  <div key={item.title} className="flex gap-4 rounded-lg border border-tileLine bg-tile p-4">
+                  <div key={item.title} className="flex gap-4 rounded-lg border border-tileLine bg-tile p-4 transition duration-200 hover:-translate-y-1 hover:border-primary/40 hover:shadow-lg">
                     <IconTile className="h-11 w-11">
                       <Icon className="h-5 w-5" aria-hidden="true" />
                     </IconTile>
@@ -593,8 +606,9 @@ export default async function InntrisCoreDarkPreview() {
                   </div>
                 );
               })}
-            </div>
+            </RevealGroup>
           </Tile>
+          </Reveal>
           </div>
         </section>
         <ContactSection />

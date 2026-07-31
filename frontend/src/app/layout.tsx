@@ -34,6 +34,13 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" className={`${outfit.variable} ${ibmPlexMono.variable} scroll-smooth`} suppressHydrationWarning>
+      <head>
+        {/* Scroll-reveal starts hidden and is switched on by JS. With JS off
+            there is nothing to switch it on, so pin everything visible. */}
+        <noscript>
+          <style>{`.reveal,.reveal-stagger>*{opacity:1!important;transform:none!important}`}</style>
+        </noscript>
+      </head>
       <body className="font-sans antialiased">
         <ThemeProvider
           attribute="class"
