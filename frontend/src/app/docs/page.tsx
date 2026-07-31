@@ -40,10 +40,10 @@ export default function DocsPage() {
             </div>
           </Link>
           <nav className="hidden items-center gap-6 text-sm md:flex">
-            <Link href="/admin" className="text-muted-foreground transition hover:text-white">Console</Link>
-            <Link href="/portal" className="text-muted-foreground transition hover:text-white">Portal</Link>
-            <Link href="/audit" className="text-muted-foreground transition hover:text-white">Audit</Link>
-            <Link href="/verify" className="text-muted-foreground transition hover:text-white">Verify</Link>
+            <Link href="/admin" className="text-muted-foreground transition hover:text-foreground">Console</Link>
+            <Link href="/portal" className="text-muted-foreground transition hover:text-foreground">Portal</Link>
+            <Link href="/audit" className="text-muted-foreground transition hover:text-foreground">Audit</Link>
+            <Link href="/verify" className="text-muted-foreground transition hover:text-foreground">Verify</Link>
           </nav>
           <MobileMenu
             links={[
@@ -349,7 +349,7 @@ POST /admin/agents/{agent_id}/promote   (admin scope)
             to Base L2 hourly. Any record can be independently verified by audit ID or transaction hash.
           </p>
 
-          <Link href="/verify" className="inline-flex items-center gap-2 text-sm font-medium text-brandInk transition hover:text-white">
+          <Link href="/verify" className="inline-flex items-center gap-2 text-sm font-medium text-brandInk transition hover:text-foreground">
             <ArrowRight className="h-4 w-4" />
             See live verification
           </Link>
@@ -476,9 +476,9 @@ POST /admin/agents/{agent_id}/promote   (admin scope)
             <span className="text-muted-foreground">Inntris Core</span>
           </div>
           <div className="flex items-center gap-6 text-muted-foreground">
-            <Link href="/" className="text-sm transition-colors hover:text-white">Home</Link>
-            <Link href="/docs" className="text-sm transition-colors hover:text-white">Docs</Link>
-            <Link href="/verify" className="text-sm transition-colors hover:text-white">Verify</Link>
+            <Link href="/" className="text-sm transition-colors hover:text-foreground">Home</Link>
+            <Link href="/docs" className="text-sm transition-colors hover:text-foreground">Docs</Link>
+            <Link href="/verify" className="text-sm transition-colors hover:text-foreground">Verify</Link>
           </div>
         </div>
       </footer>
