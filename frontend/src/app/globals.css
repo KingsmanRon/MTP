@@ -5,29 +5,35 @@
 @layer base {
   :root {
     --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
+    --foreground: 222.9 25.9% 5.3%;
     --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
+    --card-foreground: 222.9 25.9% 5.3%;
     --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
-    --primary: 221.2 83% 53%;
-    --primary-foreground: 210 40% 98%;
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
-    --success: 142 76% 36%;
-    --success-foreground: 210 40% 98%;
-    --warning: 38 92% 50%;
-    --warning-foreground: 222.2 47.4% 11.2%;
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 221.2 83% 53%;
-    --radius: 0.5rem;
+    --popover-foreground: 222.9 25.9% 5.3%;
+    --primary: 224.3 76.3% 48%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 216 29.4% 96.7%;
+    --secondary-foreground: 220 19.4% 12.2%;
+    --muted: 216 29.4% 96.7%;
+    --muted-foreground: 217.5 10.3% 45.9%;
+    --accent: 223.3 90% 96.1%;
+    --accent-foreground: 226.5 76% 42.5%;
+    --destructive: 350.1 63.9% 55.5%;
+    --destructive-foreground: 0 0% 100%;
+    --success: 156.3 80.3% 35.9%;
+    --success-foreground: 0 0% 100%;
+    --warning: 35.5 71% 42%;
+    --warning-foreground: 0 0% 100%;
+    --border: 217.5 17.4% 91%;
+    --input: 220 27.3% 91.4%;
+    --ring: 224.3 76.3% 48%;
+    --radius: 0.75rem;
+
+    --tile: 216 29.4% 96.7%;        /* #F4F6F9 tile ground */
+    --tile-line: 220 27.3% 91.4%;   /* #E3E7EF tile border */
+    --brand-deep: 227.7 75.1% 33.1%; /* #152F94 hover/gradient end */
+    --brand-ink: 226.5 76% 42.5%;    /* #1A3FBF text-on-light blue */
+    --vault: 225.8 65.5% 11.4%;      /* #0A1330 code panels */
   }
 
   .dark {
