@@ -81,6 +81,97 @@
   }
 }
 
+/* ------------------------------------------------------------------ */
+/*  Motion                                                             */
+/*                                                                     */
+/*  `.reveal` and `.reveal-stagger` are driven by the Reveal /         */
+/*  RevealGroup components (src/components/landing/reveal.tsx), which  */
+/*  add `.is-visible` once the element enters the viewport. Everything  */
+/*  here animates opacity and transform only, so nothing triggers       */
+/*  layout during scroll.                                              */
+/* ------------------------------------------------------------------ */
+@layer utilities {
+  .reveal,
+  .reveal-stagger > * {
+    opacity: 0;
+    transform: translateY(18px);
+    transition:
+      opacity 640ms cubic-bezier(0.22, 1, 0.36, 1),
+      transform 640ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .reveal.is-visible,
+  .reveal-stagger.is-visible > * {
+    opacity: 1;
+    transform: none;
+  }
+
+  /* Children of a group come in one after another. Ten steps covers the
+     widest run on the page (the four-up stat band and module grid). */
+  .reveal-stagger > *:nth-child(1) { transition-delay: 0ms; }
+  .reveal-stagger > *:nth-child(2) { transition-delay: 70ms; }
+  .reveal-stagger > *:nth-child(3) { transition-delay: 140ms; }
+  .reveal-stagger > *:nth-child(4) { transition-delay: 210ms; }
+  .reveal-stagger > *:nth-child(5) { transition-delay: 280ms; }
+  .reveal-stagger > *:nth-child(6) { transition-delay: 350ms; }
+  .reveal-stagger > *:nth-child(7) { transition-delay: 420ms; }
+  .reveal-stagger > *:nth-child(8) { transition-delay: 490ms; }
+  .reveal-stagger > *:nth-child(9) { transition-delay: 560ms; }
+  .reveal-stagger > *:nth-child(n + 10) { transition-delay: 630ms; }
+
+  /* Status dot that keeps breathing: the ring is a pseudo-element so the
+     dot itself stays crisp at 6px. `currentColor` picks up the text
+     colour of the dot, so it works on any ground. */
+  .live-dot {
+    position: relative;
+  }
+
+  .live-dot::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: 9999px;
+    background-color: currentColor;
+    animation: inntris-ping 2.4s cubic-bezier(0, 0, 0.2, 1) infinite;
+  }
+}
+
+@keyframes inntris-ping {
+  0% {
+    transform: scale(1);
+    opacity: 0.5;
+  }
+  70%,
+  100% {
+    transform: scale(2.8);
+    opacity: 0;
+  }
+}
+
+/* One global opt-out. Reveals land instantly, hover lifts stop moving,
+   and the ping ring is dropped entirely. */
+@media (prefers-reduced-motion: reduce) {
+  .reveal,
+  .reveal-stagger > * {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+
+  .live-dot::after {
+    display: none;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
 /* Custom scrollbar */
 ::-webkit-scrollbar {
   width: 8px;
