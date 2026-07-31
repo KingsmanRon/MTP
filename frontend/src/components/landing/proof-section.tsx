@@ -1,16 +1,14 @@
 import React from "react";
-import { ArrowUpRight, XOctagon } from "lucide-react";
+import { ArrowUpRight } from "lucide-react";
 import { Eyebrow, Num, focusRing } from "@/components/landing/primitives";
 import { Reveal, RevealGroup } from "@/components/landing/reveal";
 import { cn } from "@/lib/utils";
 
 /**
- * Proof — the two public repositories and the live receipts for the pull
- * requests Inntris blocked in them.
+ * Proof — the two public repositories whose pull requests Inntris blocked.
  *
- * Everything in this section is static and public on purpose: the receipts are
- * verifiable without an account, so the section links straight out rather than
- * proxying anything through the API.
+ * Everything in this section is static and public on purpose, so it links
+ * straight out rather than proxying anything through the API.
  */
 
 const repositories = [
@@ -27,31 +25,6 @@ const repositories = [
     href: "https://github.com/Inntris/inntris-verify",
   },
 ] as const;
-
-const receipts = [
-  {
-    number: 1,
-    title: "Add inntris-verify Action scaffold + demo workflow and policies",
-    prHref: "https://github.com/Inntris/agent-orchestrator-guardrails/pull/1",
-    verifyHref: "https://www.inntris.com/verify/2f41036e-cd54-4ec1-86e1-22f96cbc09aa",
-  },
-  {
-    number: 2,
-    title: "Add Inntris Verified GitHub Action, policies, docs and tests",
-    prHref: "https://github.com/Inntris/agent-orchestrator-guardrails/pull/2",
-    verifyHref: "https://www.inntris.com/verify/e8025672-096d-4c5c-b621-e3daeea4baa6",
-  },
-] as const;
-
-/** Same treatment as the BLOCK verdict on the receipt cards above. */
-function BlockChip() {
-  return (
-    <span className="inline-flex items-center gap-1.5 rounded-full border border-destructive/20 bg-destructive/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.08em] text-destructive">
-      <XOctagon className="h-3.5 w-3.5" aria-hidden="true" />
-      Block
-    </span>
-  );
-}
 
 /** Announced only to screen readers — the arrow carries it visually. */
 function NewTabHint() {
@@ -127,99 +100,6 @@ export function ProofSection() {
             </a>
           ))}
         </RevealGroup>
-
-        <Reveal className="mt-5 overflow-hidden rounded-lg border border-tileLine bg-tile">
-          {/* Below md the table collapses to stacked rows — three columns in a
-              phone-width viewport shreds the PR titles one word per line. The
-              overflow container stays as a safety net above that. */}
-          <div className="overflow-x-auto">
-            <table className="block w-full border-collapse text-left md:table">
-              <caption className="sr-only">
-                Pull requests blocked by Inntris, with their public verification
-                receipts
-              </caption>
-              <thead className="hidden md:table-header-group">
-                <tr className="border-b border-tileLine">
-                  <th
-                    scope="col"
-                    className="w-full px-5 py-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground"
-                  >
-                    PR
-                  </th>
-                  <th
-                    scope="col"
-                    className="whitespace-nowrap px-5 py-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground"
-                  >
-                    Verdict
-                  </th>
-                  <th
-                    scope="col"
-                    className="whitespace-nowrap px-5 py-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground"
-                  >
-                    Verify
-                  </th>
-                </tr>
-              </thead>
-              <RevealGroup as="tbody" className="block md:table-row-group">
-                {receipts.map((receipt) => (
-                  <tr
-                    key={receipt.number}
-                    className="block border-b border-tileLine px-5 py-5 align-top transition-colors duration-200 last:border-b-0 hover:bg-card md:table-row md:p-0"
-                  >
-                    <td className="block md:table-cell md:px-5 md:py-4">
-                      <a
-                        href={receipt.prHref}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className={cn("group block rounded-sm", focusRing)}
-                      >
-                        <Num className="block text-xs text-muted-foreground">
-                          PR #{receipt.number}
-                        </Num>
-                        <span className="mt-1 block text-sm font-medium leading-6 text-foreground transition-colors group-hover:text-brandInk">
-                          {receipt.title}
-                          <ArrowUpRight
-                            className="ml-1.5 inline h-3.5 w-3.5 align-[-1px] text-muted-foreground transition-transform duration-200 group-hover:-translate-y-0.5 group-hover:translate-x-0.5 group-hover:text-brandInk"
-                            aria-hidden="true"
-                          />
-                          <NewTabHint />
-                        </span>
-                      </a>
-                    </td>
-                    <td className="mt-3 block md:mt-0 md:table-cell md:whitespace-nowrap md:px-5 md:py-4">
-                      <BlockChip />
-                    </td>
-                    <td className="mt-3 block md:mt-0 md:table-cell md:whitespace-nowrap md:px-5 md:py-4">
-                      <a
-                        href={receipt.verifyHref}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className={cn(
-                          "group inline-flex items-center gap-1.5 rounded-sm text-sm font-medium text-brandInk",
-                          focusRing,
-                        )}
-                      >
-                        View receipt
-                        <ArrowUpRight
-                          className="h-3.5 w-3.5 transition-transform duration-200 group-hover:-translate-y-0.5 group-hover:translate-x-0.5"
-                          aria-hidden="true"
-                        />
-                        <NewTabHint />
-                      </a>
-                    </td>
-                  </tr>
-                ))}
-              </RevealGroup>
-            </table>
-          </div>
-        </Reveal>
-
-        <Reveal>
-          <p className="mt-4 max-w-2xl text-sm leading-6 text-muted-foreground">
-            Signed with Ed25519. Anchored on Base L2. Publicly verifiable — no
-            login, no repo access, no trust required.
-          </p>
-        </Reveal>
       </div>
     </section>
   );
