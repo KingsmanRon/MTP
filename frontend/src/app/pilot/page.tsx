@@ -56,7 +56,7 @@ export default function PilotPage() {
             <span className="font-semibold">Inntris</span>
           </Link>
           <div className="flex items-center gap-4">
-            <Link href="/verify" className="hidden text-sm text-muted-foreground hover:text-white sm:inline">
+            <Link href="/verify" className="hidden text-sm text-muted-foreground hover:text-foreground sm:inline">
               View live receipt
             </Link>
             <a
@@ -194,7 +194,7 @@ export default function PilotPage() {
       <footer className="border-t border-tileLine">
         <div className="mx-auto flex max-w-7xl flex-col justify-between gap-3 px-6 py-8 text-sm text-muted-foreground sm:flex-row lg:px-8">
           <span>Inntris Agent Action Proof Pilot</span>
-          <a href="mailto:sales@inntris.com" className="text-brandInk hover:text-white">
+          <a href="mailto:sales@inntris.com" className="text-brandInk hover:text-foreground">
             sales@inntris.com
           </a>
         </div>

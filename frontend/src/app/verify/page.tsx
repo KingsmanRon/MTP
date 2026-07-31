@@ -70,10 +70,10 @@ export default function VerifyLandingPage() {
           </Link>
 
           <nav className="hidden items-center gap-6 text-sm md:flex">
-            <Link href="/admin" className="text-muted-foreground transition hover:text-white">Console</Link>
-            <Link href="/portal" className="text-muted-foreground transition hover:text-white">Portal</Link>
-            <Link href="/audit" className="text-muted-foreground transition hover:text-white">Audit</Link>
-            <Link href="/docs" className="text-muted-foreground transition hover:text-white">Docs</Link>
+            <Link href="/admin" className="text-muted-foreground transition hover:text-foreground">Console</Link>
+            <Link href="/portal" className="text-muted-foreground transition hover:text-foreground">Portal</Link>
+            <Link href="/audit" className="text-muted-foreground transition hover:text-foreground">Audit</Link>
+            <Link href="/docs" className="text-muted-foreground transition hover:text-foreground">Docs</Link>
           </nav>
           <MobileMenu
             links={[
@@ -199,7 +199,7 @@ export default function VerifyLandingPage() {
               <Link href="/ai-pr-protection">
                 <Button
                   variant="outline"
-                  className="border-tileLine bg-tile text-foreground hover:bg-card hover:text-white"
+                  className="border-tileLine bg-tile text-foreground hover:bg-card hover:text-foreground"
                 >
                   See buyer page
                 </Button>
@@ -216,9 +216,9 @@ export default function VerifyLandingPage() {
             <span className="text-muted-foreground">Inntris Core</span>
           </div>
           <div className="flex items-center gap-6 text-muted-foreground">
-            <Link href="/" className="text-sm transition-colors hover:text-white">Home</Link>
-            <Link href="/docs" className="text-sm transition-colors hover:text-white">Docs</Link>
-            <Link href="/verify" className="text-sm transition-colors hover:text-white">Verify</Link>
+            <Link href="/" className="text-sm transition-colors hover:text-foreground">Home</Link>
+            <Link href="/docs" className="text-sm transition-colors hover:text-foreground">Docs</Link>
+            <Link href="/verify" className="text-sm transition-colors hover:text-foreground">Verify</Link>
           </div>
         </div>
       </footer>

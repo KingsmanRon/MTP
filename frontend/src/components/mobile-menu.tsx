@@ -15,7 +15,7 @@ interface MobileMenuProps {
   links: MobileMenuLink[];
   /** Optional highlighted call-to-action rendered below the links. */
   cta?: MobileMenuLink;
-  /** Matches the light header on /ai-pr-protection; defaults to the dark shell. */
+  /** Retained for call sites that set it explicitly; the app is light throughout. */
   variant?: "dark" | "light";
 }
 
@@ -24,7 +24,7 @@ interface MobileMenuProps {
  * `hidden md:flex`, so without this, phones have no navigation at all.
  * Renders only below `md`; the dropdown panel sits under the sticky header.
  */
-export function MobileMenu({ links, cta, variant = "dark" }: MobileMenuProps) {
+export function MobileMenu({ links, cta, variant = "light" }: MobileMenuProps) {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
 
@@ -46,7 +46,7 @@ export function MobileMenu({ links, cta, variant = "dark" }: MobileMenuProps) {
         className={cn(
           "flex h-10 w-10 items-center justify-center rounded-lg border transition-colors",
           dark
-            ? "border-tileLine bg-tile text-muted-foreground hover:text-white"
+            ? "border-tileLine bg-tile text-muted-foreground hover:text-foreground"
             : "border-border/15 bg-white text-muted-foreground hover:text-foreground"
         )}
       >
@@ -71,7 +71,7 @@ export function MobileMenu({ links, cta, variant = "dark" }: MobileMenuProps) {
                 className={cn(
                   "rounded-lg px-3 py-3 text-[15px] transition-colors",
                   dark
-                    ? "text-muted-foreground hover:bg-tile hover:text-white"
+                    ? "text-muted-foreground hover:bg-tile hover:text-foreground"
                     : "text-muted-foreground hover:bg-white hover:text-foreground"
                 )}
               >

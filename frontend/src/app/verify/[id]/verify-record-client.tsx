@@ -128,7 +128,7 @@ function Header({ onCopy, copied }: { onCopy: () => void; copied: boolean }) {
             variant="outline"
             size="sm"
             onClick={onCopy}
-            className="border-tileLine bg-tile text-foreground hover:bg-card hover:text-white"
+            className="border-tileLine bg-tile text-foreground hover:bg-card hover:text-foreground"
           >
             {copied ? (
               <Check className="h-4 w-4 mr-2 text-primary" />
@@ -141,7 +141,7 @@ function Header({ onCopy, copied }: { onCopy: () => void; copied: boolean }) {
             <Button
               variant="outline"
               size="sm"
-              className="hidden border-tileLine bg-tile text-foreground hover:bg-card hover:text-white md:inline-flex"
+              className="hidden border-tileLine bg-tile text-foreground hover:bg-card hover:text-foreground md:inline-flex"
             >
               Verify another
             </Button>
@@ -564,7 +564,7 @@ export function VerifyRecordView({ record }: { record: PublicVerificationRecord 
                       <Button
                         size="sm"
                         variant="outline"
-                        className="border-tileLine bg-tile text-brandInk hover:bg-card hover:text-white"
+                        className="border-tileLine bg-tile text-brandInk hover:bg-card hover:text-foreground"
                       >
                         <ExternalLink className="h-3.5 w-3.5 mr-1.5" />
                         BaseScan
@@ -667,7 +667,7 @@ export function VerifyRecordView({ record }: { record: PublicVerificationRecord 
             <Link href="/ai-pr-protection">
               <Button
                 variant="outline"
-                className="border-tileLine bg-tile text-foreground hover:bg-card hover:text-white"
+                className="border-tileLine bg-tile text-foreground hover:bg-card hover:text-foreground"
               >
                 Learn more
               </Button>
