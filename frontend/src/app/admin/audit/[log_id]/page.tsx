@@ -68,15 +68,15 @@ function AuditDetailContent({ logId }: { logId: string }) {
       {recordLoading ? (
         <div className="space-y-4">
           {Array.from({ length: 4 }).map((_, i) => (
-            <div key={i} className="h-40 animate-pulse rounded-xl bg-[#0D1728]" />
+            <div key={i} className="h-40 animate-pulse rounded-xl bg-tile" />
           ))}
         </div>
       ) : record ? (
         <>
           {/* SECTION 1 — Record */}
-          <Card className="border-[#22314D] bg-[#0D1728]">
+          <Card className="border-tileLine bg-tile">
             <CardHeader>
-              <CardTitle className="text-base text-[#F5F7FB]">Record</CardTitle>
+              <CardTitle className="text-base text-foreground">Record</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -89,7 +89,7 @@ function AuditDetailContent({ logId }: { logId: string }) {
                   </DetailField>
                 )}
                 <DetailField label="Timestamp">
-                  <span className="font-mono text-xs text-[#AAB7CC]">
+                  <span className="font-mono text-xs text-muted-foreground">
                     {record.timestamp ? formatDateTime(record.timestamp) : "—"}
                   </span>
                 </DetailField>
@@ -97,7 +97,7 @@ function AuditDetailContent({ logId }: { logId: string }) {
                   {record.verdict ? (
                     <AdminVerdictBadge verdict={record.verdict} />
                   ) : (
-                    <span className="text-xs text-[#7F8CA3]">—</span>
+                    <span className="text-xs text-muted-foreground">—</span>
                   )}
                 </DetailField>
               </div>
@@ -106,9 +106,9 @@ function AuditDetailContent({ logId }: { logId: string }) {
 
           {/* SECTION 1b — AI PR Guard evidence (only for guard records) */}
           {isPrGuardRecord(record) && (
-            <Card className="border-[#22314D] bg-[#0D1728]">
+            <Card className="border-tileLine bg-tile">
               <CardHeader>
-                <CardTitle className="text-base text-[#F5F7FB]">AI PR Guard</CardTitle>
+                <CardTitle className="text-base text-foreground">AI PR Guard</CardTitle>
               </CardHeader>
               <CardContent>
                 <PrGuardEvidence record={record} />
@@ -117,15 +117,15 @@ function AuditDetailContent({ logId }: { logId: string }) {
           )}
 
           {/* SECTION 2 — Action payload */}
-          <Card className="border-[#22314D] bg-[#0D1728]">
+          <Card className="border-tileLine bg-tile">
             <CardHeader>
-              <CardTitle className="text-base text-[#F5F7FB]">
+              <CardTitle className="text-base text-foreground">
                 Action Payload
               </CardTitle>
             </CardHeader>
             <CardContent>
               {record.payload ? (
-                <pre className="overflow-x-auto rounded-lg bg-[#101C31] p-4 font-mono text-xs leading-relaxed text-[#AAB7CC]">
+                <pre className="overflow-x-auto rounded-lg bg-card p-4 font-mono text-xs leading-relaxed text-muted-foreground">
                   {JSON.stringify(record.payload, null, 2)}
                 </pre>
               ) : (
@@ -138,9 +138,9 @@ function AuditDetailContent({ logId }: { logId: string }) {
           </Card>
 
           {/* SECTION 3 — Policy evaluation */}
-          <Card className="border-[#22314D] bg-[#0D1728]">
+          <Card className="border-tileLine bg-tile">
             <CardHeader>
-              <CardTitle className="text-base text-[#F5F7FB]">
+              <CardTitle className="text-base text-foreground">
                 Policy Evaluation
               </CardTitle>
             </CardHeader>
@@ -150,9 +150,9 @@ function AuditDetailContent({ logId }: { logId: string }) {
           </Card>
 
           {/* SECTION 4 — Cryptographic proof */}
-          <Card className="border-[#22314D] bg-[#0D1728]">
+          <Card className="border-tileLine bg-tile">
             <CardHeader>
-              <CardTitle className="text-base text-[#F5F7FB]">
+              <CardTitle className="text-base text-foreground">
                 Cryptographic Proof
               </CardTitle>
             </CardHeader>
@@ -160,22 +160,22 @@ function AuditDetailContent({ logId }: { logId: string }) {
               {proofLoading ? (
                 <div className="space-y-3">
                   {Array.from({ length: 3 }).map((_, i) => (
-                    <div key={i} className="h-8 animate-pulse rounded-lg bg-[#101C31]" />
+                    <div key={i} className="h-8 animate-pulse rounded-lg bg-card" />
                   ))}
                 </div>
               ) : proofPending || proofError ? (
-                <div className="flex items-center gap-3 rounded-lg border border-[#22314D] bg-[#101C31] p-4">
-                  <Link2 className="h-5 w-5 text-[#7F8CA3]" />
-                  <p className="text-sm text-[#7F8CA3]">
+                <div className="flex items-center gap-3 rounded-lg border border-tileLine bg-card p-4">
+                  <Link2 className="h-5 w-5 text-muted-foreground" />
+                  <p className="text-sm text-muted-foreground">
                     Proof anchoring in progress or not yet available
                   </p>
                 </div>
               ) : proof ? (
                 <ProofSection proof={proof} signatureValid={record.signature_valid} />
               ) : (
-                <div className="flex items-center gap-3 rounded-lg border border-[#22314D] bg-[#101C31] p-4">
-                  <Link2 className="h-5 w-5 text-[#7F8CA3]" />
-                  <p className="text-sm text-[#7F8CA3]">
+                <div className="flex items-center gap-3 rounded-lg border border-tileLine bg-card p-4">
+                  <Link2 className="h-5 w-5 text-muted-foreground" />
+                  <p className="text-sm text-muted-foreground">
                     Proof anchoring in progress or not yet available
                   </p>
                 </div>
@@ -184,8 +184,8 @@ function AuditDetailContent({ logId }: { logId: string }) {
           </Card>
 
           {/* Footer — verify link */}
-          <div className="flex items-center justify-between rounded-xl border border-[#22314D] bg-[#0D1728] p-4">
-            <span className="text-sm text-[#7F8CA3]">Public verification receipt</span>
+          <div className="flex items-center justify-between rounded-xl border border-tileLine bg-tile p-4">
+            <span className="text-sm text-muted-foreground">Public verification receipt</span>
             <VerifyLinkCopy auditId={record.id} />
           </div>
         </>
@@ -208,24 +208,24 @@ function PolicySection({ record }: { record: MappedAuditDetail }) {
     return (
       <div className="space-y-3">
         {record.policy_rule_triggered && (
-          <div className="flex items-center justify-between rounded-lg border border-[#22314D] bg-[#101C31] px-4 py-3">
-            <span className="text-xs text-[#7F8CA3]">Rule Triggered</span>
-            <span className="font-mono text-xs text-[#AAB7CC]">
+          <div className="flex items-center justify-between rounded-lg border border-tileLine bg-card px-4 py-3">
+            <span className="text-xs text-muted-foreground">Rule Triggered</span>
+            <span className="font-mono text-xs text-muted-foreground">
               {record.policy_rule_triggered}
             </span>
           </div>
         )}
         {record.risk_level && (
-          <div className="flex items-center justify-between rounded-lg border border-[#22314D] bg-[#101C31] px-4 py-3">
-            <span className="text-xs text-[#7F8CA3]">Risk Level</span>
-            <span className="font-mono text-xs text-[#AAB7CC]">
+          <div className="flex items-center justify-between rounded-lg border border-tileLine bg-card px-4 py-3">
+            <span className="text-xs text-muted-foreground">Risk Level</span>
+            <span className="font-mono text-xs text-muted-foreground">
               {record.risk_level}
             </span>
           </div>
         )}
         {record.violations && record.violations.length > 0 && (
-          <div className="rounded-lg border border-[#22314D] bg-[#101C31] px-4 py-3">
-            <span className="mb-2 block text-xs text-[#7F8CA3]">Violations</span>
+          <div className="rounded-lg border border-tileLine bg-card px-4 py-3">
+            <span className="mb-2 block text-xs text-muted-foreground">Violations</span>
             <div className="flex flex-wrap gap-2">
               {record.violations.map((v, i) => (
                 <span
@@ -239,16 +239,16 @@ function PolicySection({ record }: { record: MappedAuditDetail }) {
           </div>
         )}
         {record.verdict_reason && (
-          <div className="rounded-lg border border-[#22314D] bg-[#101C31] px-4 py-3">
-            <span className="mb-2 block text-xs text-[#7F8CA3]">Decision Reason</span>
-            <p className="text-xs leading-relaxed text-[#AAB7CC]">
+          <div className="rounded-lg border border-tileLine bg-card px-4 py-3">
+            <span className="mb-2 block text-xs text-muted-foreground">Decision Reason</span>
+            <p className="text-xs leading-relaxed text-muted-foreground">
               {record.verdict_reason}
             </p>
           </div>
         )}
         {record.policy_hash && (
-          <div className="flex items-center justify-between gap-4 rounded-lg border border-[#22314D] bg-[#101C31] px-4 py-3">
-            <span className="text-xs text-[#7F8CA3]">Policy Hash</span>
+          <div className="flex items-center justify-between gap-4 rounded-lg border border-tileLine bg-card px-4 py-3">
+            <span className="text-xs text-muted-foreground">Policy Hash</span>
             <CopyableMonoValue value={record.policy_hash} />
           </div>
         )}
@@ -294,9 +294,9 @@ function ProofSection({
 
   if (!hasAnyProof) {
     return (
-      <div className="flex items-center gap-3 rounded-lg border border-[#22314D] bg-[#101C31] p-4">
-        <Link2 className="h-5 w-5 text-[#7F8CA3]" />
-        <p className="text-sm text-[#7F8CA3]">
+      <div className="flex items-center gap-3 rounded-lg border border-tileLine bg-card p-4">
+        <Link2 className="h-5 w-5 text-muted-foreground" />
+        <p className="text-sm text-muted-foreground">
           Proof anchoring in progress or not yet available
         </p>
       </div>
@@ -305,44 +305,44 @@ function ProofSection({
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between rounded-lg border border-[#22314D] bg-[#101C31] px-4 py-3">
-        <span className="text-xs text-[#7F8CA3]">Anchor Status</span>
+      <div className="flex items-center justify-between rounded-lg border border-tileLine bg-card px-4 py-3">
+        <span className="text-xs text-muted-foreground">Anchor Status</span>
         <ProofStatusBadge status={anchorStatus} />
       </div>
-      <div className="flex items-center justify-between rounded-lg border border-[#22314D] bg-[#101C31] px-4 py-3">
-        <span className="text-xs text-[#7F8CA3]">Signature</span>
+      <div className="flex items-center justify-between rounded-lg border border-tileLine bg-card px-4 py-3">
+        <span className="text-xs text-muted-foreground">Signature</span>
         <SignatureStatus signatureValid={signatureValid} />
       </div>
       {proof.leaf && (
-        <div className="flex items-center justify-between gap-4 rounded-lg border border-[#22314D] bg-[#101C31] px-4 py-3">
-          <span className="text-xs text-[#7F8CA3]">Action Hash</span>
+        <div className="flex items-center justify-between gap-4 rounded-lg border border-tileLine bg-card px-4 py-3">
+          <span className="text-xs text-muted-foreground">Action Hash</span>
           <CopyableMonoValue value={proof.leaf} />
         </div>
       )}
       {proof.tx_hash && (
-        <div className="flex items-center justify-between gap-4 rounded-lg border border-[#22314D] bg-[#101C31] px-4 py-3">
-          <span className="text-xs text-[#7F8CA3]">Transaction Hash</span>
+        <div className="flex items-center justify-between gap-4 rounded-lg border border-tileLine bg-card px-4 py-3">
+          <span className="text-xs text-muted-foreground">Transaction Hash</span>
           <CopyableMonoValue value={proof.tx_hash} />
         </div>
       )}
       {proof.merkle_root && (
-        <div className="flex items-center justify-between gap-4 rounded-lg border border-[#22314D] bg-[#101C31] px-4 py-3">
-          <span className="text-xs text-[#7F8CA3]">Merkle Root</span>
+        <div className="flex items-center justify-between gap-4 rounded-lg border border-tileLine bg-card px-4 py-3">
+          <span className="text-xs text-muted-foreground">Merkle Root</span>
           <CopyableMonoValue value={proof.merkle_root} />
         </div>
       )}
       {proof.block_number !== undefined && proof.block_number !== null && (
-        <div className="flex items-center justify-between rounded-lg border border-[#22314D] bg-[#101C31] px-4 py-3">
-          <span className="text-xs text-[#7F8CA3]">Block Number</span>
-          <span className="font-mono text-xs text-[#AAB7CC]">
+        <div className="flex items-center justify-between rounded-lg border border-tileLine bg-card px-4 py-3">
+          <span className="text-xs text-muted-foreground">Block Number</span>
+          <span className="font-mono text-xs text-muted-foreground">
             {proof.block_number.toLocaleString("en-GB")}
           </span>
         </div>
       )}
       {proof.anchored_at && (
-        <div className="flex items-center justify-between rounded-lg border border-[#22314D] bg-[#101C31] px-4 py-3">
-          <span className="text-xs text-[#7F8CA3]">Anchored At</span>
-          <span className="font-mono text-xs text-[#AAB7CC]">
+        <div className="flex items-center justify-between rounded-lg border border-tileLine bg-card px-4 py-3">
+          <span className="text-xs text-muted-foreground">Anchored At</span>
+          <span className="font-mono text-xs text-muted-foreground">
             {formatDateTime(proof.anchored_at)}
           </span>
         </div>
@@ -354,13 +354,13 @@ function ProofSection({
         </div>
       )}
       {basescanUrl && (
-        <div className="flex items-center justify-between rounded-lg border border-[#22314D] bg-[#101C31] px-4 py-3">
-          <span className="text-xs text-[#7F8CA3]">On Chain</span>
+        <div className="flex items-center justify-between rounded-lg border border-tileLine bg-card px-4 py-3">
+          <span className="text-xs text-muted-foreground">On Chain</span>
           <a
             href={basescanUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 text-xs text-[#8FB8FF] hover:underline"
+            className="inline-flex items-center gap-1 text-xs text-brandInk hover:underline"
           >
             View on BaseScan
             <ExternalLink className="h-3 w-3" />
@@ -408,7 +408,7 @@ function SignatureStatus({ signatureValid }: { signatureValid?: boolean }) {
   }
 
   return (
-    <span className="inline-flex items-center gap-2 text-xs font-semibold text-[#7F8CA3]">
+    <span className="inline-flex items-center gap-2 text-xs font-semibold text-muted-foreground">
       <Minus className="h-4 w-4" />
       Unknown
     </span>
@@ -424,7 +424,7 @@ function DetailField({
 }) {
   return (
     <div>
-      <p className="mb-1 text-xs text-[#7F8CA3]">{label}</p>
+      <p className="mb-1 text-xs text-muted-foreground">{label}</p>
       {children}
     </div>
   );
@@ -434,7 +434,7 @@ function BackLink() {
   return (
     <Link
       href="/admin/audit"
-      className="inline-flex items-center gap-1 text-sm text-[#8FB8FF] hover:underline"
+      className="inline-flex items-center gap-1 text-sm text-brandInk hover:underline"
     >
       <ArrowLeft className="h-3 w-3" />
       Back to Audit Log

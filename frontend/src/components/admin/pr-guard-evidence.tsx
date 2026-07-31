@@ -92,13 +92,13 @@ export function PrGuardEvidence({ record }: { record: MappedAuditDetail }) {
               {enforcing ? "Enforcing (policy registered)" : "Advisory (not registered)"}
             </span>
           ) : (
-            <span className="text-xs text-[#7F8CA3]">—</span>
+            <span className="text-xs text-muted-foreground">—</span>
           )}
         </Field>
         {(repo || prNumber !== undefined) && (
           <Field label="Pull request">
-            <span className="inline-flex items-center gap-1.5 font-mono text-xs text-[#AAB7CC]">
-              <GitPullRequest className="h-3.5 w-3.5 text-[#8FB8FF]" />
+            <span className="inline-flex items-center gap-1.5 font-mono text-xs text-muted-foreground">
+              <GitPullRequest className="h-3.5 w-3.5 text-brandInk" />
               {repo ?? "repo"}
               {prNumber !== undefined ? ` #${prNumber}` : ""}
             </span>
@@ -106,8 +106,8 @@ export function PrGuardEvidence({ record }: { record: MappedAuditDetail }) {
         )}
         {(baseRef || headRef) && (
           <Field label="Branches">
-            <span className="inline-flex items-center gap-1.5 font-mono text-xs text-[#AAB7CC]">
-              <GitBranch className="h-3.5 w-3.5 text-[#8FB8FF]" />
+            <span className="inline-flex items-center gap-1.5 font-mono text-xs text-muted-foreground">
+              <GitBranch className="h-3.5 w-3.5 text-brandInk" />
               {headRef ?? "?"} → {baseRef ?? "?"}
             </span>
           </Field>
@@ -136,28 +136,28 @@ export function PrGuardEvidence({ record }: { record: MappedAuditDetail }) {
 
       {matchedRules.length > 0 && (
         <div>
-          <p className="mb-2 text-xs text-[#7F8CA3]">
+          <p className="mb-2 text-xs text-muted-foreground">
             Why this category {blocked ? "blocked" : "was chosen"}
           </p>
-          <div className="overflow-hidden rounded-lg border border-[#22314D]">
+          <div className="overflow-hidden rounded-lg border border-tileLine">
             <table className="w-full text-left text-xs">
-              <thead className="bg-[#101C31] text-[#7F8CA3]">
+              <thead className="bg-card text-muted-foreground">
                 <tr>
                   <th className="px-3 py-2 font-medium">Path</th>
                   <th className="px-3 py-2 font-medium">Action type</th>
                   <th className="px-3 py-2 font-medium">Matched rule</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[#22314D]">
+              <tbody className="divide-y divide-tileLine">
                 {matchedRules.map((rule, i) => (
-                  <tr key={`${rule.path}-${i}`} className="bg-[#0B1426]">
-                    <td className="px-3 py-2 font-mono text-[#D7E3F8]">{rule.path ?? "—"}</td>
+                  <tr key={`${rule.path}-${i}`} className="bg-background">
+                    <td className="px-3 py-2 font-mono text-brandInk">{rule.path ?? "—"}</td>
                     <td className="px-3 py-2">
                       <Badge variant="secondary" className="font-mono text-[10px]">
                         {rule.action_type ?? "—"}
                       </Badge>
                     </td>
-                    <td className="px-3 py-2 font-mono text-[#7F8CA3]">{rule.glob ?? "—"}</td>
+                    <td className="px-3 py-2 font-mono text-muted-foreground">{rule.glob ?? "—"}</td>
                   </tr>
                 ))}
               </tbody>
@@ -168,10 +168,10 @@ export function PrGuardEvidence({ record }: { record: MappedAuditDetail }) {
 
       {changedFiles.length > 0 && (
         <Field label={`Changed files (${changedFiles.length})`}>
-          <div className="max-h-48 overflow-auto rounded-lg border border-[#22314D] bg-[#0B1426] p-3">
+          <div className="max-h-48 overflow-auto rounded-lg border border-tileLine bg-background p-3">
             <ul className="space-y-1">
               {changedFiles.map((file) => (
-                <li key={file} className="font-mono text-xs text-[#AAB7CC]">
+                <li key={file} className="font-mono text-xs text-muted-foreground">
                   {file}
                 </li>
               ))}
@@ -186,7 +186,7 @@ export function PrGuardEvidence({ record }: { record: MappedAuditDetail }) {
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
-      <p className="mb-1.5 text-xs text-[#7F8CA3]">{label}</p>
+      <p className="mb-1.5 text-xs text-muted-foreground">{label}</p>
       {children}
     </div>
   );

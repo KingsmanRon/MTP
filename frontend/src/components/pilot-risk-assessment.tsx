@@ -18,15 +18,15 @@ const FORMSPREE_ENDPOINT = "https://formspree.io/f/mpqjkbre";
 
 const levelStyles = {
   observe: {
-    badge: "border-[#4C8DFF]/30 bg-[#4C8DFF]/10 text-[#8FB8FF]",
+    badge: "border-primary/30 bg-primary/10 text-brandInk",
     icon: ShieldCheck,
   },
   candidate: {
-    badge: "border-[#F59E0B]/30 bg-[#F59E0B]/10 text-[#FBBF24]",
+    badge: "border-warning/30 bg-warning/10 text-warning",
     icon: AlertTriangle,
   },
   priority: {
-    badge: "border-[#28C281]/30 bg-[#28C281]/10 text-[#28C281]",
+    badge: "border-primary/30 bg-primary/10 text-primary",
     icon: CheckCircle2,
   },
 };
@@ -76,13 +76,13 @@ export function PilotRiskAssessment() {
   return (
     <section id="assessment" className="mx-auto max-w-7xl px-6 py-20 lg:px-8">
       <div className="mb-10 max-w-3xl">
-        <p className="text-sm font-medium uppercase tracking-[0.18em] text-[#8FB8FF]">
+        <p className="text-sm font-medium uppercase tracking-[0.18em] text-brandInk">
           Pilot qualification
         </p>
         <h2 className="mt-3 text-3xl font-semibold tracking-tight md:text-5xl">
           Find the action worth protecting first.
         </h2>
-        <p className="mt-4 text-lg leading-8 text-[#AAB7CC]">
+        <p className="mt-4 text-lg leading-8 text-muted-foreground">
           Select what is true today. Inntris will recommend the highest-value workflow for a
           focused pilot.
         </p>
@@ -97,8 +97,8 @@ export function PilotRiskAssessment() {
                 key={signal.id}
                 className={`cursor-pointer rounded-2xl border p-5 transition ${
                   isSelected
-                    ? "border-[#4C8DFF] bg-[#4C8DFF]/10"
-                    : "border-[#22314D] bg-[#0D1728] hover:border-[#35507A]"
+                    ? "border-primary bg-primary/10"
+                    : "border-tileLine bg-tile hover:border-primary/40"
                 }`}
               >
                 <input
@@ -109,14 +109,14 @@ export function PilotRiskAssessment() {
                 />
                 <div className="flex items-start justify-between gap-4">
                   <div>
-                    <p className="font-medium leading-6 text-[#F5F7FB]">{signal.question}</p>
-                    <p className="mt-2 text-sm leading-6 text-[#7F8CA3]">{signal.detail}</p>
+                    <p className="font-medium leading-6 text-foreground">{signal.question}</p>
+                    <p className="mt-2 text-sm leading-6 text-muted-foreground">{signal.detail}</p>
                   </div>
                   <span
                     className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border text-xs ${
                       isSelected
-                        ? "border-[#4C8DFF] bg-[#4C8DFF] text-white"
-                        : "border-[#35507A] text-transparent"
+                        ? "border-primary bg-primary text-white"
+                        : "border-primary/40 text-transparent"
                     }`}
                   >
                     <CheckCircle2 className="h-4 w-4" />
@@ -127,37 +127,37 @@ export function PilotRiskAssessment() {
           })}
         </div>
 
-        <aside className="h-fit rounded-[24px] border border-[#22314D] bg-[#0D1728] p-6 lg:sticky lg:top-24">
+        <aside className="h-fit rounded-[24px] border border-tileLine bg-tile p-6 lg:sticky lg:top-24">
           <div className="flex items-center justify-between gap-4">
             <span className={`rounded-full border px-3 py-1 text-xs font-medium ${resultStyle.badge}`}>
               {assessment.label}
             </span>
-            <span className="font-mono text-sm text-[#AAB7CC]">
+            <span className="font-mono text-sm text-muted-foreground">
               {assessment.score}/{assessment.maxScore}
             </span>
           </div>
 
           <div className="mt-6 flex gap-4">
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#101C31] text-[#8FB8FF]">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-card text-brandInk">
               <ResultIcon className="h-5 w-5" />
             </div>
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#7F8CA3]">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
                 Recommended pilot workflow
               </p>
-              <h3 className="mt-2 text-xl font-semibold text-[#F5F7FB]">
+              <h3 className="mt-2 text-xl font-semibold text-foreground">
                 {assessment.recommendedWorkflow}
               </h3>
-              <p className="mt-3 text-sm leading-6 text-[#AAB7CC]">{assessment.summary}</p>
+              <p className="mt-3 text-sm leading-6 text-muted-foreground">{assessment.summary}</p>
             </div>
           </div>
 
-          <div className="my-6 border-t border-[#22314D]" />
+          <div className="my-6 border-t border-tileLine" />
 
           {status === "success" ? (
-            <div className="rounded-2xl border border-[#28C281]/30 bg-[#28C281]/10 p-5">
-              <p className="font-medium text-[#28C281]">Pilot request received.</p>
-              <p className="mt-2 text-sm leading-6 text-[#C4CFDE]">
+            <div className="rounded-2xl border border-primary/30 bg-primary/10 p-5">
+              <p className="font-medium text-primary">Pilot request received.</p>
+              <p className="mt-2 text-sm leading-6 text-muted-foreground">
                 We will use this risk profile to prepare a focused workflow review and reply
                 within 24 hours.
               </p>
@@ -165,8 +165,8 @@ export function PilotRiskAssessment() {
           ) : (
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
-                <p className="font-medium text-[#F5F7FB]">Request a 14-day pilot scope</p>
-                <p className="mt-1 text-sm leading-6 text-[#7F8CA3]">
+                <p className="font-medium text-foreground">Request a 14-day pilot scope</p>
+                <p className="mt-1 text-sm leading-6 text-muted-foreground">
                   We will review one workflow, define its policy boundary, and show the
                   PASS/BLOCK receipt path.
                 </p>
@@ -178,7 +178,7 @@ export function PilotRiskAssessment() {
                   placeholder="Name"
                   value={form.name}
                   onChange={(event) => setForm({ ...form, name: event.target.value })}
-                  className="rounded-xl border border-[#22314D] bg-[#101C31] px-4 py-3 text-sm text-[#F5F7FB] outline-none placeholder:text-[#7F8CA3] focus:border-[#4C8DFF]"
+                  className="rounded-xl border border-tileLine bg-card px-4 py-3 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-primary"
                 />
                 <input
                   required
@@ -187,7 +187,7 @@ export function PilotRiskAssessment() {
                   placeholder="Work email"
                   value={form.email}
                   onChange={(event) => setForm({ ...form, email: event.target.value })}
-                  className="rounded-xl border border-[#22314D] bg-[#101C31] px-4 py-3 text-sm text-[#F5F7FB] outline-none placeholder:text-[#7F8CA3] focus:border-[#4C8DFF]"
+                  className="rounded-xl border border-tileLine bg-card px-4 py-3 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-primary"
                 />
               </div>
               <input
@@ -196,7 +196,7 @@ export function PilotRiskAssessment() {
                 placeholder="Company"
                 value={form.company}
                 onChange={(event) => setForm({ ...form, company: event.target.value })}
-                className="w-full rounded-xl border border-[#22314D] bg-[#101C31] px-4 py-3 text-sm text-[#F5F7FB] outline-none placeholder:text-[#7F8CA3] focus:border-[#4C8DFF]"
+                className="w-full rounded-xl border border-tileLine bg-card px-4 py-3 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-primary"
               />
               <textarea
                 aria-label="Workflow context"
@@ -204,17 +204,17 @@ export function PilotRiskAssessment() {
                 rows={3}
                 value={form.context}
                 onChange={(event) => setForm({ ...form, context: event.target.value })}
-                className="w-full resize-none rounded-xl border border-[#22314D] bg-[#101C31] px-4 py-3 text-sm text-[#F5F7FB] outline-none placeholder:text-[#7F8CA3] focus:border-[#4C8DFF]"
+                className="w-full resize-none rounded-xl border border-tileLine bg-card px-4 py-3 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-primary"
               />
               {status === "error" && (
-                <p className="text-sm text-[#F87171]">
+                <p className="text-sm text-destructive">
                   Submission failed. Email sales@inntris.com with your workflow.
                 </p>
               )}
               <button
                 type="submit"
                 disabled={status === "submitting"}
-                className="inline-flex w-full items-center justify-center rounded-xl bg-[#28C281] px-5 py-3 text-sm font-medium text-white transition hover:opacity-90 disabled:opacity-60"
+                className="inline-flex w-full items-center justify-center rounded-xl bg-primary px-5 py-3 text-sm font-medium text-white transition hover:opacity-90 disabled:opacity-60"
               >
                 {status === "submitting" ? (
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -226,7 +226,7 @@ export function PilotRiskAssessment() {
             </form>
           )}
 
-          <p className="mt-4 text-xs leading-5 text-[#7F8CA3]">
+          <p className="mt-4 text-xs leading-5 text-muted-foreground">
             This assessment qualifies a pilot workflow. It is not a security certification.
           </p>
         </aside>

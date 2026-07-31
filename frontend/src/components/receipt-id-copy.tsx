@@ -23,7 +23,7 @@ export function ReceiptIdCopy({ id }: { id: string }) {
       onClick={handleCopy}
       title={copied ? "Copied!" : `Click to copy: ${id}`}
       aria-label={copied ? "Receipt ID copied" : "Copy receipt ID"}
-      className="group mt-1 block w-full truncate rounded text-left font-mono text-xs text-[#8FB8FF] transition-colors hover:text-teal-400 focus:outline-none focus:ring-1 focus:ring-teal-400/50"
+      className="group mt-1 block w-full truncate rounded text-left font-mono text-xs text-brandInk transition-colors hover:text-teal-400 focus:outline-none focus:ring-1 focus:ring-teal-400/50"
     >
       <span className="inline-block max-w-full truncate align-bottom">
         {copied ? "✓ Copied" : id}

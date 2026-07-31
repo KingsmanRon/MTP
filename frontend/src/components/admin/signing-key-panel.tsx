@@ -89,13 +89,13 @@ export function SigningKeyPanel({ agent }: { agent: MappedAgent }) {
   };
 
   return (
-    <div className="rounded-lg border border-[#22314D] bg-[#101C31] p-4">
+    <div className="rounded-lg border border-tileLine bg-card p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex items-start gap-2">
-          <KeyRound className="mt-0.5 h-4 w-4 text-[#8FB8FF]" />
+          <KeyRound className="mt-0.5 h-4 w-4 text-brandInk" />
           <div>
-            <h2 className="text-sm font-semibold text-[#F5F7FB]">Signing key</h2>
-            <p className="mt-1 max-w-xl text-xs leading-5 text-[#7F8CA3]">
+            <h2 className="text-sm font-semibold text-foreground">Signing key</h2>
+            <p className="mt-1 max-w-xl text-xs leading-5 text-muted-foreground">
               Rotate if the <span className="font-mono">INNTRIS_PRIVATE_KEY_B64</span> secret may
               have leaked. The new keypair is generated in your browser; the old key stops
               verifying immediately, and trust score, policy, and audit history are preserved.
@@ -109,13 +109,13 @@ export function SigningKeyPanel({ agent }: { agent: MappedAgent }) {
 
       <div className="mt-4 grid gap-2 text-xs">
         <Row label="Fingerprint">
-          <span className="font-mono text-[#AAB7CC]">
+          <span className="font-mono text-muted-foreground">
             {fingerprint ? `${fingerprint.slice(0, 16)}…` : "—"}
           </span>
         </Row>
         {agent.key_rotated_at && phase.kind !== "rotated" && (
           <Row label="Last rotated">
-            <span className="text-[#AAB7CC]">{formatDateTime(agent.key_rotated_at)}</span>
+            <span className="text-muted-foreground">{formatDateTime(agent.key_rotated_at)}</span>
           </Row>
         )}
       </div>
@@ -130,12 +130,12 @@ export function SigningKeyPanel({ agent }: { agent: MappedAgent }) {
             <p className="text-xs font-medium text-amber-200">
               New private key — shown once. Update the secret now.
             </p>
-            <p className="mt-1 text-[11px] text-[#7F8CA3]">
+            <p className="mt-1 text-[11px] text-muted-foreground">
               Set <span className="font-mono">INNTRIS_PRIVATE_KEY_B64</span> in the repo&apos;s
               GitHub Secrets to this value. It is not stored and cannot be shown again.
             </p>
             <div className="mt-2 flex items-center gap-2">
-              <code className="flex-1 overflow-x-auto rounded border border-[#22314D] bg-[#07101F] p-2 font-mono text-[11px] text-[#D7E3F8]">
+              <code className="flex-1 overflow-x-auto rounded border border-tileLine bg-background p-2 font-mono text-[11px] text-brandInk">
                 {phase.seedB64}
               </code>
               <Button
@@ -143,7 +143,7 @@ export function SigningKeyPanel({ agent }: { agent: MappedAgent }) {
                 size="sm"
                 variant="outline"
                 onClick={() => copySeed(phase.seedB64)}
-                className="shrink-0 border-[#22314D] bg-[#0D1728] text-[#AAB7CC]"
+                className="shrink-0 border-tileLine bg-tile text-muted-foreground"
               >
                 {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
               </Button>
@@ -169,14 +169,14 @@ export function SigningKeyPanel({ agent }: { agent: MappedAgent }) {
                 value={reason}
                 onChange={(e) => setReason(e.target.value)}
                 placeholder="Reason (optional, recorded for audit)"
-                className="mt-3 w-full rounded-md border border-[#22314D] bg-[#0D1728] p-2 text-xs text-[#D7E3F8] placeholder:text-[#5C6B82]"
+                className="mt-3 w-full rounded-md border border-tileLine bg-tile p-2 text-xs text-brandInk placeholder:text-muted-foreground"
               />
               <div className="mt-3 flex gap-2">
                 <Button
                   type="button"
                   size="sm"
                   onClick={rotate}
-                  className="bg-[#E0533D] text-white hover:bg-[#E0533D]/90"
+                  className="bg-destructive text-white hover:bg-destructive/90"
                 >
                   Generate &amp; rotate
                 </Button>
@@ -185,7 +185,7 @@ export function SigningKeyPanel({ agent }: { agent: MappedAgent }) {
                   size="sm"
                   variant="outline"
                   onClick={() => setConfirming(false)}
-                  className="border-[#22314D] bg-[#0D1728] text-[#AAB7CC]"
+                  className="border-tileLine bg-tile text-muted-foreground"
                 >
                   Cancel
                 </Button>
@@ -198,7 +198,7 @@ export function SigningKeyPanel({ agent }: { agent: MappedAgent }) {
               variant="outline"
               disabled={phase.kind === "working"}
               onClick={() => setConfirming(true)}
-              className="border-[#22314D] bg-[#0D1728] text-[#AAB7CC]"
+              className="border-tileLine bg-tile text-muted-foreground"
             >
               <RotateCw className="mr-2 h-3.5 w-3.5" />
               {phase.kind === "working" ? "Rotating…" : "Rotate signing key"}
@@ -212,8 +212,8 @@ export function SigningKeyPanel({ agent }: { agent: MappedAgent }) {
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="flex items-center justify-between gap-3 rounded-md border border-[#22314D] bg-[#07101F] px-3 py-2">
-      <span className="text-[#7F8CA3]">{label}</span>
+    <div className="flex items-center justify-between gap-3 rounded-md border border-tileLine bg-background px-3 py-2">
+      <span className="text-muted-foreground">{label}</span>
       {children}
     </div>
   );

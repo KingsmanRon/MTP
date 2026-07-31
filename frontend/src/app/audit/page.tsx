@@ -59,26 +59,26 @@ const timelineSteps = [
 
 export default function AuditPreviewPage() {
   return (
-    <div className="min-h-screen bg-[#07111F] text-[#F5F7FB]">
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(76,141,255,0.14),transparent_32%),radial-gradient(circle_at_80%_30%,rgba(143,184,255,0.08),transparent_24%)]" />
+    <div className="min-h-screen bg-background text-foreground">
+      <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-accent/50 via-transparent to-transparent" />
 
       {/* Header */}
-      <header className="sticky top-0 z-20 border-b border-white/8 bg-[#07111F]/85 backdrop-blur">
+      <header className="sticky top-0 z-20 border-b border-tileLine bg-background/85 backdrop-blur">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4 lg:px-8">
           <Link href="/" className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-[#22314D] bg-[#0D1728] shadow-[0_0_0_1px_rgba(255,255,255,0.02)]">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-tileLine bg-tile">
               <InntrisLogo className="h-6 w-6" />
             </div>
             <div>
               <div className="text-lg font-semibold tracking-tight">Inntris</div>
-              <div className="text-xs text-[#7F8CA3]">Audit Explorer</div>
+              <div className="text-xs text-muted-foreground">Audit Explorer</div>
             </div>
           </Link>
           <nav className="hidden items-center gap-6 text-sm md:flex">
-            <Link href="/admin" className="text-[#C4CFDE] transition hover:text-white">Console</Link>
-            <Link href="/portal" className="text-[#C4CFDE] transition hover:text-white">Portal</Link>
-            <Link href="/verify" className="text-[#C4CFDE] transition hover:text-white">Verify</Link>
-            <Link href="/docs" className="text-[#C4CFDE] transition hover:text-white">Docs</Link>
+            <Link href="/admin" className="text-muted-foreground transition hover:text-white">Console</Link>
+            <Link href="/portal" className="text-muted-foreground transition hover:text-white">Portal</Link>
+            <Link href="/verify" className="text-muted-foreground transition hover:text-white">Verify</Link>
+            <Link href="/docs" className="text-muted-foreground transition hover:text-white">Docs</Link>
           </nav>
           <MobileMenu
             links={[
@@ -96,17 +96,17 @@ export default function AuditPreviewPage() {
       <main className="relative">
         {/* Hero */}
         <section className="mx-auto max-w-4xl px-6 pb-12 pt-16 text-center lg:px-8 lg:pt-24">
-          <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-[#22314D] bg-[#0D1728]/90 px-3 py-1.5 text-sm text-[#AAB7CC]">
-            <Search className="h-4 w-4 text-[#8FB8FF]" />
+          <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-tileLine bg-tile/90 px-3 py-1.5 text-sm text-muted-foreground">
+            <Search className="h-4 w-4 text-brandInk" />
             Inntris Audit Explorer
           </div>
 
           <h1 className="text-3xl font-semibold leading-tight tracking-tight md:text-5xl">
             Search the decision trail and{" "}
-            <span className="text-[#4C8DFF]">inspect cryptographic evidence</span>
+            <span className="text-primary">inspect cryptographic evidence</span>
           </h1>
 
-          <p className="mx-auto mt-5 max-w-2xl text-lg leading-8 text-[#C4CFDE]">
+          <p className="mx-auto mt-5 max-w-2xl text-lg leading-8 text-muted-foreground">
             Trace policy outcomes, inspect signed receipts, and review tamper-evident
             records across agent activity.
           </p>
@@ -114,13 +114,13 @@ export default function AuditPreviewPage() {
           <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
             <Link
               href="/#contact"
-              className="rounded-lg bg-[#28C281] px-6 py-3 text-sm font-medium text-white transition-opacity hover:opacity-90"
+              className="rounded-lg bg-primary px-6 py-3 text-sm font-medium text-white transition-opacity hover:opacity-90"
             >
               Request Access
             </Link>
             <Link
               href="/verify"
-              className="rounded-lg border border-[#22314D] bg-[#0D1728] px-6 py-3 text-sm font-medium text-[#F5F7FB] transition hover:bg-[#101C31]"
+              className="rounded-lg border border-tileLine bg-tile px-6 py-3 text-sm font-medium text-foreground transition hover:bg-card"
             >
               Verify a Live Receipt
             </Link>
@@ -131,12 +131,12 @@ export default function AuditPreviewPage() {
         <section className="mx-auto max-w-7xl px-6 pb-16 lg:px-8">
           <div className="grid gap-5 md:grid-cols-2">
             {/* Panel 1: Search and Filter */}
-            <div className="rounded-[24px] border border-[#22314D] bg-[#0D1728] p-6">
+            <div className="rounded-[24px] border border-tileLine bg-tile p-6">
               <div className="mb-5 flex items-center gap-2">
-                <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-[#22314D] bg-[#101C31] text-[#8FB8FF]">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-tileLine bg-card text-brandInk">
                   <Search className="h-4 w-4" />
                 </div>
-                <h3 className="text-sm font-semibold text-[#F5F7FB]">Search and Filter</h3>
+                <h3 className="text-sm font-semibold text-foreground">Search and Filter</h3>
               </div>
               <div className="space-y-3">
                 {[
@@ -147,35 +147,35 @@ export default function AuditPreviewPage() {
                 ].map((row) => (
                   <div
                     key={row.label}
-                    className="flex items-center justify-between rounded-xl border border-white/6 bg-[#101C31]/70 px-4 py-3"
+                    className="flex items-center justify-between rounded-xl border border-tileLine bg-card/70 px-4 py-3"
                   >
-                    <span className="text-xs text-[#7F8CA3]">{row.label}</span>
-                    <span className="text-sm font-mono text-[#AAB7CC]">{row.value}</span>
+                    <span className="text-xs text-muted-foreground">{row.label}</span>
+                    <span className="text-sm font-mono text-muted-foreground">{row.value}</span>
                   </div>
                 ))}
               </div>
             </div>
 
             {/* Panel 2: Evidence Timeline */}
-            <div className="rounded-[24px] border border-[#22314D] bg-[#0D1728] p-6">
+            <div className="rounded-[24px] border border-tileLine bg-tile p-6">
               <div className="mb-5 flex items-center gap-2">
-                <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-[#22314D] bg-[#101C31] text-[#8FB8FF]">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-tileLine bg-card text-brandInk">
                   <Clock className="h-4 w-4" />
                 </div>
-                <h3 className="text-sm font-semibold text-[#F5F7FB]">Evidence Timeline</h3>
+                <h3 className="text-sm font-semibold text-foreground">Evidence Timeline</h3>
               </div>
               <div className="relative space-y-4 pl-5">
-                <div className="absolute left-[9px] top-1 bottom-1 w-px bg-[#22314D]" />
+                <div className="absolute left-[9px] top-1 bottom-1 w-px bg-[hsl(var(--tile-line))]" />
                 {timelineSteps.map((step) => {
                   const Icon = step.icon;
                   return (
                     <div key={step.label} className="relative flex items-center gap-3">
-                      <div className="relative z-10 flex h-5 w-5 items-center justify-center rounded-full border border-[#22314D] bg-[#0D1728]">
-                        <div className="h-2 w-2 rounded-full bg-[#4C8DFF]" />
+                      <div className="relative z-10 flex h-5 w-5 items-center justify-center rounded-full border border-tileLine bg-tile">
+                        <div className="h-2 w-2 rounded-full bg-primary" />
                       </div>
-                      <div className="flex flex-1 items-center justify-between rounded-xl border border-white/6 bg-[#101C31]/70 px-4 py-3">
-                        <span className="text-sm text-[#F5F7FB]">{step.label}</span>
-                        <Icon className="h-4 w-4 text-[#7F8CA3]" />
+                      <div className="flex flex-1 items-center justify-between rounded-xl border border-tileLine bg-card/70 px-4 py-3">
+                        <span className="text-sm text-foreground">{step.label}</span>
+                        <Icon className="h-4 w-4 text-muted-foreground" />
                       </div>
                     </div>
                   );
@@ -184,36 +184,36 @@ export default function AuditPreviewPage() {
             </div>
 
             {/* Panel 3: Recent Records */}
-            <div className="rounded-[24px] border border-[#22314D] bg-[#0D1728] p-6">
+            <div className="rounded-[24px] border border-tileLine bg-tile p-6">
               <div className="mb-5 flex items-center gap-2">
-                <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-[#22314D] bg-[#101C31] text-[#8FB8FF]">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-tileLine bg-card text-brandInk">
                   <FileCheck2 className="h-4 w-4" />
                 </div>
-                <h3 className="text-sm font-semibold text-[#F5F7FB]">Recent Records</h3>
+                <h3 className="text-sm font-semibold text-foreground">Recent Records</h3>
               </div>
               <div className="space-y-2">
                 {previewRecords.map((rec) => (
                   <div
                     key={rec.id}
-                    className="flex items-center justify-between rounded-xl border border-white/6 bg-[#101C31]/70 px-4 py-3"
+                    className="flex items-center justify-between rounded-xl border border-tileLine bg-card/70 px-4 py-3"
                   >
                     <div className="flex items-center gap-3">
                       {rec.verdict === "BLOCK" ? (
-                        <XOctagon className="h-4 w-4 text-[#ef4444]" />
+                        <XOctagon className="h-4 w-4 text-destructive" />
                       ) : (
-                        <CheckCircle2 className="h-4 w-4 text-[#22c55e]" />
+                        <CheckCircle2 className="h-4 w-4 text-success" />
                       )}
-                      <span className="text-xs font-mono text-[#8FB8FF]">{rec.id}</span>
+                      <span className="text-xs font-mono text-brandInk">{rec.id}</span>
                     </div>
                     <div className="flex items-center gap-4">
                       <span
                         className={`text-xs font-bold ${
-                          rec.verdict === "BLOCK" ? "text-[#ef4444]" : "text-[#22c55e]"
+                          rec.verdict === "BLOCK" ? "text-destructive" : "text-success"
                         }`}
                       >
                         {rec.verdict}
                       </span>
-                      <span className="text-xs text-[#7F8CA3]">{rec.timestamp}</span>
+                      <span className="text-xs text-muted-foreground">{rec.timestamp}</span>
                     </div>
                   </div>
                 ))}
@@ -221,12 +221,12 @@ export default function AuditPreviewPage() {
             </div>
 
             {/* Panel 4: Audit Depth */}
-            <div className="rounded-[24px] border border-[#22314D] bg-[#0D1728] p-6">
+            <div className="rounded-[24px] border border-tileLine bg-tile p-6">
               <div className="mb-5 flex items-center gap-2">
-                <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-[#22314D] bg-[#101C31] text-[#8FB8FF]">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-tileLine bg-card text-brandInk">
                   <Fingerprint className="h-4 w-4" />
                 </div>
-                <h3 className="text-sm font-semibold text-[#F5F7FB]">Audit Depth</h3>
+                <h3 className="text-sm font-semibold text-foreground">Audit Depth</h3>
               </div>
               <div className="space-y-3">
                 {[
@@ -237,10 +237,10 @@ export default function AuditPreviewPage() {
                 ].map((row) => (
                   <div
                     key={row.label}
-                    className="flex items-center justify-between rounded-xl border border-white/6 bg-[#101C31]/70 px-4 py-3"
+                    className="flex items-center justify-between rounded-xl border border-tileLine bg-card/70 px-4 py-3"
                   >
-                    <span className="text-xs text-[#7F8CA3]">{row.label}</span>
-                    <span className="text-sm font-mono text-[#AAB7CC]">{row.value}</span>
+                    <span className="text-xs text-muted-foreground">{row.label}</span>
+                    <span className="text-sm font-mono text-muted-foreground">{row.value}</span>
                   </div>
                 ))}
               </div>
@@ -250,8 +250,8 @@ export default function AuditPreviewPage() {
 
         {/* What teams use this for */}
         <section className="mx-auto max-w-4xl px-6 pb-16 lg:px-8">
-          <div className="rounded-[28px] border border-[#22314D] bg-[#0D1728] p-8">
-            <h2 className="mb-5 text-lg font-semibold tracking-tight text-[#F5F7FB]">
+          <div className="rounded-[28px] border border-tileLine bg-tile p-8">
+            <h2 className="mb-5 text-lg font-semibold tracking-tight text-foreground">
               What teams use this for
             </h2>
             <div className="grid gap-4 md:grid-cols-3">
@@ -273,15 +273,15 @@ export default function AuditPreviewPage() {
                 return (
                   <div
                     key={item.text}
-                    className="flex gap-3 rounded-2xl border border-white/6 bg-[#101C31]/70 p-4"
+                    className="flex gap-3 rounded-2xl border border-tileLine bg-card/70 p-4"
                   >
-                    <Icon className="mt-0.5 h-5 w-5 flex-shrink-0 text-[#8FB8FF]" />
-                    <p className="text-sm leading-6 text-[#C4CFDE]">{item.text}</p>
+                    <Icon className="mt-0.5 h-5 w-5 flex-shrink-0 text-brandInk" />
+                    <p className="text-sm leading-6 text-muted-foreground">{item.text}</p>
                   </div>
                 );
               })}
             </div>
-            <p className="mt-6 text-sm text-[#7F8CA3]">
+            <p className="mt-6 text-sm text-muted-foreground">
               Audit Explorer is available to approved teams requiring full search and
               investigation capabilities.
             </p>
@@ -290,13 +290,13 @@ export default function AuditPreviewPage() {
       </main>
 
       {/* Footer */}
-      <footer className="border-t border-white/8">
+      <footer className="border-t border-tileLine">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-8 lg:px-8">
           <div className="flex items-center gap-2">
             <InntrisLogo className="h-5 w-5" />
-            <span className="text-[#7F8CA3]">Inntris Core</span>
+            <span className="text-muted-foreground">Inntris Core</span>
           </div>
-          <div className="flex items-center gap-6 text-[#7F8CA3]">
+          <div className="flex items-center gap-6 text-muted-foreground">
             <Link href="/" className="text-sm transition-colors hover:text-white">Home</Link>
             <Link href="/docs" className="text-sm transition-colors hover:text-white">Docs</Link>
             <Link href="/verify" className="text-sm transition-colors hover:text-white">Verify</Link>

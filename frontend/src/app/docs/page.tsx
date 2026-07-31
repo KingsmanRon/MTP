@@ -24,26 +24,26 @@ export const metadata: Metadata = {
 
 export default function DocsPage() {
   return (
-    <div className="min-h-screen bg-[#07111F] text-[#F5F7FB]">
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(76,141,255,0.14),transparent_32%),radial-gradient(circle_at_80%_30%,rgba(143,184,255,0.08),transparent_24%)]" />
+    <div className="min-h-screen bg-background text-foreground">
+      <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-accent/50 via-transparent to-transparent" />
 
       {/* Header */}
-      <header className="sticky top-0 z-20 border-b border-white/8 bg-[#07111F]/85 backdrop-blur">
+      <header className="sticky top-0 z-20 border-b border-tileLine bg-background/85 backdrop-blur">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4 lg:px-8">
           <Link href="/" className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-[#22314D] bg-[#0D1728] shadow-[0_0_0_1px_rgba(255,255,255,0.02)]">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-tileLine bg-tile">
               <InntrisLogo className="h-6 w-6" />
             </div>
             <div>
               <div className="text-lg font-semibold tracking-tight">Inntris</div>
-              <div className="text-xs text-[#7F8CA3]">Documentation</div>
+              <div className="text-xs text-muted-foreground">Documentation</div>
             </div>
           </Link>
           <nav className="hidden items-center gap-6 text-sm md:flex">
-            <Link href="/admin" className="text-[#C4CFDE] transition hover:text-white">Console</Link>
-            <Link href="/portal" className="text-[#C4CFDE] transition hover:text-white">Portal</Link>
-            <Link href="/audit" className="text-[#C4CFDE] transition hover:text-white">Audit</Link>
-            <Link href="/verify" className="text-[#C4CFDE] transition hover:text-white">Verify</Link>
+            <Link href="/admin" className="text-muted-foreground transition hover:text-white">Console</Link>
+            <Link href="/portal" className="text-muted-foreground transition hover:text-white">Portal</Link>
+            <Link href="/audit" className="text-muted-foreground transition hover:text-white">Audit</Link>
+            <Link href="/verify" className="text-muted-foreground transition hover:text-white">Verify</Link>
           </nav>
           <MobileMenu
             links={[
@@ -59,7 +59,7 @@ export default function DocsPage() {
       <main className="relative">
         {/* Hero Section */}
         <section className="mx-auto max-w-4xl px-6 pb-12 pt-16 text-center lg:px-8 lg:pt-24">
-          <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-[#22314D] bg-[#0D1728]/90 px-3 py-1.5 text-sm text-[#AAB7CC]">
+          <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-tileLine bg-tile/90 px-3 py-1.5 text-sm text-muted-foreground">
             <InntrisLogo className="h-4 w-4" />
             Documentation
           </div>
@@ -68,11 +68,11 @@ export default function DocsPage() {
             Inntris
           </h1>
 
-          <p className="mx-auto mt-5 max-w-2xl text-xl leading-8 text-[#C4CFDE]">
+          <p className="mx-auto mt-5 max-w-2xl text-xl leading-8 text-muted-foreground">
             Runtime verification and cryptographic proof for AI agent actions.
           </p>
 
-          <p className="mx-auto mt-3 max-w-2xl text-lg leading-8 text-[#AAB7CC]">
+          <p className="mx-auto mt-3 max-w-2xl text-lg leading-8 text-muted-foreground">
             Inntris verifies agent actions before execution, signs decisions with agent identity,
             and produces a tamper-evident receipt for every decision.
           </p>
@@ -80,13 +80,13 @@ export default function DocsPage() {
           <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
             <a
               href="#getting-started"
-              className="rounded-lg bg-[#28C281] px-6 py-3 text-sm font-medium text-white transition-opacity hover:opacity-90"
+              className="rounded-lg bg-primary px-6 py-3 text-sm font-medium text-white transition-opacity hover:opacity-90"
             >
               Get Started
             </a>
             <Link
               href="/verify"
-              className="rounded-lg border border-[#22314D] bg-[#0D1728] px-6 py-3 text-sm font-medium text-[#F5F7FB] transition hover:bg-[#101C31]"
+              className="rounded-lg border border-tileLine bg-tile px-6 py-3 text-sm font-medium text-foreground transition hover:bg-card"
             >
               See live verification
             </Link>
@@ -97,13 +97,13 @@ export default function DocsPage() {
         <section className="mx-auto max-w-4xl px-6 py-16 lg:px-8">
           <div className="text-center mb-10">
             <h2 className="text-3xl font-semibold tracking-tight">What Inntris Is</h2>
-            <p className="mt-3 text-lg text-[#AAB7CC]">
+            <p className="mt-3 text-lg text-muted-foreground">
               A policy decision point and evidence system for AI agent actions
             </p>
           </div>
 
-          <div className="rounded-[24px] border border-[#22314D] bg-[#0D1728] p-8">
-            <p className="text-lg leading-relaxed text-[#C4CFDE] mb-5">
+          <div className="rounded-[24px] border border-tileLine bg-tile p-8">
+            <p className="text-lg leading-relaxed text-muted-foreground mb-5">
               Inntris is not observability, logging, or prompt guardrails. It is a policy decision
               point and evidence system for AI agent actions.
             </p>
@@ -114,13 +114,13 @@ export default function DocsPage() {
                 "Enforces spending limits, rate limits, and action type restrictions before an agent can act",
                 "Records tamper-evident evidence for every approval, block, and exception",
               ].map((item) => (
-                <li key={item} className="flex items-start gap-3 text-[#C4CFDE]">
-                  <CheckCircle className="h-5 w-5 text-[#22c55e] mt-0.5 flex-shrink-0" />
+                <li key={item} className="flex items-start gap-3 text-muted-foreground">
+                  <CheckCircle className="h-5 w-5 text-success mt-0.5 flex-shrink-0" />
                   {item}
                 </li>
               ))}
             </ul>
-            <p className="mt-5 text-[#AAB7CC]">
+            <p className="mt-5 text-muted-foreground">
               Built for teams that need stronger control and clearer proof than logs, screenshots,
               or after-the-fact review.
             </p>
@@ -131,7 +131,7 @@ export default function DocsPage() {
         <section className="mx-auto max-w-6xl px-6 py-16 lg:px-8">
           <div className="text-center mb-10">
             <h2 className="text-3xl font-semibold tracking-tight">What We Do</h2>
-            <p className="mt-3 text-lg text-[#AAB7CC]">
+            <p className="mt-3 text-lg text-muted-foreground">
               Four pillars of trust for autonomous AI systems
             </p>
           </div>
@@ -181,16 +181,16 @@ export default function DocsPage() {
             ].map((pillar) => {
               const Icon = pillar.icon;
               return (
-                <div key={pillar.title} className="rounded-[24px] border border-[#22314D] bg-[#0D1728] p-6">
-                  <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl border border-[#22314D] bg-[#101C31] text-[#8FB8FF]">
+                <div key={pillar.title} className="rounded-[24px] border border-tileLine bg-tile p-6">
+                  <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl border border-tileLine bg-card text-brandInk">
                     <Icon className="h-6 w-6" />
                   </div>
-                  <h3 className="text-lg font-semibold text-[#F5F7FB]">{pillar.title}</h3>
-                  <p className="mt-1 text-sm text-[#AAB7CC]">{pillar.desc}</p>
+                  <h3 className="text-lg font-semibold text-foreground">{pillar.title}</h3>
+                  <p className="mt-1 text-sm text-muted-foreground">{pillar.desc}</p>
                   <ul className="mt-4 space-y-2">
                     {pillar.items.map((item) => (
-                      <li key={item} className="flex items-start gap-2 text-sm text-[#C4CFDE]">
-                        <CheckCircle className="h-4 w-4 text-[#22c55e] mt-0.5 flex-shrink-0" />
+                      <li key={item} className="flex items-start gap-2 text-sm text-muted-foreground">
+                        <CheckCircle className="h-4 w-4 text-success mt-0.5 flex-shrink-0" />
                         {item}
                       </li>
                     ))}
@@ -205,7 +205,7 @@ export default function DocsPage() {
         <section id="getting-started" className="mx-auto max-w-4xl px-6 py-16 lg:px-8">
           <div className="text-center mb-10">
             <h2 className="text-3xl font-semibold tracking-tight">How It Works</h2>
-            <p className="mt-3 text-lg text-[#AAB7CC]">
+            <p className="mt-3 text-lg text-muted-foreground">
               Simple integration, powerful protection
             </p>
           </div>
@@ -267,14 +267,14 @@ POST /admin/agents/{agent_id}/promote   (admin scope)
               },
             ].map((item) => (
               <div key={item.step} className="flex gap-5">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#4C8DFF]/15 text-sm font-bold text-[#8FB8FF]">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/15 text-sm font-bold text-brandInk">
                   {item.step}
                 </div>
-                <div className="flex-1">
+                <div className="min-w-0 flex-1">
                   <h3 className="text-xl font-semibold mb-2">{item.title}</h3>
-                  <p className="text-[#AAB7CC] mb-4">{item.body}</p>
-                  <div className="rounded-2xl border border-[#22314D] bg-[#101C31]/70 p-4">
-                    <pre className="text-sm text-[#C4CFDE] overflow-x-auto">{item.code}</pre>
+                  <p className="text-muted-foreground mb-4">{item.body}</p>
+                  <div className="rounded-2xl border border-tileLine bg-card/70 p-4">
+                    <pre className="text-sm text-muted-foreground overflow-x-auto">{item.code}</pre>
                   </div>
                 </div>
               </div>
@@ -282,30 +282,30 @@ POST /admin/agents/{agent_id}/promote   (admin scope)
 
             {/* Step 4 — Verify & Audit */}
             <div className="flex gap-5">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#4C8DFF]/15 text-sm font-bold text-[#8FB8FF]">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/15 text-sm font-bold text-brandInk">
                 4
               </div>
-              <div className="flex-1">
+              <div className="min-w-0 flex-1">
                 <h3 className="text-xl font-semibold mb-2">Verify &amp; Audit</h3>
-                <p className="text-[#AAB7CC] mb-4">
+                <p className="text-muted-foreground mb-4">
                   Every action is cryptographically signed, verified against policies, and logged
                   to an immutable audit trail. Merkle roots are anchored to Base L2 hourly.
                 </p>
                 <div className="grid gap-4 sm:grid-cols-3">
                   {[
-                    { label: "PASS", desc: "Action verified & logged", color: "#22c55e", icon: CheckCircle },
-                    { label: "BLOCK", desc: "Policy violation", color: "#ef4444", icon: Shield },
-                    { label: "ESCALATE", desc: "Too many requests", color: "#f59e0b", icon: Zap },
+                    { label: "PASS", desc: "Action verified & logged", color: "hsl(var(--success))", icon: CheckCircle },
+                    { label: "BLOCK", desc: "Policy violation", color: "hsl(var(--destructive))", icon: Shield },
+                    { label: "ESCALATE", desc: "Too many requests", color: "hsl(var(--warning))", icon: Zap },
                   ].map((outcome) => {
                     const Icon = outcome.icon;
                     return (
                       <div
                         key={outcome.label}
-                        className="rounded-2xl border border-[#22314D] bg-[#0D1728] p-4 text-center"
+                        className="rounded-2xl border border-tileLine bg-tile p-4 text-center"
                       >
                         <Icon className="h-8 w-8 mx-auto mb-2" style={{ color: outcome.color }} />
                         <p className="font-medium" style={{ color: outcome.color }}>{outcome.label}</p>
-                        <p className="text-xs text-[#7F8CA3]">{outcome.desc}</p>
+                        <p className="text-xs text-muted-foreground">{outcome.desc}</p>
                       </div>
                     );
                   })}
@@ -319,13 +319,13 @@ POST /admin/agents/{agent_id}/promote   (admin scope)
         <section className="mx-auto max-w-4xl px-6 py-16 lg:px-8">
           <div className="text-center mb-10">
             <h2 className="text-3xl font-semibold tracking-tight">Verification Receipt</h2>
-            <p className="mt-3 text-lg text-[#AAB7CC]">
+            <p className="mt-3 text-lg text-muted-foreground">
               Every decision produces a signed receipt you can inspect, share, or verify on-chain.
             </p>
           </div>
 
-          <div className="rounded-[24px] border border-[#22314D] bg-[#0D1728] p-6 mb-6">
-            <pre className="text-sm text-[#C4CFDE] overflow-x-auto">
+          <div className="rounded-[24px] border border-tileLine bg-tile p-6 mb-6">
+            <pre className="text-sm text-muted-foreground overflow-x-auto">
 {`{
   "verdict": "approved",
   "agent_id": "uuid",
@@ -339,17 +339,17 @@ POST /admin/agents/{agent_id}/promote   (admin scope)
   "root_hash": "e56891f1de39aca50725f0e36ee4b1c4fe1c50966f69a1b368e1d691c2466149"
 }`}
             </pre>
-            <p className="mt-3 text-xs text-[#7F8CA3]">
-              The UI presents <code className="font-mono text-[#8FB8FF]">approved</code> as <code className="font-mono text-[#8FB8FF]">PASS</code>, <code className="font-mono text-[#8FB8FF]">blocked</code> as <code className="font-mono text-[#8FB8FF]">BLOCK</code>, and <code className="font-mono text-[#8FB8FF]">rate_limited</code> as <code className="font-mono text-[#8FB8FF]">ESCALATE</code>.
+            <p className="mt-3 text-xs text-muted-foreground">
+              The UI presents <code className="font-mono text-brandInk">approved</code> as <code className="font-mono text-brandInk">PASS</code>, <code className="font-mono text-brandInk">blocked</code> as <code className="font-mono text-brandInk">BLOCK</code>, and <code className="font-mono text-brandInk">rate_limited</code> as <code className="font-mono text-brandInk">ESCALATE</code>.
             </p>
           </div>
 
-          <p className="text-[#AAB7CC] mb-5">
+          <p className="text-muted-foreground mb-5">
             Receipts are stored in the tamper-evident audit trail and Merkle roots are anchored
             to Base L2 hourly. Any record can be independently verified by audit ID or transaction hash.
           </p>
 
-          <Link href="/verify" className="inline-flex items-center gap-2 text-sm font-medium text-[#8FB8FF] transition hover:text-white">
+          <Link href="/verify" className="inline-flex items-center gap-2 text-sm font-medium text-brandInk transition hover:text-white">
             <ArrowRight className="h-4 w-4" />
             See live verification
           </Link>
@@ -359,7 +359,7 @@ POST /admin/agents/{agent_id}/promote   (admin scope)
         <section className="mx-auto max-w-4xl px-6 py-16 lg:px-8">
           <div className="text-center mb-10">
             <h2 className="text-3xl font-semibold tracking-tight">Our Goal</h2>
-            <p className="mt-3 text-lg text-[#AAB7CC]">
+            <p className="mt-3 text-lg text-muted-foreground">
               Building the trust infrastructure for the agentic future
             </p>
           </div>
@@ -389,10 +389,10 @@ POST /admin/agents/{agent_id}/promote   (admin scope)
             ].map((goal) => {
               const Icon = goal.icon;
               return (
-                <div key={goal.title} className="rounded-[24px] border border-[#22314D] bg-[#0D1728] p-6">
-                  <Icon className="h-8 w-8 text-[#8FB8FF] mb-3" />
+                <div key={goal.title} className="rounded-[24px] border border-tileLine bg-tile p-6">
+                  <Icon className="h-8 w-8 text-brandInk mb-3" />
                   <h3 className="text-lg font-semibold">{goal.title}</h3>
-                  <p className="mt-2 text-sm leading-6 text-[#AAB7CC]">{goal.body}</p>
+                  <p className="mt-2 text-sm leading-6 text-muted-foreground">{goal.body}</p>
                 </div>
               );
             })}
@@ -403,13 +403,13 @@ POST /admin/agents/{agent_id}/promote   (admin scope)
         <section className="mx-auto max-w-4xl px-6 py-16 lg:px-8">
           <div className="text-center mb-10">
             <h2 className="text-3xl font-semibold tracking-tight">Start Here</h2>
-            <p className="mt-3 text-lg text-[#AAB7CC]">
+            <p className="mt-3 text-lg text-muted-foreground">
               The fastest path to production coverage is one high-risk workflow.
             </p>
           </div>
 
-          <div className="rounded-[24px] border border-[#22314D] bg-[#0D1728] p-8">
-            <p className="text-lg leading-relaxed text-[#C4CFDE] mb-5">
+          <div className="rounded-[24px] border border-tileLine bg-tile p-8">
+            <p className="text-lg leading-relaxed text-muted-foreground mb-5">
               Pick the action that would create the most loss or exposure if it ran without
               authorization. Inntris instruments that decision boundary, enforces PASS/BLOCK
               policy, and creates a verifiable receipt for every outcome.
@@ -417,18 +417,18 @@ POST /admin/agents/{agent_id}/promote   (admin scope)
             <div className="flex flex-wrap gap-3 mb-4">
               <Link
                 href="/pilot"
-                className="rounded-lg bg-[#28C281] px-6 py-3 text-sm font-medium text-white transition-opacity hover:opacity-90"
+                className="rounded-lg bg-primary px-6 py-3 text-sm font-medium text-white transition-opacity hover:opacity-90"
               >
                 Scope a 14-day pilot
               </Link>
               <Link
                 href="/verify"
-                className="rounded-lg border border-[#22314D] bg-[#0D1728] px-6 py-3 text-sm font-medium text-[#F5F7FB] transition hover:bg-[#101C31]"
+                className="rounded-lg border border-tileLine bg-tile px-6 py-3 text-sm font-medium text-foreground transition hover:bg-card"
               >
                 See live verification
               </Link>
             </div>
-            <p className="text-sm text-[#7F8CA3]">
+            <p className="text-sm text-muted-foreground">
               Common starting points include agent spend, production changes, sensitive data
               export, and external tool execution.
             </p>
@@ -439,7 +439,7 @@ POST /admin/agents/{agent_id}/promote   (admin scope)
         <section className="mx-auto max-w-4xl px-6 pb-20 lg:px-8">
           <div className="text-center mb-10">
             <h2 className="text-3xl font-semibold tracking-tight">Explore Inntris</h2>
-            <p className="mt-3 text-lg text-[#AAB7CC]">
+            <p className="mt-3 text-lg text-muted-foreground">
               Get started with the platform
             </p>
           </div>
@@ -456,11 +456,11 @@ POST /admin/agents/{agent_id}/promote   (admin scope)
                 <Link
                   key={link.title}
                   href={link.href}
-                  className="group rounded-[20px] border border-[#22314D] bg-[#0D1728] p-6 text-center transition hover:border-[#35507A] hover:bg-[#101C31]"
+                  className="group rounded-[20px] border border-tileLine bg-tile p-6 text-center transition hover:border-primary/40 hover:bg-card"
                 >
-                  <Icon className="h-8 w-8 mx-auto mb-3 text-[#8FB8FF]" />
+                  <Icon className="h-8 w-8 mx-auto mb-3 text-brandInk" />
                   <h3 className="font-semibold">{link.title}</h3>
-                  <p className="mt-1 text-sm text-[#7F8CA3]">{link.desc}</p>
+                  <p className="mt-1 text-sm text-muted-foreground">{link.desc}</p>
                 </Link>
               );
             })}
@@ -469,13 +469,13 @@ POST /admin/agents/{agent_id}/promote   (admin scope)
       </main>
 
       {/* Footer */}
-      <footer className="border-t border-white/8">
+      <footer className="border-t border-tileLine">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-8 lg:px-8">
           <div className="flex items-center gap-2">
             <InntrisLogo className="h-5 w-5" />
-            <span className="text-[#7F8CA3]">Inntris Core</span>
+            <span className="text-muted-foreground">Inntris Core</span>
           </div>
-          <div className="flex items-center gap-6 text-[#7F8CA3]">
+          <div className="flex items-center gap-6 text-muted-foreground">
             <Link href="/" className="text-sm transition-colors hover:text-white">Home</Link>
             <Link href="/docs" className="text-sm transition-colors hover:text-white">Docs</Link>
             <Link href="/verify" className="text-sm transition-colors hover:text-white">Verify</Link>

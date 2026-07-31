@@ -46,8 +46,8 @@ export function MobileMenu({ links, cta, variant = "dark" }: MobileMenuProps) {
         className={cn(
           "flex h-10 w-10 items-center justify-center rounded-lg border transition-colors",
           dark
-            ? "border-[#22314D] bg-[#0D1728] text-[#C4CFDE] hover:text-white"
-            : "border-[#171A1F]/15 bg-white text-[#424B57] hover:text-[#171A1F]"
+            ? "border-tileLine bg-tile text-muted-foreground hover:text-white"
+            : "border-border/15 bg-white text-muted-foreground hover:text-foreground"
         )}
       >
         {open ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
@@ -58,8 +58,8 @@ export function MobileMenu({ links, cta, variant = "dark" }: MobileMenuProps) {
           className={cn(
             "absolute inset-x-0 top-full border-b shadow-xl",
             dark
-              ? "border-[#22314D] bg-[#07111F]"
-              : "border-[#171A1F]/10 bg-[#F6F8FA]"
+              ? "border-tileLine bg-background"
+              : "border-border/10 bg-muted"
           )}
         >
           <nav className="mx-auto flex max-w-7xl flex-col px-6 py-3">
@@ -71,8 +71,8 @@ export function MobileMenu({ links, cta, variant = "dark" }: MobileMenuProps) {
                 className={cn(
                   "rounded-lg px-3 py-3 text-[15px] transition-colors",
                   dark
-                    ? "text-[#C4CFDE] hover:bg-[#0D1728] hover:text-white"
-                    : "text-[#424B57] hover:bg-white hover:text-[#171A1F]"
+                    ? "text-muted-foreground hover:bg-tile hover:text-white"
+                    : "text-muted-foreground hover:bg-white hover:text-foreground"
                 )}
               >
                 {label}
@@ -84,7 +84,7 @@ export function MobileMenu({ links, cta, variant = "dark" }: MobileMenuProps) {
                 onClick={() => setOpen(false)}
                 className={cn(
                   "mb-2 mt-2 rounded-md px-4 py-3 text-center text-sm font-medium text-white transition-opacity hover:opacity-90",
-                  dark ? "bg-[#28C281]" : "bg-[#0F766E]"
+                  dark ? "bg-primary" : "bg-primary"
                 )}
               >
                 {cta.label}

@@ -69,22 +69,22 @@ function AgentDetailContent({ id }: { id: string }) {
 
       {/* Agent header card */}
       {agentLoading ? (
-        <div className="h-40 animate-pulse rounded-xl bg-[#0D1728]" />
+        <div className="h-40 animate-pulse rounded-xl bg-tile" />
       ) : agent ? (
-        <Card className="border-[#22314D] bg-[#0D1728]">
+        <Card className="border-tileLine bg-tile">
           <CardContent className="p-6">
             <div className="flex items-start justify-between">
               <div className="space-y-3">
                 <div className="flex items-center gap-3">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-[#22314D] bg-[#101C31]">
-                    <Bot className="h-5 w-5 text-[#8FB8FF]" />
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-tileLine bg-card">
+                    <Bot className="h-5 w-5 text-brandInk" />
                   </div>
                   <div>
-                    <h1 className="text-xl font-semibold text-[#F5F7FB]">
+                    <h1 className="text-xl font-semibold text-foreground">
                       {agent.name || "Unnamed Agent"}
                     </h1>
                     {agent.org_id && (
-                      <p className="text-xs text-[#7F8CA3]">Org: {agent.org_id}</p>
+                      <p className="text-xs text-muted-foreground">Org: {agent.org_id}</p>
                     )}
                   </div>
                 </div>
@@ -96,7 +96,7 @@ function AgentDetailContent({ id }: { id: string }) {
                     </Badge>
                   )}
                   {agent.trust_score !== undefined && (
-                    <span className="text-[#AAB7CC]">
+                    <span className="text-muted-foreground">
                       Trust Score:{" "}
                       <span
                         className={`font-mono font-medium ${
@@ -112,9 +112,9 @@ function AgentDetailContent({ id }: { id: string }) {
                     </span>
                   )}
                   {agent.total_actions_count !== undefined && (
-                    <span className="text-[#AAB7CC]">
+                    <span className="text-muted-foreground">
                       Verifications:{" "}
-                      <span className="font-mono text-[#F5F7FB]">
+                      <span className="font-mono text-foreground">
                         {agent.total_actions_count}
                       </span>
                     </span>
@@ -135,26 +135,26 @@ function AgentDetailContent({ id }: { id: string }) {
               )}
               {agent.created_at && (
                 <DetailField label="Created">
-                  <span className="font-mono text-xs text-[#AAB7CC]">
+                  <span className="font-mono text-xs text-muted-foreground">
                     {formatDateTime(agent.created_at)}
                   </span>
                 </DetailField>
               )}
               <DetailField label="Last Active">
-                <span className="font-mono text-xs text-[#AAB7CC]">
+                <span className="font-mono text-xs text-muted-foreground">
                   {formatRelative(agent.last_action_at)}
                 </span>
               </DetailField>
               {agent.daily_limit_usd !== undefined && (
                 <DetailField label="Daily Limit">
-                  <span className="font-mono text-xs text-[#AAB7CC]">
+                  <span className="font-mono text-xs text-muted-foreground">
                     ${agent.daily_limit_usd}
                   </span>
                 </DetailField>
               )}
               {agent.rate_limit_per_minute !== undefined && (
                 <DetailField label="Rate Limit">
-                  <span className="font-mono text-xs text-[#AAB7CC]">
+                  <span className="font-mono text-xs text-muted-foreground">
                     {agent.rate_limit_per_minute}/min
                   </span>
                 </DetailField>
@@ -166,14 +166,14 @@ function AgentDetailContent({ id }: { id: string }) {
 
       {/* Tabs */}
       <Tabs defaultValue="policy">
-        <TabsList className="bg-[#0D1728]">
+        <TabsList className="bg-tile">
           <TabsTrigger value="policy">Policy</TabsTrigger>
           <TabsTrigger value="ci-guard">AI PR Guard</TabsTrigger>
           <TabsTrigger value="activity">Activity</TabsTrigger>
         </TabsList>
 
         <TabsContent value="activity">
-          <Card className="border-[#22314D] bg-[#0D1728]">
+          <Card className="border-tileLine bg-tile">
             <CardContent className="p-6">
               {auditError ? (
                 <AdminErrorState
@@ -190,7 +190,7 @@ function AgentDetailContent({ id }: { id: string }) {
                   {/* Pagination */}
                   {auditData && auditData.total > PAGE_SIZE && (
                     <div className="mt-4 flex items-center justify-between">
-                      <p className="text-xs text-[#7F8CA3]">
+                      <p className="text-xs text-muted-foreground">
                         Showing {offset + 1}–
                         {Math.min(offset + PAGE_SIZE, auditData.total)} of{" "}
                         {auditData.total}
@@ -201,7 +201,7 @@ function AgentDetailContent({ id }: { id: string }) {
                           size="sm"
                           disabled={offset === 0}
                           onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
-                          className="border-[#22314D] bg-[#101C31] text-[#AAB7CC]"
+                          className="border-tileLine bg-card text-muted-foreground"
                         >
                           <ChevronLeft className="mr-1 h-3 w-3" />
                           Prev
@@ -211,7 +211,7 @@ function AgentDetailContent({ id }: { id: string }) {
                           size="sm"
                           disabled={offset + PAGE_SIZE >= auditData.total}
                           onClick={() => setOffset(offset + PAGE_SIZE)}
-                          className="border-[#22314D] bg-[#101C31] text-[#AAB7CC]"
+                          className="border-tileLine bg-card text-muted-foreground"
                         >
                           Next
                           <ChevronRight className="ml-1 h-3 w-3" />
@@ -226,9 +226,9 @@ function AgentDetailContent({ id }: { id: string }) {
         </TabsContent>
 
         <TabsContent value="ci-guard">
-          <Card className="border-[#22314D] bg-[#0D1728]">
+          <Card className="border-tileLine bg-tile">
             <CardHeader>
-              <CardTitle className="text-[#F5F7FB]">AI PR Guard</CardTitle>
+              <CardTitle className="text-foreground">AI PR Guard</CardTitle>
             </CardHeader>
             <CardContent className="p-6">
               {agent ? (
@@ -244,9 +244,9 @@ function AgentDetailContent({ id }: { id: string }) {
         </TabsContent>
 
         <TabsContent value="policy">
-          <Card className="border-[#22314D] bg-[#0D1728]">
+          <Card className="border-tileLine bg-tile">
             <CardHeader>
-              <CardTitle className="text-[#F5F7FB]">Action Controls</CardTitle>
+              <CardTitle className="text-foreground">Action Controls</CardTitle>
             </CardHeader>
             <CardContent className="p-6">
               {agent ? (
@@ -274,7 +274,7 @@ function DetailField({
 }) {
   return (
     <div>
-      <p className="mb-1 text-xs text-[#7F8CA3]">{label}</p>
+      <p className="mb-1 text-xs text-muted-foreground">{label}</p>
       {children}
     </div>
   );
@@ -284,7 +284,7 @@ function BackLink() {
   return (
     <Link
       href="/admin/agents"
-      className="inline-flex items-center gap-1 text-sm text-[#8FB8FF] hover:underline"
+      className="inline-flex items-center gap-1 text-sm text-brandInk hover:underline"
     >
       <ArrowLeft className="h-3 w-3" />
       Back to Agents
@@ -296,7 +296,7 @@ function SkeletonRows({ count }: { count: number }) {
   return (
     <div className="space-y-3">
       {Array.from({ length: count }).map((_, i) => (
-        <div key={i} className="h-10 animate-pulse rounded-lg bg-[#101C31]" />
+        <div key={i} className="h-10 animate-pulse rounded-lg bg-card" />
       ))}
     </div>
   );

@@ -281,13 +281,13 @@ export function CiGuardPanel({
       )}
 
       {/* Server-side policy binding (Tier A) */}
-      <div className="rounded-lg border border-[#22314D] bg-[#101C31] p-4">
+      <div className="rounded-lg border border-tileLine bg-card p-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="flex items-start gap-2">
-            <BadgeCheck className="mt-0.5 h-4 w-4 text-[#8FB8FF]" />
+            <BadgeCheck className="mt-0.5 h-4 w-4 text-brandInk" />
             <div>
-              <h2 className="text-sm font-semibold text-[#F5F7FB]">Server-side enforcement</h2>
-              <p className="mt-1 max-w-xl text-xs leading-5 text-[#7F8CA3]">
+              <h2 className="text-sm font-semibold text-foreground">Server-side enforcement</h2>
+              <p className="mt-1 max-w-xl text-xs leading-5 text-muted-foreground">
                 Registering binds <span className="font-mono">/verify</span> to this policy: the
                 server rejects a mismatched policy hash and re-derives the required action type
                 from the changed files, so a caller cannot downgrade a code/release change. Until
@@ -299,9 +299,9 @@ export function CiGuardPanel({
         </div>
 
         <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-          <div className="min-w-0 text-xs text-[#7F8CA3]">
+          <div className="min-w-0 text-xs text-muted-foreground">
             {registration.status === "registered" ? (
-              <span className="font-mono text-[#AAB7CC]">
+              <span className="font-mono text-muted-foreground">
                 hash {registration.policyHash.slice(0, 12)}… · v{registration.version}
               </span>
             ) : registration.status === "error" ? (
@@ -317,7 +317,7 @@ export function CiGuardPanel({
             size="sm"
             onClick={registerPolicy}
             disabled={registering || registration.status === "loading"}
-            className="bg-[#4C8DFF] text-white hover:bg-[#4C8DFF]/90"
+            className="bg-primary text-white hover:bg-primary/90"
           >
             <UploadCloud className="mr-2 h-3.5 w-3.5" />
             {registering
@@ -354,8 +354,8 @@ export function CiGuardPanel({
 
       <div className="grid gap-4 lg:grid-cols-[1fr_1.4fr]">
         <div className="space-y-4">
-          <div className="rounded-lg border border-[#22314D] bg-[#101C31] p-4">
-            <h2 className="text-sm font-semibold text-[#F5F7FB]">Secrets</h2>
+          <div className="rounded-lg border border-tileLine bg-card p-4">
+            <h2 className="text-sm font-semibold text-foreground">Secrets</h2>
             <div className="mt-4 space-y-3">
               <SecretRow name="INNTRIS_API_URL" value="Core API base URL" />
               <SecretRow name="INNTRIS_PRIVATE_KEY_B64" value="Agent Ed25519 private key seed" /> {/* gitleaks:allow configuration label, not a secret */}
@@ -364,9 +364,9 @@ export function CiGuardPanel({
           <SigningKeyPanel agent={agent} />
         </div>
 
-        <div className="rounded-lg border border-[#22314D] bg-[#101C31] p-4">
-          <h2 className="text-sm font-semibold text-[#F5F7FB]">Action mapping &amp; gates</h2>
-          <p className="mt-1 text-xs text-[#7F8CA3]">
+        <div className="rounded-lg border border-tileLine bg-card p-4">
+          <h2 className="text-sm font-semibold text-foreground">Action mapping &amp; gates</h2>
+          <p className="mt-1 text-xs text-muted-foreground">
             Changed paths map to the strongest action type. repo_change is attestation;
             the rest BLOCK below their trust threshold.
           </p>
@@ -377,11 +377,11 @@ export function CiGuardPanel({
               return (
                 <div
                   key={action.id}
-                  className="flex items-center justify-between gap-3 rounded-md border border-[#22314D] bg-[#07101F] p-3"
+                  className="flex items-center justify-between gap-3 rounded-md border border-tileLine bg-background p-3"
                 >
                   <div className="min-w-0">
-                    <p className="font-mono text-xs text-[#F5F7FB]">{action.id}</p>
-                    <p className="mt-0.5 truncate text-xs text-[#7F8CA3]">
+                    <p className="font-mono text-xs text-foreground">{action.id}</p>
+                    <p className="mt-0.5 truncate text-xs text-muted-foreground">
                       {action.description}
                     </p>
                   </div>
@@ -404,12 +404,12 @@ export function CiGuardPanel({
       </div>
 
       {/* Latest decisions */}
-      <div className="rounded-lg border border-[#22314D] bg-[#101C31] p-4">
+      <div className="rounded-lg border border-tileLine bg-card p-4">
         <div className="flex items-center justify-between gap-3">
-          <h2 className="text-sm font-semibold text-[#F5F7FB]">Latest PR Guard Decisions</h2>
+          <h2 className="text-sm font-semibold text-foreground">Latest PR Guard Decisions</h2>
           <Link
             href={`/admin/audit?agent_id=${agent.id}`}
-            className="inline-flex items-center gap-1 text-xs text-[#8FB8FF] hover:underline"
+            className="inline-flex items-center gap-1 text-xs text-brandInk hover:underline"
           >
             Audit log
             <ExternalLink className="h-3 w-3" />
@@ -417,25 +417,25 @@ export function CiGuardPanel({
         </div>
 
         {latestCiLogs.length === 0 ? (
-          <div className="mt-4 rounded-md border border-[#22314D] bg-[#07101F] p-4 text-sm text-[#7F8CA3]">
+          <div className="mt-4 rounded-md border border-tileLine bg-background p-4 text-sm text-muted-foreground">
             No PR Guard decisions recorded yet.
           </div>
         ) : (
-          <div className="mt-4 divide-y divide-[#22314D] overflow-hidden rounded-md border border-[#22314D]">
+          <div className="mt-4 divide-y divide-tileLine overflow-hidden rounded-md border border-tileLine">
             {latestCiLogs.map((log) => (
               <Link
                 key={log.id}
                 href={`/admin/audit/${log.id}`}
-                className="grid gap-3 bg-[#07101F] p-3 transition hover:bg-[#0D1728] sm:grid-cols-[1fr_auto_auto]"
+                className="grid gap-3 bg-background p-3 transition hover:bg-tile sm:grid-cols-[1fr_auto_auto]"
               >
                 <div>
-                  <p className="font-mono text-xs text-[#F5F7FB]">{log.action_type}</p>
-                  <p className="mt-1 text-xs text-[#7F8CA3]">
+                  <p className="font-mono text-xs text-foreground">{log.action_type}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
                     {formatDateTime(log.timestamp)}
                   </p>
                 </div>
                 {log.verdict && <AdminVerdictBadge verdict={log.verdict} />}
-                <span className="font-mono text-xs text-[#7F8CA3]">
+                <span className="font-mono text-xs text-muted-foreground">
                   {log.response_time_ms ?? 0}ms
                 </span>
               </Link>
@@ -459,24 +459,24 @@ function CodeBlock({
   onCopy: () => void;
 }) {
   return (
-    <div className="rounded-lg border border-[#22314D] bg-[#101C31] p-4">
+    <div className="rounded-lg border border-tileLine bg-card p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
-          <FileCode2 className="h-4 w-4 text-[#8FB8FF]" />
-          <h2 className="text-sm font-semibold text-[#F5F7FB]">{title}</h2>
+          <FileCode2 className="h-4 w-4 text-brandInk" />
+          <h2 className="text-sm font-semibold text-foreground">{title}</h2>
         </div>
         <Button
           type="button"
           variant="outline"
           size="sm"
           onClick={onCopy}
-          className="border-[#22314D] bg-[#0D1728] text-[#AAB7CC]"
+          className="border-tileLine bg-tile text-muted-foreground"
         >
           {copied ? <Check className="mr-2 h-3.5 w-3.5" /> : <Copy className="mr-2 h-3.5 w-3.5" />}
           {copied ? "Copied" : "Copy"}
         </Button>
       </div>
-      <pre className="mt-4 max-h-[360px] overflow-auto rounded-md border border-[#22314D] bg-[#07101F] p-4 text-xs leading-5 text-[#D7E3F8]">
+      <pre className="mt-4 max-h-[360px] overflow-auto rounded-md border border-tileLine bg-background p-4 text-xs leading-5 text-brandInk">
         <code>{code}</code>
       </pre>
     </div>
@@ -538,9 +538,9 @@ function StatusTile({
 
 function SecretRow({ name, value }: { name: string; value: string }) {
   return (
-    <div className="flex items-center justify-between gap-3 rounded-md border border-[#22314D] bg-[#07101F] p-3">
-      <span className="font-mono text-xs text-[#D7E3F8]">{name}</span>
-      <span className="text-xs text-[#7F8CA3]">{value}</span>
+    <div className="flex items-center justify-between gap-3 rounded-md border border-tileLine bg-background p-3">
+      <span className="font-mono text-xs text-brandInk">{name}</span>
+      <span className="text-xs text-muted-foreground">{value}</span>
     </div>
   );
 }

@@ -9,10 +9,10 @@ export function AdminEmptyState({
 }) {
   return (
     <div className="flex flex-col items-center justify-center py-16 text-center">
-      <div className="mb-4 rounded-full bg-[#0D1728] p-4">
-        <Icon className="h-8 w-8 text-[#7F8CA3]" />
+      <div className="mb-4 rounded-full bg-tile p-4">
+        <Icon className="h-8 w-8 text-muted-foreground" />
       </div>
-      <p className="text-sm text-[#7F8CA3]">{message}</p>
+      <p className="text-sm text-muted-foreground">{message}</p>
     </div>
   );
 }

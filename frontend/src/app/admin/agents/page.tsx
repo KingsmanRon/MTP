@@ -58,7 +58,7 @@ function AgentsContent() {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Agent Registry</h1>
-          <p className="text-sm text-[#7F8CA3]">All registered agents in your organization</p>
+          <p className="text-sm text-muted-foreground">All registered agents in your organization</p>
         </div>
         <Button onClick={() => setShowRegisterDialog(true)} className="self-start">
           <Plus className="h-4 w-4 mr-2" />
@@ -76,30 +76,30 @@ function AgentsContent() {
           message="No agents found. Click 'Register Agent' to onboard your first agent."
         />
       ) : (
-        <div className="rounded-xl border border-[#22314D] bg-[#0D1728]">
+        <div className="rounded-xl border border-tileLine bg-tile">
           <Table>
             <TableHeader>
-              <TableRow className="border-[#22314D] hover:bg-transparent">
-                <TableHead className="text-[#7F8CA3]">Agent Name</TableHead>
-                <TableHead className="text-[#7F8CA3]">Agent ID</TableHead>
-                <TableHead className="text-[#7F8CA3]">Status</TableHead>
+              <TableRow className="border-tileLine hover:bg-transparent">
+                <TableHead className="text-muted-foreground">Agent Name</TableHead>
+                <TableHead className="text-muted-foreground">Agent ID</TableHead>
+                <TableHead className="text-muted-foreground">Status</TableHead>
                 {agents.some((a) => a.trust_score !== undefined) && (
-                  <TableHead className="text-[#7F8CA3]">Trust Score</TableHead>
+                  <TableHead className="text-muted-foreground">Trust Score</TableHead>
                 )}
                 {agents.some((a) => a.total_actions_count !== undefined) && (
-                  <TableHead className="text-[#7F8CA3]">Verifications</TableHead>
+                  <TableHead className="text-muted-foreground">Verifications</TableHead>
                 )}
-                <TableHead className="text-[#7F8CA3]">Last Active</TableHead>
-                <TableHead className="text-[#7F8CA3]">Created</TableHead>
+                <TableHead className="text-muted-foreground">Last Active</TableHead>
+                <TableHead className="text-muted-foreground">Created</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {agents.map((agent) => (
-                <TableRow key={agent.id} className="border-[#22314D]">
+                <TableRow key={agent.id} className="border-tileLine">
                   <TableCell>
                     <Link
                       href={`/admin/agents/${agent.id}`}
-                      className="text-sm font-medium text-[#F5F7FB] hover:text-[#8FB8FF] hover:underline"
+                      className="text-sm font-medium text-foreground hover:text-brandInk hover:underline"
                     >
                       {agent.name || "Unnamed Agent"}
                     </Link>
@@ -113,7 +113,7 @@ function AgentsContent() {
                         {statusLabel[agent.status]}
                       </Badge>
                     ) : (
-                      <span className="text-xs text-[#7F8CA3]">—</span>
+                      <span className="text-xs text-muted-foreground">—</span>
                     )}
                   </TableCell>
                   {agents.some((a) => a.trust_score !== undefined) && (
@@ -121,24 +121,24 @@ function AgentsContent() {
                       {agent.trust_score !== undefined ? (
                         <TrustScoreDisplay score={agent.trust_score} />
                       ) : (
-                        <span className="text-xs text-[#7F8CA3]">—</span>
+                        <span className="text-xs text-muted-foreground">—</span>
                       )}
                     </TableCell>
                   )}
                   {agents.some((a) => a.total_actions_count !== undefined) && (
                     <TableCell>
-                      <span className="font-mono text-xs text-[#AAB7CC]">
+                      <span className="font-mono text-xs text-muted-foreground">
                         {agent.total_actions_count ?? "—"}
                       </span>
                     </TableCell>
                   )}
                   <TableCell>
-                    <span className="text-xs text-[#AAB7CC]">
+                    <span className="text-xs text-muted-foreground">
                       {formatRelative(agent.last_action_at)}
                     </span>
                   </TableCell>
                   <TableCell>
-                    <span className="text-xs text-[#AAB7CC]">
+                    <span className="text-xs text-muted-foreground">
                       {agent.created_at ? formatDateTime(agent.created_at) : "—"}
                     </span>
                   </TableCell>
@@ -387,7 +387,7 @@ function SkeletonRows({ count }: { count: number }) {
   return (
     <div className="space-y-3">
       {Array.from({ length: count }).map((_, i) => (
-        <div key={i} className="h-14 animate-pulse rounded-lg bg-[#0D1728]" />
+        <div key={i} className="h-14 animate-pulse rounded-lg bg-tile" />
       ))}
     </div>
   );

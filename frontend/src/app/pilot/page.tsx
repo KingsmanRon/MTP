@@ -45,23 +45,23 @@ const phases = [
 
 export default function PilotPage() {
   return (
-    <div className="min-h-screen bg-[#07111F] text-[#F5F7FB]">
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(76,141,255,0.14),transparent_32%),radial-gradient(circle_at_80%_30%,rgba(40,194,129,0.08),transparent_24%)]" />
-      <header className="sticky top-0 z-20 border-b border-white/8 bg-[#07111F]/90 backdrop-blur">
+    <div className="min-h-screen bg-background text-foreground">
+      <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-accent/50 via-transparent to-transparent" />
+      <header className="sticky top-0 z-20 border-b border-tileLine bg-background/90 backdrop-blur">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4 lg:px-8">
           <Link href="/" className="flex items-center gap-3" aria-label="Inntris home">
-            <span className="flex h-10 w-10 items-center justify-center rounded-xl border border-[#22314D] bg-[#0D1728]">
+            <span className="flex h-10 w-10 items-center justify-center rounded-xl border border-tileLine bg-tile">
               <InntrisLogo className="h-6 w-6" />
             </span>
             <span className="font-semibold">Inntris</span>
           </Link>
           <div className="flex items-center gap-4">
-            <Link href="/verify" className="hidden text-sm text-[#C4CFDE] hover:text-white sm:inline">
+            <Link href="/verify" className="hidden text-sm text-muted-foreground hover:text-white sm:inline">
               View live receipt
             </Link>
             <a
               href="#assessment"
-              className="rounded-lg bg-[#28C281] px-4 py-2 text-sm font-medium text-white hover:opacity-90"
+              className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:opacity-90"
             >
               Qualify your workflow
             </a>
@@ -72,73 +72,73 @@ export default function PilotPage() {
       <main className="relative">
         <section className="mx-auto grid max-w-7xl gap-10 px-6 pb-20 pt-16 lg:grid-cols-[1.08fr_0.92fr] lg:px-8 lg:pb-28 lg:pt-24">
           <div className="max-w-3xl">
-            <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-[#28C281]/25 bg-[#28C281]/10 px-3 py-1.5 font-mono text-xs text-[#28C281]">
+            <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-primary/25 bg-primary/10 px-3 py-1.5 font-mono text-xs text-primary">
               <Timer className="h-3.5 w-3.5" />
               14-day Agent Action Proof Pilot
             </div>
             <h1 className="text-4xl font-semibold leading-[1.08] tracking-tight md:text-6xl">
               Control one high-risk agent action.{" "}
-              <span className="text-[#28C281]">Prove every decision.</span>
+              <span className="text-primary">Prove every decision.</span>
             </h1>
-            <p className="mt-6 max-w-2xl text-lg leading-8 text-[#AAB7CC]">
+            <p className="mt-6 max-w-2xl text-lg leading-8 text-muted-foreground">
               In 14 days, Inntris instruments one AI agent workflow with pre-execution policy
               enforcement and verifiable receipts for every allowed and blocked action.
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
               <a
                 href="#assessment"
-                className="inline-flex items-center rounded-lg bg-[#28C281] px-5 py-3 text-sm font-medium text-white hover:opacity-90"
+                className="inline-flex items-center rounded-lg bg-primary px-5 py-3 text-sm font-medium text-white hover:opacity-90"
               >
                 Find your pilot workflow
                 <ArrowRight className="ml-2 h-4 w-4" />
               </a>
               <Link
                 href="/verify/d8dd0902-4750-42d2-9516-92bf6362e815"
-                className="rounded-lg border border-[#22314D] bg-[#0D1728] px-5 py-3 text-sm font-medium hover:bg-[#101C31]"
+                className="rounded-lg border border-tileLine bg-tile px-5 py-3 text-sm font-medium hover:bg-card"
               >
                 Inspect a live receipt
               </Link>
             </div>
-            <p className="mt-5 text-sm text-[#7F8CA3]">
+            <p className="mt-5 text-sm text-muted-foreground">
               Design-partner pilots start at $5,000. One workflow, fixed scope, production
               rollout recommendation included.
             </p>
           </div>
 
-          <aside className="rounded-[28px] border border-[#22314D] bg-[#0D1728] p-6 shadow-2xl shadow-black/25 md:p-8">
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#8FB8FF]">
+          <aside className="rounded-[28px] border border-tileLine bg-tile p-6 shadow-2xl shadow-black/25 md:p-8">
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-brandInk">
               Definition of done
             </p>
             <h2 className="mt-3 text-2xl font-semibold">A workflow your team can control and audit.</h2>
             <ul className="mt-6 space-y-4">
               {deliverables.map((deliverable) => (
-                <li key={deliverable} className="flex gap-3 text-sm leading-6 text-[#C4CFDE]">
-                  <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-[#28C281]" />
+                <li key={deliverable} className="flex gap-3 text-sm leading-6 text-muted-foreground">
+                  <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
                   {deliverable}
                 </li>
               ))}
             </ul>
-            <div className="mt-7 grid grid-cols-3 gap-3 border-t border-[#22314D] pt-6 text-center">
+            <div className="mt-7 grid grid-cols-3 gap-3 border-t border-tileLine pt-6 text-center">
               <div>
                 <p className="font-mono text-lg font-semibold">1</p>
-                <p className="mt-1 text-xs text-[#7F8CA3]">workflow</p>
+                <p className="mt-1 text-xs text-muted-foreground">workflow</p>
               </div>
               <div>
                 <p className="font-mono text-lg font-semibold">14</p>
-                <p className="mt-1 text-xs text-[#7F8CA3]">days</p>
+                <p className="mt-1 text-xs text-muted-foreground">days</p>
               </div>
               <div>
                 <p className="font-mono text-lg font-semibold">100%</p>
-                <p className="mt-1 text-xs text-[#7F8CA3]">decision receipts</p>
+                <p className="mt-1 text-xs text-muted-foreground">decision receipts</p>
               </div>
             </div>
           </aside>
         </section>
 
-        <section className="border-y border-[#22314D] bg-[#0D1728]/55">
+        <section className="border-y border-tileLine bg-tile/55">
           <div className="mx-auto max-w-7xl px-6 py-16 lg:px-8">
             <div className="max-w-3xl">
-              <p className="text-sm font-medium uppercase tracking-[0.18em] text-[#8FB8FF]">
+              <p className="text-sm font-medium uppercase tracking-[0.18em] text-brandInk">
                 The pilot path
               </p>
               <h2 className="mt-3 text-3xl font-semibold tracking-tight md:text-4xl">
@@ -147,10 +147,10 @@ export default function PilotPage() {
             </div>
             <div className="mt-10 grid gap-4 md:grid-cols-3">
               {phases.map((phase) => (
-                <article key={phase.label} className="rounded-2xl border border-[#22314D] bg-[#07111F] p-6">
-                  <p className="font-mono text-xs text-[#28C281]">{phase.label}</p>
+                <article key={phase.label} className="rounded-2xl border border-tileLine bg-background p-6">
+                  <p className="font-mono text-xs text-primary">{phase.label}</p>
                   <h3 className="mt-4 text-xl font-semibold">{phase.title}</h3>
-                  <p className="mt-3 text-sm leading-7 text-[#AAB7CC]">{phase.body}</p>
+                  <p className="mt-3 text-sm leading-7 text-muted-foreground">{phase.body}</p>
                 </article>
               ))}
             </div>
@@ -178,10 +178,10 @@ export default function PilotPage() {
             ].map((item) => {
               const Icon = item.icon;
               return (
-                <article key={item.title} className="rounded-2xl border border-[#22314D] bg-[#0D1728] p-6">
-                  <Icon className="h-6 w-6 text-[#8FB8FF]" />
+                <article key={item.title} className="rounded-2xl border border-tileLine bg-tile p-6">
+                  <Icon className="h-6 w-6 text-brandInk" />
                   <h3 className="mt-5 text-lg font-semibold">{item.title}</h3>
-                  <p className="mt-2 text-sm leading-7 text-[#AAB7CC]">{item.body}</p>
+                  <p className="mt-2 text-sm leading-7 text-muted-foreground">{item.body}</p>
                 </article>
               );
             })}
@@ -191,10 +191,10 @@ export default function PilotPage() {
         <PilotRiskAssessment />
       </main>
 
-      <footer className="border-t border-[#22314D]">
-        <div className="mx-auto flex max-w-7xl flex-col justify-between gap-3 px-6 py-8 text-sm text-[#7F8CA3] sm:flex-row lg:px-8">
+      <footer className="border-t border-tileLine">
+        <div className="mx-auto flex max-w-7xl flex-col justify-between gap-3 px-6 py-8 text-sm text-muted-foreground sm:flex-row lg:px-8">
           <span>Inntris Agent Action Proof Pilot</span>
-          <a href="mailto:sales@inntris.com" className="text-[#8FB8FF] hover:text-white">
+          <a href="mailto:sales@inntris.com" className="text-brandInk hover:text-white">
             sales@inntris.com
           </a>
         </div>

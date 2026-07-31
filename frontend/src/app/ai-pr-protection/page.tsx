@@ -63,19 +63,19 @@ const included = [
 
 export default function AiPrProtectionPage() {
   return (
-    <div className="min-h-screen bg-[#F6F8FA] text-[#171A1F]">
-      <header className="sticky top-0 z-20 border-b border-[#171A1F]/10 bg-[#F6F8FA]/90 backdrop-blur">
+    <div className="min-h-screen bg-muted text-foreground">
+      <header className="sticky top-0 z-20 border-b border-border/10 bg-muted/90 backdrop-blur">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-5 py-4 lg:px-8">
           <Link href="/" className="flex items-center gap-3" aria-label="Inntris home">
-            <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#0F766E]">
+            <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary">
               <InntrisLogo className="h-5 w-5" />
             </span>
             <span className="font-semibold">Inntris</span>
           </Link>
-          <nav className="hidden items-center gap-6 text-sm text-[#5B6472] md:flex">
-            <a href="#problem" className="transition hover:text-[#171A1F]">Problem</a>
-            <a href="#demo" className="transition hover:text-[#171A1F]">Demo</a>
-            <a href="#pricing" className="transition hover:text-[#171A1F]">Pricing</a>
+          <nav className="hidden items-center gap-6 text-sm text-muted-foreground md:flex">
+            <a href="#problem" className="transition hover:text-foreground">Problem</a>
+            <a href="#demo" className="transition hover:text-foreground">Demo</a>
+            <a href="#pricing" className="transition hover:text-foreground">Pricing</a>
           </nav>
           <MobileMenu
             variant="light"
@@ -89,29 +89,29 @@ export default function AiPrProtectionPage() {
       </header>
 
       <main>
-        <section className="mx-auto grid min-h-[calc(100vh-144px)] max-w-7xl items-center gap-6 border-b border-[#171A1F]/10 px-5 py-6 md:grid-cols-[1.08fr_0.72fr] lg:gap-10 lg:px-8 lg:py-12">
+        <section className="mx-auto grid min-h-[calc(100vh-144px)] max-w-7xl items-center gap-6 border-b border-border/10 px-5 py-6 md:grid-cols-[1.08fr_0.72fr] lg:gap-10 lg:px-8 lg:py-12">
           <div className="min-w-0 max-w-3xl">
-            <p className="mb-3 text-xs font-bold uppercase text-[#0F766E]">
+            <p className="mb-3 text-xs font-bold uppercase text-primary">
               AI PR Protection for GitHub
             </p>
             <h1 className="text-4xl font-semibold leading-[0.98] tracking-normal sm:text-5xl md:text-5xl lg:text-6xl xl:text-7xl">
               Stop AI-generated PRs reaching production without proof.
             </h1>
-            <p className="mt-6 max-w-2xl text-lg leading-8 text-[#424B57] md:text-xl">
+            <p className="mt-6 max-w-2xl text-lg leading-8 text-muted-foreground md:text-xl">
               Inntris adds a required GitHub Action check that PASS/BLOCKs AI-generated pull
               requests and creates a verification receipt for every decision.
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
               <a
                 href="mailto:founder@inntris.com?subject=Protect%20one%20repo%20with%20Inntris"
-                className="inline-flex min-h-12 items-center justify-center rounded-md bg-[#0F766E] px-5 text-sm font-semibold text-white transition hover:bg-[#115E59]"
+                className="inline-flex min-h-12 items-center justify-center rounded-md bg-primary px-5 text-sm font-semibold text-white transition hover:bg-brandDeep"
               >
                 <ShieldCheck className="mr-2 h-4 w-4" />
                 Protect one repo
               </a>
               <a
                 href="#demo"
-                className="inline-flex min-h-12 items-center justify-center rounded-md border border-[#171A1F] bg-white/50 px-5 text-sm font-semibold transition hover:bg-white"
+                className="inline-flex min-h-12 items-center justify-center rounded-md border border-border bg-white/50 px-5 text-sm font-semibold transition hover:bg-white"
               >
                 <ClipboardCheck className="mr-2 h-4 w-4" />
                 Watch 60-second demo
@@ -119,37 +119,37 @@ export default function AiPrProtectionPage() {
             </div>
           </div>
 
-          <aside className="min-w-0 rounded-lg border border-[#D8DDE5] bg-white p-4 shadow-[0_18px_42px_rgba(31,41,55,0.12)] sm:p-6">
-            <div className="mb-4 flex items-center justify-between text-sm font-semibold text-[#5B6472] sm:mb-6">
+          <aside className="min-w-0 rounded-lg border border-border bg-white p-4 shadow-[0_18px_42px_rgba(31,41,55,0.12)] sm:p-6">
+            <div className="mb-4 flex items-center justify-between text-sm font-semibold text-muted-foreground sm:mb-6">
               <span className="flex items-center gap-2">
-                <span className="h-3 w-3 rounded-full bg-[#B42318] shadow-[0_0_0_5px_rgba(180,35,24,0.12)]" />
+                <span className="h-3 w-3 rounded-full bg-destructive shadow-[0_0_0_5px_rgba(180,35,24,0.12)]" />
                 Inntris Verification
               </span>
               <span>pull_request -&gt; main</span>
             </div>
             <div className="mb-4 flex flex-wrap items-center justify-between gap-4 sm:mb-6">
-              <span className="inline-flex min-h-12 min-w-28 items-center justify-center rounded-md bg-[#B42318] px-4 text-lg font-black text-white">
+              <span className="inline-flex min-h-12 min-w-28 items-center justify-center rounded-md bg-destructive px-4 text-lg font-black text-white">
                 BLOCK
               </span>
-              <span className="text-sm text-[#5B6472]">AI coding agent</span>
+              <span className="text-sm text-muted-foreground">AI coding agent</span>
             </div>
-            <p className="border-t border-[#D8DDE5] pt-4 text-sm font-semibold leading-6 text-[#424B57] sm:hidden">
+            <p className="border-t border-border pt-4 text-sm font-semibold leading-6 text-muted-foreground sm:hidden">
               AI-generated PR touched protected production-sensitive files.
             </p>
             <dl className="hidden space-y-4 sm:block">
-              <div className="border-t border-[#D8DDE5] pt-4">
-                <dt className="text-xs font-bold uppercase text-[#5B6472]">Changed path</dt>
+              <div className="border-t border-border pt-4">
+                <dt className="text-xs font-bold uppercase text-muted-foreground">Changed path</dt>
                 <dd className="mt-1 break-words font-semibold">supabase/migrations/0012_update_rls.sql</dd>
               </div>
-              <div className="border-t border-[#D8DDE5] pt-4">
-                <dt className="text-xs font-bold uppercase text-[#5B6472]">Policy reason</dt>
+              <div className="border-t border-border pt-4">
+                <dt className="text-xs font-bold uppercase text-muted-foreground">Policy reason</dt>
                 <dd className="mt-1 font-semibold">
                   AI-generated PR touched protected production-sensitive files
                 </dd>
               </div>
-              <div className="border-t border-[#D8DDE5] pt-4">
-                <dt className="text-xs font-bold uppercase text-[#5B6472]">Receipt</dt>
-                <dd className="mt-1 font-semibold text-[#0F766E]">Verification evidence ready</dd>
+              <div className="border-t border-border pt-4">
+                <dt className="text-xs font-bold uppercase text-muted-foreground">Receipt</dt>
+                <dd className="mt-1 font-semibold text-primary">Verification evidence ready</dd>
               </div>
             </dl>
           </aside>
@@ -157,7 +157,7 @@ export default function AiPrProtectionPage() {
 
         <section id="problem" className="mx-auto max-w-7xl px-5 pb-12 pt-5 lg:px-8 lg:pb-16 lg:pt-6">
           <div className="max-w-3xl">
-            <p className="mb-3 text-xs font-bold uppercase text-[#0F766E]">The problem</p>
+            <p className="mb-3 text-xs font-bold uppercase text-primary">The problem</p>
             <h2 className="text-4xl font-semibold leading-tight md:text-5xl">
               CI can pass while the action still violates production policy.
             </h2>
@@ -182,20 +182,20 @@ export default function AiPrProtectionPage() {
             ].map((item) => {
               const Icon = item.icon;
               return (
-                <article key={item.title} className="rounded-lg border border-[#D8DDE5] bg-white p-6">
-                  <Icon className="mb-5 h-6 w-6 text-[#C26A15]" />
+                <article key={item.title} className="rounded-lg border border-border bg-white p-6">
+                  <Icon className="mb-5 h-6 w-6 text-warning" />
                   <h3 className="text-lg font-semibold">{item.title}</h3>
-                  <p className="mt-2 leading-7 text-[#5B6472]">{item.body}</p>
+                  <p className="mt-2 leading-7 text-muted-foreground">{item.body}</p>
                 </article>
               );
             })}
           </div>
         </section>
 
-        <section id="demo" className="bg-[#EEF6F4]">
+        <section id="demo" className="bg-accent">
           <div className="mx-auto max-w-7xl px-5 py-12 lg:px-8 lg:py-16">
             <div className="max-w-3xl">
-              <p className="mb-3 text-xs font-bold uppercase text-[#0F766E]">The demo</p>
+              <p className="mb-3 text-xs font-bold uppercase text-primary">The demo</p>
               <h2 className="text-4xl font-semibold leading-tight md:text-5xl">
                 AI PR -&gt; Inntris required check -&gt; PASS/BLOCK receipt
               </h2>
@@ -203,15 +203,15 @@ export default function AiPrProtectionPage() {
             <div className="mt-8 grid gap-4 lg:grid-cols-[1fr_auto_1fr_auto_1fr] lg:items-stretch">
               {demoSteps.map((step, index) => (
                 <div key={step.title} className="contents">
-                  <article className="rounded-lg border border-[#D8DDE5] bg-white p-6">
-                    <span className="mb-5 flex h-11 w-11 items-center justify-center rounded-md bg-[#0F766E] text-sm font-black text-white">
+                  <article className="rounded-lg border border-border bg-white p-6">
+                    <span className="mb-5 flex h-11 w-11 items-center justify-center rounded-md bg-primary text-sm font-black text-white">
                       {String(index + 1).padStart(2, "0")}
                     </span>
                     <h3 className="text-lg font-semibold">{step.title}</h3>
-                    <p className="mt-2 leading-7 text-[#5B6472]">{step.body}</p>
+                    <p className="mt-2 leading-7 text-muted-foreground">{step.body}</p>
                   </article>
                   {index < demoSteps.length - 1 && (
-                    <div className="hidden items-center justify-center text-3xl font-black text-[#0F766E] lg:flex">
+                    <div className="hidden items-center justify-center text-3xl font-black text-primary lg:flex">
                       <ArrowRight className="h-8 w-8" />
                     </div>
                   )}
@@ -223,7 +223,7 @@ export default function AiPrProtectionPage() {
 
         <section className="mx-auto max-w-7xl px-5 py-12 lg:px-8 lg:py-16">
           <div className="max-w-3xl">
-            <p className="mb-3 text-xs font-bold uppercase text-[#0F766E]">What gets protected</p>
+            <p className="mb-3 text-xs font-bold uppercase text-primary">What gets protected</p>
             <h2 className="text-4xl font-semibold leading-tight md:text-5xl">
               Start with the files buyers are nervous about.
             </h2>
@@ -232,8 +232,8 @@ export default function AiPrProtectionPage() {
             {protectedAreas.map((area) => {
               const Icon = area.icon;
               return (
-                <div key={area.label} className="min-h-24 rounded-lg border border-[#D8DDE5] bg-white p-4">
-                  <Icon className="mb-3 h-5 w-5 text-[#0F766E]" />
+                <div key={area.label} className="min-h-24 rounded-lg border border-border bg-white p-4">
+                  <Icon className="mb-3 h-5 w-5 text-primary" />
                   <p className="font-semibold">{area.label}</p>
                 </div>
               );
@@ -243,44 +243,44 @@ export default function AiPrProtectionPage() {
 
         <section id="pricing" className="bg-white">
           <div className="mx-auto grid max-w-7xl gap-5 px-5 py-12 lg:grid-cols-[0.85fr_1fr] lg:px-8 lg:py-16">
-            <div className="rounded-lg border border-[#D8DDE5] bg-white p-6">
-              <p className="mb-2 text-xs font-bold uppercase text-[#0F766E]">Starter</p>
+            <div className="rounded-lg border border-border bg-white p-6">
+              <p className="mb-2 text-xs font-bold uppercase text-primary">Starter</p>
               <p className="text-5xl font-black">$200</p>
-              <p className="mt-2 font-semibold text-[#5B6472]">per month per repo</p>
+              <p className="mt-2 font-semibold text-muted-foreground">per month per repo</p>
               <ul className="mt-6 space-y-3">
                 {included.map((item) => (
-                  <li key={item} className="flex gap-3 text-[#343B46]">
-                    <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-[#087443]" />
+                  <li key={item} className="flex gap-3 text-foreground">
+                    <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-success" />
                     <span>{item}</span>
                   </li>
                 ))}
               </ul>
             </div>
-            <div className="flex flex-col justify-center rounded-lg border border-[#D8DDE5] bg-white p-6">
-              <p className="mb-3 text-xs font-bold uppercase text-[#0F766E]">Trust-safe wording</p>
+            <div className="flex flex-col justify-center rounded-lg border border-border bg-white p-6">
+              <p className="mb-3 text-xs font-bold uppercase text-primary">Trust-safe wording</p>
               <h2 className="text-3xl font-semibold leading-tight">
                 Adds an AI-specific policy gate. Creates verification evidence. Supports review and audit.
               </h2>
               <div className="mt-6 grid gap-3 sm:grid-cols-2">
-                <p className="flex gap-2 text-[#5B6472]">
-                  <BadgeCheck className="mt-0.5 h-5 w-5 shrink-0 text-[#087443]" />
+                <p className="flex gap-2 text-muted-foreground">
+                  <BadgeCheck className="mt-0.5 h-5 w-5 shrink-0 text-success" />
                   Keep normal CI and code review.
                 </p>
-                <p className="flex gap-2 text-[#5B6472]">
-                  <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-[#0F766E]" />
+                <p className="flex gap-2 text-muted-foreground">
+                  <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
                   Use it as evidence for review, audit, and production change control.
                 </p>
               </div>
               <div className="mt-8 flex flex-wrap gap-3">
                 <a
                   href="mailto:founder@inntris.com?subject=Protect%20one%20repo%20with%20Inntris"
-                  className="inline-flex min-h-12 items-center justify-center rounded-md bg-[#0F766E] px-5 text-sm font-semibold text-white transition hover:bg-[#115E59]"
+                  className="inline-flex min-h-12 items-center justify-center rounded-md bg-primary px-5 text-sm font-semibold text-white transition hover:bg-brandDeep"
                 >
                   Protect one repo
                 </a>
                 <a
                   href="#demo"
-                  className="inline-flex min-h-12 items-center justify-center rounded-md border border-[#171A1F] px-5 text-sm font-semibold transition hover:bg-white"
+                  className="inline-flex min-h-12 items-center justify-center rounded-md border border-border px-5 text-sm font-semibold transition hover:bg-white"
                 >
                   Watch 60-second demo
                 </a>

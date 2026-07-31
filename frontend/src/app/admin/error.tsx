@@ -25,26 +25,26 @@ export default function AdminError({
   }, [error]);
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-[#07111F] px-6 text-center text-[#F5F7FB]">
+    <div className="flex min-h-screen flex-col items-center justify-center bg-background px-6 text-center text-foreground">
       <div className="mb-4 rounded-full bg-red-500/10 p-4">
         <AlertTriangle className="h-8 w-8 text-red-400" />
       </div>
       <h1 className="mb-1 text-lg font-semibold">Something went wrong</h1>
-      <p className="mb-6 max-w-md text-sm text-[#7F8CA3]">
+      <p className="mb-6 max-w-md text-sm text-muted-foreground">
         This page hit an unexpected error and couldn&apos;t be displayed. You
         can try again or head back to the dashboard.
       </p>
       <div className="flex items-center gap-3">
         <button
           onClick={reset}
-          className="inline-flex items-center gap-2 rounded-lg border border-[#22314D] bg-[#101C31] px-4 py-2 text-sm text-[#C4CFDE] transition-colors hover:text-[#F5F7FB]"
+          className="inline-flex items-center gap-2 rounded-lg border border-tileLine bg-card px-4 py-2 text-sm text-muted-foreground transition-colors hover:text-foreground"
         >
           <RefreshCw className="h-4 w-4" />
           Try again
         </button>
         <Link
           href="/admin"
-          className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm text-[#8FB8FF] hover:underline"
+          className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm text-brandInk hover:underline"
         >
           <ArrowLeft className="h-4 w-4" />
           Back to dashboard

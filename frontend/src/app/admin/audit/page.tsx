@@ -110,22 +110,22 @@ function AuditContent() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Audit Log</h1>
-        <p className="text-sm text-[#7F8CA3]">
+        <p className="text-sm text-muted-foreground">
           Search and filter verification records
         </p>
       </div>
 
       {/* Filters */}
-      <Card className="border-[#22314D] bg-[#0D1728]">
+      <Card className="border-tileLine bg-tile">
         <CardContent className="p-4">
           <div className="flex flex-wrap items-end gap-3">
             {/* Verdict filter */}
             <div className="w-44">
-              <label className="mb-1 block text-xs text-[#7F8CA3]">Verdict</label>
+              <label className="mb-1 block text-xs text-muted-foreground">Verdict</label>
               <Select
                 value={verdict}
                 onChange={(e) => applyFilter("verdict", e.target.value)}
-                className="border-[#22314D] bg-[#101C31] text-[#F5F7FB]"
+                className="border-tileLine bg-card text-foreground"
               >
                 {VERDICT_OPTIONS.map((opt) => (
                   <option key={opt.value} value={opt.value}>
@@ -138,11 +138,11 @@ function AuditContent() {
             {/* Agent filter */}
             {agents && agents.length > 0 && (
               <div className="w-52">
-                <label className="mb-1 block text-xs text-[#7F8CA3]">Agent</label>
+                <label className="mb-1 block text-xs text-muted-foreground">Agent</label>
                 <Select
                   value={agentId}
                   onChange={(e) => applyFilter("agent_id", e.target.value)}
-                  className="border-[#22314D] bg-[#101C31] text-[#F5F7FB]"
+                  className="border-tileLine bg-card text-foreground"
                 >
                   <option value="">All Agents</option>
                   {agents.map((agent) => (
@@ -156,34 +156,34 @@ function AuditContent() {
 
             {/* Action type filter */}
             <div className="w-44">
-              <label className="mb-1 block text-xs text-[#7F8CA3]">
+              <label className="mb-1 block text-xs text-muted-foreground">
                 Action Type
               </label>
               <Input
                 placeholder="e.g. code_execution"
                 value={actionType}
                 onChange={(e) => applyFilter("action_type", e.target.value)}
-                className="border-[#22314D] bg-[#101C31] text-[#F5F7FB] placeholder:text-[#4A5568]"
+                className="border-tileLine bg-card text-foreground placeholder:text-muted-foreground"
               />
             </div>
 
             {/* Date range */}
             <div className="w-44">
-              <label className="mb-1 block text-xs text-[#7F8CA3]">Start</label>
+              <label className="mb-1 block text-xs text-muted-foreground">Start</label>
               <Input
                 type="date"
                 value={startDate}
                 onChange={(e) => applyFilter("start", e.target.value)}
-                className="border-[#22314D] bg-[#101C31] text-[#F5F7FB]"
+                className="border-tileLine bg-card text-foreground"
               />
             </div>
             <div className="w-44">
-              <label className="mb-1 block text-xs text-[#7F8CA3]">End</label>
+              <label className="mb-1 block text-xs text-muted-foreground">End</label>
               <Input
                 type="date"
                 value={endDate}
                 onChange={(e) => applyFilter("end", e.target.value)}
-                className="border-[#22314D] bg-[#101C31] text-[#F5F7FB]"
+                className="border-tileLine bg-card text-foreground"
               />
             </div>
 
@@ -193,7 +193,7 @@ function AuditContent() {
                 variant="ghost"
                 size="sm"
                 onClick={clearFilters}
-                className="text-[#7F8CA3] hover:text-[#F5F7FB]"
+                className="text-muted-foreground hover:text-foreground"
               >
                 <X className="mr-1 h-3 w-3" />
                 Clear
@@ -204,12 +204,12 @@ function AuditContent() {
       </Card>
 
       {/* Results */}
-      <Card className="border-[#22314D] bg-[#0D1728]">
+      <Card className="border-tileLine bg-tile">
         <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle className="text-base text-[#F5F7FB]">
+          <CardTitle className="text-base text-foreground">
             Results
             {auditData && (
-              <span className="ml-2 text-sm font-normal text-[#7F8CA3]">
+              <span className="ml-2 text-sm font-normal text-muted-foreground">
                 ({auditData.total} total)
               </span>
             )}
@@ -231,7 +231,7 @@ function AuditContent() {
               {/* Pagination */}
               {auditData && auditData.total > PAGE_SIZE && (
                 <div className="mt-4 flex items-center justify-between">
-                  <p className="text-xs text-[#7F8CA3]">
+                  <p className="text-xs text-muted-foreground">
                     Showing {offset + 1}–
                     {Math.min(offset + PAGE_SIZE, auditData.total)} of{" "}
                     {auditData.total}
@@ -246,7 +246,7 @@ function AuditContent() {
                         setOffset(newOffset);
                         updateUrl({ offset: String(newOffset) });
                       }}
-                      className="border-[#22314D] bg-[#101C31] text-[#AAB7CC]"
+                      className="border-tileLine bg-card text-muted-foreground"
                     >
                       <ChevronLeft className="mr-1 h-3 w-3" />
                       Prev
@@ -260,7 +260,7 @@ function AuditContent() {
                         setOffset(newOffset);
                         updateUrl({ offset: String(newOffset) });
                       }}
-                      className="border-[#22314D] bg-[#101C31] text-[#AAB7CC]"
+                      className="border-tileLine bg-card text-muted-foreground"
                     >
                       Next
                       <ChevronRight className="ml-1 h-3 w-3" />
@@ -280,7 +280,7 @@ function SkeletonRows({ count }: { count: number }) {
   return (
     <div className="space-y-3">
       {Array.from({ length: count }).map((_, i) => (
-        <div key={i} className="h-10 animate-pulse rounded-lg bg-[#101C31]" />
+        <div key={i} className="h-10 animate-pulse rounded-lg bg-card" />
       ))}
     </div>
   );

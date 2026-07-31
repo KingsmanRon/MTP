@@ -13,8 +13,8 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
 
   if (state === "loading") {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[#07111F]">
-        <Loader2 className="h-8 w-8 animate-spin text-[#4C8DFF]" />
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
       </div>
     );
   }
@@ -25,7 +25,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className="min-h-screen bg-[#07111F] text-[#F5F7FB]">
+    <div className="min-h-screen bg-background text-foreground">
       <AdminNav />
       <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">{children}</main>
     </div>

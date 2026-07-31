@@ -20,26 +20,26 @@ import { MobileMenu } from "@/components/mobile-menu";
 
 export default function PortalPreviewPage() {
   return (
-    <div className="min-h-screen bg-[#07111F] text-[#F5F7FB]">
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(76,141,255,0.14),transparent_32%),radial-gradient(circle_at_80%_30%,rgba(143,184,255,0.08),transparent_24%)]" />
+    <div className="min-h-screen bg-background text-foreground">
+      <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-accent/50 via-transparent to-transparent" />
 
       {/* Header */}
-      <header className="sticky top-0 z-20 border-b border-white/8 bg-[#07111F]/85 backdrop-blur">
+      <header className="sticky top-0 z-20 border-b border-tileLine bg-background/85 backdrop-blur">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4 lg:px-8">
           <Link href="/" className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-[#22314D] bg-[#0D1728] shadow-[0_0_0_1px_rgba(255,255,255,0.02)]">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-tileLine bg-tile">
               <InntrisLogo className="h-6 w-6" />
             </div>
             <div>
               <div className="text-lg font-semibold tracking-tight">Inntris</div>
-              <div className="text-xs text-[#7F8CA3]">Portal</div>
+              <div className="text-xs text-muted-foreground">Portal</div>
             </div>
           </Link>
           <nav className="hidden items-center gap-6 text-sm md:flex">
-            <Link href="/admin" className="text-[#C4CFDE] transition hover:text-white">Console</Link>
-            <Link href="/audit" className="text-[#C4CFDE] transition hover:text-white">Audit</Link>
-            <Link href="/verify" className="text-[#C4CFDE] transition hover:text-white">Verify</Link>
-            <Link href="/docs" className="text-[#C4CFDE] transition hover:text-white">Docs</Link>
+            <Link href="/admin" className="text-muted-foreground transition hover:text-white">Console</Link>
+            <Link href="/audit" className="text-muted-foreground transition hover:text-white">Audit</Link>
+            <Link href="/verify" className="text-muted-foreground transition hover:text-white">Verify</Link>
+            <Link href="/docs" className="text-muted-foreground transition hover:text-white">Docs</Link>
           </nav>
           <MobileMenu
             links={[
@@ -57,17 +57,17 @@ export default function PortalPreviewPage() {
       <main className="relative">
         {/* Hero */}
         <section className="mx-auto max-w-4xl px-6 pb-12 pt-16 text-center lg:px-8 lg:pt-24">
-          <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-[#22314D] bg-[#0D1728]/90 px-3 py-1.5 text-sm text-[#AAB7CC]">
-            <Bot className="h-4 w-4 text-[#8FB8FF]" />
+          <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-tileLine bg-tile/90 px-3 py-1.5 text-sm text-muted-foreground">
+            <Bot className="h-4 w-4 text-brandInk" />
             Inntris Portal
           </div>
 
           <h1 className="text-3xl font-semibold leading-tight tracking-tight md:text-5xl">
             Inspect agent identity, decisions, and{" "}
-            <span className="text-[#4C8DFF]">trust status</span>
+            <span className="text-primary">trust status</span>
           </h1>
 
-          <p className="mx-auto mt-5 max-w-2xl text-lg leading-8 text-[#C4CFDE]">
+          <p className="mx-auto mt-5 max-w-2xl text-lg leading-8 text-muted-foreground">
             View registered agents, signed activity, trust scores, and decision records
             tied to each agent.
           </p>
@@ -75,13 +75,13 @@ export default function PortalPreviewPage() {
           <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
             <Link
               href="/#contact"
-              className="rounded-lg bg-[#28C281] px-6 py-3 text-sm font-medium text-white transition-opacity hover:opacity-90"
+              className="rounded-lg bg-primary px-6 py-3 text-sm font-medium text-white transition-opacity hover:opacity-90"
             >
               Request Access
             </Link>
             <Link
               href="/verify"
-              className="rounded-lg border border-[#22314D] bg-[#0D1728] px-6 py-3 text-sm font-medium text-[#F5F7FB] transition hover:bg-[#101C31]"
+              className="rounded-lg border border-tileLine bg-tile px-6 py-3 text-sm font-medium text-foreground transition hover:bg-card"
             >
               See Live Verification
             </Link>
@@ -92,26 +92,26 @@ export default function PortalPreviewPage() {
         <section className="mx-auto max-w-7xl px-6 pb-16 lg:px-8">
           <div className="grid gap-5 md:grid-cols-2">
             {/* Panel 1: Agent Profile */}
-            <div className="rounded-[24px] border border-[#22314D] bg-[#0D1728] p-6">
+            <div className="min-w-0 rounded-[24px] border border-tileLine bg-tile p-6">
               <div className="mb-5 flex items-center gap-2">
-                <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-[#22314D] bg-[#101C31] text-[#8FB8FF]">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-tileLine bg-card text-brandInk">
                   <Fingerprint className="h-4 w-4" />
                 </div>
-                <h3 className="text-sm font-semibold text-[#F5F7FB]">Agent Profile</h3>
+                <h3 className="text-sm font-semibold text-foreground">Agent Profile</h3>
               </div>
               <div className="space-y-3">
                 {[
                   { label: "Agent name", value: "pr-reviewer-01" },
                   { label: "Agent ID", value: "agt_8f3a21c4...c91e" },
-                  { label: "Key status", value: "Valid", color: "text-[#22c55e]" },
-                  { label: "Signature status", value: "Ed25519 active", color: "text-[#22c55e]" },
+                  { label: "Key status", value: "Valid", color: "text-success" },
+                  { label: "Signature status", value: "Ed25519 active", color: "text-success" },
                 ].map((row) => (
                   <div
                     key={row.label}
-                    className="flex items-center justify-between rounded-xl border border-white/6 bg-[#101C31]/70 px-4 py-3"
+                    className="flex min-w-0 items-center justify-between gap-3 rounded-xl border border-tileLine bg-card px-4 py-3"
                   >
-                    <span className="text-xs text-[#7F8CA3]">{row.label}</span>
-                    <span className={`text-sm font-mono ${row.color ?? "text-[#AAB7CC]"}`}>
+                    <span className="shrink-0 text-xs text-muted-foreground">{row.label}</span>
+                    <span className={`truncate text-sm font-mono ${row.color ?? "text-muted-foreground"}`}>
                       {row.value}
                     </span>
                   </div>
@@ -120,30 +120,30 @@ export default function PortalPreviewPage() {
             </div>
 
             {/* Panel 2: Trust State */}
-            <div className="rounded-[24px] border border-[#22314D] bg-[#0D1728] p-6">
+            <div className="min-w-0 rounded-[24px] border border-tileLine bg-tile p-6">
               <div className="mb-5 flex items-center gap-2">
-                <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-[#22314D] bg-[#101C31] text-[#8FB8FF]">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-tileLine bg-card text-brandInk">
                   <Shield className="h-4 w-4" />
                 </div>
-                <h3 className="text-sm font-semibold text-[#F5F7FB]">Trust State</h3>
+                <h3 className="text-sm font-semibold text-foreground">Trust State</h3>
               </div>
               <div className="space-y-3">
-                <div className="flex items-center justify-between rounded-xl border border-white/6 bg-[#101C31]/70 px-4 py-3">
-                  <span className="text-xs text-[#7F8CA3]">Trust score</span>
-                  <span className="text-lg font-bold text-[#22c55e]">
-                    87<span className="text-sm text-[#7F8CA3]">/100</span>
+                <div className="flex min-w-0 items-center justify-between gap-3 rounded-xl border border-tileLine bg-card px-4 py-3">
+                  <span className="text-xs text-muted-foreground">Trust score</span>
+                  <span className="text-lg font-bold text-success">
+                    87<span className="text-sm text-muted-foreground">/100</span>
                   </span>
                 </div>
                 {[
-                  { label: "Policy standing", value: "Good", color: "text-[#22c55e]" },
+                  { label: "Policy standing", value: "Good", color: "text-success" },
                   { label: "Last verified action", value: "14 min ago" },
                 ].map((row) => (
                   <div
                     key={row.label}
-                    className="flex items-center justify-between rounded-xl border border-white/6 bg-[#101C31]/70 px-4 py-3"
+                    className="flex min-w-0 items-center justify-between gap-3 rounded-xl border border-tileLine bg-card px-4 py-3"
                   >
-                    <span className="text-xs text-[#7F8CA3]">{row.label}</span>
-                    <span className={`text-sm font-mono ${row.color ?? "text-[#AAB7CC]"}`}>
+                    <span className="shrink-0 text-xs text-muted-foreground">{row.label}</span>
+                    <span className={`truncate text-sm font-mono ${row.color ?? "text-muted-foreground"}`}>
                       {row.value}
                     </span>
                   </div>
@@ -152,12 +152,12 @@ export default function PortalPreviewPage() {
             </div>
 
             {/* Panel 3: Recent Decisions */}
-            <div className="rounded-[24px] border border-[#22314D] bg-[#0D1728] p-6">
+            <div className="min-w-0 rounded-[24px] border border-tileLine bg-tile p-6">
               <div className="mb-5 flex items-center gap-2">
-                <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-[#22314D] bg-[#101C31] text-[#8FB8FF]">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-tileLine bg-card text-brandInk">
                   <Activity className="h-4 w-4" />
                 </div>
-                <h3 className="text-sm font-semibold text-[#F5F7FB]">Recent Decisions</h3>
+                <h3 className="text-sm font-semibold text-foreground">Recent Decisions</h3>
               </div>
               <div className="space-y-2">
                 {[
@@ -168,31 +168,31 @@ export default function PortalPreviewPage() {
                 ].map((dec, i) => (
                   <div
                     key={i}
-                    className="flex items-center justify-between rounded-xl border border-white/6 bg-[#101C31]/70 px-4 py-3"
+                    className="flex min-w-0 items-center justify-between gap-3 rounded-xl border border-tileLine bg-card px-4 py-3"
                   >
                     <div className="flex items-center gap-3">
                       {dec.verdict === "BLOCK" ? (
-                        <XOctagon className="h-4 w-4 text-[#ef4444]" />
+                        <XOctagon className="h-4 w-4 text-destructive" />
                       ) : dec.verdict === "ESCALATE" ? (
-                        <Clock className="h-4 w-4 text-[#f59e0b]" />
+                        <Clock className="h-4 w-4 text-warning" />
                       ) : (
-                        <CheckCircle2 className="h-4 w-4 text-[#22c55e]" />
+                        <CheckCircle2 className="h-4 w-4 text-success" />
                       )}
                       <span
                         className={`text-xs font-bold ${
                           dec.verdict === "BLOCK"
-                            ? "text-[#ef4444]"
+                            ? "text-destructive"
                             : dec.verdict === "ESCALATE"
-                            ? "text-[#f59e0b]"
-                            : "text-[#22c55e]"
+                            ? "text-warning"
+                            : "text-success"
                         }`}
                       >
                         {dec.verdict}
                       </span>
                     </div>
                     <div className="flex items-center gap-4">
-                      <span className="text-xs font-mono text-[#AAB7CC]">{dec.rule}</span>
-                      <span className="text-xs text-[#7F8CA3]">{dec.time}</span>
+                      <span className="text-xs font-mono text-muted-foreground">{dec.rule}</span>
+                      <span className="text-xs text-muted-foreground">{dec.time}</span>
                     </div>
                   </div>
                 ))}
@@ -200,12 +200,12 @@ export default function PortalPreviewPage() {
             </div>
 
             {/* Panel 4: Linked Workflows */}
-            <div className="rounded-[24px] border border-[#22314D] bg-[#0D1728] p-6">
+            <div className="min-w-0 rounded-[24px] border border-tileLine bg-tile p-6">
               <div className="mb-5 flex items-center gap-2">
-                <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-[#22314D] bg-[#101C31] text-[#8FB8FF]">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-tileLine bg-card text-brandInk">
                   <Link2 className="h-4 w-4" />
                 </div>
-                <h3 className="text-sm font-semibold text-[#F5F7FB]">Linked Workflows</h3>
+                <h3 className="text-sm font-semibold text-foreground">Linked Workflows</h3>
               </div>
               <div className="space-y-3">
                 {[
@@ -215,10 +215,10 @@ export default function PortalPreviewPage() {
                 ].map((row) => (
                   <div
                     key={row.label}
-                    className="flex items-center justify-between rounded-xl border border-white/6 bg-[#101C31]/70 px-4 py-3"
+                    className="flex min-w-0 items-center justify-between gap-3 rounded-xl border border-tileLine bg-card px-4 py-3"
                   >
-                    <span className="text-xs text-[#7F8CA3]">{row.label}</span>
-                    <span className="text-sm font-mono text-[#AAB7CC]">{row.value}</span>
+                    <span className="shrink-0 text-xs text-muted-foreground">{row.label}</span>
+                    <span className="truncate text-sm font-mono text-muted-foreground">{row.value}</span>
                   </div>
                 ))}
               </div>
@@ -228,8 +228,8 @@ export default function PortalPreviewPage() {
 
         {/* What teams use this for */}
         <section className="mx-auto max-w-4xl px-6 pb-16 lg:px-8">
-          <div className="rounded-[28px] border border-[#22314D] bg-[#0D1728] p-8">
-            <h2 className="mb-5 text-lg font-semibold tracking-tight text-[#F5F7FB]">
+          <div className="rounded-[28px] border border-tileLine bg-tile p-8">
+            <h2 className="mb-5 text-lg font-semibold tracking-tight text-foreground">
               What teams use this for
             </h2>
             <div className="grid gap-4 md:grid-cols-3">
@@ -251,15 +251,15 @@ export default function PortalPreviewPage() {
                 return (
                   <div
                     key={item.text}
-                    className="flex gap-3 rounded-2xl border border-white/6 bg-[#101C31]/70 p-4"
+                    className="flex gap-3 rounded-2xl border border-tileLine bg-card/70 p-4"
                   >
-                    <Icon className="mt-0.5 h-5 w-5 flex-shrink-0 text-[#8FB8FF]" />
-                    <p className="text-sm leading-6 text-[#C4CFDE]">{item.text}</p>
+                    <Icon className="mt-0.5 h-5 w-5 flex-shrink-0 text-brandInk" />
+                    <p className="text-sm leading-6 text-muted-foreground">{item.text}</p>
                   </div>
                 );
               })}
             </div>
-            <p className="mt-6 text-sm text-[#7F8CA3]">
+            <p className="mt-6 text-sm text-muted-foreground">
               Portal access is available to approved teams managing registered Inntris
               agents.
             </p>
@@ -268,13 +268,13 @@ export default function PortalPreviewPage() {
       </main>
 
       {/* Footer */}
-      <footer className="border-t border-white/8">
+      <footer className="border-t border-tileLine">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-8 lg:px-8">
           <div className="flex items-center gap-2">
             <InntrisLogo className="h-5 w-5" />
-            <span className="text-[#7F8CA3]">Inntris Core</span>
+            <span className="text-muted-foreground">Inntris Core</span>
           </div>
-          <div className="flex items-center gap-6 text-[#7F8CA3]">
+          <div className="flex items-center gap-6 text-muted-foreground">
             <Link href="/" className="text-sm transition-colors hover:text-white">Home</Link>
             <Link href="/docs" className="text-sm transition-colors hover:text-white">Docs</Link>
             <Link href="/verify" className="text-sm transition-colors hover:text-white">Verify</Link>

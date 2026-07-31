@@ -24,14 +24,14 @@ export function VerifyLinkCopy({ auditId }: { auditId: string }) {
         href={`/verify/${auditId}`}
         target="_blank"
         rel="noopener noreferrer"
-        className="inline-flex items-center gap-1.5 text-sm text-[#8FB8FF] hover:underline"
+        className="inline-flex items-center gap-1.5 text-sm text-brandInk hover:underline"
       >
         Open public receipt
         <ExternalLink className="h-3.5 w-3.5" />
       </Link>
       <button
         onClick={handleCopy}
-        className="inline-flex items-center gap-1.5 rounded-md border border-[#22314D] bg-[#101C31] px-3 py-1.5 text-xs text-[#AAB7CC] transition-colors hover:text-[#F5F7FB]"
+        className="inline-flex items-center gap-1.5 rounded-md border border-tileLine bg-card px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
       >
         {copied ? (
           <>
