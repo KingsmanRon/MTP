@@ -17,7 +17,7 @@ const repositories = [
   {
     name: "Inntris/inntris-verify",
     label: "Offline verifier",
-    body: "The canonical, out-of-band publication channel for the evidence pack verifier and its signing keys. verify_pack.py checks the Ed25519 signature, every file hash, every receipt fingerprint, and every Merkle proof on stock Python with no network at all — verification that routes through the vendor of the evidence is circular.",
+    body: "The canonical, out-of-band publication channel for the verifier and its signing keys. verify_pack.py checks the Ed25519 signature, every file hash in both directions, every receipt fingerprint, and every Merkle inclusion proof. The copy here is byte-identical to the one embedded in every evidence pack, so you can audit it once and diff it against any pack you receive.",
     href: "https://github.com/Inntris/inntris-verify",
   },
   {
@@ -50,14 +50,14 @@ export function ProofSection() {
             id="proof-heading"
             className="mt-4 text-2xl font-semibold tracking-tight md:text-3xl"
           >
-            The governance layer blocked its own tooling.
+            Verify it without us.
           </h2>
           <p className="mt-4 text-base leading-7 text-muted-foreground">
-            An AI agent opened two pull requests adding workflow files and policy
-            definitions. Inntris evaluated each one, classified the changes as
-            high-risk, and issued BLOCK verdicts before merge. Both PRs are
-            permanently open and blocked — that&apos;s the product working, not a
-            bug.
+            Two public repositories, both independently checkable. The evidence
+            pack verifier runs on stock Python with no network and no Inntris
+            dependency — verification that routes through the vendor of the
+            evidence is circular. The x402 adapter binds a signed policy decision
+            to the exact proposed payment, and fails closed before settlement.
           </p>
         </Reveal>
 
