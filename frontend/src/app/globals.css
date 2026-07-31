@@ -3,7 +3,16 @@
 @tailwind utilities;
 
 @layer base {
-  :root {
+  /**
+   * `.theme-light` re-declares the light palette on a subtree.
+   *
+   * The app shell sets defaultTheme="dark" (layout.tsx), so <html> always
+   * carries `.dark` and the dark block below would otherwise win everywhere
+   * by inheritance. A subtree that opts in with `.theme-light` gets the light
+   * tokens back without changing the global theme or any other route.
+   */
+  :root,
+  .theme-light {
     --background: 0 0% 100%;
     --foreground: 222.9 25.9% 5.3%;
     --card: 0 0% 100%;
