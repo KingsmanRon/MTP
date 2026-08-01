@@ -32,9 +32,9 @@ to execute without a valid Inntris PASS decision.
 ## Evidence Available Now
 
 - Public PASS receipt:
-  `https://www.inntris.com/verify/d8dd0902-4750-42d2-9516-92bf6362e815`
+  `https://www.inntris.com/verify/65cc4da3-3774-495d-9748-865a7ff98d40`
 - Public BLOCK receipt:
-  `https://www.inntris.com/verify/3030c27c-87c4-4464-b4af-605fbe638e0e`
+  `https://www.inntris.com/verify/975151ca-834e-4919-9ef6-d9e80803e5f1`
 - Public API health:
   `https://api.inntris.com/health`
 - Receipt schema:

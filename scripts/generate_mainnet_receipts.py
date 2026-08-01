@@ -86,6 +86,15 @@ def _require(response, operation: str, expected: tuple[int, ...] = (200,)) -> di
     return response.json()
 
 
+# The identity the public receipts carry. A clearly fictional institution such
+# as "Global Bank Corp" still reads as an implied customer once it appears
+# inside a cryptographic receipt — the artifact's formality lends the name
+# credibility it has not earned. This one is short, self-labelling, and cannot
+# be mistaken for traction.
+DEMO_ORG_NAME = "Inntris Payment Demo"
+DEMO_AGENT_NAME = "Payment Demo Agent"
+
+
 def setup_agent(api_url: str, api_key: str, signing_key: SigningKey) -> str:
     """Register, configure and explicitly approve the receipt agent."""
     headers = {"Content-Type": "application/json", "X-API-Key": api_key}
@@ -93,6 +102,20 @@ def setup_agent(api_url: str, api_key: str, signing_key: SigningKey) -> str:
         requests.get(f"{api_url}/admin/organization", headers=headers, timeout=15),
         "resolve organisation",
     )
+    # The organisation name is rendered on every public receipt this agent
+    # produces, so it is set here rather than left to whatever the admin key's
+    # tenant happens to be called.
+    if org.get("name") != DEMO_ORG_NAME:
+        _require(
+            requests.patch(
+                f"{api_url}/admin/organization",
+                headers=headers,
+                json={"name": DEMO_ORG_NAME},
+                timeout=15,
+            ),
+            "rename organisation",
+        )
+        print(f"  Renamed organisation to: {DEMO_ORG_NAME}")
     public_key = base64.b64encode(bytes(signing_key.verify_key)).decode("ascii")
     created = _require(
         requests.post(
@@ -100,12 +123,12 @@ def setup_agent(api_url: str, api_key: str, signing_key: SigningKey) -> str:
             headers=headers,
             json={
                 "org_id": org["id"],
-                "name": "Mainnet Receipt Agent",
+                "name": DEMO_AGENT_NAME,
                 "public_key": public_key,
                 "daily_limit_usd": 500,
                 "per_action_limit_usd": 50,
                 "allowed_actions": ["financial_transaction", "api_call"],
-                "metadata": {"description": "Agent for mainnet receipt generation"},
+                "metadata": {"description": "Agent for the public payment demo receipts"},
             },
             timeout=15,
         ),

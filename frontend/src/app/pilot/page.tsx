@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { InntrisLogo } from "@/components/inntris-logo";
 import { PilotRiskAssessment } from "@/components/pilot-risk-assessment";
+import { SAMPLE_RECEIPT_ID } from "@/lib/canonical-receipts";
 
 export const metadata: Metadata = {
   title: "14-Day Agent Action Proof Pilot - Inntris",
@@ -93,7 +94,7 @@ export default function PilotPage() {
                 <ArrowRight className="ml-2 h-4 w-4" />
               </a>
               <Link
-                href="/verify/d8dd0902-4750-42d2-9516-92bf6362e815"
+                href={`/verify/${SAMPLE_RECEIPT_ID}`}
                 className="rounded-lg border border-tileLine bg-tile px-5 py-3 text-sm font-medium hover:bg-card"
               >
                 Inspect a live receipt

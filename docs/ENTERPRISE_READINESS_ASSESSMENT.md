@@ -3,6 +3,7 @@
 **Assessed against**: `docs/INNTRIS_ENTERPRISE_READINESS_V2.md`
 **Date**: 2026-04-15
 **Branch**: `claude/review-enterprise-readiness-lPKU8`
+**Amended**: 2026-08-01 — §2.4 and §2.5 corrected during the payments-led homepage claim audit. Two findings in this assessment did not hold up; the corrections are marked inline rather than deleted, because an audit record that quietly rewrites itself is not an audit record.
 
 ---
 
@@ -181,7 +182,7 @@ Matches spec exactly. Positioned below the live proof section, above the core ca
 
 Reviewed all homepage copy. Key claims are supported by the linked live receipts:
 - "We prove every decision" — supported by live receipts with verified signatures, policy hashes, and on-chain anchors.
-- "Independently verifiable — anyone can check the receipt using the on-chain anchor alone" — supported by BaseScan link in verify page.
+- ~~"Independently verifiable — anyone can check the receipt using the on-chain anchor alone" — supported by BaseScan link in verify page.~~ **Withdrawn 2026-08-01. This assessment was wrong.** The anchor confirms that a Merkle root was recorded. Verifying a *specific* receipt additionally requires the evidence pack, its inclusion proof, and a public key pinned from a channel the reader trusts. A BaseScan link proves none of those. The claim has been removed from the homepage and must not be reintroduced in the deck, outreach or docs.
 - "Ed25519 signatures bind every action to its agent" — signature check shows VERIFIED.
 - "Receipt integrity you can verify yourself" — fingerprint verification runs client-side.
 
@@ -191,7 +192,7 @@ No overstated claims found.
 
 | Surface | Treatment | Status |
 |---------|-----------|--------|
-| Homepage receipt cards | `Trust {score}/100` as small sub-line under Action (page.tsx:368, 441) | Advisory, not headline |
+| Homepage receipt cards | **Removed 2026-08-01.** An unpublished scoring methodology sitting beside a cryptographic signature weakens the claim it sits next to. Trust score is now Console-only. | Not shown publicly |
 | Public verify page | Labeled "(advisory)" at verify-record-client.tsx:592, rendered as small section below proof checks (line 591) | Correctly secondary |
 | Portal preview | `87/100` in Trust State panel (portal/page.tsx:122-127) | Present but doesn't outrank identity/decisions/verification |
 

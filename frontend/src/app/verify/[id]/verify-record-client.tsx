@@ -627,24 +627,12 @@ export function VerifyRecordView({ record }: { record: PublicVerificationRecord 
           </div>
         </section>
 
-        {/* ============================================================ */}
-        {/* 3b. Trust score (advisory)                                   */}
-        {/* ============================================================ */}
-        <section className="mt-3 rounded-2xl border border-tileLine bg-card/70 p-4">
-          <p className="text-xs text-muted-foreground mb-1">Trust score (advisory)</p>
-          <p
-            className={`text-sm font-medium ${
-              record.trust_score >= 70
-                ? "text-success"
-                : record.trust_score >= 40
-                ? "text-warning"
-                : "text-destructive"
-            }`}
-          >
-            {record.trust_score}
-            <span className="text-xs text-muted-foreground">/100</span>
-          </p>
-        </section>
+        {/* Trust score is deliberately absent from this public page. The
+            scoring methodology is unpublished, and an unpublished score sitting
+            beside a cryptographic signature weakens the claim it sits next to —
+            a reader cannot check it, so it reads as the soft part of an
+            otherwise checkable artifact. It stays inside the Console, where the
+            operator who configured the policy has the context to read it. */}
 
         {/* ============================================================ */}
         {/* 4. ProofCompletenessChecks                                   */}

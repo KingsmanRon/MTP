@@ -8,9 +8,11 @@ const FORMSPREE_ENDPOINT = "https://formspree.io/f/mpqjkbre";
 const initialForm = {
   name: "",
   email: "",
+  company: "",
+  rail: "",
   framework: "",
-  risk: "",
-  subject: "",
+  purchases: "",
+  policy: "",
   message: "",
 };
 
@@ -71,9 +73,10 @@ function Dropdown({
   const selected = options.find((o) => o.value === value);
 
   return (
-    <div ref={ref} className="relative" id={id}>
+    <div ref={ref} className="relative">
       {/* trigger */}
       <button
+        id={id}
         type="button"
         onClick={() => setOpen((o) => !o)}
         className={cn(
@@ -152,12 +155,16 @@ const frameworkOptions: DropdownOption[] = [
   { value: "other", label: "Other" },
 ];
 
-const riskOptions: DropdownOption[] = [
-  { value: "code", label: "Writing / executing code" },
-  { value: "data", label: "Accessing sensitive data" },
-  { value: "api", label: "Calling external APIs / tools" },
-  { value: "finance", label: "Financial or payment operations" },
-  { value: "multiple", label: "Multiple of the above" },
+/* Payment rails and providers, not generic risk categories. The question the
+   page needs answered is which system actually moves the money. */
+const railOptions: DropdownOption[] = [
+  { value: "stripe", label: "Stripe" },
+  { value: "x402", label: "x402 / stablecoin" },
+  { value: "card", label: "Card issuer or virtual cards" },
+  { value: "bank", label: "Bank transfer / ACH / SEPA" },
+  { value: "internal", label: "Internal ledger or wallet" },
+  { value: "undecided", label: "Not decided yet" },
+  { value: "other", label: "Other" },
 ];
 
 /* ── Contact section ────────────────────────────────────────────── */
@@ -207,9 +214,14 @@ export default function ContactSection() {
           Get in touch
         </p>
 
-        <h2 className="mb-12 font-sans text-3xl font-semibold text-foreground">
-          Talk to us about your agents.
+        <h2 className="mb-4 font-sans text-3xl font-semibold text-foreground">
+          Talk to us about an agent payment workflow.
         </h2>
+
+        <p className="mb-12 max-w-2xl font-sans text-base leading-7 text-muted-foreground">
+          Tell us what the agent can pay for, which system executes the payment and which limits
+          or approvals must be enforced.
+        </p>
 
         <div className="grid grid-cols-1 gap-12 md:grid-cols-[1.2fr_0.8fr]">
           <div>
@@ -227,17 +239,17 @@ export default function ContactSection() {
                       Message received
                     </p>
                     <p className="font-sans text-sm text-muted-foreground">
-                      Thanks for reaching out. We will reply within 24 hours using the email
-                      you provided.
+                      Thanks for reaching out. Design-partner and technical enquiries are
+                      answered within one business day, using the email you provided.
                     </p>
                   </div>
                 </div>
 
                 <div className="rounded-md border border-tileLine bg-card px-4 py-3">
                   <p className="font-sans text-sm leading-relaxed text-muted-foreground">
-                    This inbox is used for design partner enquiries, technical questions, and
-                    integration conversations. If your workflow is a fit, we will guide the
-                    next step directly.
+                    This inbox is used for design-partner enquiries, technical questions, and
+                    integration conversations. If your payment workflow is a fit, we will guide
+                    the next step directly.
                   </p>
                 </div>
 
@@ -273,7 +285,7 @@ export default function ContactSection() {
 
                   <div className="flex flex-col gap-1.5">
                     <label htmlFor="contact-email" className={labelClasses}>
-                      Email
+                      Work email
                     </label>
                     <input
                       id="contact-email"
@@ -290,46 +302,78 @@ export default function ContactSection() {
 
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div className="flex flex-col gap-1.5">
-                    <label htmlFor="contact-framework" className={labelClasses}>
-                      Agent framework
+                    <label htmlFor="contact-company" className={labelClasses}>
+                      Company
                     </label>
-                    <Dropdown
-                      id="contact-framework"
-                      name="framework"
-                      value={form.framework}
-                      placeholder="Select one"
-                      options={frameworkOptions}
-                      onChange={handleDropdown}
+                    <input
+                      id="contact-company"
+                      type="text"
+                      name="company"
+                      value={form.company}
+                      onChange={handleChange}
+                      required
+                      placeholder="Your company"
+                      className={fieldClasses}
                     />
                   </div>
 
                   <div className="flex flex-col gap-1.5">
-                    <label htmlFor="contact-risk" className={labelClasses}>
-                      What are your agents doing?
+                    <label htmlFor="contact-rail" className={labelClasses}>
+                      Payment rail or provider
                     </label>
                     <Dropdown
-                      id="contact-risk"
-                      name="risk"
-                      value={form.risk}
+                      id="contact-rail"
+                      name="rail"
+                      value={form.rail}
                       placeholder="Select one"
-                      options={riskOptions}
+                      options={railOptions}
                       onChange={handleDropdown}
                     />
                   </div>
                 </div>
 
                 <div className="flex flex-col gap-1.5">
-                  <label htmlFor="contact-subject" className={labelClasses}>
-                    Subject
+                  <label htmlFor="contact-framework" className={labelClasses}>
+                    Agent framework
+                  </label>
+                  <Dropdown
+                    id="contact-framework"
+                    name="framework"
+                    value={form.framework}
+                    placeholder="Select one"
+                    options={frameworkOptions}
+                    onChange={handleDropdown}
+                  />
+                </div>
+
+                <div className="flex flex-col gap-1.5">
+                  <label htmlFor="contact-purchases" className={labelClasses}>
+                    What can the agent purchase or pay?
                   </label>
                   <input
-                    id="contact-subject"
+                    id="contact-purchases"
                     type="text"
-                    name="subject"
-                    value={form.subject}
+                    name="purchases"
+                    value={form.purchases}
                     onChange={handleChange}
                     required
-                    placeholder="e.g. Design partner inquiry / Technical question"
+                    placeholder="e.g. supplier invoices under $5,000, API credits, customer refunds"
+                    className={fieldClasses}
+                  />
+                </div>
+
+                <div className="flex flex-col gap-1.5">
+                  <label htmlFor="contact-policy" className={labelClasses}>
+                    Which policy must be enforced?
+                  </label>
+                  <input
+                    id="contact-policy"
+                    type="text"
+                    name="policy"
+                    value={form.policy}
+                    onChange={handleChange}
+                    required
+                    placeholder="e.g. per-action limit, approved recipients, human approval above $1,000"
                     className={fieldClasses}
                   />
                 </div>
@@ -380,15 +424,19 @@ export default function ContactSection() {
             </div>
             <div className="h-fit rounded-lg border border-tileLine bg-tile px-5 py-4">
               <p className="font-sans text-sm leading-relaxed text-muted-foreground">
-                Whether you&apos;re exploring design partner opportunities, have technical
-                questions, or want to know how Inntris fits your agent stack, we respond
-                within 24 hours.
+                Whether you&apos;re exploring a design-partner pilot, verifying a receipt, or
+                working out how Inntris fits in front of your payment rail, this is the address.
               </p>
 
               <div className="mt-3 flex flex-col gap-4">
+                {/* One address, deliberately. The evidence-pack verifier's
+                    README tells auditors to write in on any key discrepancy, so
+                    whatever this says has to resolve — a dedicated-looking
+                    security@ that bounces is worse than a shared box that
+                    answers. */}
                 <div className="flex flex-col gap-1">
                   <p className="font-mono text-xs uppercase tracking-wide text-muted-foreground">
-                    Email
+                    Commercial, technical and security
                   </p>
                   <a
                     href="mailto:sales@inntris.com"
@@ -406,7 +454,7 @@ export default function ContactSection() {
                     Response time
                   </p>
                   <p className="font-sans text-sm text-foreground">
-                    Within 24 hours
+                    Within one business day
                   </p>
                 </div>
               </div>
@@ -416,12 +464,10 @@ export default function ContactSection() {
 
         <div className="mt-10 border-t border-border pt-6">
           <p className="text-center font-sans text-sm leading-relaxed text-muted-foreground">
-            We respond within 24 hours. If you&apos;re running agents against code, data,
-            or financial operations — that&apos;s our sweet spot.
+            Design-partner and technical enquiries are answered within one business day.
           </p>
           <p className="mt-3 text-center font-sans text-sm leading-relaxed text-muted-foreground">
-            For design partner discussions, platform reviews, and production agent
-            deployments, contact{" "}
+            Design partners, technical questions, security reports and key verification:{" "}
             <a
               href="mailto:sales@inntris.com"
               className={cn(
@@ -431,7 +477,6 @@ export default function ContactSection() {
             >
               sales@inntris.com
             </a>
-            .
           </p>
         </div>
       </div>

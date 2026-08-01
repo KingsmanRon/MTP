@@ -326,8 +326,8 @@ than asserted.
 
 Already live and anchored on Base mainnet (chain_id 8453):
 
-- Receipt page — `https://inntris.com/verify/3030c27c-87c4-4464-b4af-605fbe638e0e`
-- Merkle proof — `https://api.inntris.com/public/verify/3030c27c-87c4-4464-b4af-605fbe638e0e/proof`
+- Receipt page — `https://inntris.com/verify/975151ca-834e-4919-9ef6-d9e80803e5f1`
+- Merkle proof — `https://api.inntris.com/public/verify/975151ca-834e-4919-9ef6-d9e80803e5f1/proof`
 - On-chain — `https://basescan.org/address/0x0600eA15802c8d2EA429371b2EB0aacCFe321480`
 
 ---

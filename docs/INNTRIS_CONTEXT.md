@@ -38,15 +38,37 @@ v1 — legacy
 
 ## Canonical homepage demo receipts
 
+Defined in one place: `frontend/src/lib/canonical-receipts.ts`. Every frontend
+surface imports from there, so regenerating the pair is a one-line change
+rather than a grep across the repo.
+
 ```
-CANONICAL_PASS_ID    = d8dd0902-4750-42d2-9516-92bf6362e815
-CANONICAL_RECEIPT_ID = 3030c27c-87c4-4464-b4af-605fbe638e0e
-Demo policy hash     = b5e687b5bd9878f561f8050e994fbd8632fec823503fa4bd8c047a3e3b14f686
-Anchored             = Base mainnet (chain 8453), block 44,401,999,
-                       tx 0x3f86eea4328d00fbd968181f5f188aee95dea65ea690273f229534edd68ecd84
+CANONICAL_RECEIPT_IDS = [
+  975151ca-834e-4919-9ef6-d9e80803e5f1,   # BLOCK
+  65cc4da3-3774-495d-9748-865a7ff98d40,   # PASS
+]
 ```
 
-Regenerated on mainnet under schema v2. Mainnet migration fully complete.
+The IDs are stored without verdict labels in code on purpose. Which receipt
+carries which verdict is a property of the artifact, not of the constant — the
+homepage reads the verdict off each fetched record and lays itself out from
+that, so a regenerated pair cannot leave the page asserting the wrong thing.
+The labels above are for humans reading this file and should be re-checked
+against the live records, not trusted from here.
+
+Superseded pair (pre-2026-08-01), retained because the dated audit records and
+the canonicalization test vectors still reference them:
+
+```
+d8dd0902-4750-42d2-9516-92bf6362e815   # PASS
+3030c27c-87c4-4464-b4af-605fbe638e0e   # BLOCK
+Demo policy hash = b5e687b5bd9878f561f8050e994fbd8632fec823503fa4bd8c047a3e3b14f686
+Anchored         = Base mainnet (chain 8453), block 44,401,999,
+                   tx 0x3f86eea4328d00fbd968181f5f188aee95dea65ea690273f229534edd68ecd84
+```
+
+Anchor details for the current pair are not recorded here — read them off the
+live receipts rather than copying figures that belong to the superseded ones.
 
 ## Prior PENDING integrity state — root cause
 
