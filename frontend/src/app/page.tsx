@@ -331,7 +331,16 @@ export default async function InntrisHomePage() {
                         <div className="text-lg font-semibold tracking-tight text-foreground">
                           Payment decision flow
                         </div>
-                        <div className="mt-1 font-mono text-sm text-muted-foreground">
+                        {/* brandInk rather than muted-foreground. The muted
+                            token is a 10%-saturation cool grey that reads as a
+                            washed-out blue next to the chip and the numbered
+                            tiles — neither clearly grey nor clearly blue. This
+                            is a label, and blue labels are the page convention
+                            (eyebrows, role captions, protocol status lines), so
+                            it matches the chip beside it on purpose. The title
+                            above stays near-black: blue headings would collide
+                            with the blue reserved for interactive elements. */}
+                        <div className="mt-1 font-mono text-sm text-brandInk">
                           Where Inntris sits before the rail
                         </div>
                       </div>
