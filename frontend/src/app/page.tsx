@@ -273,7 +273,7 @@ export default async function InntrisHomePage() {
                     into the evidence chain. "Before it settles" implied that
                     link. Do not reintroduce settlement into this headline
                     unless the product actually closes that loop. */}
-                <h1 className="mb-5 max-w-3xl text-4xl font-semibold leading-[1.12] tracking-tight md:text-6xl">
+                <h1 className="mb-5 max-w-3xl text-2xl font-semibold leading-[1.12] tracking-tight md:text-4xl">
                   Authorise every agent payment before execution.{" "}
                   <span className="text-primary">Prove every decision independently.</span>
                 </h1>
