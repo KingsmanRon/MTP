@@ -10,19 +10,49 @@ beforeEach(() => {
   mockFetch.mockReset();
 });
 
+type User = ReturnType<typeof userEvent.setup>;
+
+/**
+ * Fill every required text input. The form is payments-shaped: it asks what
+ * the agent can pay for and which policy must be enforced, because those are
+ * the two answers that make a pilot conversation possible at all.
+ */
+async function fillForm(user: User) {
+  await user.type(screen.getByLabelText("Name"), "Jane Doe");
+  await user.type(screen.getByLabelText("Work email"), "jane@example.com");
+  await user.type(screen.getByLabelText("Company"), "Acme");
+  await user.type(
+    screen.getByLabelText("What can the agent purchase or pay?"),
+    "Supplier invoices",
+  );
+  await user.type(
+    screen.getByLabelText("Which policy must be enforced?"),
+    "Per-action limit of $1,000",
+  );
+  await user.type(screen.getByLabelText("Message"), "Hello!");
+}
+
 describe("ContactSection", () => {
   describe("rendering", () => {
-    it("renders the section heading and subtitle", () => {
+    it("renders the section heading and intro", () => {
       render(<ContactSection />);
       expect(screen.getByText("Get in touch")).toBeInTheDocument();
-      expect(screen.getByText("Talk to us about your agents.")).toBeInTheDocument();
+      expect(
+        screen.getByText("Talk to us about an agent payment workflow."),
+      ).toBeInTheDocument();
     });
 
     it("renders all form fields with correct labels", () => {
       render(<ContactSection />);
       expect(screen.getByLabelText("Name")).toBeInTheDocument();
-      expect(screen.getByLabelText("Email")).toBeInTheDocument();
-      expect(screen.getByLabelText("Subject")).toBeInTheDocument();
+      expect(screen.getByLabelText("Work email")).toBeInTheDocument();
+      expect(screen.getByLabelText("Company")).toBeInTheDocument();
+      expect(screen.getByLabelText("Payment rail or provider")).toBeInTheDocument();
+      expect(screen.getByLabelText("Agent framework")).toBeInTheDocument();
+      expect(
+        screen.getByLabelText("What can the agent purchase or pay?"),
+      ).toBeInTheDocument();
+      expect(screen.getByLabelText("Which policy must be enforced?")).toBeInTheDocument();
       expect(screen.getByLabelText("Message")).toBeInTheDocument();
     });
 
@@ -31,10 +61,20 @@ describe("ContactSection", () => {
       expect(screen.getByRole("button", { name: "Send message" })).toBeInTheDocument();
     });
 
-    it("renders the sidebar with contact info", () => {
+    it("renders the sidebar with both contact addresses and the response commitment", () => {
       render(<ContactSection />);
       expect(screen.getAllByText("sales@inntris.com").length).toBeGreaterThan(0);
-      expect(screen.getByText("Within 24 hours")).toBeInTheDocument();
+      expect(screen.getAllByText("security@inntris.com").length).toBeGreaterThan(0);
+      expect(screen.getByText("Within one business day")).toBeInTheDocument();
+    });
+
+    /* The evidence-pack verifier's README tells auditors to write to this
+       address on any key discrepancy. If the site drops it, that instruction
+       dead-ends at the moment someone is deciding whether to trust the keys. */
+    it("links the security address as a mailto", () => {
+      render(<ContactSection />);
+      const links = screen.getAllByText("security@inntris.com");
+      expect(links[0]).toHaveAttribute("href", "mailto:security@inntris.com");
     });
 
     it("renders the section with id='contact' for anchor navigation", () => {
@@ -42,7 +82,7 @@ describe("ContactSection", () => {
       expect(container.querySelector("section#contact")).toBeInTheDocument();
     });
 
-    it("renders the email link with correct href", () => {
+    it("renders the sales email link with correct href", () => {
       render(<ContactSection />);
       const emailLinks = screen.getAllByText("sales@inntris.com");
       expect(emailLinks.length).toBeGreaterThan(0);
@@ -53,6 +93,14 @@ describe("ContactSection", () => {
       const { container } = render(<ContactSection />);
       expect(container.textContent ?? "").not.toContain("applications@inntris.com");
     });
+
+    /* v1 said enquiries were "reviewed directly by the founder" — true, but it
+       volunteers the solo-founder fact to exactly the audience the risk slide
+       exists to reassure. The replacement is a response commitment. */
+    it("does not disclose the org chart in place of a response commitment", () => {
+      const { container } = render(<ContactSection />);
+      expect(container.textContent ?? "").not.toContain("founder");
+    });
   });
 
   describe("form interaction", () => {
@@ -60,33 +108,33 @@ describe("ContactSection", () => {
       const user = userEvent.setup();
       render(<ContactSection />);
 
-      const nameInput = screen.getByLabelText("Name");
-      const emailInput = screen.getByLabelText("Email");
-      const subjectInput = screen.getByLabelText("Subject");
-      const messageInput = screen.getByLabelText("Message");
+      await fillForm(user);
 
-      await user.type(nameInput, "Jane Doe");
-      await user.type(emailInput, "jane@example.com");
-      await user.type(subjectInput, "Partner inquiry");
-      await user.type(messageInput, "Hello, I'd like to learn more.");
-
-      expect(nameInput).toHaveValue("Jane Doe");
-      expect(emailInput).toHaveValue("jane@example.com");
-      expect(subjectInput).toHaveValue("Partner inquiry");
-      expect(messageInput).toHaveValue("Hello, I'd like to learn more.");
+      expect(screen.getByLabelText("Name")).toHaveValue("Jane Doe");
+      expect(screen.getByLabelText("Work email")).toHaveValue("jane@example.com");
+      expect(screen.getByLabelText("Company")).toHaveValue("Acme");
+      expect(screen.getByLabelText("What can the agent purchase or pay?")).toHaveValue(
+        "Supplier invoices",
+      );
+      expect(screen.getByLabelText("Which policy must be enforced?")).toHaveValue(
+        "Per-action limit of $1,000",
+      );
+      expect(screen.getByLabelText("Message")).toHaveValue("Hello!");
     });
 
-    it("has required attributes on all inputs", () => {
+    it("has required attributes on all text inputs", () => {
       render(<ContactSection />);
       expect(screen.getByLabelText("Name")).toBeRequired();
-      expect(screen.getByLabelText("Email")).toBeRequired();
-      expect(screen.getByLabelText("Subject")).toBeRequired();
+      expect(screen.getByLabelText("Work email")).toBeRequired();
+      expect(screen.getByLabelText("Company")).toBeRequired();
+      expect(screen.getByLabelText("What can the agent purchase or pay?")).toBeRequired();
+      expect(screen.getByLabelText("Which policy must be enforced?")).toBeRequired();
       expect(screen.getByLabelText("Message")).toBeRequired();
     });
 
     it("email input has type='email'", () => {
       render(<ContactSection />);
-      expect(screen.getByLabelText("Email")).toHaveAttribute("type", "email");
+      expect(screen.getByLabelText("Work email")).toHaveAttribute("type", "email");
     });
   });
 
@@ -96,17 +144,13 @@ describe("ContactSection", () => {
       const user = userEvent.setup();
       render(<ContactSection />);
 
-      await user.type(screen.getByLabelText("Name"), "Jane Doe");
-      await user.type(screen.getByLabelText("Email"), "jane@example.com");
-      await user.type(screen.getByLabelText("Subject"), "Inquiry");
-      await user.type(screen.getByLabelText("Message"), "Hello!");
+      await fillForm(user);
       await user.click(screen.getByRole("button", { name: "Send message" }));
 
       await waitFor(() => {
         expect(screen.getByText("Message received")).toBeInTheDocument();
       });
 
-      // Verify fetch was called with correct data
       expect(mockFetch).toHaveBeenCalledTimes(1);
       expect(mockFetch).toHaveBeenCalledWith(
         "https://formspree.io/f/mpqjkbre",
@@ -119,12 +163,14 @@ describe("ContactSection", () => {
           body: JSON.stringify({
             name: "Jane Doe",
             email: "jane@example.com",
+            company: "Acme",
+            rail: "",
             framework: "",
-            risk: "",
-            subject: "Inquiry",
+            purchases: "Supplier invoices",
+            policy: "Per-action limit of $1,000",
             message: "Hello!",
           }),
-        })
+        }),
       );
     });
 
@@ -133,10 +179,7 @@ describe("ContactSection", () => {
       const user = userEvent.setup();
       render(<ContactSection />);
 
-      await user.type(screen.getByLabelText("Name"), "Jane Doe");
-      await user.type(screen.getByLabelText("Email"), "jane@example.com");
-      await user.type(screen.getByLabelText("Subject"), "Inquiry");
-      await user.type(screen.getByLabelText("Message"), "Hello!");
+      await fillForm(user);
       await user.click(screen.getByRole("button", { name: "Send message" }));
 
       await waitFor(() => {
@@ -149,10 +192,7 @@ describe("ContactSection", () => {
       const user = userEvent.setup();
       render(<ContactSection />);
 
-      await user.type(screen.getByLabelText("Name"), "Jane Doe");
-      await user.type(screen.getByLabelText("Email"), "jane@example.com");
-      await user.type(screen.getByLabelText("Subject"), "Inquiry");
-      await user.type(screen.getByLabelText("Message"), "Hello!");
+      await fillForm(user);
       await user.click(screen.getByRole("button", { name: "Send message" }));
 
       await waitFor(() => {
@@ -161,9 +201,8 @@ describe("ContactSection", () => {
 
       await user.click(screen.getByText("Send another message"));
 
-      // Form should be visible again with empty fields
       expect(screen.getByLabelText("Name")).toHaveValue("");
-      expect(screen.getByLabelText("Email")).toHaveValue("");
+      expect(screen.getByLabelText("Work email")).toHaveValue("");
       expect(screen.getByRole("button", { name: "Send message" })).toBeInTheDocument();
     });
   });
@@ -174,15 +213,12 @@ describe("ContactSection", () => {
       const user = userEvent.setup();
       render(<ContactSection />);
 
-      await user.type(screen.getByLabelText("Name"), "Jane Doe");
-      await user.type(screen.getByLabelText("Email"), "jane@example.com");
-      await user.type(screen.getByLabelText("Subject"), "Inquiry");
-      await user.type(screen.getByLabelText("Message"), "Hello!");
+      await fillForm(user);
       await user.click(screen.getByRole("button", { name: "Send message" }));
 
       await waitFor(() => {
         expect(
-          screen.getByText("Something went wrong. Email us directly at sales@inntris.com")
+          screen.getByText("Something went wrong. Email us directly at sales@inntris.com"),
         ).toBeInTheDocument();
       });
     });
@@ -192,15 +228,12 @@ describe("ContactSection", () => {
       const user = userEvent.setup();
       render(<ContactSection />);
 
-      await user.type(screen.getByLabelText("Name"), "Jane Doe");
-      await user.type(screen.getByLabelText("Email"), "jane@example.com");
-      await user.type(screen.getByLabelText("Subject"), "Inquiry");
-      await user.type(screen.getByLabelText("Message"), "Hello!");
+      await fillForm(user);
       await user.click(screen.getByRole("button", { name: "Send message" }));
 
       await waitFor(() => {
         expect(
-          screen.getByText("Something went wrong. Email us directly at sales@inntris.com")
+          screen.getByText("Something went wrong. Email us directly at sales@inntris.com"),
         ).toBeInTheDocument();
       });
     });
@@ -210,48 +243,41 @@ describe("ContactSection", () => {
       const user = userEvent.setup();
       render(<ContactSection />);
 
-      await user.type(screen.getByLabelText("Name"), "Jane Doe");
-      await user.type(screen.getByLabelText("Email"), "jane@example.com");
-      await user.type(screen.getByLabelText("Subject"), "Inquiry");
-      await user.type(screen.getByLabelText("Message"), "Hello!");
+      await fillForm(user);
       await user.click(screen.getByRole("button", { name: "Send message" }));
 
       await waitFor(() => {
         expect(
-          screen.getByText("Something went wrong. Email us directly at sales@inntris.com")
+          screen.getByText("Something went wrong. Email us directly at sales@inntris.com"),
         ).toBeInTheDocument();
       });
 
-      // Form values should still be filled
       expect(screen.getByLabelText("Name")).toHaveValue("Jane Doe");
-      expect(screen.getByLabelText("Email")).toHaveValue("jane@example.com");
-      expect(screen.getByLabelText("Subject")).toHaveValue("Inquiry");
+      expect(screen.getByLabelText("Work email")).toHaveValue("jane@example.com");
+      expect(screen.getByLabelText("Company")).toHaveValue("Acme");
       expect(screen.getByLabelText("Message")).toHaveValue("Hello!");
     });
   });
 
   describe("submit button state", () => {
     it("shows 'Sending...' and is disabled while submitting", async () => {
-      // Keep the fetch pending
       let resolveFetch: (value: { ok: boolean }) => void;
       mockFetch.mockImplementationOnce(
-        () => new Promise((resolve) => { resolveFetch = resolve; })
+        () =>
+          new Promise((resolve) => {
+            resolveFetch = resolve;
+          }),
       );
 
       const user = userEvent.setup();
       render(<ContactSection />);
 
-      await user.type(screen.getByLabelText("Name"), "Jane Doe");
-      await user.type(screen.getByLabelText("Email"), "jane@example.com");
-      await user.type(screen.getByLabelText("Subject"), "Inquiry");
-      await user.type(screen.getByLabelText("Message"), "Hello!");
+      await fillForm(user);
       await user.click(screen.getByRole("button", { name: "Send message" }));
 
-      // Button should be in submitting state
       const button = screen.getByRole("button", { name: "Sending..." });
       expect(button).toBeDisabled();
 
-      // Resolve the fetch to clean up
       resolveFetch!({ ok: true });
       await waitFor(() => {
         expect(screen.getByText("Message received")).toBeInTheDocument();
@@ -265,10 +291,7 @@ describe("ContactSection", () => {
       const user = userEvent.setup();
       render(<ContactSection />);
 
-      await user.type(screen.getByLabelText("Name"), "Jane Doe");
-      await user.type(screen.getByLabelText("Email"), "jane@example.com");
-      await user.type(screen.getByLabelText("Subject"), "Inquiry");
-      await user.type(screen.getByLabelText("Message"), "Hello!");
+      await fillForm(user);
       await user.click(screen.getByRole("button", { name: "Send message" }));
 
       await waitFor(() => {
@@ -279,7 +302,14 @@ describe("ContactSection", () => {
 
     it("all form inputs have associated labels via htmlFor/id", () => {
       render(<ContactSection />);
-      const labels = ["Name", "Email", "Subject", "Message"];
+      const labels = [
+        "Name",
+        "Work email",
+        "Company",
+        "What can the agent purchase or pay?",
+        "Which policy must be enforced?",
+        "Message",
+      ];
       labels.forEach((label) => {
         const input = screen.getByLabelText(label);
         expect(input).toBeInTheDocument();

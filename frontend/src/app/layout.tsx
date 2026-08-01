@@ -16,9 +16,9 @@ const ibmPlexMono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Inntris - Control and Proof for High-Risk AI Agent Actions",
+  title: "Inntris — Authorisation and proof for agentic payments",
   description:
-    "Inntris enforces policy before high-risk AI agent actions execute and creates tamper-evident receipts for every decision.",
+    "Inntris evaluates the exact proposed agent payment against organisational policy before execution and produces signed evidence that can be independently verified.",
   icons: {
     icon: [
       { url: "/favicon.ico" },

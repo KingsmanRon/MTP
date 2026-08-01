@@ -268,13 +268,13 @@ The dashboard will be available at `http://localhost:3000` with four interfaces:
 Returns a live, Base-mainnet-anchored receipt. No auth required.
 
 ```bash
-curl -s https://api.inntris.com/public/verify/3030c27c-87c4-4464-b4af-605fbe638e0e | jq
+curl -s https://api.inntris.com/public/verify/975151ca-834e-4919-9ef6-d9e80803e5f1 | jq
 ```
 
 Fetch the Merkle proof for the same receipt:
 
 ```bash
-curl -s https://api.inntris.com/public/verify/3030c27c-87c4-4464-b4af-605fbe638e0e/proof | jq
+curl -s https://api.inntris.com/public/verify/975151ca-834e-4919-9ef6-d9e80803e5f1/proof | jq
 ```
 
 - The first call returns the public verification receipt.

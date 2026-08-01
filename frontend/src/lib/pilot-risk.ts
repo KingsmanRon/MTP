@@ -25,7 +25,23 @@ export interface PilotRiskAssessment {
   selectedSignals: string[];
 }
 
+/**
+ * Question order and weight are positioning, not just scoring.
+ *
+ * Payments lead and weigh heaviest: a visitor who arrives from payments-led
+ * homepage copy and gets recommended a code-review pilot has been told the
+ * site does not know what it sells. `financial_actions` is weighted above
+ * every other signal so a payments answer alone clears the candidate
+ * threshold, and its position is first so it is the question the visitor
+ * reads before any other.
+ */
 export const PILOT_RISK_SIGNALS: PilotRiskSignal[] = [
+  {
+    id: "financial_actions",
+    question: "Can agents trigger payments, refunds, or spend?",
+    detail: "Creates direct financial loss and authorisation risk.",
+    weight: 4,
+  },
   {
     id: "external_tools",
     question: "Do your agents call external tools or APIs?",
@@ -43,12 +59,6 @@ export const PILOT_RISK_SIGNALS: PilotRiskSignal[] = [
     question: "Can agents change production code or infrastructure?",
     detail: "Creates operational and change-control risk.",
     weight: 2,
-  },
-  {
-    id: "financial_actions",
-    question: "Can agents trigger payments, refunds, or spend?",
-    detail: "Creates direct financial loss and authorization risk.",
-    weight: 3,
   },
   {
     id: "external_communications",
@@ -80,7 +90,7 @@ const MAX_SCORE = PILOT_RISK_SIGNALS.reduce((total, signal) => total + signal.we
 
 function recommendWorkflow(selected: Set<PilotRiskSignalId>): string {
   if (selected.has("financial_actions")) {
-    return "Agent spend and payment authorization";
+    return "Agent spend and payment authorisation";
   }
   if (selected.has("production_changes")) {
     return "Production change control";

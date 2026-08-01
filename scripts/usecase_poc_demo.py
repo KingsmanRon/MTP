@@ -89,7 +89,7 @@ ORG_ID = ""
 
 # A real, Base-mainnet-anchored Inntris receipt — referenced at the end as proof
 # that production receipts land on Base L2 (chain_id 8453). Anyone can verify it.
-LIVE_MAINNET_RECEIPT = "3030c27c-87c4-4464-b4af-605fbe638e0e"
+LIVE_MAINNET_RECEIPT = "975151ca-834e-4919-9ef6-d9e80803e5f1"
 ANCHOR_CONTRACT = "0x0600eA15802c8d2EA429371b2EB0aacCFe321480"
 
 # --- Layer 2: downstream MoonPay execution --------------------------------- #
