@@ -324,23 +324,19 @@ export default async function InntrisHomePage() {
               </RevealGroup>
 
               <Reveal className="min-w-0" delay={160}>
-                <div className="overflow-hidden rounded-2xl border border-tileLine bg-card shadow-sm">
+                {/* Dark border rather than tileLine. This panel is the hero's
+                    only card and it sits on the tinted gradient wash, where a
+                    91%-lightness border all but disappears. The definition
+                    comes from the edge, which is why the subtitle inside can
+                    stay grey instead of carrying the weight in colour. */}
+                <div className="overflow-hidden rounded-2xl border border-foreground/70 bg-card shadow-sm">
                   <div className="px-6 pb-2 pt-6">
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
                         <div className="text-lg font-semibold tracking-tight text-foreground">
                           Payment decision flow
                         </div>
-                        {/* brandInk rather than muted-foreground. The muted
-                            token is a 10%-saturation cool grey that reads as a
-                            washed-out blue next to the chip and the numbered
-                            tiles — neither clearly grey nor clearly blue. This
-                            is a label, and blue labels are the page convention
-                            (eyebrows, role captions, protocol status lines), so
-                            it matches the chip beside it on purpose. The title
-                            above stays near-black: blue headings would collide
-                            with the blue reserved for interactive elements. */}
-                        <div className="mt-1 font-mono text-sm text-brandInk">
+                        <div className="mt-1 font-mono text-sm text-muted-foreground">
                           Where Inntris sits before the rail
                         </div>
                       </div>
