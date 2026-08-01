@@ -425,14 +425,18 @@ export default function ContactSection() {
             <div className="h-fit rounded-lg border border-tileLine bg-tile px-5 py-4">
               <p className="font-sans text-sm leading-relaxed text-muted-foreground">
                 Whether you&apos;re exploring a design-partner pilot, verifying a receipt, or
-                working out how Inntris fits in front of your payment rail, write to the address
-                that matches the question.
+                working out how Inntris fits in front of your payment rail, this is the address.
               </p>
 
               <div className="mt-3 flex flex-col gap-4">
+                {/* One address, deliberately. The evidence-pack verifier's
+                    README tells auditors to write in on any key discrepancy, so
+                    whatever this says has to resolve — a dedicated-looking
+                    security@ that bounces is worse than a shared box that
+                    answers. */}
                 <div className="flex flex-col gap-1">
                   <p className="font-mono text-xs uppercase tracking-wide text-muted-foreground">
-                    Design partners and commercial
+                    Commercial, technical and security
                   </p>
                   <a
                     href="mailto:sales@inntris.com"
@@ -442,25 +446,6 @@ export default function ContactSection() {
                     )}
                   >
                     sales@inntris.com
-                  </a>
-                </div>
-
-                {/* The evidence-pack verifier's README tells auditors to write
-                    here on any key discrepancy. If this address is missing from
-                    the site, that instruction dead-ends at the exact moment
-                    someone is deciding whether to trust the key registry. */}
-                <div className="flex flex-col gap-1">
-                  <p className="font-mono text-xs uppercase tracking-wide text-muted-foreground">
-                    Security and key verification
-                  </p>
-                  <a
-                    href="mailto:security@inntris.com"
-                    className={cn(
-                      "w-fit rounded-sm font-mono text-sm text-brandInk underline-offset-4 transition-colors hover:underline",
-                      focusRing,
-                    )}
-                  >
-                    security@inntris.com
                   </a>
                 </div>
 
@@ -482,7 +467,7 @@ export default function ContactSection() {
             Design-partner and technical enquiries are answered within one business day.
           </p>
           <p className="mt-3 text-center font-sans text-sm leading-relaxed text-muted-foreground">
-            Design partners and commercial:{" "}
+            Design partners, technical questions, security reports and key verification:{" "}
             <a
               href="mailto:sales@inntris.com"
               className={cn(
@@ -491,16 +476,6 @@ export default function ContactSection() {
               )}
             >
               sales@inntris.com
-            </a>
-            {" · "}Security and key verification:{" "}
-            <a
-              href="mailto:security@inntris.com"
-              className={cn(
-                "rounded-sm font-mono text-brandInk underline-offset-4 hover:underline",
-                focusRing,
-              )}
-            >
-              security@inntris.com
             </a>
           </p>
         </div>

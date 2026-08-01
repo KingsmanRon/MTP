@@ -144,13 +144,13 @@ export function VerificationSection() {
                   not that Inntris produced it. On any discrepancy between the two channels, treat
                   verification as failed and contact{" "}
                   <a
-                    href="mailto:security@inntris.com"
+                    href="mailto:sales@inntris.com"
                     className={cn(
                       "rounded-sm font-mono text-brandInk underline-offset-4 hover:underline",
                       focusRing,
                     )}
                   >
-                    security@inntris.com
+                    sales@inntris.com
                   </a>
                   .
                 </p>

@@ -16,9 +16,13 @@ export const metadata: Metadata = {
  * `/security` is load-bearing rather than decorative. Four separate published
  * artifacts resolve here — the footer navigation, the homepage key-pinning
  * instructions, the published-boundaries link, and the evidence-pack
- * verifier's own README, which tells auditors to write to security@inntris.com
- * on any key discrepancy. If this page 404s, that instruction dead-ends at the
- * exact moment someone is deciding whether to trust the key registry.
+ * verifier's own README, which tells auditors to write in on any key
+ * discrepancy. If this page 404s, that instruction dead-ends at the exact
+ * moment someone is deciding whether to trust the key registry.
+ *
+ * There is no separate security mailbox. Reports go to sales@inntris.com,
+ * which is the address that actually resolves — a dedicated-looking
+ * security@ that bounces is worse than a shared one that answers.
  */
 
 const KEY_REGISTRY_URL = "/.well-known/inntris-keys.txt";
@@ -164,10 +168,10 @@ export default function SecurityPage() {
                 to substitute a key. On any discrepancy between them, treat verification as failed
                 and write to{" "}
                 <a
-                  href="mailto:security@inntris.com"
+                  href="mailto:sales@inntris.com"
                   className={cn("rounded-sm font-mono text-brandInk underline-offset-4 hover:underline", focusRing)}
                 >
-                  security@inntris.com
+                  sales@inntris.com
                 </a>
                 .
               </p>
@@ -190,14 +194,18 @@ export default function SecurityPage() {
                 </div>
                 <div className="min-w-0">
                   <a
-                    href="mailto:security@inntris.com"
+                    href="mailto:sales@inntris.com"
                     className={cn(
                       "rounded-sm font-mono text-base text-brandInk underline-offset-4 hover:underline",
                       focusRing,
                     )}
                   >
-                    security@inntris.com
+                    sales@inntris.com
                   </a>
+                  <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                    One address handles commercial, technical and security mail. Put
+                    &ldquo;Security&rdquo; in the subject line and it is triaged first.
+                  </p>
                   <ul className="mt-4 space-y-2.5 text-sm leading-6 text-muted-foreground">
                     <li className="flex gap-3">
                       <span aria-hidden="true" className="mt-3 h-0.5 w-3 shrink-0 rounded-full bg-primary" />

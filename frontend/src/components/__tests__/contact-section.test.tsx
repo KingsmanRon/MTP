@@ -61,20 +61,21 @@ describe("ContactSection", () => {
       expect(screen.getByRole("button", { name: "Send message" })).toBeInTheDocument();
     });
 
-    it("renders the sidebar with both contact addresses and the response commitment", () => {
+    it("renders the sidebar with the contact address and the response commitment", () => {
       render(<ContactSection />);
       expect(screen.getAllByText("sales@inntris.com").length).toBeGreaterThan(0);
-      expect(screen.getAllByText("security@inntris.com").length).toBeGreaterThan(0);
       expect(screen.getByText("Within one business day")).toBeInTheDocument();
     });
 
-    /* The evidence-pack verifier's README tells auditors to write to this
-       address on any key discrepancy. If the site drops it, that instruction
-       dead-ends at the moment someone is deciding whether to trust the keys. */
-    it("links the security address as a mailto", () => {
-      render(<ContactSection />);
-      const links = screen.getAllByText("security@inntris.com");
-      expect(links[0]).toHaveAttribute("href", "mailto:security@inntris.com");
+    /* There is no security@inntris.com mailbox. The evidence-pack verifier's
+       README tells auditors to write in on a key discrepancy, so the address
+       the site publishes has to be one that actually resolves — a
+       dedicated-looking security@ that bounces is worse than a shared box
+       that answers. */
+    it("does not publish an address that has no mailbox behind it", () => {
+      const { container } = render(<ContactSection />);
+      expect(container.textContent ?? "").not.toContain("security@inntris.com");
+      expect(container.innerHTML).not.toContain("mailto:security@inntris.com");
     });
 
     it("renders the section with id='contact' for anchor navigation", () => {

@@ -22,7 +22,9 @@ should pin to a specific commit and subscribe to our advisories.
 
 * GitHub Security Advisories: use the **Report a vulnerability** button
   on the repo's Security tab.
-* Email: `security@inntris.com`. For sensitive reports, encrypt with
+* Email: `sales@inntris.com`. Security reports sent here are routed to
+  the same person who answers design-partner mail; there is no separate
+  security mailbox. For sensitive reports, encrypt with
   the PGP key published at <https://inntris.com/.well-known/security.asc>
   (fingerprint to be published on first release).
 
