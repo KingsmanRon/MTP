@@ -262,14 +262,25 @@ export default async function InntrisHomePage() {
                   />
                   <span className="text-sm text-brandInk">Agentic payment control</span>
                 </div>
+                {/* Two clauses, because the product has two halves: control
+                    before execution, proof afterwards.
+
+                    An earlier draft read "Prove every agent payment was
+                    authorised before it settles." It blurred the boundary the
+                    rest of the page draws. Inntris proves the policy decision;
+                    it does not tie a specific settled transaction back to that
+                    decision unless the rail's transaction reference is brought
+                    into the evidence chain. "Before it settles" implied that
+                    link. Do not reintroduce settlement into this headline
+                    unless the product actually closes that loop. */}
                 <h1 className="mb-5 max-w-3xl text-4xl font-semibold leading-[1.12] tracking-tight md:text-6xl">
-                  Prove every agent payment was{" "}
-                  <span className="text-primary">authorised before it settles.</span>
+                  Authorise every agent payment before execution.{" "}
+                  <span className="text-primary">Prove every decision independently.</span>
                 </h1>
                 <p className="mb-5 max-w-2xl text-lg leading-relaxed text-muted-foreground">
                   Inntris evaluates the exact proposed payment against your organisation&rsquo;s
-                  current policy before execution. It returns an approve, block or
-                  human-approval-required result with signed evidence bound to that action.
+                  current policy before execution. It allows the payment, blocks it or requires
+                  human approval — with signed evidence bound to the exact action.
                 </p>
                 <p className="mb-8 max-w-xl border-l-[3px] border-primary pl-4 text-base leading-relaxed text-foreground">
                   The payment rail records that money moved. Inntris records the policy decision
