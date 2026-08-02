@@ -20,6 +20,7 @@ verdict = POST /verify-token {
   agent_id,                       # cross-checked against the token
   action_type, payload,           # the EXACT values that were signed/approved
   nonce, timestamp, sig_version,
+  execution_ref,                 # stable executor reference for safe retries
   consume: true                   # single-use: one approval = one execution
 }
 proceed only if verdict.valid === true
@@ -37,6 +38,7 @@ Each guard does one job:
 | `action_type`+`payload`+`nonce`+`timestamp` | the token authorizes **this** action — a tampered `amount` recomputes a different hash | "action hash mismatch" (`action_hash_matches:false`) |
 | `agent_id` | the token belongs to the acting agent | "agent_id does not match" |
 | `consume:true` | the approval hasn't already been spent | "Token already used (single-use)" |
+| `execution_ref` | a retry represents the same downstream execution | same reference returns the original receipt; a different reference conflicts |
 
 If `/verify-token` is unreachable, errors, or returns `valid:false` for **any**
 reason — **do not execute.** Fail closed. (When `consume:true` and the cache or
@@ -59,6 +61,13 @@ tx hash, …) so an auditor can walk from the act back to the anchored proof
 that it was authorized first. If the consumption event cannot be written, the
 consume fails closed and the token is **not** burned — retry.
 
+Use a stable, unique `execution_ref` generated before the first consume call.
+If the response is lost, retry with the same token, exact action, and reference.
+The server returns `valid:true`, `consumption_status:"idempotent"`, and the
+original `consumption_audit_id`. Reusing the token with another reference still
+returns `valid:false`. Callers that omit `execution_ref` retain legacy strict
+single-use behaviour and cannot safely recover a lost response.
+
 ## Why you must retain the signed params
 
 The action hash is recomputed from `action_type`, `payload`, `nonce`, and
@@ -80,6 +89,7 @@ approved = requests.post(f"{API}/verify", json=body, timeout=30)
 if approved.status_code != 200:
     raise SystemExit("not approved — do not execute")
 token = approved.json()["approval_token"]
+execution_ref = "payment_01JXYZ..."        # persist before the first attempt
 
 # ── before moving money, bind the execution to the approval ──
 gate = requests.post(f"{API}/verify-token", json={
@@ -90,6 +100,7 @@ gate = requests.post(f"{API}/verify-token", json={
     "nonce": body["nonce"],
     "timestamp": body["timestamp"],
     "sig_version": body["sig_version"],
+    "execution_ref": execution_ref,
     "consume": True,                      # single-use
 }, timeout=30).json()
 
@@ -102,7 +113,8 @@ consumption_receipt = gate["consumption_audit_id"]
 settle_payment(body["payload"])          # safe: bound + single-use + provable
 ```
 
-A second attempt to settle with the same approval returns
+A retry with the same `execution_ref` returns the same successful consumption
+receipt. A second attempt with a different reference returns
 `valid:false, "Token already used (single-use)"`, and any change to the payload
 (e.g. a different amount) returns `valid:false, action_hash_matches:false`.
 

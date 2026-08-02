@@ -72,6 +72,12 @@ _WRAPPER_REVISIONS = [
         "0011_durable_security_state",
         "016_gdpr_erasure_idempotency.sql",
     ),
+    (
+        _REPO / "alembic" / "versions" / "0013_token_execution_idempotency.py",
+        "0013_token_execution_idempotency",
+        "0012_erasure_idempotency",
+        "017_token_execution_idempotency.sql",
+    ),
 ]
 
 

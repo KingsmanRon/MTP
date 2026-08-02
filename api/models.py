@@ -7,7 +7,7 @@ All models are strictly typed and validated for forensic-grade operations.
 from datetime import datetime
 from decimal import Decimal
 from enum import StrEnum
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -215,6 +215,15 @@ class VerifyTokenRequest(BaseModel):
             "so one approval cannot authorize two executions."
         ),
     )
+    execution_ref: str | None = Field(
+        None,
+        min_length=1,
+        max_length=512,
+        description=(
+            "Stable downstream execution reference. When supplied with consume=true, "
+            "a retry using the same reference is idempotent; a different reference conflicts."
+        ),
+    )
 
 
 class VerifyTokenResponse(BaseModel):
@@ -238,6 +247,14 @@ class VerifyTokenResponse(BaseModel):
             "succeeded. Fetch its public receipt as proof the pre-execution "
             "check happened. Sandbox consumption remains unanchored."
         ),
+    )
+    consumption_status: Literal["consumed", "idempotent"] | None = Field(
+        None,
+        description="Whether this request first consumed the token or replayed the same execution.",
+    )
+    execution_ref: str | None = Field(
+        None,
+        description="Stable execution reference accepted during token consumption.",
     )
     sandbox: bool | None = Field(
         None,
