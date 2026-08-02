@@ -13,6 +13,7 @@ import pytest
 from fastapi import HTTPException
 
 from api.database import Database
+from api.models import ActionVerdict, AuditLogEntry
 
 DATABASE_URL = os.getenv("DATABASE_URL", "")
 REDIS_URL = os.getenv("REDIS_URL", "")
@@ -157,5 +158,104 @@ async def test_real_postgres_excludes_sandbox_rows_from_anchor_selection() -> No
         selected_ids = {row["id"] for row in selected}
         assert live_log_id in selected_ids
         assert sandbox_log_id not in selected_ids
+    finally:
+        await database.close()
+
+
+@_database_integration
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_real_postgres_token_consumption_is_execution_idempotent() -> None:
+    database = await Database.create(DATABASE_URL, min_size=1, max_size=2)
+    org_id = uuid4()
+    agent_id = uuid4()
+    token_id = f"integration-token-{uuid4()}"
+    token_digest = hashlib.sha256(token_id.encode()).digest()
+    action_hash = hashlib.sha256(b"integration-action").hexdigest()
+    execution_ref = f"integration-execution-{uuid4()}"
+
+    try:
+        async with database.acquire() as conn:
+            await conn.execute(
+                """
+                INSERT INTO organizations (id, name, contact_email, api_key_hash)
+                VALUES ($1, $2, $3, $4)
+                """,
+                org_id,
+                f"token-consumption-{org_id}",
+                f"{org_id}@integration.invalid",
+                hashlib.sha256(org_id.bytes).digest(),
+            )
+            await conn.execute(
+                """
+                INSERT INTO agents (
+                    id, org_id, name, public_key, public_key_fingerprint,
+                    status, metadata
+                ) VALUES ($1, $2, $3, $4, $5, 'active', $6::jsonb)
+                """,
+                agent_id,
+                org_id,
+                "token-consumption",
+                hashlib.sha256(agent_id.bytes).digest(),
+                hashlib.sha256(agent_id.bytes).hexdigest(),
+                json.dumps(
+                    {
+                        "sandbox": False,
+                        "production_approval_reference": "integration-test",
+                        "production_approved_at": datetime.now(UTC).isoformat(),
+                        "production_approved_by": "integration-test",
+                    }
+                ),
+            )
+
+        entry = AuditLogEntry(
+            agent_id=agent_id,
+            action_type="token_consumed",
+            action_hash=hashlib.sha256(token_digest).hexdigest(),
+            payload={"event": "token_consumed", "execution_ref": execution_ref},
+            verdict=ActionVerdict.APPROVED,
+            verdict_reason="integration test",
+            signature=b"TOKEN_CONSUMED",
+            signature_valid=False,
+            request_ip=None,
+            request_user_agent=None,
+            response_time_ms=None,
+            trust_score_at_time=50,
+            chain_previous_hash=None,
+            metadata={"execution_ref": execution_ref},
+        )
+
+        first = await database.insert_token_consumption(
+            entry,
+            token_id=token_id,
+            token_digest=token_digest,
+            approved_action_hash=action_hash,
+            execution_ref=execution_ref,
+        )
+        retry = await database.insert_token_consumption(
+            entry,
+            token_id=token_id,
+            token_digest=token_digest,
+            approved_action_hash=action_hash,
+            execution_ref=execution_ref,
+        )
+        conflict = await database.insert_token_consumption(
+            entry,
+            token_id=token_id,
+            token_digest=token_digest,
+            approved_action_hash=action_hash,
+            execution_ref=f"{execution_ref}-different",
+        )
+
+        assert first is not None and first[1] == "consumed"
+        assert retry == (first[0], "idempotent")
+        assert conflict is None
+
+        async with database.acquire() as conn:
+            receipt_count = await conn.fetchval(
+                "SELECT COUNT(*) FROM approval_token_consumptions WHERE token_id = $1",
+                token_id,
+            )
+        assert receipt_count == 1
     finally:
         await database.close()

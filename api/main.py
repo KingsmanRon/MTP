@@ -2177,8 +2177,9 @@ async def _record_token_consumption(
     expires_at: datetime | None,
     action_hash_matches: bool | None,
     token_sandbox: bool,
+    execution_ref: str | None,
     request: Request,
-) -> UUID:
+) -> tuple[UUID, str]:
     """Insert the ``token_consumed`` audit event for a consumed token.
 
     The consumption event is what makes the approve→execute ordering provable
@@ -2221,6 +2222,7 @@ async def _record_token_consumption(
             expires_at.isoformat().replace("+00:00", "Z") if expires_at else None
         ),
         "action_hash_matches": action_hash_matches,
+        "execution_ref": execution_ref,
         "consumed_at": consumed_at,
     }
     # The consumption gets its own leaf hash (a content commitment over the
@@ -2250,6 +2252,7 @@ async def _record_token_consumption(
                 "source": "verify_token",
                 "attestation_type": "token_consumption",
                 "original_action_hash": token_action_hash,
+                "execution_ref": execution_ref,
                 "non_cryptographic": True,
             },
         ),
@@ -2259,6 +2262,7 @@ async def _record_token_consumption(
         token_id=token_id,
         token_digest=token_digest,
         approved_action_hash=token_action_hash,
+        execution_ref=execution_ref,
     )
     if audit_id is None:
         raise ValueError("approval token already consumed")
@@ -2389,6 +2393,7 @@ async def verify_token(
     # Single-use enforcement for the execution gate. Only consume after every
     # validity/binding check above has passed, so a rejected token is not burned.
     consumption_audit_id: UUID | None = None
+    consumption_status: str | None = None
     if request_data.consume:
         if token_sandbox:
             return VerifyTokenResponse(
@@ -2422,7 +2427,7 @@ async def verify_token(
                 action_hash_matches=action_hash_matches,
             )
         try:
-            consumption_audit_id = await _record_token_consumption(
+            consumption_audit_id, consumption_status = await _record_token_consumption(
                 database=database,
                 token_id=token_id,
                 token_digest=hashlib.sha256(
@@ -2434,6 +2439,7 @@ async def verify_token(
                 expires_at=expires_at,
                 action_hash_matches=action_hash_matches,
                 token_sandbox=token_sandbox,
+                execution_ref=request_data.execution_ref,
                 request=request,
             )
         except SandboxExecutionDeniedError:
@@ -2480,6 +2486,8 @@ async def verify_token(
         expires_at=expires_at,
         action_hash_matches=action_hash_matches,
         consumption_audit_id=str(consumption_audit_id) if consumption_audit_id else None,
+        consumption_status=consumption_status,
+        execution_ref=request_data.execution_ref if request_data.consume else None,
         sandbox=token_sandbox,
     )
 

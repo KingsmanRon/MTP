@@ -989,7 +989,8 @@ class Database:
         token_id: str,
         token_digest: bytes,
         approved_action_hash: str,
-    ) -> UUID | None:
+        execution_ref: str | None = None,
+    ) -> tuple[UUID, str] | None:
         """Atomically claim one token and append its consumption receipt.
 
         The database uniqueness constraints are the single use authority. A
@@ -1016,16 +1017,26 @@ class Database:
                     "SELECT pg_advisory_xact_lock(hashtext($1)::bigint)",
                     f"approval-token:{token_id}",
                 )
-                already_used = await conn.fetchval(
+                already_used = await conn.fetchrow(
                     """
-                    SELECT 1
+                    SELECT token_id, token_digest, action_hash, audit_log_id,
+                           execution_ref
                     FROM approval_token_consumptions
                     WHERE token_id = $1 OR token_digest = $2
+                    LIMIT 1
                     """,
                     token_id,
                     token_digest,
                 )
                 if already_used:
+                    if (
+                        execution_ref is not None
+                        and already_used["token_id"] == token_id
+                        and already_used["token_digest"] == token_digest
+                        and already_used["action_hash"] == approved_action_hash
+                        and already_used["execution_ref"] == execution_ref
+                    ):
+                        return already_used["audit_log_id"], "idempotent"
                     return None
 
                 audit_id = await conn.fetchval(
@@ -1049,16 +1060,17 @@ class Database:
                     """
                     INSERT INTO approval_token_consumptions (
                         token_id, token_digest, agent_id, action_hash,
-                        audit_log_id
-                    ) VALUES ($1, $2, $3, $4, $5)
+                        audit_log_id, execution_ref
+                    ) VALUES ($1, $2, $3, $4, $5, $6)
                     """,
                     token_id,
                     token_digest,
                     entry.agent_id,
                     approved_action_hash,
                     audit_id,
+                    execution_ref,
                 )
-                return audit_id
+                return audit_id, "consumed"
         except asyncpg.UniqueViolationError:
             return None
 

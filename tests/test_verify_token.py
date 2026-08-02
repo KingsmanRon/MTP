@@ -128,6 +128,7 @@ class _FakeDatabase:
         self.entries = []
         self.consumed_token_ids: set[str] = set()
         self.consumed_token_digests: set[bytes] = set()
+        self.consumptions: dict[str, tuple[bytes, str | None, str, object]] = {}
 
     def acquire(self):
         db = self
@@ -153,26 +154,43 @@ class _FakeDatabase:
         *,
         token_id,
         token_digest,
-        approved_action_hash,  # noqa: ARG002
+        approved_action_hash,
+        execution_ref=None,
     ):
         if self.fail_insert:
             raise RuntimeError("simulated database outage")
-        if (
-            token_id in self.consumed_token_ids
-            or token_digest in self.consumed_token_digests
-        ):
+        existing = self.consumptions.get(token_id)
+        if existing is not None:
+            digest, existing_ref, action_hash, audit_id = existing
+            if (
+                execution_ref is not None
+                and digest == token_digest
+                and existing_ref == execution_ref
+                and action_hash == approved_action_hash
+            ):
+                return audit_id, "idempotent"
             return None
+        if token_digest in self.consumed_token_digests:
+            return None
+        audit_id = uuid4()
         self.consumed_token_ids.add(token_id)
         self.consumed_token_digests.add(token_digest)
+        self.consumptions[token_id] = (
+            token_digest,
+            execution_ref,
+            approved_action_hash,
+            audit_id,
+        )
         self.entries.append((entry, True))
-        return uuid4()
+        return audit_id, "consumed"
 
 
-def _consume_body():
+def _consume_body(execution_ref="x402-settlement-1"):
     return {
         "approval_token": _token(), "agent_id": AGENT_ID,
         "action_type": ACTION_TYPE, "payload": PAYLOAD,
         "nonce": NONCE, "timestamp": TIMESTAMP, "consume": True,
+        "execution_ref": execution_ref,
     }
 
 
@@ -181,7 +199,7 @@ def _with_overrides(db=None):
         app.dependency_overrides[get_db_optional] = lambda: db
 
 
-def test_consume_makes_token_single_use():
+def test_consume_retry_with_same_execution_ref_is_idempotent():
     fake_db = _FakeDatabase()
     body = _consume_body()
     _with_overrides(db=fake_db)
@@ -191,8 +209,40 @@ def test_consume_makes_token_single_use():
     finally:
         app.dependency_overrides.clear()
     assert first.status_code == 200 and first.json()["valid"] is True
-    assert second.status_code == 200 and second.json()["valid"] is False
+    assert second.status_code == 200 and second.json()["valid"] is True
+    assert first.json()["consumption_status"] == "consumed"
+    assert second.json()["consumption_status"] == "idempotent"
+    assert first.json()["consumption_audit_id"] == second.json()["consumption_audit_id"]
+    assert second.json()["execution_ref"] == "x402-settlement-1"
+    assert len(fake_db.entries) == 1
+
+
+def test_consume_with_different_execution_ref_is_replay_conflict():
+    fake_db = _FakeDatabase()
+    first_body = _consume_body("x402-settlement-1")
+    second_body = {**first_body, "execution_ref": "x402-settlement-2"}
+    _with_overrides(db=fake_db)
+    try:
+        first = client.post("/verify-token", json=first_body)
+        second = client.post("/verify-token", json=second_body)
+    finally:
+        app.dependency_overrides.clear()
+    assert first.json()["valid"] is True
+    assert second.json()["valid"] is False
     assert "used" in (second.json()["reason"] or "").lower()
+
+
+def test_legacy_consume_without_execution_ref_remains_single_use():
+    fake_db = _FakeDatabase()
+    body = _consume_body(None)
+    _with_overrides(db=fake_db)
+    try:
+        first = client.post("/verify-token", json=body)
+        second = client.post("/verify-token", json=body)
+    finally:
+        app.dependency_overrides.clear()
+    assert first.json()["valid"] is True
+    assert second.json()["valid"] is False
 
 
 def test_consume_records_anchored_audit_event():

@@ -111,6 +111,12 @@ database and runs the end to end erasure contract. See
 complete `action_type`, `payload`, `nonce`, and `timestamp`. The action hash
 must match and the token can be consumed only once.
 
+Executors should also send a stable `execution_ref`. The first successful call
+returns `consumption_status: "consumed"`. An exact retry with the same token,
+action, and reference returns `consumption_status: "idempotent"` and the same
+`consumption_audit_id`. A different reference conflicts. Omitting the reference
+keeps the legacy single-use contract, so a lost response remains ambiguous.
+
 The approval token signs the sandbox state. A stateless `consume: false` check
 may authenticate a sandbox token and reports `sandbox: true`, but an execution
 gate using `consume: true` returns `valid: false` when either the signed token or
