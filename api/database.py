@@ -346,17 +346,22 @@ class Database:
     ) -> dict[str, Any]:
         """Rotate an agent's Ed25519 signing key in place.
 
-        Records the current key in ``agent_key_history`` and swaps in the new
-        one (new fingerprint, bumped ``key_version``, ``key_rotated_at`` now) in
-        one tenant-scoped transaction. Trust score, policy, and audit history are
-        untouched; the old key stops verifying immediately.
+        Records the current public key and fingerprint in ``agent_key_history``
+        and swaps in the new one (new fingerprint, bumped ``key_version``,
+        ``key_rotated_at`` now) in one tenant-scoped transaction. Trust score,
+        policy, and audit history are untouched; the old key stops authenticating
+        new actions but remains available for historical receipt verification.
 
         Returns the new ``key_version``, ``public_key_fingerprint``, and
         ``key_rotated_at``.
         """
         async with self.acquire_as_tenant(org_id) as conn:
             current = await conn.fetchrow(
-                "SELECT public_key_fingerprint, key_version FROM agents WHERE id = $1",
+                """
+                SELECT public_key, public_key_fingerprint, key_version
+                FROM agents
+                WHERE id = $1
+                """,
                 agent_id,
             )
             if current is None:
@@ -365,11 +370,13 @@ class Database:
             await conn.execute(
                 """
                 INSERT INTO agent_key_history (
-                    agent_id, public_key_fingerprint, key_version, retired_by, reason
+                    agent_id, public_key, public_key_fingerprint,
+                    key_version, retired_by, reason
                 )
-                VALUES ($1, $2, $3, $4, $5)
+                VALUES ($1, $2, $3, $4, $5, $6)
                 """,
                 agent_id,
+                current["public_key"],
                 current["public_key_fingerprint"],
                 current["key_version"],
                 retired_by,
@@ -1032,7 +1039,6 @@ class Database:
                     if (
                         execution_ref is not None
                         and already_used["token_id"] == token_id
-                        and already_used["token_digest"] == token_digest
                         and already_used["action_hash"] == approved_action_hash
                         and already_used["execution_ref"] == execution_ref
                     ):
@@ -1070,9 +1076,140 @@ class Database:
                     audit_id,
                     execution_ref,
                 )
+                reservation = await conn.fetchrow(
+                    "SELECT status FROM spend_reservations WHERE approval_token_id = $1",
+                    token_id,
+                )
+                if reservation is not None:
+                    if reservation["status"] != "reserved":
+                        raise ValueError(
+                            f"spend reservation is {reservation['status']}, not reserved"
+                        )
+                    await conn.execute(
+                        """
+                        UPDATE spend_reservations
+                        SET status = 'consumed', consumed_at = NOW()
+                        WHERE approval_token_id = $1 AND status = 'reserved'
+                        """,
+                        token_id,
+                    )
                 return audit_id, "consumed"
         except asyncpg.UniqueViolationError:
             return None
+
+    async def claim_verify_request(
+        self,
+        *,
+        agent_id: UUID,
+        request_ref: str,
+        action_hash: str,
+        nonce: str,
+        sandbox: bool,
+    ) -> tuple[str, dict[str, Any]]:
+        """Claim a signed ``/verify`` request reference or return its state.
+
+        The unique ``(agent_id, request_ref)`` key is acquired before nonce and
+        spend state change. Concurrent duplicates therefore cannot create two
+        reservations even when the caller retries before the first response.
+        """
+        query = """
+            INSERT INTO verify_request_idempotency (
+                agent_id, request_ref, action_hash, nonce, sandbox
+            ) VALUES ($1, $2, $3, $4, $5)
+            ON CONFLICT (agent_id, request_ref) DO NOTHING
+            RETURNING agent_id, request_ref, action_hash, nonce, state
+        """
+        async with self.acquire() as conn:
+            row = await conn.fetchrow(
+                query, agent_id, request_ref, action_hash, nonce, sandbox
+            )
+            if row is not None:
+                return "new", dict(row)
+            existing = await conn.fetchrow(
+                """
+                SELECT agent_id, request_ref, action_hash, nonce, state,
+                       verdict, violation_code, http_status, audit_log_id,
+                       verdict_reason, approval_token_id,
+                       approval_token_expires_at, trust_score,
+                       response_timestamp, limits_remaining, sandbox,
+                       created_at, completed_at
+                FROM verify_request_idempotency
+                WHERE agent_id = $1 AND request_ref = $2
+                """,
+                agent_id,
+                request_ref,
+            )
+        if existing is None:
+            raise DatabaseError("verify idempotency claim disappeared")
+        return "existing", dict(existing)
+
+    async def complete_verify_request(
+        self,
+        *,
+        agent_id: UUID,
+        request_ref: str,
+        action_hash: str,
+        verdict: str,
+        http_status: int,
+        audit_id: UUID,
+        verdict_reason: str,
+        trust_score: int,
+        response_timestamp: datetime,
+        limits_remaining: dict[str, Any] | None,
+        violation_code: str | None = None,
+        approval_token_id: str | None = None,
+        approval_token_expires_at: datetime | None = None,
+    ) -> None:
+        """Persist the complete response needed for an exact retry."""
+        query = """
+            UPDATE verify_request_idempotency
+            SET state = 'completed', verdict = $4, violation_code = $5,
+                http_status = $6, audit_log_id = $7, verdict_reason = $8,
+                approval_token_id = $9, approval_token_expires_at = $10,
+                trust_score = $11, response_timestamp = $12,
+                limits_remaining = $13::jsonb, completed_at = NOW()
+            WHERE agent_id = $1 AND request_ref = $2
+              AND action_hash = $3 AND state = 'processing'
+        """
+        async with self.acquire() as conn:
+            result = await conn.execute(
+                query,
+                agent_id,
+                request_ref,
+                action_hash,
+                verdict,
+                violation_code,
+                http_status,
+                audit_id,
+                verdict_reason,
+                approval_token_id,
+                approval_token_expires_at,
+                trust_score,
+                response_timestamp,
+                json.dumps(limits_remaining) if limits_remaining is not None else None,
+            )
+        if result == "UPDATE 0":
+            raise DatabaseError("verify idempotency completion did not match its claim")
+
+    async def abandon_verify_request(
+        self,
+        *,
+        agent_id: UUID,
+        request_ref: str,
+        action_hash: str,
+    ) -> None:
+        """Release an incomplete claim after a handled internal failure."""
+        async with self.acquire() as conn:
+            await conn.execute(
+                """
+                DELETE FROM verify_request_idempotency
+                WHERE agent_id = $1 AND request_ref = $2
+                  AND action_hash = $3 AND state = 'processing'
+                """,
+                agent_id,
+                request_ref,
+                action_hash,
+            )
 
     async def get_last_audit_hash(self, agent_id: UUID) -> str | None:
         """Get the hash of the last audit log entry for chain linking."""
@@ -1179,16 +1316,35 @@ class Database:
             await conn.execute(query, agent_id, window_type, window_start, amount_usd)
 
     async def get_daily_spend(self, agent_id: UUID) -> Decimal:
-        """Get total spend for an agent today."""
+        """Get today's legacy spend plus live or consumed reservations.
+
+        ``rate_limit_windows`` remains part of the total for the deployment day
+        so rolling out the reservation ledger cannot reset already-counted
+        spend. New approvals are written only to ``spend_reservations``.
+        """
         now = datetime.now(UTC)
         day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
 
         query = """
-            SELECT COALESCE(SUM(amount_usd), 0)
-            FROM rate_limit_windows
-            WHERE agent_id = $1
-              AND window_type = 'day'
-              AND window_start >= $2
+            SELECT
+                COALESCE((
+                    SELECT SUM(amount_usd)
+                    FROM rate_limit_windows
+                    WHERE agent_id = $1
+                      AND window_type = 'day'
+                      AND window_start >= $2
+                ), 0)
+                +
+                COALESCE((
+                    SELECT SUM(amount_usd)
+                    FROM spend_reservations
+                    WHERE agent_id = $1
+                      AND created_at >= $2
+                      AND (
+                          status = 'consumed'
+                          OR (status = 'reserved' AND expires_at > NOW())
+                      )
+                ), 0)
         """
         async with self.acquire() as conn:
             return await conn.fetchval(query, agent_id, day_start) or Decimal("0")
@@ -1201,7 +1357,10 @@ class Database:
         amount: Decimal,
         rate_limit_per_minute: int,
         daily_limit_usd: Decimal,
-    ) -> tuple[int, Decimal]:
+        action_hash: str,
+        approval_token_id: str,
+        expires_at: datetime,
+    ) -> tuple[int, Decimal, UUID]:
         """Atomically reserve one request in the minute window and ``amount`` in
         the day window, enforcing both limits inside a single transaction.
 
@@ -1213,10 +1372,24 @@ class Database:
         over the limit raises :class:`LimitReservationError`, rolling the
         transaction back so nothing is reserved for a rejected request.
 
-        Returns ``(minute_count, daily_spend)`` reflecting the counters after
-        this request is included.
+        Returns ``(minute_count, daily_spend, reservation_id)`` reflecting the
+        state after this request is included. An unconsumed reservation stops
+        counting automatically at approval-token expiry.
         """
         async with self.acquire() as conn, conn.transaction():
+            await conn.execute(
+                "SELECT pg_advisory_xact_lock(hashtext($1)::bigint)",
+                f"spend-reservation:{agent_id}",
+            )
+            await conn.execute(
+                """
+                UPDATE spend_reservations
+                SET status = 'expired', released_at = NOW(),
+                    release_reason = 'approval_token_expired'
+                WHERE agent_id = $1 AND status = 'reserved' AND expires_at <= NOW()
+                """,
+                agent_id,
+            )
             minute_count = await conn.fetchval(
                 """
                     INSERT INTO rate_limit_windows (
@@ -1233,26 +1406,69 @@ class Database:
             if minute_count > rate_limit_per_minute:
                 raise LimitReservationError("rate", minute_count)
 
-            daily_spend = await conn.fetchval(
+            legacy_spend = await conn.fetchval(
                 """
-                    INSERT INTO rate_limit_windows (
-                        agent_id, window_type, window_start, request_count, amount_usd
-                    )
-                    VALUES ($1, 'day', $2, 1, $3)
-                    ON CONFLICT (agent_id, window_type, window_start)
-                    DO UPDATE SET
-                        request_count = rate_limit_windows.request_count + 1,
-                        amount_usd = rate_limit_windows.amount_usd + $3
-                    RETURNING amount_usd
+                    SELECT COALESCE(SUM(amount_usd), 0)
+                    FROM rate_limit_windows
+                    WHERE agent_id = $1
+                      AND window_type = 'day'
+                      AND window_start >= $2
                     """,
                 agent_id,
                 day_start,
-                amount,
+            )
+            reserved_spend = await conn.fetchval(
+                """
+                SELECT COALESCE(SUM(amount_usd), 0)
+                FROM spend_reservations
+                WHERE agent_id = $1
+                  AND created_at >= $2
+                  AND status IN ('reserved', 'consumed')
+                """,
+                agent_id,
+                day_start,
+            )
+            daily_spend = (
+                Decimal(legacy_spend or 0)
+                + Decimal(reserved_spend or 0)
+                + amount
             )
             if daily_spend > daily_limit_usd:
                 raise LimitReservationError("daily", daily_spend)
 
-            return minute_count, daily_spend
+            reservation_id = await conn.fetchval(
+                """
+                INSERT INTO spend_reservations (
+                    agent_id, action_hash, approval_token_id,
+                    amount_usd, expires_at
+                ) VALUES ($1, $2, $3, $4, $5)
+                RETURNING id
+                """,
+                agent_id,
+                action_hash,
+                approval_token_id,
+                amount,
+                expires_at,
+            )
+
+            return minute_count, daily_spend, reservation_id
+
+    async def release_spend_reservation(
+        self,
+        *,
+        agent_id: UUID,
+        action_hash: str,
+        reason: str,
+    ) -> bool:
+        """Release an unconsumed reservation after a failed approval response."""
+        query = """
+            UPDATE spend_reservations
+            SET status = 'released', released_at = NOW(), release_reason = $3
+            WHERE agent_id = $1 AND action_hash = $2 AND status = 'reserved'
+        """
+        async with self.acquire() as conn:
+            result = await conn.execute(query, agent_id, action_hash, reason[:255])
+        return result == "UPDATE 1"
 
     # =========================================================================
     # MERKLE PROOF OPERATIONS

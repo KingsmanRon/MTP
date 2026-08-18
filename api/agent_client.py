@@ -61,6 +61,7 @@ def build_signed_verify_request(
     nonce: str | None = None,
     timestamp: datetime | str | None = None,
     policy_hash: str | None = None,
+    request_ref: str | None = None,
     sig_version: int = DEFAULT_SIG_VERSION,
 ) -> dict[str, Any]:
     """Build a ready-to-POST ``/verify`` request body, signed with the agent key.
@@ -75,10 +76,17 @@ def build_signed_verify_request(
     ts_source = timestamp if timestamp is not None else datetime.now(UTC)
     canonical_ts = CryptoService.canonicalize_timestamp(ts_source)
 
+    signed_payload = dict(payload)
+    if request_ref is not None:
+        existing_ref = signed_payload.get("request_ref")
+        if existing_ref is not None and existing_ref != request_ref:
+            raise ValueError("payload.request_ref must equal request_ref")
+        signed_payload["request_ref"] = request_ref
+
     action_hash = CryptoService.compute_action_hash(
         agent_id=str(agent_id),
         action_type=action_type,
-        payload=payload,
+        payload=signed_payload,
         nonce=nonce,
         timestamp=canonical_ts,
         sig_version=sig_version,
@@ -88,7 +96,7 @@ def build_signed_verify_request(
     body: dict[str, Any] = {
         "agent_id": str(agent_id),
         "action_type": action_type,
-        "payload": payload,
+        "payload": signed_payload,
         "nonce": nonce,
         "timestamp": canonical_ts,
         "signature": base64.b64encode(signature).decode(),
@@ -96,6 +104,8 @@ def build_signed_verify_request(
     }
     if policy_hash is not None:
         body["policy_hash"] = policy_hash
+    if request_ref is not None:
+        body["request_ref"] = request_ref
     return body
 
 
@@ -136,6 +146,7 @@ class InntrisAgentClient:
         payload: dict[str, Any],
         *,
         policy_hash: str | None = None,
+        request_ref: str | None = None,
     ) -> tuple[int, dict[str, Any]]:
         """Sign and submit an action. Returns ``(http_status, json_body)``.
 
@@ -149,6 +160,7 @@ class InntrisAgentClient:
             action_type=action_type,
             payload=payload,
             policy_hash=policy_hash,
+            request_ref=request_ref,
             sig_version=self.sig_version,
         )
         resp = self._requests.post(

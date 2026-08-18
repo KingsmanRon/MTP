@@ -113,6 +113,16 @@ class VerifyActionRequest(BaseModel):
         max_length=64,
         description="SHA-256 hash of .inntris.yml policy file"
     )
+    request_ref: str | None = Field(
+        None,
+        min_length=1,
+        max_length=512,
+        description=(
+            "Stable caller request reference for durable idempotency. When set, "
+            "payload.request_ref must contain the same value so the reference is "
+            "covered by the agent signature."
+        ),
+    )
 
     # Signing-envelope version. Phase 0.4 introduced this field so the wire
     # format of ``compute_action_hash`` can evolve without silently breaking
@@ -148,6 +158,18 @@ class VerifyActionRequest(BaseModel):
         if not v.replace("_", "").isalnum():
             raise ValueError("action_type must be alphanumeric with underscores only")
         return v.lower()
+
+    @model_validator(mode="after")
+    def validate_signed_request_ref(self) -> "VerifyActionRequest":
+        """Never accept an unsigned idempotency key.
+
+        ``request_ref`` is not part of signing envelopes v1-v3. Requiring the
+        same value inside ``payload`` binds it through ``payload_hash`` without
+        changing the established cross-language signature contract.
+        """
+        if self.request_ref is not None and self.payload.get("request_ref") != self.request_ref:
+            raise ValueError("payload.request_ref must equal request_ref")
+        return self
 
 
 class TestVerifyRequest(BaseModel):
@@ -518,6 +540,23 @@ class VerifyActionResponse(BaseModel):
         None,
         description="Remaining limits for the agent"
     )
+    idempotency_status: Literal["new", "replayed"] | None = Field(
+        None,
+        description="Whether this response was created now or recovered from request_ref.",
+    )
+
+
+class VerifyActionDeniedResponse(BaseModel):
+    """Structured authenticated policy denial returned by ``POST /verify``."""
+
+    model_config = ConfigDict(strict=False)
+
+    verdict: ActionVerdict
+    violation_code: str
+    audit_id: UUID
+    timestamp: datetime
+    detail: str
+    idempotency_status: Literal["new", "replayed"] | None = None
 
 
 class AgentPublicInfo(BaseModel):

@@ -78,6 +78,12 @@ _WRAPPER_REVISIONS = [
         "0012_erasure_idempotency",
         "017_token_execution_idempotency.sql",
     ),
+    (
+        _REPO / "alembic" / "versions" / "0014_highnote_core_authority.py",
+        "0014_highnote_core_authority",
+        "0013_token_execution_idempotency",
+        "018_highnote_core_authority.sql",
+    ),
 ]
 
 

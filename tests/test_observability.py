@@ -210,6 +210,7 @@ def test_expected_metric_names_are_exported() -> None:
     assert hasattr(obs, "anchor_worker_cycles_total")
     assert hasattr(obs, "anchor_proof_backlog")
     assert hasattr(obs, "verify_latency_seconds")
+    assert hasattr(obs, "verify_stage_latency_seconds")
 
 
 def test_metrics_endpoint_returns_prometheus_text() -> None:

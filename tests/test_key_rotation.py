@@ -6,11 +6,13 @@ RLS integration suite; here we cover the pure pieces that gate the endpoint.
 import base64
 from datetime import UTC, datetime
 from decimal import Decimal
+from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 import pytest
 from pydantic import ValidationError
 
+from api.database import Database
 from api.models import AgentRecord, AgentStatus, RotateAgentKeyRequest
 
 
@@ -64,3 +66,56 @@ def test_agent_record_key_version_defaults():
     )
     assert agent.key_version == 1
     assert agent.key_rotated_at is None
+
+
+@pytest.mark.asyncio
+async def test_rotation_retains_only_the_retiring_public_key_for_historical_receipts():
+    agent_id = uuid4()
+    org_id = uuid4()
+    old_public_key = b"\x01" * 32
+    new_public_key = b"\x02" * 32
+    old_fingerprint = "a" * 64
+    new_fingerprint = "b" * 64
+    rotated_at = datetime.now(UTC)
+
+    conn = AsyncMock()
+    conn.fetchrow = AsyncMock(
+        side_effect=[
+            {
+                "public_key": old_public_key,
+                "public_key_fingerprint": old_fingerprint,
+                "key_version": 1,
+            },
+            {
+                "key_version": 2,
+                "public_key_fingerprint": new_fingerprint,
+                "key_rotated_at": rotated_at,
+            },
+        ]
+    )
+    context = MagicMock()
+    context.__aenter__ = AsyncMock(return_value=conn)
+    context.__aexit__ = AsyncMock(return_value=False)
+    database = Database(MagicMock())
+    database.acquire_as_tenant = MagicMock(return_value=context)
+
+    result = await database.rotate_agent_key(
+        agent_id=agent_id,
+        org_id=org_id,
+        new_public_key=new_public_key,
+        new_fingerprint=new_fingerprint,
+        retired_by="operator",
+        reason="scheduled rotation",
+    )
+
+    history_insert = conn.execute.await_args
+    assert "public_key" in history_insert.args[0]
+    assert history_insert.args[1:] == (
+        agent_id,
+        old_public_key,
+        old_fingerprint,
+        1,
+        "operator",
+        "scheduled rotation",
+    )
+    assert result["key_version"] == 2

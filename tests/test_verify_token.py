@@ -161,10 +161,9 @@ class _FakeDatabase:
             raise RuntimeError("simulated database outage")
         existing = self.consumptions.get(token_id)
         if existing is not None:
-            digest, existing_ref, action_hash, audit_id = existing
+            _digest, existing_ref, action_hash, audit_id = existing
             if (
                 execution_ref is not None
-                and digest == token_digest
                 and existing_ref == execution_ref
                 and action_hash == approved_action_hash
             ):

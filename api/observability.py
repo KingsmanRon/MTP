@@ -217,6 +217,12 @@ if _HAS_PROMETHEUS:
         "Wall time for /verify end-to-end, seconds.",
         buckets=(0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10),
     )
+    verify_stage_latency_seconds = Histogram(
+        "inntris_verify_stage_latency_seconds",
+        "Wall time for one named /verify stage, seconds.",
+        ["stage"],
+        buckets=(0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5),
+    )
     verify_unavailable_total = Counter(
         "inntris_verify_unavailable_total",
         "Total /verify requests refused fail-closed because a security "
@@ -239,6 +245,7 @@ else:  # pragma: no cover — exercised in stub mode
     rpc_breaker_rejected_total = _NoopMetric()
     rpc_breaker_state = _NoopMetric()
     verify_latency_seconds = _NoopMetric()
+    verify_stage_latency_seconds = _NoopMetric()
     verify_unavailable_total = _NoopMetric()
 
 

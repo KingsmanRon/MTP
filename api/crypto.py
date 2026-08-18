@@ -304,6 +304,8 @@ class CryptoService:
         expiry_minutes: int = 5,
         *,
         sandbox: bool = False,
+        token_id: str | None = None,
+        expires_at: datetime | int | float | None = None,
     ) -> str:
         """
         Generate a signed approval token.
@@ -325,10 +327,15 @@ class CryptoService:
         Returns:
             Base64-encoded approval token.
         """
-        expiry = datetime.now(UTC).timestamp() + (expiry_minutes * 60)
+        if expires_at is None:
+            expiry = datetime.now(UTC).timestamp() + (expiry_minutes * 60)
+        elif isinstance(expires_at, datetime):
+            expiry = expires_at.timestamp()
+        else:
+            expiry = float(expires_at)
 
         token_data = {
-            "token_id": secrets.token_urlsafe(24),
+            "token_id": token_id or secrets.token_urlsafe(24),
             "agent_id": agent_id,
             "action_hash": action_hash,
             "verdict": verdict,

@@ -61,6 +61,7 @@ from api.models import (
     RotateAgentKeyRequest,
     TestVerifyRequest,
     UpdateAgentRequest,
+    VerifyActionDeniedResponse,
     VerifyActionRequest,
     VerifyActionResponse,
     VerifyDebugResponse,
@@ -1274,8 +1275,13 @@ async def get_public_verification_record(
                 # Lookup by transaction hash via merkle_proofs
                 row = await conn.fetchrow(
                     """
-                    SELECT al.*, a.name AS agent_name, a.org_id,
-                           a.public_key AS agent_public_key,
+                     SELECT al.*, a.name AS agent_name, a.org_id,
+                            CASE
+                                WHEN al.metadata->>'key_fingerprint' IS NULL
+                                  OR al.metadata->>'key_fingerprint' = a.public_key_fingerprint
+                                THEN a.public_key
+                                ELSE retired_key.public_key
+                            END AS agent_public_key,
                            mp.root_hash AS merkle_root,
                            mp.transaction_hash AS tx_hash,
                            mp.block_number,
@@ -1283,8 +1289,16 @@ async def get_public_verification_record(
                            mp.status AS proof_status,
                            mp.confirmed_at AS anchored_at
                     FROM merkle_proofs mp
-                    JOIN audit_logs al ON al.merkle_root_id = mp.id
-                    JOIN agents a ON al.agent_id = a.id
+                     JOIN audit_logs al ON al.merkle_root_id = mp.id
+                     JOIN agents a ON al.agent_id = a.id
+                     LEFT JOIN LATERAL (
+                         SELECT akh.public_key
+                         FROM agent_key_history akh
+                         WHERE akh.agent_id = al.agent_id
+                           AND akh.public_key_fingerprint = al.metadata->>'key_fingerprint'
+                         ORDER BY akh.key_version DESC
+                         LIMIT 1
+                     ) retired_key ON TRUE
                     WHERE mp.transaction_hash = $1
                     ORDER BY al.timestamp DESC
                     LIMIT 1
@@ -1300,16 +1314,29 @@ async def get_public_verification_record(
 
                 row = await conn.fetchrow(
                     """
-                    SELECT al.*, a.name AS agent_name, a.org_id,
-                           a.public_key AS agent_public_key,
+                     SELECT al.*, a.name AS agent_name, a.org_id,
+                            CASE
+                                WHEN al.metadata->>'key_fingerprint' IS NULL
+                                  OR al.metadata->>'key_fingerprint' = a.public_key_fingerprint
+                                THEN a.public_key
+                                ELSE retired_key.public_key
+                            END AS agent_public_key,
                            mp.root_hash AS merkle_root,
                            mp.transaction_hash AS tx_hash,
                            mp.block_number,
                            mp.chain_id,
                            mp.status AS proof_status,
                            mp.confirmed_at AS anchored_at
-                    FROM audit_logs al
-                    JOIN agents a ON al.agent_id = a.id
+                     FROM audit_logs al
+                     JOIN agents a ON al.agent_id = a.id
+                     LEFT JOIN LATERAL (
+                         SELECT akh.public_key
+                         FROM agent_key_history akh
+                         WHERE akh.agent_id = al.agent_id
+                           AND akh.public_key_fingerprint = al.metadata->>'key_fingerprint'
+                         ORDER BY akh.key_version DESC
+                         LIMIT 1
+                     ) retired_key ON TRUE
                     LEFT JOIN merkle_proofs mp ON al.merkle_root_id = mp.id
                     WHERE al.id = $1
                     """,
@@ -1591,12 +1618,110 @@ async def get_public_proof(
 # VERIFICATION ENDPOINT
 # =============================================================================
 
+APPROVAL_TOKEN_TTL_MINUTES = 5
+
+
+def _verify_denied_response(
+    *,
+    verdict: ActionVerdict,
+    violation_code: str,
+    audit_id: UUID,
+    timestamp_value: datetime,
+    detail: str,
+    http_status: int,
+    idempotency_status: str = "new",
+    headers: dict[str, str] | None = None,
+) -> JSONResponse:
+    body = VerifyActionDeniedResponse(
+        verdict=verdict,
+        violation_code=violation_code,
+        audit_id=audit_id,
+        timestamp=timestamp_value,
+        detail=detail,
+        idempotency_status=idempotency_status,
+    )
+    return JSONResponse(
+        status_code=http_status,
+        content=jsonable_encoder(body),
+        headers=headers,
+    )
+
+
+def _idempotent_verify_response(record: dict[str, Any]) -> VerifyActionResponse | JSONResponse:
+    """Rebuild the original completed response without new policy state."""
+    if record.get("state") != "completed":
+        return JSONResponse(
+            status_code=status.HTTP_409_CONFLICT,
+            content={
+                "error": "request_in_progress",
+                "detail": "The same request_ref is still being processed. Retry shortly.",
+            },
+            headers={"Retry-After": "1"},
+        )
+
+    verdict = ActionVerdict(record["verdict"])
+    http_status = int(record["http_status"])
+    if http_status != status.HTTP_200_OK:
+        return _verify_denied_response(
+            verdict=verdict,
+            violation_code=record.get("violation_code") or "policy_denied",
+            audit_id=record["audit_log_id"],
+            timestamp_value=record["response_timestamp"],
+            detail=record.get("verdict_reason") or "Action blocked by policy",
+            http_status=http_status,
+            idempotency_status="replayed",
+            headers={"Retry-After": "60"} if http_status == 429 else None,
+        )
+
+    expires_at = record.get("approval_token_expires_at")
+    token_id = record.get("approval_token_id")
+    if not isinstance(expires_at, datetime) or not isinstance(token_id, str):
+        return JSONResponse(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            content={
+                "error": "idempotency_record_incomplete",
+                "detail": "The original approval cannot be reconstructed safely.",
+            },
+        )
+    if expires_at <= datetime.now(UTC):
+        return JSONResponse(
+            status_code=status.HTTP_409_CONFLICT,
+            content={
+                "error": "approval_expired",
+                "detail": "The original idempotent approval token has expired.",
+                "audit_id": str(record["audit_log_id"]),
+            },
+        )
+
+    token = CryptoService.generate_approval_token(
+        agent_id=str(record["agent_id"]),
+        action_hash=record["action_hash"],
+        verdict=verdict.value,
+        server_secret=SERVER_SECRET,
+        sandbox=bool(record.get("sandbox")),
+        token_id=token_id,
+        expires_at=expires_at,
+    )
+    limits_remaining = _json_dict(record.get("limits_remaining"))
+    return VerifyActionResponse(
+        verdict=verdict,
+        verdict_reason=record.get("verdict_reason"),
+        approval_token=token,
+        trust_score=int(record["trust_score"]),
+        audit_id=record["audit_log_id"],
+        timestamp=record["response_timestamp"],
+        limits_remaining=limits_remaining,
+        idempotency_status="replayed",
+    )
+
 @app.post(
     "/verify",
     response_model=VerifyActionResponse,
     responses={
         401: {"model": ErrorResponse, "description": "Signature verification failed"},
-        403: {"model": ErrorResponse, "description": "Policy violation"},
+        403: {"model": VerifyActionDeniedResponse, "description": "Policy violation"},
+        409: {"model": ErrorResponse, "description": "Idempotency conflict"},
+        429: {"model": VerifyActionDeniedResponse, "description": "Rate limit"},
         404: {"model": ErrorResponse, "description": "Agent not found"},
     },
     tags=["Verification"],
@@ -1613,13 +1738,29 @@ async def verify_action(
     verdict = ActionVerdict.BLOCKED
     verdict_reason: str | None = None
     audit_id: UUID | None = None
+    action_hash: str | None = None
+    agent: Any | None = None
+    idempotency_claimed = False
+    nonce_reserved = False
+    nonce_key: str | None = None
+    reservation_created = False
+
+    from api.observability import verify_stage_latency_seconds
+
+    def observe_stage(stage: str, started_at: float) -> None:
+        verify_stage_latency_seconds.labels(stage=stage).observe(
+            time.perf_counter() - started_at
+        )
 
     try:
         # STEP 1: Reserve bounded unauthenticated attempt budgets. This runs
         # before the agent lookup, action hashing, and Ed25519 verification.
+        stage_started = time.perf_counter()
         await _check_verify_abuse_limits(request, redis_conn, request_data.agent_id)
+        observe_stage("abuse_limit", stage_started)
 
         # STEP 2: Fetch Agent
+        stage_started = time.perf_counter()
         try:
             agent = await database.get_agent_by_id(request_data.agent_id)
         except AgentNotFoundError:
@@ -1627,6 +1768,7 @@ async def verify_action(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Agent {request_data.agent_id} not found",
             )
+        observe_stage("agent_lookup", stage_started)
 
         # Sandbox agents (self-serve public registrations, or any agent tagged
         # metadata.sandbox=true) are kept off the mainnet anchor path and out of
@@ -1650,6 +1792,7 @@ async def verify_action(
             timestamp=request_data.timestamp,
             sig_version=request_data.sig_version,
         )
+        stage_started = time.perf_counter()
         signature_slot = await _acquire_agent_signature_slot(redis_conn, agent.id)
         try:
             try:
@@ -1663,6 +1806,7 @@ async def verify_action(
                 signature_valid = False
         finally:
             await _release_agent_signature_slot(redis_conn, signature_slot)
+        observe_stage("signature", stage_started)
 
         if not signature_valid:
             verdict = ActionVerdict.SIGNATURE_INVALID
@@ -1743,9 +1887,39 @@ async def verify_action(
                 },
             )
 
+        if request_data.request_ref is not None:
+            stage_started = time.perf_counter()
+            claim_status, idempotency_record = await database.claim_verify_request(
+                agent_id=agent.id,
+                request_ref=request_data.request_ref,
+                action_hash=action_hash,
+                nonce=request_data.nonce,
+                sandbox=is_sandbox,
+            )
+            observe_stage("idempotency", stage_started)
+            if claim_status == "existing":
+                if idempotency_record["action_hash"] != action_hash:
+                    return JSONResponse(
+                        status_code=status.HTTP_409_CONFLICT,
+                        content={
+                            "error": "idempotency_conflict",
+                            "detail": (
+                                "request_ref was already used for a different signed action."
+                            ),
+                        },
+                    )
+                replayed_response = _idempotent_verify_response(idempotency_record)
+                from api.observability import verify_latency_seconds
+
+                verify_latency_seconds.observe(time.time() - start_time)
+                return replayed_response
+            idempotency_claimed = True
+
         # Only authenticated agent actions enter execution policy, usage, trust,
         # forensic audit, webhook, or anchoring paths.
+        stage_started = time.perf_counter()
         await _check_authenticated_agent_limit(redis_conn, agent.id)
+        observe_stage("authenticated_limit", stage_started)
         effective_policy_hash = _effective_policy_hash(agent)
         audit_signature = _decode_signature_for_audit(request_data.signature)
 
@@ -1758,6 +1932,7 @@ async def verify_action(
         nonce_key = f"inntris:nonce:{agent.id}:{request_data.nonce}"
         # Only the Redis call may map to 503: a detected replay is a caller
         # error (401) and must not be reported as service unavailability.
+        stage_started = time.perf_counter()
         try:
             nonce_set = await redis_conn.set(nonce_key, "1", ex=600, nx=True)
         except Exception as e:
@@ -1771,15 +1946,21 @@ async def verify_action(
             nonce_replays_total.inc()
             verify_requests_total.labels(verdict="replay").inc()
             raise HTTPException(status_code=401, detail="Nonce already used - possible replay attack")
+        nonce_reserved = True
+        observe_stage("nonce", stage_started)
 
         # STEP 4: Policy Check - Full PolicyEngine evaluation
         # Get current limits from database
         now = datetime.now(UTC)
         minute_start = now.replace(second=0, microsecond=0)
+        stage_started = time.perf_counter()
         minute_count, _ = await database.get_rate_limit_count(
             agent.id, "minute", minute_start
         )
+        observe_stage("rate_limit_lookup", stage_started)
+        stage_started = time.perf_counter()
         daily_spend = await database.get_daily_spend(agent.id)
+        observe_stage("daily_spend_lookup", stage_started)
 
         # Initialize PolicyEngine with current state
         policy_engine = PolicyEngine(
@@ -1791,8 +1972,10 @@ async def verify_action(
         # The engine uses it to reject a mismatched policy hash or a downgraded
         # code/release action type. None => advisory (no block), so the feature
         # rolls out before every agent has registered.
+        stage_started = time.perf_counter()
         registered_policy = await database.get_active_agent_policy(agent.id)
         policy_binding_state = "registered" if registered_policy else "unregistered"
+        observe_stage("policy_fetch", stage_started)
 
         # Parse timestamp from request
         request_timestamp = request_data.timestamp
@@ -1800,6 +1983,7 @@ async def verify_action(
             request_timestamp = datetime.fromisoformat(request_timestamp.replace("Z", "+00:00"))
 
         # Evaluate all policies
+        stage_started = time.perf_counter()
         policy_result = policy_engine.evaluate(
             agent=agent,
             action_type=request_data.action_type,
@@ -1808,6 +1992,7 @@ async def verify_action(
             registered_policy=registered_policy,
             client_policy_hash=request_data.policy_hash,
         )
+        observe_stage("policy_evaluation", stage_started)
 
         verdict = policy_result.verdict
         verdict_reason = policy_result.reason or "All verification checks passed"
@@ -1859,8 +2044,11 @@ async def verify_action(
                     },
                 ),
             )
+            stage_started = time.perf_counter()
             audit_id = await database.insert_audit_log(audit_entry, derive_chain_hash=True)
+            observe_stage("audit_insert", stage_started)
 
+            stage_started = time.perf_counter()
             await _dispatch_verdict_webhook(
                 database=database,
                 org_id=agent.org_id,
@@ -1871,26 +2059,55 @@ async def verify_action(
                 verdict=verdict.value,
                 verdict_reason=verdict_reason,
             )
+            observe_stage("webhook_enqueue", stage_started)
 
             # Update trust score and counters for blocked action
             new_trust_score = TrustScorer.calculate_adjustment(
                 current_score=agent.trust_score,
                 event_type="action_blocked_policy" if verdict == ActionVerdict.BLOCKED else "action_blocked_rate_limit",
             )
+            stage_started = time.perf_counter()
             await database.update_agent_after_verification(agent.id, new_trust_score, was_approved=False)
+            observe_stage("trust_update", stage_started)
 
-            # Determine appropriate HTTP status code
-            if verdict == ActionVerdict.RATE_LIMITED:
-                raise HTTPException(
-                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                    detail=verdict_reason,
-                    headers={"Retry-After": "60"},
+            violation_code = (
+                policy_result.violation.value
+                if policy_result.violation is not None
+                else "policy_denied"
+            )
+            response_timestamp = datetime.now(UTC)
+            http_status = (
+                status.HTTP_429_TOO_MANY_REQUESTS
+                if verdict == ActionVerdict.RATE_LIMITED
+                else status.HTTP_403_FORBIDDEN
+            )
+            if request_data.request_ref is not None:
+                await database.complete_verify_request(
+                    agent_id=agent.id,
+                    request_ref=request_data.request_ref,
+                    action_hash=action_hash,
+                    verdict=verdict.value,
+                    http_status=http_status,
+                    audit_id=audit_id,
+                    verdict_reason=verdict_reason,
+                    trust_score=new_trust_score,
+                    response_timestamp=response_timestamp,
+                    limits_remaining=limits_remaining,
+                    violation_code=violation_code,
                 )
-            else:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail=verdict_reason,
-                )
+
+            from api.observability import verify_latency_seconds
+
+            verify_latency_seconds.observe(time.time() - start_time)
+            return _verify_denied_response(
+                verdict=verdict,
+                violation_code=violation_code,
+                audit_id=audit_id,
+                timestamp_value=response_timestamp,
+                detail=verdict_reason,
+                http_status=http_status,
+                headers={"Retry-After": "60"} if http_status == 429 else None,
+            )
 
         # STEP 5b: Atomically reserve rate + spend BEFORE approving. The
         # snapshot checks in evaluate() fail fast, but this increment-and-test
@@ -1900,15 +2117,25 @@ async def verify_action(
         # rolls back, leaving no counter consumed.
         day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
         reserve_amount = policy_engine._extract_amount(request_data.payload) or Decimal("0")
+        approval_token_id = secrets.token_urlsafe(24)
+        approval_token_expires_at = datetime.now(UTC) + timedelta(
+            minutes=APPROVAL_TOKEN_TTL_MINUTES
+        )
         try:
-            _minute_count, new_daily_spend = await database.reserve_rate_and_spend(
+            stage_started = time.perf_counter()
+            _minute_count, new_daily_spend, _reservation_id = await database.reserve_rate_and_spend(
                 agent_id=agent.id,
                 minute_start=minute_start,
                 day_start=day_start,
                 amount=reserve_amount,
                 rate_limit_per_minute=agent.rate_limit_per_minute,
                 daily_limit_usd=agent.daily_limit_usd,
+                action_hash=action_hash,
+                approval_token_id=approval_token_id,
+                expires_at=approval_token_expires_at,
             )
+            reservation_created = True
+            observe_stage("spend_reservation", stage_started)
         except LimitReservationError as exc:
             reserve_verdict = (
                 ActionVerdict.RATE_LIMITED if exc.kind == "rate" else ActionVerdict.BLOCKED
@@ -1962,8 +2189,11 @@ async def verify_action(
                     },
                 ),
             )
+            stage_started = time.perf_counter()
             audit_id = await database.insert_audit_log(audit_entry, derive_chain_hash=True)
+            observe_stage("audit_insert", stage_started)
 
+            stage_started = time.perf_counter()
             await _dispatch_verdict_webhook(
                 database=database,
                 org_id=agent.org_id,
@@ -1977,6 +2207,7 @@ async def verify_action(
                 verdict=reserve_verdict.value,
                 verdict_reason=reserve_reason,
             )
+            observe_stage("webhook_enqueue", stage_started)
 
             new_trust_score = TrustScorer.calculate_adjustment(
                 current_score=agent.trust_score,
@@ -1985,17 +2216,47 @@ async def verify_action(
                     else "action_blocked_policy"
                 ),
             )
+            stage_started = time.perf_counter()
             await database.update_agent_after_verification(
                 agent.id, new_trust_score, was_approved=False
             )
+            observe_stage("trust_update", stage_started)
 
-            raise HTTPException(
-                status_code=(
-                    status.HTTP_429_TOO_MANY_REQUESTS if exc.kind == "rate"
-                    else status.HTTP_403_FORBIDDEN
-                ),
+            violation_code = (
+                "rate_limit_exceeded" if exc.kind == "rate" else "daily_limit_exceeded"
+            )
+            response_timestamp = datetime.now(UTC)
+            http_status = (
+                status.HTTP_429_TOO_MANY_REQUESTS
+                if exc.kind == "rate"
+                else status.HTTP_403_FORBIDDEN
+            )
+            if request_data.request_ref is not None:
+                await database.complete_verify_request(
+                    agent_id=agent.id,
+                    request_ref=request_data.request_ref,
+                    action_hash=action_hash,
+                    verdict=reserve_verdict.value,
+                    http_status=http_status,
+                    audit_id=audit_id,
+                    verdict_reason=reserve_reason,
+                    trust_score=new_trust_score,
+                    response_timestamp=response_timestamp,
+                    limits_remaining=limits_remaining,
+                    violation_code=violation_code,
+                )
+
+            from api.observability import verify_latency_seconds
+
+            verify_latency_seconds.observe(time.time() - start_time)
+            return _verify_denied_response(
+                verdict=reserve_verdict,
+                violation_code=violation_code,
+                audit_id=audit_id,
+                timestamp_value=response_timestamp,
                 detail=reserve_reason,
-                headers={"Retry-After": "60"} if exc.kind == "rate" else None,
+                http_status=http_status,
+                headers={"Retry-After": "60"} if http_status == 429 else None,
             )
 
         # Reservation succeeded — surface the authoritative post-reservation
@@ -2029,8 +2290,11 @@ async def verify_action(
                 extra={"policy_binding": policy_binding_state},
             ),
         )
+        stage_started = time.perf_counter()
         audit_id = await database.insert_audit_log(audit_entry, derive_chain_hash=True)
+        observe_stage("audit_insert", stage_started)
 
+        stage_started = time.perf_counter()
         await _dispatch_verdict_webhook(
             database=database,
             org_id=agent.org_id,
@@ -2041,6 +2305,7 @@ async def verify_action(
             verdict=verdict.value,
             verdict_reason=verdict_reason,
         )
+        observe_stage("webhook_enqueue", stage_started)
 
         # STEP 7: Update trust score and counters for approved action. Rate and
         # spend counters were already advanced atomically in STEP 5b.
@@ -2048,16 +2313,39 @@ async def verify_action(
             current_score=agent.trust_score,
             event_type="action_approved",
         )
+        stage_started = time.perf_counter()
         await database.update_agent_after_verification(agent.id, new_trust_score, was_approved=True)
+        observe_stage("trust_update", stage_started)
 
         # Generate Approval Token
+        stage_started = time.perf_counter()
         token = CryptoService.generate_approval_token(
             agent_id=str(agent.id),
             action_hash=action_hash,
             verdict=verdict.value,
             server_secret=SERVER_SECRET,
             sandbox=is_sandbox,
+            token_id=approval_token_id,
+            expires_at=approval_token_expires_at,
         )
+        observe_stage("approval_token", stage_started)
+
+        response_timestamp = datetime.now(UTC)
+        if request_data.request_ref is not None:
+            await database.complete_verify_request(
+                agent_id=agent.id,
+                request_ref=request_data.request_ref,
+                action_hash=action_hash,
+                verdict=verdict.value,
+                http_status=status.HTTP_200_OK,
+                audit_id=audit_id,
+                verdict_reason=verdict_reason,
+                trust_score=new_trust_score,
+                response_timestamp=response_timestamp,
+                limits_remaining=limits_remaining,
+                approval_token_id=approval_token_id,
+                approval_token_expires_at=approval_token_expires_at,
+            )
 
         # Phase 2C — successful verification. Observed after the audit insert
         # and trust-score update so the counter reflects a fully-processed
@@ -2072,13 +2360,48 @@ async def verify_action(
             approval_token=token,
             trust_score=new_trust_score,
             audit_id=audit_id,
-            timestamp=datetime.now(UTC),
-            limits_remaining=limits_remaining
+            timestamp=response_timestamp,
+            limits_remaining=limits_remaining,
+            idempotency_status="new" if request_data.request_ref is not None else None,
         )
 
     except HTTPException:
+        if reservation_created and agent is not None and action_hash is not None:
+            with suppress(Exception):
+                await database.release_spend_reservation(
+                    agent_id=agent.id,
+                    action_hash=action_hash,
+                    reason="verify_http_error",
+                )
+        if idempotency_claimed and agent is not None and action_hash is not None:
+            with suppress(Exception):
+                await database.abandon_verify_request(
+                    agent_id=agent.id,
+                    request_ref=request_data.request_ref or "",
+                    action_hash=action_hash,
+                )
+        if nonce_reserved and redis_conn is not None and nonce_key is not None:
+            with suppress(Exception):
+                await redis_conn.delete(nonce_key)
         raise
     except Exception as e:
+        if reservation_created and agent is not None and action_hash is not None:
+            with suppress(Exception):
+                await database.release_spend_reservation(
+                    agent_id=agent.id,
+                    action_hash=action_hash,
+                    reason="verify_internal_error",
+                )
+        if idempotency_claimed and agent is not None and action_hash is not None:
+            with suppress(Exception):
+                await database.abandon_verify_request(
+                    agent_id=agent.id,
+                    request_ref=request_data.request_ref or "",
+                    action_hash=action_hash,
+                )
+        if nonce_reserved and redis_conn is not None and nonce_key is not None:
+            with suppress(Exception):
+                await redis_conn.delete(nonce_key)
         logger.exception(f"Unexpected error: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
