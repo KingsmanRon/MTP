@@ -312,20 +312,25 @@ function ProofCompletenessChecks({ record }: { record: PublicVerificationRecord 
 
   return (
     <section className="mt-5 rounded-[28px] border border-tileLine bg-tile p-6 md:p-8">
-      <div className="mb-5 flex flex-wrap items-center gap-3">
-        <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-tileLine bg-card text-brandInk">
-          <ShieldCheck className="h-5 w-5" />
-        </div>
-        <div className="min-w-0 flex-1">
-          <h3 className="text-lg font-semibold">Proof completeness</h3>
-          <p className="text-xs text-muted-foreground">
-            Independent verification of receipt integrity
-          </p>
+      {/* The badge takes its own row until there is width for it to sit
+          beside the heading. Sharing a flex row at every size squeezed
+          "Proof completeness" into two wrapped lines on a phone. */}
+      <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center">
+        <div className="flex min-w-0 flex-1 items-center gap-3">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-tileLine bg-card text-brandInk">
+            <ShieldCheck className="h-5 w-5" />
+          </div>
+          <div className="min-w-0">
+            <h3 className="text-lg font-semibold">Proof completeness</h3>
+            <p className="text-xs text-muted-foreground">
+              Independent verification of receipt integrity
+            </p>
+          </div>
         </div>
         {/* Rollup, derived from the rows below rather than hardcoded, so the
             reader is not left adjudicating a mixed panel. */}
         <span
-          className={`inline-flex shrink-0 items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold ${
+          className={`inline-flex w-fit shrink-0 items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold ${
             rollup.status === "verified"
               ? "border-success/30 bg-success/10 text-success"
               : rollup.status === "failed"
@@ -657,7 +662,9 @@ export function VerifyRecordView({ record }: { record: PublicVerificationRecord 
             <div>
               <h3 className="text-lg font-semibold">On-chain proof</h3>
               <p className="text-xs text-muted-foreground">
-                Anchored to Base L2 via Merkle tree
+                {record.tx_hash != null
+                  ? "Anchored to Base L2 via Merkle tree"
+                  : "Anchors to Base L2 via Merkle tree"}
               </p>
             </div>
           </div>
@@ -688,16 +695,20 @@ export function VerifyRecordView({ record }: { record: PublicVerificationRecord 
                   )}
                 </div>
               ) : (
-                <p className="text-sm font-mono text-muted-foreground">Pending anchoring…</p>
+                <p className="text-sm font-mono text-muted-foreground">Not yet anchored</p>
               )}
             </div>
 
             {/* merkle_root */}
             <div className="rounded-2xl border border-tileLine bg-card/70 p-4">
               <p className="text-xs text-muted-foreground mb-1">Merkle root</p>
-              <code className="text-sm font-mono text-brandInk break-all">
-                {record.merkle_root ?? "Pending…"}
-              </code>
+              {record.merkle_root ? (
+                <code className="text-sm font-mono text-brandInk break-all">
+                  {record.merkle_root}
+                </code>
+              ) : (
+                <span className="text-sm font-mono text-muted-foreground">Not yet anchored</span>
+              )}
             </div>
 
             {/* action_hash */}

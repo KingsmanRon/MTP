@@ -351,7 +351,7 @@ export default async function InntrisHomePage() {
                       shows only the shape of the path; the section carries the
                       words. */}
                   <RevealGroup className="space-y-2 p-4">
-                    {controlPath.map(({ step, title }, i) => (
+                    {controlPath.map(({ step, title }) => (
                       <div
                         key={step}
                         className="flex items-center gap-4 rounded-xl bg-tile px-5 py-3.5 transition duration-200 hover:translate-x-1 hover:bg-accent"
@@ -360,12 +360,6 @@ export default async function InntrisHomePage() {
                           <Num className="text-xs font-semibold text-primary-foreground">{step}</Num>
                         </span>
                         <div className="min-w-0 font-medium text-foreground">{title}</div>
-                        {i < controlPath.length - 1 && (
-                          <ChevronRight
-                            className="ml-auto h-4 w-4 shrink-0 rotate-90 text-muted-foreground/50"
-                            aria-hidden="true"
-                          />
-                        )}
                       </div>
                     ))}
                   </RevealGroup>
