@@ -622,4 +622,4 @@ We welcome contributions! Please open an issue to discuss proposed changes befor
 
 *Inntris — Cryptographic verification for AI agents.*
 
-**© 2026 Inntris INC. All rights reserved.**
+**© 2026 Inntris INC. All rights reserved.**  
