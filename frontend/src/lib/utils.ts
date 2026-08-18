@@ -38,6 +38,29 @@ export function formatDateTime(date: Date | string | null | undefined): string {
 }
 
 /**
+ * Absolute UTC timestamp, for evidence surfaces.
+ *
+ * `formatDateTime` renders in the reader's own locale and timezone, which is
+ * the right choice for a console but the wrong one for an artifact two parties
+ * are meant to agree about. Receipts state the time in UTC, spelled out, with
+ * no relative form that decays as the receipt ages.
+ *
+ * e.g. "22 July 2026, 15:43 UTC"
+ */
+export function formatUtcTimestamp(date: Date | string | null | undefined): string {
+  if (!date) return "N/A";
+  const d = typeof date === "string" ? new Date(date) : date;
+  if (Number.isNaN(d.getTime())) return "N/A";
+  const day = d.getUTCDate();
+  const month = [
+    "January", "February", "March", "April", "May", "June",
+    "July", "August", "September", "October", "November", "December",
+  ][d.getUTCMonth()];
+  const pad = (n: number) => n.toString().padStart(2, "0");
+  return `${day} ${month} ${d.getUTCFullYear()}, ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())} UTC`;
+}
+
+/**
  * Format a relative time (e.g., "5 minutes ago")
  */
 export function formatRelative(date: Date | string | null | undefined): string {

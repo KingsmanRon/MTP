@@ -85,7 +85,7 @@ export default function SettingsPage() {
       <div>
         <h1 className="text-3xl font-bold">Settings</h1>
         <p className="text-muted-foreground">
-          Manage your organization settings and preferences
+          Manage your organisation settings and preferences
         </p>
       </div>
 
@@ -112,20 +112,20 @@ export default function SettingsPage() {
         <TabsContent value="general">
           <Card>
             <CardHeader>
-              <CardTitle>Organization Details</CardTitle>
-              <CardDescription>Basic information about your organization</CardDescription>
+              <CardTitle>Organisation details</CardTitle>
+              <CardDescription>Basic information about your organisation</CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">Organization Name</label>
+                  <label className="text-sm font-medium">Organisation name</label>
                   <Input
                     value={orgName}
                     onChange={(e) => setOrgName(e.target.value)}
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">Organization ID</label>
+                  <label className="text-sm font-medium">Organisation ID</label>
                   <Input value={organization?.id || ""} disabled className="font-mono" />
                 </div>
               </div>
@@ -283,7 +283,7 @@ export default function SettingsPage() {
             <Card>
               <CardHeader>
                 <CardTitle>Security Policies</CardTitle>
-                <CardDescription>Configure organization-wide security settings</CardDescription>
+                <CardDescription>Configure organisation-wide security settings</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <label className="flex items-center justify-between p-4 border rounded-lg">

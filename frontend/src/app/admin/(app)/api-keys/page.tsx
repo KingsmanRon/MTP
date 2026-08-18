@@ -123,7 +123,7 @@ export default function APIKeysPage() {
           <div>
             <p className="font-medium">Keep your API keys secure</p>
             <p className="text-sm text-muted-foreground">
-              API keys grant access to your Inntris organization. Never share them publicly or commit them to version control.
+              API keys grant access to your Inntris organisation. Never share them publicly or commit them to version control.
             </p>
           </div>
         </CardContent>

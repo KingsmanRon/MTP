@@ -25,6 +25,9 @@ const fieldClasses =
 
 const labelClasses = "font-mono text-xs tracking-wide text-muted-foreground";
 
+const errorFieldClasses =
+  "border-destructive hover:border-destructive focus:border-destructive focus:ring-destructive/20";
+
 /* ── Custom dropdown ────────────────────────────────────────────── */
 
 interface DropdownOption {
@@ -169,13 +172,64 @@ const railOptions: DropdownOption[] = [
 
 /* ── Contact section ────────────────────────────────────────────── */
 
+/* ── Inline validation ──────────────────────────────────────────── */
+
+function FieldError({ id, message }: { id: string; message: string | null }) {
+  if (!message) return null;
+  return (
+    <p id={id} role="alert" className="font-sans text-xs text-destructive">
+      {message}
+    </p>
+  );
+}
+
+/**
+ * Validation runs on blur, so a reader is told about a malformed email while
+ * they are still looking at the field — not after they have committed to
+ * sending and had the whole form bounced back at them.
+ */
+function fieldError(name: string, value: string): string | null {
+  const trimmed = value.trim();
+  if (name === "name" && !trimmed) return "Tell us who you are.";
+  if (name === "company" && !trimmed) return "Which company are you writing from?";
+  if (name === "message" && !trimmed) return "A sentence or two is enough.";
+  if (name === "email") {
+    if (!trimmed) return "We need an address to reply to.";
+    // Deliberately permissive: reject what is obviously not an address, and
+    // let the server be the authority on the rest. A clever regex here mostly
+    // succeeds at rejecting real addresses.
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
+      return "That does not look like an email address.";
+    }
+  }
+  return null;
+}
+
+/** The four fields that make up the default view. */
+const REQUIRED_FIELDS = ["name", "email", "company", "message"] as const;
+
 export default function ContactSection() {
   const [status, setStatus] = useState<"idle" | "submitting" | "success" | "error">("idle");
   const [form, setForm] = useState(initialForm);
+  const [errors, setErrors] = useState<Record<string, string | null>>({});
+  // Progressive disclosure. The common path is four fields; the payment rail,
+  // agent framework and the two policy questions are qualification detail and
+  // sit one level deeper. Everything still submits — see handleSubmit.
+  const [showTechnical, setShowTechnical] = useState(false);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
     setForm((prev) => ({ ...prev, [name]: value }));
+    // Clear a resolved error as the reader types; do not introduce a new one
+    // mid-keystroke, which would flag every address as invalid while typing.
+    setErrors((prev) => (prev[name] ? { ...prev, [name]: fieldError(name, value) } : prev));
+  };
+
+  const handleBlur = (
+    e: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement>,
+  ) => {
+    const { name, value } = e.target;
+    setErrors((prev) => ({ ...prev, [name]: fieldError(name, value) }));
   };
 
   const handleDropdown = (name: string, value: string) => {
@@ -184,6 +238,16 @@ export default function ContactSection() {
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+
+    const nextErrors: Record<string, string | null> = {};
+    for (const field of REQUIRED_FIELDS) {
+      nextErrors[field] = fieldError(field, form[field]);
+    }
+    if (Object.values(nextErrors).some(Boolean)) {
+      setErrors(nextErrors);
+      return;
+    }
+
     setStatus("submitting");
 
     try {
@@ -199,6 +263,8 @@ export default function ContactSection() {
       if (res.ok) {
         setStatus("success");
         setForm(initialForm);
+        setErrors({});
+        setShowTechnical(false);
       } else {
         setStatus("error");
       }
@@ -265,7 +331,7 @@ export default function ContactSection() {
                 </button>
               </div>
             ) : (
-              <form onSubmit={handleSubmit} className="flex flex-col gap-5">
+              <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-5">
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div className="flex flex-col gap-1.5">
                     <label htmlFor="contact-name" className={labelClasses}>
@@ -277,10 +343,14 @@ export default function ContactSection() {
                       name="name"
                       value={form.name}
                       onChange={handleChange}
+                      onBlur={handleBlur}
                       required
+                      aria-invalid={Boolean(errors.name)}
+                      aria-describedby={errors.name ? "contact-name-error" : undefined}
                       placeholder="Your name"
-                      className={fieldClasses}
+                      className={cn(fieldClasses, errors.name && errorFieldClasses)}
                     />
+                    <FieldError id="contact-name-error" message={errors.name ?? null} />
                   </div>
 
                   <div className="flex flex-col gap-1.5">
@@ -293,89 +363,35 @@ export default function ContactSection() {
                       name="email"
                       value={form.email}
                       onChange={handleChange}
+                      onBlur={handleBlur}
                       required
+                      aria-invalid={Boolean(errors.email)}
+                      aria-describedby={errors.email ? "contact-email-error" : undefined}
                       placeholder="you@company.com"
-                      className={fieldClasses}
+                      className={cn(fieldClasses, errors.email && errorFieldClasses)}
                     />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                  <div className="flex flex-col gap-1.5">
-                    <label htmlFor="contact-company" className={labelClasses}>
-                      Company
-                    </label>
-                    <input
-                      id="contact-company"
-                      type="text"
-                      name="company"
-                      value={form.company}
-                      onChange={handleChange}
-                      required
-                      placeholder="Your company"
-                      className={fieldClasses}
-                    />
-                  </div>
-
-                  <div className="flex flex-col gap-1.5">
-                    <label htmlFor="contact-rail" className={labelClasses}>
-                      Payment rail or provider
-                    </label>
-                    <Dropdown
-                      id="contact-rail"
-                      name="rail"
-                      value={form.rail}
-                      placeholder="Select one"
-                      options={railOptions}
-                      onChange={handleDropdown}
-                    />
+                    <FieldError id="contact-email-error" message={errors.email ?? null} />
                   </div>
                 </div>
 
                 <div className="flex flex-col gap-1.5">
-                  <label htmlFor="contact-framework" className={labelClasses}>
-                    Agent framework
-                  </label>
-                  <Dropdown
-                    id="contact-framework"
-                    name="framework"
-                    value={form.framework}
-                    placeholder="Select one"
-                    options={frameworkOptions}
-                    onChange={handleDropdown}
-                  />
-                </div>
-
-                <div className="flex flex-col gap-1.5">
-                  <label htmlFor="contact-purchases" className={labelClasses}>
-                    What can the agent purchase or pay?
+                  <label htmlFor="contact-company" className={labelClasses}>
+                    Company
                   </label>
                   <input
-                    id="contact-purchases"
+                    id="contact-company"
                     type="text"
-                    name="purchases"
-                    value={form.purchases}
+                    name="company"
+                    value={form.company}
                     onChange={handleChange}
+                    onBlur={handleBlur}
                     required
-                    placeholder="e.g. supplier invoices under $5,000, API credits, customer refunds"
-                    className={fieldClasses}
+                    aria-invalid={Boolean(errors.company)}
+                    aria-describedby={errors.company ? "contact-company-error" : undefined}
+                    placeholder="Your company"
+                    className={cn(fieldClasses, errors.company && errorFieldClasses)}
                   />
-                </div>
-
-                <div className="flex flex-col gap-1.5">
-                  <label htmlFor="contact-policy" className={labelClasses}>
-                    Which policy must be enforced?
-                  </label>
-                  <input
-                    id="contact-policy"
-                    type="text"
-                    name="policy"
-                    value={form.policy}
-                    onChange={handleChange}
-                    required
-                    placeholder="e.g. per-action limit, approved recipients, human approval above $1,000"
-                    className={fieldClasses}
-                  />
+                  <FieldError id="contact-company-error" message={errors.company ?? null} />
                 </div>
 
                 <div className="flex flex-col gap-1.5">
@@ -387,11 +403,121 @@ export default function ContactSection() {
                     name="message"
                     value={form.message}
                     onChange={handleChange}
+                    onBlur={handleBlur}
                     required
                     rows={5}
+                    aria-invalid={Boolean(errors.message)}
+                    aria-describedby={errors.message ? "contact-message-error" : undefined}
                     placeholder="Tell us about your agent stack, your use case, or any questions..."
-                    className={cn(fieldClasses, "resize-none")}
+                    className={cn(fieldClasses, "resize-none", errors.message && errorFieldClasses)}
                   />
+                  <FieldError id="contact-message-error" message={errors.message ?? null} />
+                </div>
+
+                {/* ── Technical detail, one level deeper ──────────────── */}
+                {/* These four answers qualify a pilot, but asking all of them
+                    up front turns an enquiry into a questionnaire. They are
+                    optional, they are collapsed by default, and whatever is
+                    filled in is submitted with the rest of the form. */}
+                <div className="rounded-md border border-tileLine bg-tile">
+                  <button
+                    type="button"
+                    onClick={() => setShowTechnical((v) => !v)}
+                    aria-expanded={showTechnical}
+                    aria-controls="contact-technical"
+                    className={cn(
+                      "flex w-full items-center justify-between px-4 py-3 text-left font-sans text-sm text-foreground transition-colors hover:text-brandInk",
+                      focusRing,
+                    )}
+                  >
+                    <span>
+                      Add technical detail
+                      <span className="ml-2 font-mono text-xs text-muted-foreground">
+                        optional
+                      </span>
+                    </span>
+                    <svg
+                      width="16"
+                      height="16"
+                      viewBox="0 0 16 16"
+                      fill="none"
+                      aria-hidden="true"
+                      className="shrink-0 text-muted-foreground transition-transform duration-200"
+                      style={{ transform: showTechnical ? "rotate(180deg)" : "rotate(0deg)" }}
+                    >
+                      <path
+                        d="M4 6L8 10L12 6"
+                        stroke="currentColor"
+                        strokeWidth="1.5"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                  </button>
+
+                  {showTechnical && (
+                    <div id="contact-technical" className="flex flex-col gap-5 border-t border-tileLine p-4">
+                      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                        <div className="flex flex-col gap-1.5">
+                          <label htmlFor="contact-rail" className={labelClasses}>
+                            Payment rail or provider
+                          </label>
+                          <Dropdown
+                            id="contact-rail"
+                            name="rail"
+                            value={form.rail}
+                            placeholder="Select one"
+                            options={railOptions}
+                            onChange={handleDropdown}
+                          />
+                        </div>
+
+                        <div className="flex flex-col gap-1.5">
+                          <label htmlFor="contact-framework" className={labelClasses}>
+                            Agent framework
+                          </label>
+                          <Dropdown
+                            id="contact-framework"
+                            name="framework"
+                            value={form.framework}
+                            placeholder="Select one"
+                            options={frameworkOptions}
+                            onChange={handleDropdown}
+                          />
+                        </div>
+                      </div>
+
+                      <div className="flex flex-col gap-1.5">
+                        <label htmlFor="contact-purchases" className={labelClasses}>
+                          What can the agent purchase or pay?
+                        </label>
+                        <input
+                          id="contact-purchases"
+                          type="text"
+                          name="purchases"
+                          value={form.purchases}
+                          onChange={handleChange}
+                          placeholder="e.g. supplier invoices under $5,000, API credits, customer refunds"
+                          className={fieldClasses}
+                        />
+                      </div>
+
+                      <div className="flex flex-col gap-1.5">
+                        <label htmlFor="contact-policy" className={labelClasses}>
+                          Which policy must be enforced?
+                        </label>
+                        <input
+                          id="contact-policy"
+                          type="text"
+                          name="policy"
+                          value={form.policy}
+                          onChange={handleChange}
+                          placeholder="e.g. per-action limit, approved recipients, human approval above $1,000"
+                          className={fieldClasses}
+                        />
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {status === "error" && (

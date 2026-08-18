@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { InntrisLogo } from "@/components/inntris-logo";
 import { useState } from "react";
+import { BRAND_NAME } from "@/lib/brand";
 
 interface SidebarProps {
   variant: "admin" | "portal" | "audit";
@@ -118,7 +119,7 @@ export function Sidebar({ variant, onNavigate }: SidebarProps) {
       {/* Footer */}
       <div className="p-4 border-t">
         {!collapsed && (
-          <p className="text-xs text-muted-foreground">Inntris Core</p>
+          <p className="text-xs text-muted-foreground">{BRAND_NAME}</p>
         )}
       </div>
     </aside>

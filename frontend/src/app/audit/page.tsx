@@ -14,6 +14,9 @@ import {
 import { InntrisLogo } from "@/components/inntris-logo";
 import { AuthRedirectBanner } from "@/components/auth-redirect-banner";
 import { MobileMenu } from "@/components/mobile-menu";
+import { SiteFooter } from "@/components/site-footer";
+import { VERIFY_TOOL_HREF, VERIFY_TOOL_LABEL } from "@/lib/brand";
+import { verdictLabel } from "@/lib/verdict";
 
 /* ------------------------------------------------------------------ */
 /*  Curated preview data                                               */
@@ -22,25 +25,25 @@ import { MobileMenu } from "@/components/mobile-menu";
 const previewRecords = [
   {
     id: "8f3a..c91e",
-    verdict: "BLOCK",
+    verdict: "blocked",
     timestamp: "2026-03-18  14:32 UTC",
     status: "Verified",
   },
   {
     id: "2f41..09aa",
-    verdict: "PASS",
+    verdict: "approved",
     timestamp: "2026-03-18  14:28 UTC",
     status: "Verified",
   },
   {
     id: "a1d7..b204",
-    verdict: "PASS",
+    verdict: "approved",
     timestamp: "2026-03-18  14:21 UTC",
     status: "Verified",
   },
   {
     id: "c4e9..3f17",
-    verdict: "BLOCK",
+    verdict: "blocked",
     timestamp: "2026-03-18  14:15 UTC",
     status: "Anchored",
   },
@@ -77,14 +80,14 @@ export default function AuditPreviewPage() {
           <nav className="hidden items-center gap-6 text-sm md:flex">
             <Link href="/admin" className="text-muted-foreground transition hover:text-foreground">Console</Link>
             <Link href="/portal" className="text-muted-foreground transition hover:text-foreground">Portal</Link>
-            <Link href="/verify" className="text-muted-foreground transition hover:text-foreground">Verify</Link>
+            <Link href={VERIFY_TOOL_HREF} className="text-muted-foreground transition hover:text-foreground">{VERIFY_TOOL_LABEL}</Link>
             <Link href="/docs" className="text-muted-foreground transition hover:text-foreground">Docs</Link>
           </nav>
           <MobileMenu
             links={[
               { href: "/admin", label: "Console" },
               { href: "/portal", label: "Portal" },
-              { href: "/verify", label: "Verify" },
+              { href: VERIFY_TOOL_HREF, label: VERIFY_TOOL_LABEL },
               { href: "/docs", label: "Docs" },
             ]}
           />
@@ -198,7 +201,7 @@ export default function AuditPreviewPage() {
                     className="flex items-center justify-between rounded-xl border border-tileLine bg-card/70 px-4 py-3"
                   >
                     <div className="flex items-center gap-3">
-                      {rec.verdict === "BLOCK" ? (
+                      {rec.verdict === "blocked" ? (
                         <XOctagon className="h-4 w-4 text-destructive" />
                       ) : (
                         <CheckCircle2 className="h-4 w-4 text-success" />
@@ -208,10 +211,10 @@ export default function AuditPreviewPage() {
                     <div className="flex items-center gap-4">
                       <span
                         className={`text-xs font-bold ${
-                          rec.verdict === "BLOCK" ? "text-destructive" : "text-success"
+                          rec.verdict === "blocked" ? "text-destructive" : "text-success"
                         }`}
                       >
-                        {rec.verdict}
+                        {verdictLabel(rec.verdict)}
                       </span>
                       <span className="text-xs text-muted-foreground">{rec.timestamp}</span>
                     </div>
@@ -290,19 +293,7 @@ export default function AuditPreviewPage() {
       </main>
 
       {/* Footer */}
-      <footer className="border-t border-tileLine">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-8 lg:px-8">
-          <div className="flex items-center gap-2">
-            <InntrisLogo className="h-5 w-5" />
-            <span className="text-muted-foreground">Inntris Core</span>
-          </div>
-          <div className="flex items-center gap-6 text-muted-foreground">
-            <Link href="/" className="text-sm transition-colors hover:text-foreground">Home</Link>
-            <Link href="/docs" className="text-sm transition-colors hover:text-foreground">Docs</Link>
-            <Link href="/verify" className="text-sm transition-colors hover:text-foreground">Verify</Link>
-          </div>
-        </div>
-      </footer>
+      <SiteFooter className="border-tileLine" />
     </div>
   );
 }

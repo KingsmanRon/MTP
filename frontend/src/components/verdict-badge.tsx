@@ -1,4 +1,5 @@
 import { cn, getVerdictBadgeStyles } from "@/lib/utils";
+import { verdictLabel } from "@/lib/verdict";
 import { CheckCircle, XCircle, Clock, AlertTriangle } from "lucide-react";
 import type { ActionVerdict } from "@/lib/api";
 
@@ -15,13 +16,6 @@ export function VerdictBadge({ verdict, showIcon = true }: VerdictBadgeProps) {
     signature_invalid: AlertTriangle,
   };
 
-  const labels = {
-    approved: "PASS",
-    blocked: "BLOCK",
-    rate_limited: "ESCALATE",
-    signature_invalid: "BLOCK",
-  };
-
   const Icon = icons[verdict];
 
   return (
@@ -32,7 +26,7 @@ export function VerdictBadge({ verdict, showIcon = true }: VerdictBadgeProps) {
       )}
     >
       {showIcon && <Icon className="w-3 h-3" />}
-      {labels[verdict]}
+      {verdictLabel(verdict)}
     </span>
   );
 }

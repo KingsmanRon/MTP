@@ -12,15 +12,32 @@ beforeEach(() => {
 
 type User = ReturnType<typeof userEvent.setup>;
 
+/** Reveal the optional technical fields, which are collapsed by default. */
+async function openTechnical(user: User) {
+  await user.click(screen.getByRole("button", { name: /Add technical detail/ }));
+}
+
 /**
- * Fill every required text input. The form is payments-shaped: it asks what
- * the agent can pay for and which policy must be enforced, because those are
- * the two answers that make a pilot conversation possible at all.
+ * Fill the four fields the default view asks for. This is the common path: a
+ * reader who fills only these can send a complete, valid enquiry.
  */
-async function fillForm(user: User) {
+async function fillRequired(user: User) {
   await user.type(screen.getByLabelText("Name"), "Jane Doe");
   await user.type(screen.getByLabelText("Work email"), "jane@example.com");
   await user.type(screen.getByLabelText("Company"), "Acme");
+  await user.type(screen.getByLabelText("Message"), "Hello!");
+}
+
+/**
+ * Fill everything, including the qualification detail behind the disclosure.
+ * The form is payments-shaped: it asks what the agent can pay for and which
+ * policy must be enforced, because those are the two answers that make a pilot
+ * conversation possible at all — but it asks them one level deeper, so the
+ * default view is an enquiry form rather than a questionnaire.
+ */
+async function fillForm(user: User) {
+  await fillRequired(user);
+  await openTechnical(user);
   await user.type(
     screen.getByLabelText("What can the agent purchase or pay?"),
     "Supplier invoices",
@@ -29,7 +46,6 @@ async function fillForm(user: User) {
     screen.getByLabelText("Which policy must be enforced?"),
     "Per-action limit of $1,000",
   );
-  await user.type(screen.getByLabelText("Message"), "Hello!");
 }
 
 describe("ContactSection", () => {
@@ -42,18 +58,35 @@ describe("ContactSection", () => {
       ).toBeInTheDocument();
     });
 
-    it("renders all form fields with correct labels", () => {
+    it("shows only the four common-path fields by default", () => {
       render(<ContactSection />);
       expect(screen.getByLabelText("Name")).toBeInTheDocument();
       expect(screen.getByLabelText("Work email")).toBeInTheDocument();
       expect(screen.getByLabelText("Company")).toBeInTheDocument();
+      expect(screen.getByLabelText("Message")).toBeInTheDocument();
+
+      // Qualification detail is one level deeper, not on the default view.
+      expect(screen.queryByLabelText("Payment rail or provider")).not.toBeInTheDocument();
+      expect(screen.queryByLabelText("Agent framework")).not.toBeInTheDocument();
+      expect(
+        screen.queryByLabelText("What can the agent purchase or pay?"),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.queryByLabelText("Which policy must be enforced?"),
+      ).not.toBeInTheDocument();
+    });
+
+    it("reveals the technical fields when the disclosure is opened", async () => {
+      const user = userEvent.setup();
+      render(<ContactSection />);
+      await openTechnical(user);
+
       expect(screen.getByLabelText("Payment rail or provider")).toBeInTheDocument();
       expect(screen.getByLabelText("Agent framework")).toBeInTheDocument();
       expect(
         screen.getByLabelText("What can the agent purchase or pay?"),
       ).toBeInTheDocument();
       expect(screen.getByLabelText("Which policy must be enforced?")).toBeInTheDocument();
-      expect(screen.getByLabelText("Message")).toBeInTheDocument();
     });
 
     it("renders the submit button", () => {
@@ -123,14 +156,19 @@ describe("ContactSection", () => {
       expect(screen.getByLabelText("Message")).toHaveValue("Hello!");
     });
 
-    it("has required attributes on all text inputs", () => {
+    it("marks the four common-path inputs required and the deeper ones optional", async () => {
+      const user = userEvent.setup();
       render(<ContactSection />);
       expect(screen.getByLabelText("Name")).toBeRequired();
       expect(screen.getByLabelText("Work email")).toBeRequired();
       expect(screen.getByLabelText("Company")).toBeRequired();
-      expect(screen.getByLabelText("What can the agent purchase or pay?")).toBeRequired();
-      expect(screen.getByLabelText("Which policy must be enforced?")).toBeRequired();
       expect(screen.getByLabelText("Message")).toBeRequired();
+
+      await openTechnical(user);
+      expect(
+        screen.getByLabelText("What can the agent purchase or pay?"),
+      ).not.toBeRequired();
+      expect(screen.getByLabelText("Which policy must be enforced?")).not.toBeRequired();
     });
 
     it("email input has type='email'", () => {
@@ -286,6 +324,82 @@ describe("ContactSection", () => {
     });
   });
 
+  describe("inline validation", () => {
+    it("reports a malformed email on blur, before submit", async () => {
+      const user = userEvent.setup();
+      render(<ContactSection />);
+
+      await user.type(screen.getByLabelText("Work email"), "not-an-address");
+      await user.tab();
+
+      expect(
+        await screen.findByText("That does not look like an email address."),
+      ).toBeInTheDocument();
+      expect(screen.getByLabelText("Work email")).toHaveAttribute("aria-invalid", "true");
+      // Nothing was sent: the reader has not pressed anything yet.
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it("clears the error once the address is corrected", async () => {
+      const user = userEvent.setup();
+      render(<ContactSection />);
+
+      const email = screen.getByLabelText("Work email");
+      await user.type(email, "nope");
+      await user.tab();
+      expect(
+        await screen.findByText("That does not look like an email address."),
+      ).toBeInTheDocument();
+
+      await user.type(email, "@example.com");
+      await waitFor(() => {
+        expect(
+          screen.queryByText("That does not look like an email address."),
+        ).not.toBeInTheDocument();
+      });
+    });
+
+    it("blocks submission and flags empty required fields", async () => {
+      const user = userEvent.setup();
+      render(<ContactSection />);
+
+      await user.click(screen.getByRole("button", { name: "Send message" }));
+
+      expect(mockFetch).not.toHaveBeenCalled();
+      expect(await screen.findByText("Tell us who you are.")).toBeInTheDocument();
+      expect(screen.getByText("We need an address to reply to.")).toBeInTheDocument();
+    });
+
+    it("sends when only the four common-path fields are filled", async () => {
+      mockFetch.mockResolvedValueOnce({ ok: true });
+      const user = userEvent.setup();
+      render(<ContactSection />);
+
+      await fillRequired(user);
+      await user.click(screen.getByRole("button", { name: "Send message" }));
+
+      await waitFor(() => {
+        expect(screen.getByText("Message received")).toBeInTheDocument();
+      });
+      // The optional fields still travel, empty, exactly as before.
+      expect(mockFetch).toHaveBeenCalledWith(
+        "https://formspree.io/f/mpqjkbre",
+        expect.objectContaining({
+          body: JSON.stringify({
+            name: "Jane Doe",
+            email: "jane@example.com",
+            company: "Acme",
+            rail: "",
+            framework: "",
+            purchases: "",
+            policy: "",
+            message: "Hello!",
+          }),
+        }),
+      );
+    });
+  });
+
   describe("accessibility", () => {
     it("success message container has aria-live='polite'", async () => {
       mockFetch.mockResolvedValueOnce({ ok: true });
@@ -301,21 +415,35 @@ describe("ContactSection", () => {
       });
     });
 
-    it("all form inputs have associated labels via htmlFor/id", () => {
+    it("all form inputs have associated labels via htmlFor/id", async () => {
+      const user = userEvent.setup();
       render(<ContactSection />);
+      await openTechnical(user);
+
       const labels = [
         "Name",
         "Work email",
         "Company",
+        "Message",
+        "Payment rail or provider",
+        "Agent framework",
         "What can the agent purchase or pay?",
         "Which policy must be enforced?",
-        "Message",
       ];
       labels.forEach((label) => {
         const input = screen.getByLabelText(label);
         expect(input).toBeInTheDocument();
         expect(input.id).toBeTruthy();
       });
+    });
+
+    it("the disclosure toggle reports its own expanded state", async () => {
+      const user = userEvent.setup();
+      render(<ContactSection />);
+      const toggle = screen.getByRole("button", { name: /Add technical detail/ });
+      expect(toggle).toHaveAttribute("aria-expanded", "false");
+      await user.click(toggle);
+      expect(toggle).toHaveAttribute("aria-expanded", "true");
     });
   });
 });

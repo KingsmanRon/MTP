@@ -13,6 +13,9 @@ import {
 import { InntrisLogo } from "@/components/inntris-logo";
 import { AuthRedirectBanner } from "@/components/auth-redirect-banner";
 import { MobileMenu } from "@/components/mobile-menu";
+import { SiteFooter } from "@/components/site-footer";
+import { VERIFY_TOOL_HREF, VERIFY_TOOL_LABEL } from "@/lib/brand";
+import { verdictLabel } from "@/lib/verdict";
 
 /* ------------------------------------------------------------------ */
 /*  Page (Server Component — SSR public preview shell)                 */
@@ -38,14 +41,14 @@ export default function PortalPreviewPage() {
           <nav className="hidden items-center gap-6 text-sm md:flex">
             <Link href="/admin" className="text-muted-foreground transition hover:text-foreground">Console</Link>
             <Link href="/audit" className="text-muted-foreground transition hover:text-foreground">Audit</Link>
-            <Link href="/verify" className="text-muted-foreground transition hover:text-foreground">Verify</Link>
+            <Link href={VERIFY_TOOL_HREF} className="text-muted-foreground transition hover:text-foreground">{VERIFY_TOOL_LABEL}</Link>
             <Link href="/docs" className="text-muted-foreground transition hover:text-foreground">Docs</Link>
           </nav>
           <MobileMenu
             links={[
               { href: "/admin", label: "Console" },
               { href: "/audit", label: "Audit" },
-              { href: "/verify", label: "Verify" },
+              { href: VERIFY_TOOL_HREF, label: VERIFY_TOOL_LABEL },
               { href: "/docs", label: "Docs" },
             ]}
           />
@@ -161,33 +164,33 @@ export default function PortalPreviewPage() {
               </div>
               <div className="space-y-2">
                 {[
-                  { verdict: "PASS", rule: "api_call", time: "14:32 UTC" },
-                  { verdict: "BLOCK", rule: "data_export", time: "14:28 UTC" },
-                  { verdict: "PASS", rule: "api_call", time: "14:21 UTC" },
-                  { verdict: "ESCALATE", rule: "financial_transaction", time: "14:15 UTC" },
+                  { verdict: "approved", rule: "api_call", time: "14:32 UTC" },
+                  { verdict: "blocked", rule: "data_export", time: "14:28 UTC" },
+                  { verdict: "approved", rule: "api_call", time: "14:21 UTC" },
+                  { verdict: "rate_limited", rule: "financial_transaction", time: "14:15 UTC" },
                 ].map((dec, i) => (
                   <div
                     key={i}
                     className="flex min-w-0 items-center justify-between gap-3 rounded-xl border border-tileLine bg-card px-4 py-3"
                   >
                     <div className="flex items-center gap-3">
-                      {dec.verdict === "BLOCK" ? (
+                      {dec.verdict === "blocked" ? (
                         <XOctagon className="h-4 w-4 text-destructive" />
-                      ) : dec.verdict === "ESCALATE" ? (
+                      ) : dec.verdict === "rate_limited" ? (
                         <Clock className="h-4 w-4 text-warning" />
                       ) : (
                         <CheckCircle2 className="h-4 w-4 text-success" />
                       )}
                       <span
                         className={`text-xs font-bold ${
-                          dec.verdict === "BLOCK"
+                          dec.verdict === "blocked"
                             ? "text-destructive"
-                            : dec.verdict === "ESCALATE"
+                            : dec.verdict === "rate_limited"
                             ? "text-warning"
                             : "text-success"
                         }`}
                       >
-                        {dec.verdict}
+                        {verdictLabel(dec.verdict)}
                       </span>
                     </div>
                     <div className="flex items-center gap-4">
@@ -268,19 +271,7 @@ export default function PortalPreviewPage() {
       </main>
 
       {/* Footer */}
-      <footer className="border-t border-tileLine">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-8 lg:px-8">
-          <div className="flex items-center gap-2">
-            <InntrisLogo className="h-5 w-5" />
-            <span className="text-muted-foreground">Inntris Core</span>
-          </div>
-          <div className="flex items-center gap-6 text-muted-foreground">
-            <Link href="/" className="text-sm transition-colors hover:text-foreground">Home</Link>
-            <Link href="/docs" className="text-sm transition-colors hover:text-foreground">Docs</Link>
-            <Link href="/verify" className="text-sm transition-colors hover:text-foreground">Verify</Link>
-          </div>
-        </div>
-      </footer>
+      <SiteFooter className="border-tileLine" />
     </div>
   );
 }

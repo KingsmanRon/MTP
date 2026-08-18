@@ -94,7 +94,7 @@ export default function LoginPage() {
                 />
               </div>
               <p className="text-xs text-muted-foreground">
-                Your API key can be found in your organization settings or provided by your admin.
+                Your API key can be found in your organisation settings or provided by your admin.
               </p>
             </div>
 

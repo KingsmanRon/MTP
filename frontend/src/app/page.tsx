@@ -24,6 +24,8 @@ import {
 import { VerificationSection } from "@/components/landing/verification-section";
 import { BeyondPaymentsSection } from "@/components/landing/beyond-payments-section";
 import { cn } from "@/lib/utils";
+import { PILOT_CTA_LABEL, PILOT_HREF, PRIMARY_NAV } from "@/lib/brand";
+import { SiteFooter } from "@/components/site-footer";
 
 /**
  * The Inntris homepage.
@@ -163,13 +165,6 @@ const pilotDeliverables = [
   "Pilot findings and production-rollout recommendation",
 ];
 
-const navLinks = [
-  { href: "/#payments", label: "Payments" },
-  { href: "/#use-cases", label: "Use cases" },
-  { href: "/#verify", label: "Verify" },
-  { href: "/docs", label: "Docs" },
-  { href: "/pilot", label: "14-day pilot" },
-];
 
 export default async function InntrisHomePage() {
   // One fetch for both canonical receipts. The hero deep link and the live
@@ -215,7 +210,7 @@ export default async function InntrisHomePage() {
               aria-label="Primary"
               className="hidden items-center gap-5 text-[15px] md:flex lg:gap-7"
             >
-              {navLinks.map((link) => (
+              {PRIMARY_NAV.map((link) => (
                 <Link
                   key={link.href}
                   className={cn(
@@ -230,18 +225,18 @@ export default async function InntrisHomePage() {
             </nav>
             <div className="flex items-center gap-3">
               <Link
-                href="/pilot"
+                href={PILOT_HREF}
                 className={cn(
                   "hidden min-h-11 items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors hover:bg-brandDeep md:inline-flex",
                   focusRing,
                 )}
               >
-                Scope a payment pilot
+                {PILOT_CTA_LABEL}
               </Link>
               <MobileMenu
                 variant="light"
-                links={navLinks}
-                cta={{ href: "/pilot", label: "Scope a payment pilot" }}
+                links={PRIMARY_NAV}
+                cta={{ href: PILOT_HREF, label: PILOT_CTA_LABEL }}
               />
             </div>
           </div>
@@ -303,13 +298,13 @@ export default async function InntrisHomePage() {
                 </ul>
                 <div className="flex flex-wrap gap-3">
                   <Link
-                    href="/pilot"
+                    href={PILOT_HREF}
                     className={cn(
                       "inline-flex min-h-12 items-center rounded-xl bg-primary px-6 text-[15px] font-semibold text-primary-foreground shadow-sm transition-colors hover:bg-brandDeep",
                       focusRing,
                     )}
                   >
-                    Scope a 14-day payment pilot
+                    {PILOT_CTA_LABEL}
                   </Link>
                   <Link
                     href={`/verify/${blockedId}`}
@@ -340,30 +335,37 @@ export default async function InntrisHomePage() {
                           Where Inntris sits before the rail
                         </div>
                       </div>
+                      {/* Not "live". This card is a static diagram of the
+                          production path, and a pulsing dot on a drawing
+                          claims a liveness it does not have. */}
                       <span className="inline-flex shrink-0 items-center gap-2 rounded-full bg-accent px-3 py-1.5 font-mono text-xs text-accent-foreground">
-                        <span
-                          aria-hidden="true"
-                          className="live-dot h-1.5 w-1.5 rounded-full bg-primary text-primary"
-                        />
-                        live policy path
+                        production path
                       </span>
                     </div>
                   </div>
-                  <RevealGroup className="space-y-3 p-4">
-                    {controlPath.slice(0, 4).map(({ step, title, body }) => (
+                  {/* A diagram, not a second copy of the explanation. This
+                      card and the "How Inntris works" section below both read
+                      from `controlPath`, and the card used to render the same
+                      four paragraphs the section renders in full — the reader
+                      met the identical prose twice on one page. The card now
+                      shows only the shape of the path; the section carries the
+                      words. */}
+                  <RevealGroup className="space-y-2 p-4">
+                    {controlPath.map(({ step, title }, i) => (
                       <div
                         key={step}
-                        className="flex gap-4 rounded-xl bg-tile p-5 transition duration-200 hover:translate-x-1 hover:bg-accent"
+                        className="flex items-center gap-4 rounded-xl bg-tile px-5 py-3.5 transition duration-200 hover:translate-x-1 hover:bg-accent"
                       >
-                        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary">
+                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary">
                           <Num className="text-xs font-semibold text-primary-foreground">{step}</Num>
                         </span>
-                        <div className="min-w-0">
-                          <div className="font-semibold text-foreground">{title}</div>
-                          <div className="mt-1 text-[15px] leading-7 text-muted-foreground">
-                            {body}
-                          </div>
-                        </div>
+                        <div className="min-w-0 font-medium text-foreground">{title}</div>
+                        {i < controlPath.length - 1 && (
+                          <ChevronRight
+                            className="ml-auto h-4 w-4 shrink-0 rotate-90 text-muted-foreground/50"
+                            aria-hidden="true"
+                          />
+                        )}
                       </div>
                     ))}
                   </RevealGroup>
@@ -666,13 +668,13 @@ export default async function InntrisHomePage() {
                 </p>
                 <div className="mt-8 flex flex-wrap gap-3">
                   <Link
-                    href="/pilot"
+                    href={PILOT_HREF}
                     className={cn(
                       "inline-flex min-h-12 items-center rounded-xl bg-primary px-6 text-[15px] font-semibold text-primary-foreground shadow-sm transition-colors hover:bg-brandDeep",
                       focusRing,
                     )}
                   >
-                    Scope a 14-day payment pilot
+                    {PILOT_CTA_LABEL}
                   </Link>
                 </div>
                 <p className="mt-5 text-sm text-muted-foreground">
@@ -705,41 +707,7 @@ export default async function InntrisHomePage() {
           <ContactSection />
         </main>
 
-        <footer className="border-t border-border bg-background">
-          <div className="mx-auto max-w-7xl px-6 py-10 lg:px-8">
-            <div className="flex flex-col items-center gap-5">
-              <div className="flex items-center gap-2.5">
-                <InntrisLogo className="h-5 w-5" />
-                <span className="text-sm font-semibold tracking-tight text-foreground">Inntris</span>
-              </div>
-              <p className="text-center text-sm text-muted-foreground">
-                Independent authorisation and verifiable evidence for agent actions. Payments first.
-              </p>
-              <nav aria-label="Footer" className="flex flex-wrap items-center justify-center gap-x-6 gap-y-3">
-                {[
-                  { href: "/#payments", label: "Payments" },
-                  { href: "/#use-cases", label: "Use cases" },
-                  { href: "/verify", label: "Verify" },
-                  { href: "/docs", label: "Docs" },
-                  { href: "/security", label: "Security" },
-                  { href: "/#contact", label: "Contact" },
-                ].map((link) => (
-                  <Link
-                    key={link.href}
-                    href={link.href}
-                    className={cn(
-                      "rounded-sm text-sm text-muted-foreground transition-colors hover:text-foreground",
-                      focusRing,
-                    )}
-                  >
-                    {link.label}
-                  </Link>
-                ))}
-              </nav>
-              <p className="text-xs text-muted-foreground">&copy; 2026 Inntris, Inc.</p>
-            </div>
-          </div>
-        </footer>
+        <SiteFooter />
       </div>
     </>
   );

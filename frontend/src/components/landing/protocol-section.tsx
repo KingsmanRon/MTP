@@ -94,19 +94,39 @@ export function ProtocolSection() {
           </Tile>
         </Reveal>
 
-        {/* The literal tokens, attributed to the artifact that emits them. The
-            narrative copy on this page stays in plain English; technical
-            readers still search for the tokens, so they appear exactly once. */}
+        {/* The literal tokens, each attributed to the artifact that actually
+            emits it.
+
+            This block previously said the envelope tokens were "the literal
+            values in the signed artifact" without naming which artifact — on
+            the same page as receipt cards rendering PASS. A reader who took up
+            the "check it yourself" invitation landed straight on a value the
+            homepage appeared to deny existed.
+
+            Two systems, two vocabularies, and neither is normalised into the
+            other in the UI. Platform receipts carry a `verdict` field that is
+            hashed into the receipt fingerprint and signed, so its wire values
+            cannot be renamed for presentation — see lib/verdict.ts. */}
         <Reveal className="mt-6">
           <div className="rounded-lg border-l-[3px] border-primary bg-tile px-5 py-4">
             <p className="text-sm font-medium text-foreground">
-              Verdict names in the reference implementation
+              Verdict names, and where each one appears
             </p>
             <p className="mt-1.5 text-sm leading-7 text-muted-foreground">
-              Decision envelopes emit <Num className="text-foreground">ALLOW</Num>,{" "}
+              The x402 policy adapter emits decision envelopes carrying{" "}
+              <Num className="text-foreground">ALLOW</Num>,{" "}
               <Num className="text-foreground">BLOCK</Num> and{" "}
-              <Num className="text-foreground">REQUIRE_APPROVAL</Num>. These are the literal values
-              in the signed artifact and in the public verifier output.
+              <Num className="text-foreground">REQUIRE_APPROVAL</Num>. Inntris platform receipts
+              are a different artifact: they record a signed{" "}
+              <Num className="text-foreground">verdict</Num> field, shown on the public verifier as{" "}
+              <Num className="text-foreground">PASS</Num>,{" "}
+              <Num className="text-foreground">BLOCK</Num> or{" "}
+              <Num className="text-foreground">ESCALATE</Num>.
+            </p>
+            <p className="mt-3 text-sm leading-7 text-muted-foreground">
+              The two vocabularies are not interchangeable and neither is rewritten to match the
+              other. A receipt shows the value its own signed record contains, because that value
+              is part of what the fingerprint covers.
             </p>
           </div>
         </Reveal>

@@ -5,6 +5,8 @@ import { InntrisLogo } from "@/components/inntris-logo";
 import { MobileMenu } from "@/components/mobile-menu";
 import { Eyebrow, Num, Tile, focusRing } from "@/components/landing/primitives";
 import { cn } from "@/lib/utils";
+import { SiteFooter } from "@/components/site-footer";
+import { PILOT_CTA_LABEL, PILOT_HREF, PRIMARY_NAV } from "@/lib/brand";
 
 export const metadata: Metadata = {
   title: "Security and published boundaries — Inntris",
@@ -52,14 +54,6 @@ const limitations = [
   },
 ];
 
-const navLinks = [
-  { href: "/#payments", label: "Payments" },
-  { href: "/#use-cases", label: "Use cases" },
-  { href: "/verify", label: "Verify" },
-  { href: "/docs", label: "Docs" },
-  { href: "/pilot", label: "14-day pilot" },
-];
-
 export default function SecurityPage() {
   return (
     <div className="theme-light min-h-screen bg-background text-foreground">
@@ -72,7 +66,7 @@ export default function SecurityPage() {
             <span className="text-lg font-semibold tracking-tight">Inntris</span>
           </Link>
           <nav aria-label="Primary" className="hidden items-center gap-5 text-[15px] md:flex lg:gap-7">
-            {navLinks.map((link) => (
+            {PRIMARY_NAV.map((link) => (
               <Link
                 key={link.href}
                 href={link.href}
@@ -84,8 +78,8 @@ export default function SecurityPage() {
           </nav>
           <MobileMenu
             variant="light"
-            links={navLinks}
-            cta={{ href: "/pilot", label: "Scope a payment pilot" }}
+            links={PRIMARY_NAV}
+            cta={{ href: PILOT_HREF, label: PILOT_CTA_LABEL }}
           />
         </div>
       </header>
@@ -315,20 +309,7 @@ export default function SecurityPage() {
         </section>
       </main>
 
-      <footer className="border-t border-border bg-background">
-        <div className="mx-auto max-w-7xl px-6 py-10 lg:px-8">
-          <div className="flex flex-col items-center gap-5">
-            <div className="flex items-center gap-2.5">
-              <InntrisLogo className="h-5 w-5" />
-              <span className="text-sm font-semibold tracking-tight text-foreground">Inntris</span>
-            </div>
-            <p className="text-center text-sm text-muted-foreground">
-              Independent authorisation and verifiable evidence for agent actions. Payments first.
-            </p>
-            <p className="text-xs text-muted-foreground">&copy; 2026 Inntris, Inc.</p>
-          </div>
-        </div>
-      </footer>
+      <SiteFooter />
     </div>
   );
 }

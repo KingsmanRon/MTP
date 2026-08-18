@@ -11,6 +11,8 @@ import {
 import { InntrisLogo } from "@/components/inntris-logo";
 import { PilotRiskAssessment } from "@/components/pilot-risk-assessment";
 import { SAMPLE_RECEIPT_ID } from "@/lib/canonical-receipts";
+import { SiteFooter } from "@/components/site-footer";
+import { VERIFY_TOOL_HREF, VERIFY_TOOL_LABEL } from "@/lib/brand";
 
 export const metadata: Metadata = {
   title: "14-Day Agent Action Proof Pilot - Inntris",
@@ -57,8 +59,11 @@ export default function PilotPage() {
             <span className="font-semibold">Inntris</span>
           </Link>
           <div className="flex items-center gap-4">
-            <Link href="/verify" className="hidden text-sm text-muted-foreground hover:text-foreground sm:inline">
-              View live receipt
+            <Link
+              href={VERIFY_TOOL_HREF}
+              className="hidden text-sm text-muted-foreground hover:text-foreground sm:inline"
+            >
+              {VERIFY_TOOL_LABEL}
             </Link>
             <a
               href="#assessment"
@@ -192,14 +197,7 @@ export default function PilotPage() {
         <PilotRiskAssessment />
       </main>
 
-      <footer className="border-t border-tileLine">
-        <div className="mx-auto flex max-w-7xl flex-col justify-between gap-3 px-6 py-8 text-sm text-muted-foreground sm:flex-row lg:px-8">
-          <span>Inntris Agent Action Proof Pilot</span>
-          <a href="mailto:sales@inntris.com" className="text-brandInk hover:text-foreground">
-            sales@inntris.com
-          </a>
-        </div>
-      </footer>
+      <SiteFooter />
     </div>
   );
 }

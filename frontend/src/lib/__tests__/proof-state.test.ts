@@ -5,6 +5,11 @@ import {
   deriveIntegrityStatus,
   isSupportedSchemaVersion,
   checkStatusUiLabel,
+  anchorDetailLabel,
+  integrityDetailLabel,
+  proofRollup,
+  ANCHOR_CADENCE_MINUTES,
+  type CheckStatus,
   canonicalFingerprintPayload,
   canonicalStringify,
   computeReceiptFingerprint,
@@ -116,11 +121,144 @@ describe("proof-state helpers (PR1 §1.4)", () => {
   });
 
   describe("UI label", () => {
-    it("uses canonical four-state vocabulary", () => {
+    it("uses the canonical state vocabulary", () => {
       expect(checkStatusUiLabel("verified")).toBe("VERIFIED");
       expect(checkStatusUiLabel("failed")).toBe("FAILED");
       expect(checkStatusUiLabel("pending")).toBe("PENDING");
       expect(checkStatusUiLabel("not_applicable")).toBe("NOT APPLICABLE");
+      expect(checkStatusUiLabel("computing")).toBe("CHECKING");
+    });
+  });
+
+  /* ---------------------------------------------------------------- */
+  /*  P0-2 — the panel must not contradict itself                     */
+  /* ---------------------------------------------------------------- */
+  //
+  // Both live receipts used to render "On-chain anchor — Confirmed on-chain —
+  // VERIFIED" directly above "Receipt integrity — Fingerprint matches;
+  // awaiting anchoring — PENDING". The panel reported the same receipt as
+  // anchored and as awaiting anchoring at the same time, on an artifact shown
+  // to auditors. These tests make that pair unrepresentable.
+
+  const ALL_STATUSES: CheckStatus[] = [
+    "verified",
+    "computing",
+    "pending",
+    "failed",
+    "not_applicable",
+  ];
+  const SERVER_STATUSES = [null, undefined, "verified", "pending", "failed", "sandbox"];
+
+  describe("panel self-consistency invariant", () => {
+    it("never claims a receipt is awaiting anchoring while the anchor is confirmed", () => {
+      for (const integrity of ALL_STATUSES) {
+        for (const fingerprint of [true, false, null]) {
+          for (const server of SERVER_STATUSES) {
+            const detail = integrityDetailLabel(integrity, "verified", fingerprint, server);
+            expect(detail.toLowerCase()).not.toContain("awaiting");
+            expect(detail.toLowerCase()).not.toContain("anchor confirmation expected");
+          }
+        }
+      }
+    });
+
+    it("only says the receipt is waiting on an anchor while the anchor is pending", () => {
+      // "Waiting" phrasing, in any form the copy might take. A row that merely
+      // states a sandbox receipt is not anchored, or that an anchor proof
+      // failed, is describing a settled fact rather than claiming a wait.
+      const waiting = /awaiting|expected within|in progress|pending anchor/i;
+      for (const anchor of ALL_STATUSES) {
+        for (const integrity of ALL_STATUSES) {
+          for (const server of SERVER_STATUSES) {
+            const detail = integrityDetailLabel(integrity, anchor, true, server);
+            if (waiting.test(detail)) {
+              expect(anchor).toBe("pending");
+            }
+          }
+        }
+      }
+    });
+
+    it("does not assert the fingerprint matches before it has been computed", () => {
+      const detail = integrityDetailLabel("computing", "verified", null, null);
+      expect(detail).toBe("Recomputing the receipt fingerprint in your browser");
+      expect(detail.toLowerCase()).not.toContain("matches");
+    });
+
+    it("a confirmed anchor yields a verified integrity row with a plain detail", () => {
+      const integrity = deriveIntegrityStatus("verified", "verified", "verified", true, null);
+      expect(integrity).toBe("verified");
+      expect(integrityDetailLabel(integrity, "verified", true, null)).toBe(
+        "Fingerprint matches record",
+      );
+    });
+
+    it("propagates the computing state instead of reporting a false pending", () => {
+      expect(deriveIntegrityStatus("verified", "verified", "computing", true, null)).toBe(
+        "computing",
+      );
+    });
+
+    it("labels a failed integrity row as failed rather than as still verifying", () => {
+      // Regression guard: the old label chain fell through to "Verifying
+      // integrity..." whenever integrity failed for a reason other than a
+      // fingerprint mismatch.
+      const detail = integrityDetailLabel("failed", "verified", true, null);
+      expect(detail).toBe("Fingerprint matches, but another proof check did not pass");
+    });
+  });
+
+  describe("anchor detail label", () => {
+    it("explains what an un-anchored receipt is waiting for, and for how long", () => {
+      const waiting = anchorDetailLabel("pending", null);
+      expect(waiting).toContain(String(ANCHOR_CADENCE_MINUTES));
+      expect(waiting.toLowerCase()).toContain("minutes");
+
+      const submitted = anchorDetailLabel("pending", "0xabc");
+      expect(submitted).toContain(String(ANCHOR_CADENCE_MINUTES));
+      expect(submitted.toLowerCase()).toContain("awaiting confirmation");
+    });
+
+    it("says confirmed only when the anchor is verified", () => {
+      expect(anchorDetailLabel("verified", "0xabc")).toBe("Confirmed on-chain");
+      for (const s of ALL_STATUSES.filter((x) => x !== "verified")) {
+        expect(anchorDetailLabel(s, "0xabc")).not.toBe("Confirmed on-chain");
+      }
+    });
+  });
+
+  describe("panel rollup", () => {
+    it("reports 4 of 4 for a fully verified receipt", () => {
+      const rollup = proofRollup(["verified", "verified", "verified", "verified"]);
+      expect(rollup.label).toBe("4 of 4 checks verified");
+      expect(rollup.status).toBe("verified");
+      expect(rollup.verified).toBe(4);
+      expect(rollup.total).toBe(4);
+    });
+
+    it("is derived, not hardcoded: a pending anchor shows in the rollup", () => {
+      const rollup = proofRollup(["verified", "verified", "pending", "pending"]);
+      expect(rollup.status).toBe("pending");
+      expect(rollup.label).toBe("2 of 4 checks verified · 2 pending");
+    });
+
+    it("a failure dominates a pending", () => {
+      const rollup = proofRollup(["verified", "failed", "pending", "failed"]);
+      expect(rollup.status).toBe("failed");
+      expect(rollup.label).toContain("2 failed");
+    });
+
+    it("excludes not-applicable checks from the denominator", () => {
+      const rollup = proofRollup(["verified", "verified", "not_applicable", "not_applicable"]);
+      expect(rollup.total).toBe(2);
+      expect(rollup.label).toBe("2 of 2 checks verified · 2 not applicable");
+      expect(rollup.status).toBe("verified");
+    });
+
+    it("reports checking while the fingerprint digest is still running", () => {
+      const rollup = proofRollup(["verified", "verified", "verified", "computing"]);
+      expect(rollup.status).toBe("computing");
+      expect(rollup.label).toContain("Checking");
     });
   });
 

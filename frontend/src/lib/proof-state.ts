@@ -22,9 +22,17 @@
 
 export type CheckStatus =
   | "verified"
+  | "computing"
   | "pending"
   | "failed"
   | "not_applicable";
+
+/**
+ * Anchoring cadence published on the site. Used to tell a reader looking at a
+ * genuinely un-anchored receipt what is being waited on and for how long,
+ * rather than showing them a bare PENDING.
+ */
+export const ANCHOR_CADENCE_MINUTES = 10;
 
 export const SUPPORTED_SCHEMA_VERSIONS = new Set(["v1", "v2"]);
 
@@ -82,6 +90,9 @@ export function deriveIntegrityStatus(
   if (signature === "failed" || policy === "failed" || anchor === "failed") {
     return "failed";
   }
+  if (anchor === "computing") {
+    return "computing";
+  }
   if (anchor === "pending") {
     // Anchor still landing — integrity stays pending until anchor resolves.
     return "pending";
@@ -93,6 +104,8 @@ export function checkStatusUiLabel(s: CheckStatus): string {
   switch (s) {
     case "verified":
       return "VERIFIED";
+    case "computing":
+      return "CHECKING";
     case "pending":
       return "PENDING";
     case "failed":
@@ -100,6 +113,153 @@ export function checkStatusUiLabel(s: CheckStatus): string {
     case "not_applicable":
       return "NOT APPLICABLE";
   }
+}
+
+/* ------------------------------------------------------------------ */
+/*  Detail strings                                                    */
+/*                                                                    */
+/*  The panel used to hold two rows that could contradict each other: */
+/*  "On-chain anchor — Confirmed on-chain — VERIFIED" sat next to     */
+/*  "Receipt integrity — Fingerprint matches; awaiting anchoring —    */
+/*  PENDING" on the same receipt. Two causes, both fixed here.        */
+/*                                                                    */
+/*  1. The integrity row started life as useState("pending") and was  */
+/*     only corrected once an async fingerprint digest resolved. The  */
+/*     anchor row derives synchronously from the record, so the       */
+/*     server-rendered HTML and the first client paint always         */
+/*     disagreed. "computing" is now a state of its own.              */
+/*  2. The pending detail string was hardcoded. It claimed the        */
+/*     fingerprint matched before it had been computed, and claimed   */
+/*     the receipt was awaiting anchoring while the block number was  */
+/*     on screen. The string is now derived from the same anchor      */
+/*     status the anchor row renders, so the two cannot disagree.     */
+/* ------------------------------------------------------------------ */
+
+export function anchorDetailLabel(
+  anchor: CheckStatus,
+  txHash: string | null | undefined,
+): string {
+  switch (anchor) {
+    case "not_applicable":
+      return "Sandbox receipt — not anchored on-chain";
+    case "failed":
+      return "Anchor proof failed";
+    case "verified":
+      return "Confirmed on-chain";
+    case "computing":
+      return "Reading anchor state";
+    case "pending":
+      return txHash != null
+        ? `Transaction submitted, awaiting confirmation (usually within ${ANCHOR_CADENCE_MINUTES} minutes)`
+        : `Awaiting the next anchoring batch (published every ${ANCHOR_CADENCE_MINUTES} minutes)`;
+  }
+}
+
+/**
+ * The integrity row's detail string.
+ *
+ * Takes the anchor status rather than re-deriving it, which is what makes the
+ * "anchor confirmed AND awaiting anchoring" pair unrepresentable: the only
+ * branch that can mention anchoring is guarded on `anchor === "pending"`.
+ * `proof-state.test.ts` asserts this exhaustively.
+ */
+export function integrityDetailLabel(
+  integrity: CheckStatus,
+  anchor: CheckStatus,
+  fingerprintMatches: boolean | null,
+  serverIntegrityStatus?: string | null,
+): string {
+  if (fingerprintMatches === false) {
+    return "Fingerprint does not match; receipt may have been altered";
+  }
+  if (integrity === "computing" || fingerprintMatches == null) {
+    return "Recomputing the receipt fingerprint in your browser";
+  }
+  if (integrity === "not_applicable" || serverIntegrityStatus === "sandbox") {
+    return "Sandbox receipt; signed and independently verifiable, not anchored";
+  }
+  if (integrity === "failed") {
+    return serverIntegrityStatus === "failed"
+      ? "Anchor proof failed; the receipt fingerprint itself still matches"
+      : "Fingerprint matches, but another proof check did not pass";
+  }
+  if (integrity === "verified") {
+    return "Fingerprint matches record";
+  }
+  // integrity === "pending". Anchoring is the only thing that holds integrity
+  // in this state, and it can only be reached while the anchor is pending.
+  if (anchor === "pending") {
+    return `Fingerprint matches; anchor confirmation expected within ${ANCHOR_CADENCE_MINUTES} minutes`;
+  }
+  return "Fingerprint matches; completing remaining checks";
+}
+
+/* ------------------------------------------------------------------ */
+/*  Panel rollup                                                      */
+/* ------------------------------------------------------------------ */
+
+export interface ProofRollup {
+  /** Checks that carry a pass/fail meaning for this receipt. */
+  total: number;
+  verified: number;
+  notApplicable: number;
+  /** Worst individual state, which is what the panel badge shows. */
+  status: CheckStatus;
+  label: string;
+}
+
+/**
+ * Derive the panel's headline state from the individual checks so a reader is
+ * not left adjudicating a mixed panel. Never hardcoded: a check that is not
+ * applicable to this receipt type is excluded from the denominator rather than
+ * counted as a failure.
+ */
+export function proofRollup(statuses: CheckStatus[]): ProofRollup {
+  const notApplicable = statuses.filter((s) => s === "not_applicable").length;
+  const scored = statuses.filter((s) => s !== "not_applicable");
+  const verified = scored.filter((s) => s === "verified").length;
+  const failed = scored.filter((s) => s === "failed").length;
+  const pending = scored.filter((s) => s === "pending").length;
+  const computing = scored.filter((s) => s === "computing").length;
+  const total = scored.length;
+
+  const suffix = notApplicable > 0 ? ` · ${notApplicable} not applicable` : "";
+  const counted = `${verified} of ${total} checks verified`;
+
+  if (failed > 0) {
+    return {
+      total,
+      verified,
+      notApplicable,
+      status: "failed",
+      label: `${counted} · ${failed} failed${suffix}`,
+    };
+  }
+  if (computing > 0) {
+    return {
+      total,
+      verified,
+      notApplicable,
+      status: "computing",
+      label: `Checking ${total} proof${total === 1 ? "" : "s"}${suffix}`,
+    };
+  }
+  if (pending > 0) {
+    return {
+      total,
+      verified,
+      notApplicable,
+      status: "pending",
+      label: `${counted} · ${pending} pending${suffix}`,
+    };
+  }
+  return {
+    total,
+    verified,
+    notApplicable,
+    status: total === 0 ? "not_applicable" : "verified",
+    label: `${counted}${suffix}`,
+  };
 }
 
 /* ------------------------------------------------------------------ */

@@ -1,4 +1,5 @@
 import { cn, getVerdictBadgeStyles } from "@/lib/utils";
+import { verdictLongLabel } from "@/lib/verdict";
 import { CheckCircle, XCircle, Clock, AlertTriangle } from "lucide-react";
 import type { ActionVerdict } from "@/lib/admin/types";
 
@@ -7,13 +8,6 @@ const icons: Record<ActionVerdict, typeof CheckCircle> = {
   blocked: XCircle,
   rate_limited: Clock,
   signature_invalid: AlertTriangle,
-};
-
-const labels: Record<ActionVerdict, string> = {
-  approved: "Approved",
-  blocked: "Blocked",
-  rate_limited: "Rate Limited",
-  signature_invalid: "Invalid Signature",
 };
 
 export function AdminVerdictBadge({
@@ -25,7 +19,6 @@ export function AdminVerdictBadge({
 }) {
   const isKnown = verdict in icons;
   const Icon = isKnown ? icons[verdict as ActionVerdict] : AlertTriangle;
-  const label = isKnown ? labels[verdict as ActionVerdict] : verdict;
 
   return (
     <span
@@ -37,7 +30,7 @@ export function AdminVerdictBadge({
       )}
     >
       {showIcon && <Icon className="h-3 w-3" />}
-      {label}
+      {verdictLongLabel(verdict)}
     </span>
   );
 }

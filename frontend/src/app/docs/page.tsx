@@ -15,6 +15,9 @@ import {
 } from "lucide-react";
 import { InntrisLogo } from "@/components/inntris-logo";
 import { MobileMenu } from "@/components/mobile-menu";
+import { SiteFooter } from "@/components/site-footer";
+import { VERIFY_TOOL_HREF, VERIFY_TOOL_LABEL } from "@/lib/brand";
+import { verdictLabel } from "@/lib/verdict";
 
 export const metadata: Metadata = {
   title: "Documentation — Inntris | AI Agent Governance Integration Guide",
@@ -43,14 +46,14 @@ export default function DocsPage() {
             <Link href="/admin" className="text-muted-foreground transition hover:text-foreground">Console</Link>
             <Link href="/portal" className="text-muted-foreground transition hover:text-foreground">Portal</Link>
             <Link href="/audit" className="text-muted-foreground transition hover:text-foreground">Audit</Link>
-            <Link href="/verify" className="text-muted-foreground transition hover:text-foreground">Verify</Link>
+            <Link href={VERIFY_TOOL_HREF} className="text-muted-foreground transition hover:text-foreground">{VERIFY_TOOL_LABEL}</Link>
           </nav>
           <MobileMenu
             links={[
               { href: "/admin", label: "Console" },
               { href: "/portal", label: "Portal" },
               { href: "/audit", label: "Audit" },
-              { href: "/verify", label: "Verify" },
+              { href: VERIFY_TOOL_HREF, label: VERIFY_TOOL_LABEL },
             ]}
           />
         </div>
@@ -293,18 +296,18 @@ POST /admin/agents/{agent_id}/promote   (admin scope)
                 </p>
                 <div className="grid gap-4 sm:grid-cols-3">
                   {[
-                    { label: "PASS", desc: "Action verified & logged", color: "hsl(var(--success))", icon: CheckCircle },
-                    { label: "BLOCK", desc: "Policy violation", color: "hsl(var(--destructive))", icon: Shield },
-                    { label: "ESCALATE", desc: "Too many requests", color: "hsl(var(--warning))", icon: Zap },
+                    { verdict: "approved", desc: "Action verified & logged", color: "hsl(var(--success))", icon: CheckCircle },
+                    { verdict: "blocked", desc: "Policy violation", color: "hsl(var(--destructive))", icon: Shield },
+                    { verdict: "rate_limited", desc: "Too many requests", color: "hsl(var(--warning))", icon: Zap },
                   ].map((outcome) => {
                     const Icon = outcome.icon;
                     return (
                       <div
-                        key={outcome.label}
+                        key={outcome.verdict}
                         className="rounded-2xl border border-tileLine bg-tile p-4 text-center"
                       >
                         <Icon className="h-8 w-8 mx-auto mb-2" style={{ color: outcome.color }} />
-                        <p className="font-medium" style={{ color: outcome.color }}>{outcome.label}</p>
+                        <p className="font-medium" style={{ color: outcome.color }}>{verdictLabel(outcome.verdict)}</p>
                         <p className="text-xs text-muted-foreground">{outcome.desc}</p>
                       </div>
                     );
@@ -446,7 +449,7 @@ POST /admin/agents/{agent_id}/promote   (admin scope)
 
           <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
             {[
-              { href: "/verify", icon: Shield, title: "Public Verify", desc: "Inspect a live receipt" },
+              { href: VERIFY_TOOL_HREF, icon: Shield, title: "Public Verify", desc: "Inspect a signed receipt" },
               { href: "/admin", icon: Key, title: "Admin Console", desc: "Manage agents & policies" },
               { href: "/portal", icon: Bot, title: "Agent Portal", desc: "Developer tools & testing" },
               { href: "/audit", icon: FileSearch, title: "Audit Explorer", desc: "Search & verify logs" },
@@ -469,19 +472,7 @@ POST /admin/agents/{agent_id}/promote   (admin scope)
       </main>
 
       {/* Footer */}
-      <footer className="border-t border-tileLine">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-8 lg:px-8">
-          <div className="flex items-center gap-2">
-            <InntrisLogo className="h-5 w-5" />
-            <span className="text-muted-foreground">Inntris Core</span>
-          </div>
-          <div className="flex items-center gap-6 text-muted-foreground">
-            <Link href="/" className="text-sm transition-colors hover:text-foreground">Home</Link>
-            <Link href="/docs" className="text-sm transition-colors hover:text-foreground">Docs</Link>
-            <Link href="/verify" className="text-sm transition-colors hover:text-foreground">Verify</Link>
-          </div>
-        </div>
-      </footer>
+      <SiteFooter className="border-tileLine" />
     </div>
   );
 }

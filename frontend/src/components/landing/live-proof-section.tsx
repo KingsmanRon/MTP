@@ -3,14 +3,19 @@ import Link from "next/link";
 import { ChevronRight, CheckCircle2, XOctagon, AlertTriangle } from "lucide-react";
 import { Eyebrow, Num, Tile, focusRing } from "@/components/landing/primitives";
 import { Reveal, RevealGroup } from "@/components/landing/reveal";
-import { cn } from "@/lib/utils";
+import { cn, formatUtcTimestamp } from "@/lib/utils";
 import { publicApi, type PublicVerificationRecord } from "@/lib/api";
 import { verdictLabel, isPassVerdict, isEscalateVerdict } from "@/lib/verdict";
 import { CANONICAL_RECEIPT_IDS } from "@/lib/canonical-receipts";
 
 /**
- * Live payment proof — one allowed request and one blocked request, rendered
- * from the live platform records rather than from copy.
+ * Payment proof — one allowed request and one blocked request, rendered from
+ * the platform records themselves rather than from copy.
+ *
+ * The section does not call these receipts "live". They are real signed
+ * records, but they are generated on demand rather than continuously, and a
+ * heading that overclaims freshness on the one artifact meant to establish
+ * trust is the worst possible place to overclaim.
  *
  * Three rules hold this section together:
  *
@@ -20,7 +25,9 @@ import { CANONICAL_RECEIPT_IDS } from "@/lib/canonical-receipts";
  *     version means editing `CANONICAL_RECEIPT_IDS` and nothing else. The blocked
  *     receipt leads because it is the more interesting artifact.
  *  2. The verdict tokens shown here — PASS / BLOCK / ESCALATE — are the
- *     platform receipt's own vocabulary. Decision envelopes use ALLOW / BLOCK /
+ *     platform receipt's own vocabulary, mapped in lib/verdict.ts from the
+ *     signed wire values (approved / blocked / rate_limited). Decision
+ *     envelopes are a separate artifact and use ALLOW / BLOCK /
  *     REQUIRE_APPROVAL. Do not normalise one into the other in the UI; display
  *     what the artifact actually contains.
  *  3. No trust score. An unpublished scoring methodology sitting beside a
@@ -38,23 +45,20 @@ const receiptProofs = [
   "The receipt was included in a Merkle batch anchored to Base L2.",
 ];
 
+/**
+ * The recorded time of a receipt, in UTC, absolute.
+ *
+ * This used to lead with a relative form — "Generated 27 days ago · 2026-07-22
+ * 15:43 UTC" — which grows without bound. On an evidence artifact the absolute
+ * time is the fact; the relative form is decoration that decays, and on the
+ * flagship proof it eventually reads as abandonment rather than authority. It
+ * is gone rather than demoted.
+ */
 export function formatReceiptTimestamp(iso: string | null | undefined): string | null {
   if (!iso) return null;
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return null;
-  const diffMs = Date.now() - d.getTime();
-  const sec = Math.round(diffMs / 1000);
-  const min = Math.round(sec / 60);
-  const hr = Math.round(min / 60);
-  const day = Math.round(hr / 24);
-  let relative: string;
-  if (sec < 60) relative = "just now";
-  else if (min < 60) relative = `${min} minute${min === 1 ? "" : "s"} ago`;
-  else if (hr < 24) relative = `${hr} hour${hr === 1 ? "" : "s"} ago`;
-  else relative = `${day} day${day === 1 ? "" : "s"} ago`;
-  const pad = (n: number) => n.toString().padStart(2, "0");
-  const absolute = `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())} UTC`;
-  return `Generated ${relative} · ${absolute}`;
+  return `Recorded ${formatUtcTimestamp(d)}`;
 }
 
 async function loadReceipt(id: string): Promise<PublicVerificationRecord | null> {
@@ -209,7 +213,7 @@ export function LiveProofSection({ records }: { records: PublicVerificationRecor
     >
       <div className="mx-auto max-w-7xl px-6 py-20 lg:px-8">
         <Reveal className="max-w-3xl">
-          <Eyebrow>Live verification receipts</Eyebrow>
+          <Eyebrow>Signed platform records</Eyebrow>
           <h2
             id="live-proof-heading"
             className="mt-4 text-2xl font-semibold tracking-tight md:text-3xl"
@@ -217,8 +221,10 @@ export function LiveProofSection({ records }: { records: PublicVerificationRecor
             One allowed request. One blocked request.
           </h2>
           <p className="mt-4 text-base leading-7 text-muted-foreground">
-            Both receipts are live, signed platform records for financial-transaction requests. Each
-            shows the policy decision applied before the proposed action was allowed or blocked.
+            Both receipts are signed platform records for financial-transaction requests, produced
+            by the same path a production request takes. Each shows the policy decision applied
+            before the proposed action was allowed or blocked, and each can be verified
+            independently.
           </p>
         </Reveal>
 

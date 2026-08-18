@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { formatDateTime, copyToClipboard } from "@/lib/utils";
+import { formatUtcTimestamp, copyToClipboard } from "@/lib/utils";
 import type { PublicVerificationRecord } from "@/lib/api";
 import {
   CheckCircle2,
@@ -16,18 +16,26 @@ import {
   Fingerprint,
   FileCheck2,
   Link2,
+  Loader2,
   ShieldCheck,
+  ArrowLeft,
 } from "lucide-react";
 import { InntrisLogo } from "@/components/inntris-logo";
+import { PILOT_CTA_LABEL, PILOT_HREF, VERIFIER_REPO_URL } from "@/lib/brand";
 import { verdictLabel, isPassVerdict, isEscalateVerdict } from "@/lib/verdict";
+import { SiteFooter } from "@/components/site-footer";
 import {
   signatureCheckStatus,
   policyHashCheckStatus,
   anchorCheckStatus,
+  anchorDetailLabel,
+  integrityDetailLabel,
   isSupportedSchemaVersion,
   checkStatusUiLabel,
   computeReceiptFingerprint,
   deriveIntegrityStatus,
+  proofRollup,
+  ANCHOR_CADENCE_MINUTES,
   type CheckStatus,
 } from "@/lib/proof-state";
 
@@ -56,6 +64,7 @@ function truncateHash(hash: string, chars = 10) {
 function checkStatusColor(s: CheckStatus) {
   switch (s) {
     case "verified": return "text-success";
+    case "computing": return "text-muted-foreground";
     case "pending": return "text-warning";
     case "failed": return "text-destructive";
     case "not_applicable": return "text-muted-foreground";
@@ -66,6 +75,8 @@ function CheckIcon({ status }: { status: CheckStatus }) {
   switch (status) {
     case "verified":
       return <CheckCircle2 className="h-5 w-5 text-success" />;
+    case "computing":
+      return <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />;
     case "pending":
       return <Clock className="h-5 w-5 text-warning" />;
     case "failed":
@@ -137,13 +148,19 @@ function Header({ onCopy, copied }: { onCopy: () => void; copied: boolean }) {
             )}
             {copied ? "Copied!" : "Share"}
           </Button>
-          <Link href="/verify">
+          {/* The only back affordance on this page. It used to be
+              `hidden md:inline-flex`, which left a phone reader with no way
+              back to the lookup at all. The icon carries the meaning below
+              `sm`, so the accessible name is set explicitly rather than
+              inherited from text that is not always rendered. */}
+          <Link href="/verify" aria-label="Back to receipt lookup">
             <Button
               variant="outline"
               size="sm"
-              className="hidden border-tileLine bg-tile text-foreground hover:bg-card hover:text-foreground md:inline-flex"
+              className="border-tileLine bg-tile text-foreground hover:bg-card hover:text-foreground"
             >
-              Verify another
+              <ArrowLeft className="h-4 w-4 sm:mr-2" aria-hidden="true" />
+              <span className="hidden sm:inline">Verify another</span>
             </Button>
           </Link>
         </div>
@@ -193,7 +210,11 @@ export function VerifyRecordNotFound() {
 /* ------------------------------------------------------------------ */
 
 function ProofCompletenessChecks({ record }: { record: PublicVerificationRecord }) {
-  const [integrityStatus, setIntegrityStatus] = useState<CheckStatus>("pending");
+  // "computing", not "pending". This component is server-rendered before the
+  // async fingerprint digest can run, so its initial state ships in the HTML.
+  // Starting at "pending" is what put "awaiting anchoring" next to a confirmed
+  // block number on every first paint.
+  const [integrityStatus, setIntegrityStatus] = useState<CheckStatus>("computing");
   const [fingerprintMatches, setFingerprintMatches] = useState<boolean | null>(null);
 
   useEffect(() => {
@@ -203,61 +224,38 @@ function ProofCompletenessChecks({ record }: { record: PublicVerificationRecord 
       return;
     }
 
+    let cancelled = false;
     computeReceiptFingerprint(record).then((computed) => {
+      if (cancelled) return;
       const frontendMatch = computed === record.receipt_fingerprint;
-      const nextSignatureCheck = signatureCheckStatus(record.signature_valid);
-      const nextPolicyHashCheck = policyHashCheckStatus(record.policy_hash);
-      const nextAnchorCheck = anchorCheckStatus(
-        record.tx_hash,
-        record.block_number,
-        record.integrity_status,
-      );
       setFingerprintMatches(frontendMatch);
       setIntegrityStatus(
         deriveIntegrityStatus(
-          nextSignatureCheck,
-          nextPolicyHashCheck,
-          nextAnchorCheck,
+          signatureCheckStatus(record.signature_valid),
+          policyHashCheckStatus(record.policy_hash),
+          anchorCheckStatus(record.tx_hash, record.block_number, record.integrity_status),
           frontendMatch,
           record.integrity_status,
         ),
       );
     }).catch(() => {
+      if (cancelled) return;
       setFingerprintMatches(false);
       setIntegrityStatus("failed");
     });
+    return () => {
+      cancelled = true;
+    };
   }, [record]);
 
   // Pure deterministic checks (see lib/proof-state.ts).
+  const isSandbox = record.integrity_status === "sandbox";
   const signatureCheck: CheckStatus = signatureCheckStatus(record.signature_valid);
   const policyHashCheck: CheckStatus = policyHashCheckStatus(record.policy_hash);
-  const anchorCheck: CheckStatus = anchorCheckStatus(
-    record.tx_hash,
-    record.block_number,
-    record.integrity_status,
-  );
-  const anchorLabel: string =
-    record.integrity_status === "sandbox"
-      ? "Sandbox — not anchored on-chain"
-      : anchorCheck === "failed"
-      ? "Anchor proof failed"
-      : anchorCheck === "verified"
-      ? "Confirmed on-chain"
-      : record.tx_hash != null
-      ? "Transaction submitted"
-      : "Awaiting anchoring";
-  const integrityLabel: string =
-    fingerprintMatches === false
-      ? "Fingerprint mismatch; receipt may be tampered"
-      : record.integrity_status === "sandbox"
-      ? "Sandbox receipt; signed & verifiable, not anchored"
-      : record.integrity_status === "failed"
-      ? "Anchor proof failed; receipt fingerprint still matches"
-      : integrityStatus === "verified"
-      ? "Fingerprint matches; receipt is intact"
-      : integrityStatus === "pending"
-      ? "Fingerprint matches; awaiting anchoring"
-      : "Verifying integrity...";
+  const anchorCheck: CheckStatus = isSandbox
+    ? "not_applicable"
+    : anchorCheckStatus(record.tx_hash, record.block_number, record.integrity_status);
+  const integrityCheck: CheckStatus = isSandbox ? "not_applicable" : integrityStatus;
 
   // Schema version gate
   if (!isSupportedSchemaVersion(record.schema_version)) {
@@ -275,7 +273,10 @@ function ProofCompletenessChecks({ record }: { record: PublicVerificationRecord 
     {
       label: "Ed25519 signature",
       status: signatureCheck,
-      sublabel: signatureCheck === "verified" ? "Cryptographic signature valid" : "Signature verification failed",
+      sublabel:
+        signatureCheck === "verified"
+          ? "Cryptographic signature valid"
+          : "Signature verification failed",
     },
     {
       label: "Policy hash",
@@ -289,34 +290,76 @@ function ProofCompletenessChecks({ record }: { record: PublicVerificationRecord 
     },
     {
       label: "On-chain anchor",
-      status: record.integrity_status === "sandbox" ? "not_applicable" : anchorCheck,
-      sublabel: anchorLabel,
+      status: anchorCheck,
+      sublabel: anchorDetailLabel(anchorCheck, record.tx_hash),
     },
     {
       label: "Receipt integrity",
-      status: record.integrity_status === "sandbox" ? "not_applicable" : integrityStatus,
-      sublabel: integrityLabel,
+      // Derived from the same anchor status the row above renders, so the two
+      // rows cannot contradict each other. Asserted in proof-state.test.ts.
+      status: integrityCheck,
+      sublabel: integrityDetailLabel(
+        integrityCheck,
+        anchorCheck,
+        fingerprintMatches,
+        record.integrity_status,
+      ),
     },
   ];
 
+  const rollup = proofRollup(checks.map((c) => c.status));
+  const showAnchorWait = anchorCheck === "pending";
+
   return (
     <section className="mt-5 rounded-[28px] border border-tileLine bg-tile p-6 md:p-8">
-      <div className="flex items-center gap-3 mb-5">
+      <div className="mb-5 flex flex-wrap items-center gap-3">
         <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-tileLine bg-card text-brandInk">
           <ShieldCheck className="h-5 w-5" />
         </div>
-        <div>
+        <div className="min-w-0 flex-1">
           <h3 className="text-lg font-semibold">Proof completeness</h3>
           <p className="text-xs text-muted-foreground">
             Independent verification of receipt integrity
           </p>
         </div>
+        {/* Rollup, derived from the rows below rather than hardcoded, so the
+            reader is not left adjudicating a mixed panel. */}
+        <span
+          className={`inline-flex shrink-0 items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold ${
+            rollup.status === "verified"
+              ? "border-success/30 bg-success/10 text-success"
+              : rollup.status === "failed"
+              ? "border-destructive/30 bg-destructive/10 text-destructive"
+              : rollup.status === "pending"
+              ? "border-warning/30 bg-warning/10 text-warning"
+              : "border-tileLine bg-card text-muted-foreground"
+          }`}
+        >
+          <CheckIcon status={rollup.status} />
+          {rollup.label}
+        </span>
       </div>
 
-      {record.integrity_status === "sandbox" && (
+      {isSandbox && (
         <div className="mb-5 rounded-2xl border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-warning">
           Sandbox receipt — this decision is cryptographically signed and
           independently verifiable, but is not anchored on-chain.
+        </div>
+      )}
+
+      {/* A genuinely un-anchored receipt. Say what is being waited on and for
+          roughly how long, rather than leaving an unexplained PENDING for an
+          auditor to assume the worst about. */}
+      {showAnchorWait && (
+        <div className="mb-5 rounded-2xl border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-warning">
+          <p className="font-medium">Anchoring in progress</p>
+          <p className="mt-1 leading-6">
+            The signature and policy hash are already verifiable. Receipts are
+            batched into a Merkle tree and anchored to Base L2 every{" "}
+            {ANCHOR_CADENCE_MINUTES} minutes, so this receipt&rsquo;s on-chain
+            proof is expected shortly. Nothing about the signed decision changes
+            when the anchor lands.
+          </p>
         </div>
       )}
 
@@ -336,6 +379,74 @@ function ProofCompletenessChecks({ record }: { record: PublicVerificationRecord 
             </span>
           </div>
         ))}
+      </div>
+    </section>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Terminal CTA                                                       */
+/* ------------------------------------------------------------------ */
+
+/** Action types produced by the CI/CD guard rather than the payment path. */
+const CI_ACTION_TYPES = new Set(["code_change", "pull_request", "ci_check"]);
+
+function ConversionCta({ actionType }: { actionType: string }) {
+  if (CI_ACTION_TYPES.has(actionType)) {
+    return (
+      <section className="mt-8 rounded-[28px] border border-primary/20 bg-gradient-to-b from-primary/8 to-tile p-8 text-center">
+        <h2 className="text-2xl font-semibold tracking-tight">
+          Run this check on your own pull requests
+        </h2>
+        <p className="mx-auto mt-3 max-w-md text-base leading-7 text-muted-foreground">
+          The GitHub Actions example shows how{" "}
+          <code className="font-mono text-brandInk">inntris-verify</code> runs as
+          a required status check and records a receipt like this one.
+        </p>
+        <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
+          <Link href="/ai-pr-protection">
+            <Button
+              variant="outline"
+              className="border-tileLine bg-tile text-foreground hover:bg-card hover:text-foreground"
+            >
+              Learn more
+            </Button>
+          </Link>
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <section className="mt-8 rounded-[28px] border border-primary/20 bg-gradient-to-b from-primary/8 to-tile p-8 text-center">
+      <h2 className="text-2xl font-semibold tracking-tight">
+        Verify this receipt yourself
+      </h2>
+      <p className="mx-auto mt-3 max-w-lg text-base leading-7 text-muted-foreground">
+        Everything above can be checked without trusting this page.{" "}
+        <code className="font-mono text-brandInk">inntris-verify</code> recomputes
+        the receipt fingerprint, checks the Ed25519 signature against a pinned
+        public key and confirms Merkle inclusion under the anchored root.
+      </p>
+      <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
+        <a
+          href={VERIFIER_REPO_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          <Button className="bg-primary text-white hover:bg-brandInk">
+            <ExternalLink className="h-4 w-4 mr-2" aria-hidden="true" />
+            Verify independently
+          </Button>
+        </a>
+        <Link href={PILOT_HREF}>
+          <Button
+            variant="outline"
+            className="border-tileLine bg-tile text-foreground hover:bg-card hover:text-foreground"
+          >
+            {PILOT_CTA_LABEL}
+          </Button>
+        </Link>
       </div>
     </section>
   );
@@ -419,7 +530,7 @@ export function VerifyRecordView({ record }: { record: PublicVerificationRecord 
             </span>
             <span className="inline-flex items-center gap-1.5 rounded-full border border-tileLine bg-card px-3 py-1 text-xs text-muted-foreground">
               <Clock className="h-3 w-3" />
-              {formatDateTime(record.timestamp)}
+              {formatUtcTimestamp(record.timestamp)}
             </span>
           </div>
         </section>
@@ -441,7 +552,9 @@ export function VerifyRecordView({ record }: { record: PublicVerificationRecord 
                   <p className="text-sm font-medium">{record.agent_name}</p>
                 </div>
                 <div>
-                  <p className="text-xs text-muted-foreground">Organization</p>
+                  {/* UI label only. The wire field stays `organization_name`
+                      — it is inside the signed record. */}
+                  <p className="text-xs text-muted-foreground">Organisation</p>
                   <p className="text-sm font-medium">{record.organization_name}</p>
                 </div>
                 <div>
@@ -488,7 +601,9 @@ export function VerifyRecordView({ record }: { record: PublicVerificationRecord 
                         {record.risk_level}
                       </span>
                     ) : (
-                      <span className="text-muted-foreground">—</span>
+                      <span className="text-sm text-muted-foreground">
+                        Not scored for this action type
+                      </span>
                     )}
                   </p>
                 </div>
@@ -606,9 +721,11 @@ export function VerifyRecordView({ record }: { record: PublicVerificationRecord 
               <div className="rounded-2xl border border-tileLine bg-card/70 p-4">
                 <p className="text-xs text-muted-foreground mb-1">Block</p>
                 <p className="text-sm font-mono text-foreground">
-                  {record.block_number == null
-                    ? "—"
-                    : blockNumberFormatter.format(record.block_number)}
+                  {record.block_number == null ? (
+                    <span className="text-muted-foreground">Not yet anchored</span>
+                  ) : (
+                    blockNumberFormatter.format(record.block_number)
+                  )}
                 </p>
               </div>
               <div className="rounded-2xl border border-tileLine bg-card/70 p-4">
@@ -620,7 +737,11 @@ export function VerifyRecordView({ record }: { record: PublicVerificationRecord 
               <div className="rounded-2xl border border-tileLine bg-card/70 p-4">
                 <p className="text-xs text-muted-foreground mb-1">Anchored</p>
                 <p className="text-sm font-mono text-foreground">
-                  {record.anchored_at ? formatDateTime(record.anchored_at) : "Pending"}
+                  {record.anchored_at ? (
+                    formatUtcTimestamp(record.anchored_at)
+                  ) : (
+                    <span className="text-muted-foreground">Not yet anchored</span>
+                  )}
                 </p>
               </div>
             </div>
@@ -642,40 +763,16 @@ export function VerifyRecordView({ record }: { record: PublicVerificationRecord 
         {/* ============================================================ */}
         {/* 5. ConversionCTA                                             */}
         {/* ============================================================ */}
-        <section className="mt-8 rounded-[28px] border border-primary/20 bg-gradient-to-b from-primary/8 to-tile p-8 text-center">
-          <h2 className="text-2xl font-semibold tracking-tight">
-            Want PR protection for AI agent changes?
-          </h2>
-          <p className="mx-auto mt-3 max-w-md text-base leading-7 text-muted-foreground">
-            View the GitHub Actions example for PR protection. It shows how{" "}
-            <code className="font-mono text-brandInk">inntris-verify</code>{" "}
-            runs as a required status check and records a PASS or BLOCK receipt.
-          </p>
-          <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
-            <Link href="/ai-pr-protection">
-              <Button
-                variant="outline"
-                className="border-tileLine bg-tile text-foreground hover:bg-card hover:text-foreground"
-              >
-                Learn more
-              </Button>
-            </Link>
-          </div>
-        </section>
+        {/* The reader is mid-inspection of this receipt. The next step is the
+            one their own story implies — check it independently — not a
+            different product. Routing is on the receipt's action type, which
+            is already on the record: a CI/CD receipt keeps the PR-protection
+            path, everything else gets the verifier. */}
+        <ConversionCta actionType={record.action_type} />
       </main>
 
       {/* Footer */}
-      <footer className="border-t border-tileLine mt-12">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-8 lg:px-8">
-          <div className="flex items-center gap-2">
-            <InntrisLogo className="h-5 w-5" />
-            <span className="text-muted-foreground">Inntris Core</span>
-          </div>
-          <p className="text-sm text-muted-foreground">
-            Cryptographic verification for AI agents
-          </p>
-        </div>
-      </footer>
+      <SiteFooter className="mt-12 border-tileLine" />
     </div>
   );
 }

@@ -58,7 +58,7 @@ function AgentsContent() {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Agent Registry</h1>
-          <p className="text-sm text-muted-foreground">All registered agents in your organization</p>
+          <p className="text-sm text-muted-foreground">All registered agents in your organisation</p>
         </div>
         <Button onClick={() => setShowRegisterDialog(true)} className="self-start">
           <Plus className="h-4 w-4 mr-2" />
@@ -296,7 +296,7 @@ function RegisterAgentDialog({
         <DialogHeader>
           <DialogTitle>Register Agent</DialogTitle>
           <DialogDescription>
-            Onboard an agent in this organization. The agent operator generates
+            Onboard an agent in this organisation. The agent operator generates
             an Ed25519 keypair locally and supplies the public key here — Inntris
             never sees the private key.
           </DialogDescription>

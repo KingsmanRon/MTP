@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { InntrisLogo } from "@/components/inntris-logo";
 import { MobileMenu } from "@/components/mobile-menu";
+import { SiteFooter } from "@/components/site-footer";
 
 const features = [
   {
@@ -209,19 +210,7 @@ export default function VerifyLandingPage() {
         </section>
       </main>
 
-      <footer className="border-t border-tileLine">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-8 lg:px-8">
-          <div className="flex items-center gap-2">
-            <InntrisLogo className="h-5 w-5" />
-            <span className="text-muted-foreground">Inntris Core</span>
-          </div>
-          <div className="flex items-center gap-6 text-muted-foreground">
-            <Link href="/" className="text-sm transition-colors hover:text-foreground">Home</Link>
-            <Link href="/docs" className="text-sm transition-colors hover:text-foreground">Docs</Link>
-            <Link href="/verify" className="text-sm transition-colors hover:text-foreground">Verify</Link>
-          </div>
-        </div>
-      </footer>
+      <SiteFooter className="border-tileLine" />
     </div>
   );
 }
