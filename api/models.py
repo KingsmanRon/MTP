@@ -470,6 +470,32 @@ class UpdateAgentRequest(BaseModel):
     ) -> list[str] | None:
         return _validate_action_list(values, field_name=info.field_name or "")
 
+    @field_validator("metadata")
+    @classmethod
+    def validate_wallet_policy_metadata(
+        cls, value: dict[str, Any] | None
+    ) -> dict[str, Any] | None:
+        """Reject a structurally invalid ``wallet_policy`` at write time.
+
+        The authoritative fail-closed behaviour lives in the policy engine — a
+        malformed policy blocks wallet actions however it got into the metadata
+        bag. Validating here as well means an operator finds out when they set
+        the policy rather than when a transaction is unexpectedly denied.
+
+        Imported locally: ``api.policy`` imports from this module, so a
+        top-level import would be circular.
+        """
+        if value is None or "wallet_policy" not in value:
+            return value
+
+        from api.policy import WalletPolicyError, validate_wallet_policy
+
+        try:
+            validate_wallet_policy(value["wallet_policy"])
+        except WalletPolicyError as exc:
+            raise ValueError(str(exc)) from exc
+        return value
+
     @model_validator(mode="after")
     def validate_policy_consistency(self) -> "UpdateAgentRequest":
         for field_name in (
