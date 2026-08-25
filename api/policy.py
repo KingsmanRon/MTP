@@ -16,6 +16,7 @@ from enum import Enum
 from typing import Any
 
 from api.models import ActionVerdict, AgentRecord, AgentStatus, RegisteredPolicy
+from api.observability import spend_check_skipped_total
 
 logger = logging.getLogger(__name__)
 
@@ -164,6 +165,9 @@ class PolicyViolation(Enum):
     AMOUNT_INVALID = "amount_invalid"
     POLICY_HASH_MISMATCH = "policy_hash_mismatch"
     ACTION_TYPE_DOWNGRADE = "action_type_downgrade"
+    ACTION_TYPE_UNKNOWN = "action_type_unknown"
+    WALLET_POLICY_MISSING = "wallet_policy_missing"
+    WALLET_RECIPIENT_NOT_ALLOWED = "wallet_recipient_not_allowed"
 
 
 @dataclass
@@ -206,10 +210,24 @@ class PolicyEngine:
     # rather than falling through to a later field.
     AMOUNT_FIELDS: tuple = ("amount", "amount_usd", "value", "total")
 
+    # Action types gated by the agent's registered wallet policy. Every
+    # action named here requires ``metadata.wallet_policy.allowed_recipients``
+    # on the agent; there is no configuration under which one of these
+    # approves a recipient the operator did not name.
+    WALLET_ACTIONS: frozenset = frozenset({
+        "wallet_transaction",
+    })
+
+    # Payload fields that may carry the counterparty, in priority order.
+    # The first field present wins. A wallet action with none of them has
+    # no recipient to match against the allowlist and is blocked.
+    WALLET_RECIPIENT_FIELDS: tuple = ("recipient", "to_address", "to", "destination")
+
     # Runtime actions: PASS/BLOCK/ESCALATE semantics.
     # The caller is asking the system to authorize a live operation.
     TRUST_THRESHOLDS = {
         "financial_transaction": 30,
+        "wallet_transaction": 30,
         "email_send": 20,
         "api_call": 10,
         "tool_call": 10,
@@ -276,6 +294,14 @@ class PolicyEngine:
         if not action_result.allowed:
             return action_result
 
+        # 2a. Check the action type is one the engine actually governs.
+        # An action type absent from both policy tables has no threshold
+        # and no spend rule, so approving it would mean approving something
+        # nothing has evaluated. Registration is what makes an action real.
+        registered_result = self._check_action_registered(action_type)
+        if not registered_result.allowed:
+            return registered_result
+
         # 2b. Policy binding (Tier A): the server, not the client-asserted
         # action_type, decides the minimum risk class. Rejects a mismatched
         # policy hash or a downgrade of a code/release change.
@@ -300,6 +326,11 @@ class PolicyEngine:
         if not rate_result.allowed:
             return rate_result
 
+        # 5b. Check the wallet recipient allowlist for wallet actions.
+        wallet_result = self._check_wallet_policy(agent, action_type, payload)
+        if not wallet_result.allowed:
+            return wallet_result
+
         # 6. Check spending limits (for amount-bearing actions). Fail closed:
         # a malformed amount, or a missing amount on an action type that
         # requires one, is blocked rather than treated as $0.
@@ -323,6 +354,20 @@ class PolicyEngine:
                     f"(one of: {', '.join(self.AMOUNT_FIELDS)})."
                 ),
             )
+
+        if (
+            amount is None
+            and action_type not in self.AMOUNT_REQUIRED_ACTIONS
+            and action_type not in self.ATTESTATION_ACTIONS
+        ):
+            # AMOUNT_REQUIRED_ACTIONS names only financial_transaction, so every
+            # other runtime action with no amount field skips the spend caps
+            # entirely. Widening that set would change behaviour for action
+            # types that work today, so count what a wider set would have
+            # denied and decide separately with the data. Counted rather than
+            # logged: /verify is the hot path, and the question this answers is
+            # "which action types, how often", not "which request".
+            spend_check_skipped_total.labels(action_type=action_type).inc()
 
         if amount is not None:
             spend_result = self._check_spending_limits(agent, amount)
@@ -435,6 +480,28 @@ class PolicyEngine:
 
         return PolicyResult(allowed=True, verdict=ActionVerdict.APPROVED)
 
+    def _check_action_registered(self, action_type: str) -> PolicyResult:
+        """Verify the action type is one this engine governs.
+
+        ``allowed_actions`` is operator-supplied, so before the schema layer
+        validated it a typo like ``wallet_transactions`` (plural) minted a live
+        action type that no policy table named. Such a type matched no trust
+        threshold and no spend rule, and so passed every check by being unknown
+        to all of them. Unregistered types are now denied at the gate.
+        """
+        if action_type in KNOWN_ACTION_TYPES:
+            return PolicyResult(allowed=True, verdict=ActionVerdict.APPROVED)
+
+        return PolicyResult(
+            allowed=False,
+            verdict=ActionVerdict.BLOCKED,
+            violation=PolicyViolation.ACTION_TYPE_UNKNOWN,
+            reason=(
+                f"Action type '{action_type}' is not a registered action type. "
+                "Registered types: " + ", ".join(sorted(KNOWN_ACTION_TYPES)) + "."
+            ),
+        )
+
     def _check_trust_score(
         self,
         agent: AgentRecord,
@@ -450,7 +517,22 @@ class PolicyEngine:
         if action_type in self.ATTESTATION_ACTIONS:
             return PolicyResult(allowed=True, verdict=ActionVerdict.APPROVED)
 
-        threshold = self.TRUST_THRESHOLDS.get(action_type, 20)
+        # No permissive fallback: an action type with no registered
+        # threshold is denied rather than gated at an invented default.
+        # ``_check_action_registered`` already rejects these upstream; this
+        # is the second lock on the same door, so a future caller that
+        # reaches the trust check by another route still fails closed.
+        threshold = self.TRUST_THRESHOLDS.get(action_type)
+        if threshold is None:
+            return PolicyResult(
+                allowed=False,
+                verdict=ActionVerdict.BLOCKED,
+                violation=PolicyViolation.ACTION_TYPE_UNKNOWN,
+                reason=(
+                    f"Action type '{action_type}' has no registered trust "
+                    "threshold and cannot be authorized."
+                ),
+            )
 
         if agent.trust_score < threshold:
             return PolicyResult(
@@ -490,6 +572,96 @@ class PolicyEngine:
             )
 
         return PolicyResult(allowed=True, verdict=ActionVerdict.APPROVED)
+
+    def _check_wallet_policy(
+        self,
+        agent: AgentRecord,
+        action_type: str,
+        payload: dict[str, Any],
+    ) -> PolicyResult:
+        """Check a wallet action's recipient against the agent's allowlist.
+
+        Fails closed at every step. A missing ``metadata.wallet_policy``, a
+        policy naming no ``allowed_recipients``, a payload carrying no
+        recipient, and a recipient absent from the allowlist all block. The
+        absence of a policy is not the absence of a rule — it is the absence
+        of permission.
+        """
+        if action_type not in self.WALLET_ACTIONS:
+            return PolicyResult(allowed=True, verdict=ActionVerdict.APPROVED)
+
+        wallet_policy = (agent.metadata or {}).get("wallet_policy")
+        if not isinstance(wallet_policy, dict) or "allowed_recipients" not in wallet_policy:
+            return PolicyResult(
+                allowed=False,
+                verdict=ActionVerdict.BLOCKED,
+                violation=PolicyViolation.WALLET_POLICY_MISSING,
+                reason=(
+                    f"Action '{action_type}' requires a wallet policy: the agent's "
+                    "metadata.wallet_policy.allowed_recipients is not configured."
+                ),
+            )
+
+        raw_allowlist = wallet_policy["allowed_recipients"]
+        if not isinstance(raw_allowlist, list):
+            return PolicyResult(
+                allowed=False,
+                verdict=ActionVerdict.BLOCKED,
+                violation=PolicyViolation.WALLET_POLICY_MISSING,
+                reason=(
+                    "metadata.wallet_policy.allowed_recipients must be a list of "
+                    f"recipient addresses (got {type(raw_allowlist).__name__})."
+                ),
+            )
+
+        # Non-string entries are dropped rather than coerced: a malformed
+        # allowlist entry must never widen the set of approved recipients.
+        allowlist = {
+            entry.strip().lower()
+            for entry in raw_allowlist
+            if isinstance(entry, str) and entry.strip()
+        }
+
+        recipient = self._extract_recipient(payload)
+        if recipient is None:
+            return PolicyResult(
+                allowed=False,
+                verdict=ActionVerdict.BLOCKED,
+                violation=PolicyViolation.WALLET_RECIPIENT_NOT_ALLOWED,
+                reason=(
+                    f"Action '{action_type}' carries no recipient "
+                    f"(one of: {', '.join(self.WALLET_RECIPIENT_FIELDS)}), so it "
+                    "cannot be matched against the allowlist."
+                ),
+            )
+
+        if recipient.strip().lower() not in allowlist:
+            return PolicyResult(
+                allowed=False,
+                verdict=ActionVerdict.BLOCKED,
+                violation=PolicyViolation.WALLET_RECIPIENT_NOT_ALLOWED,
+                reason=(
+                    f"Recipient '{recipient}' is not in the agent's wallet policy "
+                    "allowlist."
+                ),
+            )
+
+        return PolicyResult(allowed=True, verdict=ActionVerdict.APPROVED)
+
+    def _extract_recipient(self, payload: dict[str, Any]) -> str | None:
+        """Return the counterparty from the payload, or None if absent.
+
+        Mirrors ``_extract_amount``: first recognized field wins. A field
+        present but not a non-empty string yields None, which blocks.
+        """
+        for field in self.WALLET_RECIPIENT_FIELDS:
+            if field not in payload:
+                continue
+            raw = payload[field]
+            if isinstance(raw, str) and raw.strip():
+                return raw
+            return None
+        return None
 
     def _check_spending_limits(
         self,
@@ -661,3 +833,14 @@ class TrustScorer:
             new_score = max(new_score, TrustScorer.BASE_SCORE)
 
         return max(0, min(100, int(new_score)))
+
+
+# The canonical set of action types the system recognises: everything with a
+# registered trust threshold, plus the attestation actions that are exempt from
+# trust gating by design. The admin write path validates ``allowed_actions``
+# against this set, and ``PolicyEngine._check_action_registered`` denies
+# anything outside it, so an action type cannot be admitted at one layer and
+# unknown at the other.
+KNOWN_ACTION_TYPES: frozenset[str] = frozenset(
+    PolicyEngine.TRUST_THRESHOLDS
+) | PolicyEngine.ATTESTATION_ACTIONS
