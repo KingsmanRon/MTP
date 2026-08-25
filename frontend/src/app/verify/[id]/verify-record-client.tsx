@@ -488,7 +488,9 @@ export function VerifyRecordView({ record }: { record: PublicVerificationRecord 
                         {record.risk_level}
                       </span>
                     ) : (
-                      <span className="text-muted-foreground">—</span>
+                      <span className="text-sm font-normal text-muted-foreground">
+                        Not assessed
+                      </span>
                     )}
                   </p>
                 </div>
@@ -542,7 +544,9 @@ export function VerifyRecordView({ record }: { record: PublicVerificationRecord 
             <div>
               <h3 className="text-lg font-semibold">On-chain proof</h3>
               <p className="text-xs text-muted-foreground">
-                Anchored to Base L2 via Merkle tree
+                {record.tx_hash
+                  ? "Anchored to Base L2 via Merkle tree"
+                  : "Awaiting the next Base L2 anchor batch"}
               </p>
             </div>
           </div>
@@ -583,6 +587,12 @@ export function VerifyRecordView({ record }: { record: PublicVerificationRecord 
               <code className="text-sm font-mono text-brandInk break-all">
                 {record.merkle_root ?? "Pending…"}
               </code>
+              {record.merkle_root && record.merkle_root === record.action_hash && (
+                <p className="mt-2 text-xs text-muted-foreground">
+                  This batch contains a single action, so the Merkle root is that
+                  action&rsquo;s hash. Larger batches produce a distinct root.
+                </p>
+              )}
             </div>
 
             {/* action_hash */}
@@ -607,7 +617,7 @@ export function VerifyRecordView({ record }: { record: PublicVerificationRecord 
                 <p className="text-xs text-muted-foreground mb-1">Block</p>
                 <p className="text-sm font-mono text-foreground">
                   {record.block_number == null
-                    ? "—"
+                    ? "Pending"
                     : blockNumberFormatter.format(record.block_number)}
                 </p>
               </div>
