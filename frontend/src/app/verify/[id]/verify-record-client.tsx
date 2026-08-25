@@ -93,7 +93,7 @@ function CopyableHash({ value, label }: { value: string; label?: string }) {
       </code>
       <button
         onClick={handleCopy}
-        className="flex-shrink-0 p-1 rounded hover:bg-tile transition-colors"
+        className="flex-shrink-0 rounded p-1 transition-[transform,background-color] duration-100 ease-out hover:bg-tile active:scale-[0.88] active:bg-tile motion-reduce:transition-none motion-reduce:active:scale-100"
         title="Copy to clipboard"
       >
         {copied ? (
@@ -112,7 +112,7 @@ function CopyableHash({ value, label }: { value: string; label?: string }) {
 
 function Header({ onCopy, copied }: { onCopy: () => void; copied: boolean }) {
   return (
-    <header className="sticky top-0 z-20 border-b border-tileLine bg-background/85 backdrop-blur">
+    <header className="sticky top-0 z-20 border-b border-tileLine/60 bg-background/75 backdrop-blur-xl backdrop-saturate-150 supports-[backdrop-filter]:bg-background/70">
       <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4 lg:px-8">
         <Link href="/" className="flex items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-tileLine bg-tile">
@@ -355,6 +355,13 @@ export function VerifyRecordView({ record }: { record: PublicVerificationRecord 
 
   const isPass = isPassVerdict(record.verdict);
   const isEscalate = isEscalateVerdict(record.verdict);
+
+  // The headline already states the reason. Repeating it verbatim under
+  // "Violations" reads as a rendering fault rather than as emphasis, so the
+  // list carries only what the headline has not already said.
+  const additionalViolations = record.violations.filter(
+    (v) => v.trim() !== (record.verdict_reason ?? "").trim()
+  );
   const baseScanDomain = "https://basescan.org";
   const baseScanUrl = record.tx_hash
     ? `${baseScanDomain}/tx/${record.tx_hash}`
@@ -398,20 +405,20 @@ export function VerifyRecordView({ record }: { record: PublicVerificationRecord 
 
           {/* Verdict text */}
           <h1
-            className={`text-4xl font-bold tracking-tight mb-2 ${
+            className={`text-4xl font-bold tracking-[-0.03em] leading-[1.05] mb-2 ${
               isPass ? "text-success" : isEscalate ? "text-warning" : "text-destructive"
             }`}
           >
             {verdictLabel(record.verdict)}
           </h1>
-          <p className="text-muted-foreground mb-4">
+          <p className="mx-auto mb-4 max-w-[52ch] break-words leading-relaxed text-muted-foreground">
             {record.verdict_reason ?? (isPass ? "All policy checks passed" : "Policy violation detected")}
           </p>
 
           {/* Badges */}
           <div className="flex flex-wrap items-center justify-center gap-2">
             <span
-              className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-medium font-mono ${actionBadgeColor(
+              className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-medium font-mono tracking-[0.02em] ${actionBadgeColor(
                 record.action_type
               )}`}
             >
@@ -512,17 +519,19 @@ export function VerifyRecordView({ record }: { record: PublicVerificationRecord 
                     )}
                   </span>
                 </div>
-                {record.violations.length > 0 && (
+                {additionalViolations.length > 0 && (
                   <div>
-                    <p className="text-xs text-muted-foreground mb-1.5">Violations</p>
+                    <p className="text-xs tracking-[0.01em] text-muted-foreground mb-1.5">
+                      {record.verdict_reason ? "Further violations" : "Violations"}
+                    </p>
                     <ul className="space-y-1">
-                      {record.violations.map((v, i) => (
+                      {additionalViolations.map((v, i) => (
                         <li
                           key={i}
-                          className="flex items-start gap-2 text-sm text-destructive"
+                          className="flex items-start gap-2 text-sm leading-relaxed text-destructive"
                         >
                           <XOctagon className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
-                          {v}
+                          <span className="break-words">{v}</span>
                         </li>
                       ))}
                     </ul>
