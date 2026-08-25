@@ -10,7 +10,14 @@ from enum import StrEnum
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationInfo,
+    field_validator,
+    model_validator,
+)
 
 
 class BillingTier(StrEnum):
@@ -308,6 +315,52 @@ class VerifyDebugResponse(BaseModel):
     note: str = Field(..., description="How to use this diagnostic")
 
 
+def _validate_action_list(
+    values: list[str] | None,
+    *,
+    field_name: str,
+) -> list[str] | None:
+    """Normalize an action-type list and reject unregistered types.
+
+    Shared by the agent create and update paths. ``allowed_actions`` is checked
+    against the engine's registry: admitting a type no policy table names used
+    to mint an action that every check passed by being unknown to all of them,
+    so a single operator typo became a live approving action type.
+
+    ``blocked_actions`` is only format-checked. Blocking a string the engine
+    does not recognise is harmless — unregistered types are denied anyway — and
+    rejecting it here would break operators who defensively blocklist names.
+
+    The import is deferred because ``api.policy`` imports this module.
+    """
+    if values is None:
+        return None
+
+    from api.policy import KNOWN_ACTION_TYPES
+
+    normalized: list[str] = []
+    for value in values:
+        action = value.strip().lower()
+        if not action or len(action) > 100 or not action.replace("_", "").isalnum():
+            raise ValueError(
+                "action types must be 1-100 characters using letters, numbers, and underscores"
+            )
+        if action not in normalized:
+            normalized.append(action)
+
+    if field_name == "allowed_actions":
+        unknown = sorted(set(normalized) - KNOWN_ACTION_TYPES)
+        if unknown:
+            raise ValueError(
+                "unknown action types: "
+                + ", ".join(unknown)
+                + ". Allowed: "
+                + ", ".join(sorted(KNOWN_ACTION_TYPES))
+            )
+
+    return normalized
+
+
 class RegisterAgentRequest(BaseModel):
     """Request to register a new agent with the platform."""
     # UPDATED: strict=False allows JSON strings to be parsed into Types (UUID, Decimal)
@@ -338,6 +391,13 @@ class RegisterAgentRequest(BaseModel):
         description="List of allowed action types"
     )
     metadata: dict[str, Any] = Field(default_factory=dict, description="Additional metadata")
+
+    @field_validator("allowed_actions")
+    @classmethod
+    def validate_allowed_actions(
+        cls, values: list[str], info: ValidationInfo
+    ) -> list[str]:
+        return _validate_action_list(values, field_name=info.field_name or "") or []
 
 
 class RotateAgentKeyRequest(BaseModel):
@@ -405,20 +465,36 @@ class UpdateAgentRequest(BaseModel):
 
     @field_validator("allowed_actions", "blocked_actions")
     @classmethod
-    def validate_action_lists(cls, values: list[str] | None) -> list[str] | None:
-        if values is None:
-            return None
+    def validate_action_lists(
+        cls, values: list[str] | None, info: ValidationInfo
+    ) -> list[str] | None:
+        return _validate_action_list(values, field_name=info.field_name or "")
 
-        normalized: list[str] = []
-        for value in values:
-            action = value.strip().lower()
-            if not action or len(action) > 100 or not action.replace("_", "").isalnum():
-                raise ValueError(
-                    "action types must be 1-100 characters using letters, numbers, and underscores"
-                )
-            if action not in normalized:
-                normalized.append(action)
-        return normalized
+    @field_validator("metadata")
+    @classmethod
+    def validate_wallet_policy_metadata(
+        cls, value: dict[str, Any] | None
+    ) -> dict[str, Any] | None:
+        """Reject a structurally invalid ``wallet_policy`` at write time.
+
+        The authoritative fail-closed behaviour lives in the policy engine — a
+        malformed policy blocks wallet actions however it got into the metadata
+        bag. Validating here as well means an operator finds out when they set
+        the policy rather than when a transaction is unexpectedly denied.
+
+        Imported locally: ``api.policy`` imports from this module, so a
+        top-level import would be circular.
+        """
+        if value is None or "wallet_policy" not in value:
+            return value
+
+        from api.policy import WalletPolicyError, validate_wallet_policy
+
+        try:
+            validate_wallet_policy(value["wallet_policy"])
+        except WalletPolicyError as exc:
+            raise ValueError(str(exc)) from exc
+        return value
 
     @model_validator(mode="after")
     def validate_policy_consistency(self) -> "UpdateAgentRequest":

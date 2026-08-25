@@ -229,6 +229,15 @@ if _HAS_PROMETHEUS:
         "dependency (Redis) was unavailable. Any increase is an outage.",
         ["component"],  # abuse_limiter | agent_limiter | signature_slots | nonce_cache
     )
+    spend_check_skipped_total = Counter(
+        "inntris_spend_check_skipped_total",
+        "Total policy evaluations where the payload carried no amount and the "
+        "action type is absent from AMOUNT_REQUIRED_ACTIONS, so the daily and "
+        "per-action spend caps were not applied. Shadow signal for deciding "
+        "which action types should require an amount; no traffic is denied on "
+        "account of it.",
+        ["action_type"],
+    )
 else:  # pragma: no cover — exercised in stub mode
     verify_requests_total = _NoopMetric()
     signature_failures_total = _NoopMetric()
@@ -247,6 +256,7 @@ else:  # pragma: no cover — exercised in stub mode
     verify_latency_seconds = _NoopMetric()
     verify_stage_latency_seconds = _NoopMetric()
     verify_unavailable_total = _NoopMetric()
+    spend_check_skipped_total = _NoopMetric()
 
 
 async def metrics_endpoint() -> Response:
