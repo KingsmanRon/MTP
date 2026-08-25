@@ -134,6 +134,54 @@ ORDER BY created_at DESC;
 
 The second query must return zero.
 
+### 3a. WalletConnect Wallet Rail (negative probe)
+
+Run this after every Core deploy that touches the wallet rail, and before any
+demo capture or public claim about wallet authorisation. Repository
+configuration is not proof that the allowlist is enforced on the running build.
+
+- [ ] A `wallet_transaction` for a recipient **not** on the agent's allowlist is
+      denied with `violation_code: wallet_recipient_not_allowed`.
+- [ ] The same transaction for an allowlisted recipient is approved, so the
+      denial above is the allowlist doing its job rather than a blanket failure.
+- [ ] A `wallet_transaction` on a chain outside `allowed_chains` is denied with
+      `wallet_chain_not_allowed`.
+- [ ] The agent's `metadata.wallet_policy` was read back after the `PATCH` that
+      set it, and the chain key in the allowlist matches the chain the probe
+      submits. A recipient allowlist is keyed by CAIP-2 chain, so a mismatched
+      key silently applies no recipient restriction.
+
+```bash
+export INNTRIS_CORE_URL=https://api.inntris.com
+export INNTRIS_AGENT_ID=<uuid>
+export INNTRIS_PRIVATE_KEY_B64=<base64 32-byte Ed25519 seed>
+
+python scripts/wallet_gate1_probe.py \
+    --chain eip155:8453 \
+    --recipient 0x9999999999999999999999999999999999999999
+```
+
+The probe exits `0` only on `wallet_recipient_not_allowed`. Read its other exit
+codes as stop conditions, not as noise:
+
+| Exit | Result | Meaning | Action |
+| --- | --- | --- | --- |
+| 0 | `403 wallet_recipient_not_allowed` | Enforcement is live | Proceed |
+| 3 | Approved | The wallet policy check is not on the deployed build, or the agent has no `wallet_policy` | **Stop.** Fail-open |
+| 2 | `action_not_allowed` / `action_type_unknown` | Deployed Core does not recognise `wallet_transaction` | Redeploy |
+| 4 | Any other denial | The allowlist was not what denied it, so enforcement is unproven | Diagnose |
+| 1 | Probe could not run | Arguments, network, or auth | Fix and re-run |
+
+An `action_not_allowed` result is never resolved by adding the action type to
+the agent's `allowed_actions`. That converts exit 2 into exit 3 — a deployment
+that approves every recipient while appearing to work.
+
+Evidence:
+
+```text
+[probe exit code, verbatim 403 body, agent id, chain, both recipients]
+```
+
 ## 4. Database And Tenant Isolation
 
 - [ ] Required migrations are applied.
