@@ -341,6 +341,8 @@ function ProofCompletenessChecks({ record }: { record: PublicVerificationRecord 
   );
 }
 
+const VERIFY_ACTION_REPO = "https://github.com/Inntris/inntris-verify";
+
 /* ------------------------------------------------------------------ */
 /*  Main record view                                                  */
 /* ------------------------------------------------------------------ */
@@ -667,7 +669,16 @@ export function VerifyRecordView({ record }: { record: PublicVerificationRecord 
           </h2>
           <p className="mx-auto mt-3 max-w-md text-base leading-7 text-muted-foreground">
             View the GitHub Actions example for PR protection. It shows how{" "}
-            <code className="font-mono text-brandInk">inntris-verify</code>{" "}
+            <a
+              href={VERIFY_ACTION_REPO}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-baseline gap-1 font-mono text-brandInk underline decoration-brandInk/40 decoration-1 underline-offset-2 transition-colors duration-100 ease-out hover:decoration-brandInk focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brandInk"
+            >
+              inntris-verify
+              <ExternalLink className="h-3 w-3 shrink-0 self-center" aria-hidden="true" />
+              <span className="sr-only"> (opens GitHub in a new tab)</span>
+            </a>{" "}
             runs as a required status check and records a PASS or BLOCK receipt.
           </p>
           <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
