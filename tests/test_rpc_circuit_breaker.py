@@ -423,13 +423,17 @@ class TestWorkerHandlesCircuitOpen:
         worker.blockchain = MagicMock()
         worker.blockchain.get_balance = MagicMock(return_value=1.0)
 
-        async def _raise_open(**_kwargs):
+        def _raise_open(*_args, **_kwargs):
             raise RpcCircuitOpenError(
                 "circuit open; retries in 42.0s",
                 cooldown_remaining_seconds=42.0,
             )
 
-        worker.blockchain.anchor_batch = _raise_open
+        # The breaker now trips on the pre-submission anchor check, which is
+        # the first RPC the submit path makes. It must still be recorded as a
+        # deferral rather than escaping the worker.
+        worker.blockchain.is_root_anchored = _raise_open
+        worker.blockchain.prepare_anchor_transaction = _raise_open
         worker._record_failure = AsyncMock()
 
         proof_id = uuid4()

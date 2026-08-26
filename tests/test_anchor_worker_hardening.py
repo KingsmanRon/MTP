@@ -169,20 +169,15 @@ def test_anchor_batch_refuses_excessive_gas_price() -> None:
     svc.contract.functions.anchorBatch = MagicMock(return_value=contract_fn)
     svc.w3.eth.get_transaction_count = MagicMock(return_value=0)
 
-    # Drive anchor_batch synchronously via asyncio to exercise the raise path.
-    import asyncio
     from datetime import datetime
 
-    async def _run() -> None:
-        await svc.anchor_batch(
+    with pytest.raises(RuntimeError, match="exceeds cap"):
+        svc.prepare_anchor_transaction(
             merkle_root="00" * 32,
             log_count=1,
             start_timestamp=datetime.now(UTC),
             end_timestamp=datetime.now(UTC),
         )
-
-    with pytest.raises(RuntimeError, match="exceeds cap"):
-        asyncio.run(_run())
 
     # Critical: we must have bailed BEFORE calling build_transaction. Any
     # signed-tx construction past the cap would defeat the point of the cap.
@@ -212,19 +207,27 @@ def test_anchor_batch_returns_database_formatted_transaction_hash() -> None:
     )
     signed_tx = MagicMock()
     signed_tx.raw_transaction = b"signed"
+    signed_tx.hash = bytes.fromhex("ab" * 32)
     svc.w3.eth.account.sign_transaction = MagicMock(return_value=signed_tx)
+    svc.w3.eth.get_transaction_receipt = svc.w3.eth.wait_for_transaction_receipt
 
     import asyncio
     from datetime import datetime
 
-    result = asyncio.run(
-        svc.anchor_batch(
-            merkle_root="00" * 32,
-            log_count=1,
-            start_timestamp=datetime.now(UTC),
-            end_timestamp=datetime.now(UTC),
-        )
+    prepared = svc.prepare_anchor_transaction(
+        merkle_root="00" * 32,
+        log_count=1,
+        start_timestamp=datetime.now(UTC),
+        end_timestamp=datetime.now(UTC),
     )
+
+    # The hash is known at signing time, before anything is broadcast. This is
+    # what makes a submission recoverable when receipt polling later fails.
+    assert prepared.transaction_hash == "0x" + "ab" * 32
+    assert len(prepared.transaction_hash) == 66
+
+    svc.broadcast(prepared)
+    result = asyncio.run(svc.wait_for_confirmation(prepared.transaction_hash))
 
     assert result["status"] == "confirmed"
     assert result["transaction_hash"] == "0x" + "cd" * 32

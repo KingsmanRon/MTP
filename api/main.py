@@ -292,10 +292,22 @@ def _compute_integrity_status(
     tx_hash: "str | None",
     proof_status: "str | None" = None,
 ) -> str:
-    """Return integrity_status reflecting whether the receipt has been anchored.
+    """Return the receipt's Base anchoring state.
 
-    - ``"verified"``       — receipt exists and is anchored on-chain
-    - ``"pending_anchor"`` — receipt exists but anchor batch not yet submitted
+    This describes anchoring alone. It is NOT a statement about the receipt's
+    cryptographic integrity — a receipt with a valid signature whose batch has
+    not reached Base is intact and unanchored, and the verify page reports
+    those on separate rows.
+
+    - ``"verified"``       — Base confirms the batch
+    - ``"pending_anchor"`` — batch assigned or transaction in flight, not confirmed
+    - ``"failed"``         — the anchor attempt failed or was dead-lettered
+
+    ``submitted`` deliberately maps to ``pending_anchor``. A broadcast
+    transaction is not a confirmation: during the 2026-08-25 incident four
+    transactions were broadcast for one batch and the database still could not
+    say whether any had landed. Only ``confirmed`` — a receipt or contract
+    state — earns ``verified``.
     """
     if proof_status in {"failed", "dead_letter"}:
         return "failed"

@@ -51,6 +51,20 @@ export function policyHashCheckStatus(
   return "failed";
 }
 
+/**
+ * Merkle membership: does this receipt belong to a batch yet?
+ *
+ * Distinct from anchoring. A receipt is assigned to a Merkle batch the moment
+ * the batch is formed, which happens before the batch is submitted to Base and
+ * long before Base confirms it. Reading membership as proof of anchoring is
+ * the error that let a receipt claim the chain when nothing had landed.
+ */
+export function merkleMembershipStatus(
+  merkleRoot: string | null | undefined,
+): CheckStatus {
+  return merkleRoot != null && merkleRoot !== "" ? "verified" : "pending";
+}
+
 export function anchorCheckStatus(
   txHash: string | null | undefined,
   blockNumber: number | null | undefined,
@@ -63,10 +77,9 @@ export function anchorCheckStatus(
     return "verified";
   }
   if (txHash != null) {
-    // Transaction submitted but not yet confirmed — legitimate transient state
-    // for a brand-new receipt. Canonical homepage demo receipts should not
-    // ever land here because they are generated and confirmed before being
-    // swapped in.
+    // A transaction exists but no block does. This is the `submitted` state:
+    // broadcast, outcome not yet established. It is emphatically not
+    // "anchored" — only a block number earns that.
     return "pending";
   }
   return "pending";

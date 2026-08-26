@@ -3,6 +3,7 @@ import {
   policyHashCheckStatus,
   anchorCheckStatus,
   deriveIntegrityStatus,
+  merkleMembershipStatus,
   isSupportedSchemaVersion,
   checkStatusUiLabel,
   canonicalFingerprintPayload,
@@ -126,6 +127,34 @@ describe("proof-state helpers (PR1 §1.4)", () => {
       expect(
         deriveIntegrityStatus("verified", "verified", "pending", false, "pending_anchor"),
       ).toBe("failed");
+    });
+  });
+
+  // Test H (anchor recovery handoff §14): a broadcast transaction whose
+  // outcome is unknown must read as pending, never as anchored. Four
+  // transactions were broadcast for the Gate 1 batch and none of them was a
+  // confirmation.
+  describe("Merkle membership vs Base anchoring", () => {
+    it("reports membership as soon as a batch exists", () => {
+      expect(merkleMembershipStatus("d5".repeat(32))).toBe("verified");
+    });
+    it("reports no membership before a batch is formed", () => {
+      expect(merkleMembershipStatus(null)).toBe("pending");
+      expect(merkleMembershipStatus("")).toBe("pending");
+    });
+    it("does NOT call a submitted transaction anchored", () => {
+      // status=submitted: tx hash known, no block yet.
+      expect(anchorCheckStatus("0x" + "c5".repeat(32), null, "pending_anchor"))
+        .toBe("pending");
+    });
+    it("anchors only once a block exists", () => {
+      expect(anchorCheckStatus("0x" + "c5".repeat(32), 47762091, "verified"))
+        .toBe("verified");
+    });
+    it("membership does not imply anchoring", () => {
+      // Batched but nothing on chain — the exact Gate 1 shape.
+      expect(merkleMembershipStatus("d5".repeat(32))).toBe("verified");
+      expect(anchorCheckStatus(null, null, "pending_anchor")).toBe("pending");
     });
   });
 

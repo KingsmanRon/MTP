@@ -1249,12 +1249,18 @@ class Database:
 
         return [dict(row) for row in rows]
 
-    async def mark_logs_as_anchored(
+    async def assign_logs_to_proof(
         self,
         log_ids: list[UUID],
         merkle_root_id: UUID,
     ) -> None:
-        """Mark audit logs as anchored to a merkle root."""
+        """Bind audit logs to the Merkle batch that contains them.
+
+        Membership, not confirmation. ``merkle_root_id IS NOT NULL`` says only
+        that a log belongs to this batch; whether the batch reached Base is
+        ``merkle_proofs.status``. Conflating the two is what let the public
+        verify page report an anchor that never landed.
+        """
         query = """
             UPDATE audit_logs
             SET merkle_root_id = $1, merkle_leaf_index = idx.leaf_index

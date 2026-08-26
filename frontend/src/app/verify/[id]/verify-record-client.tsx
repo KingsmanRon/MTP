@@ -28,6 +28,7 @@ import {
   checkStatusUiLabel,
   computeReceiptFingerprint,
   deriveIntegrityStatus,
+  merkleMembershipStatus,
   type CheckStatus,
 } from "@/lib/proof-state";
 
@@ -287,6 +288,19 @@ function ProofCompletenessChecks({ record }: { record: PublicVerificationRecord 
           : policyHashCheck === "not_applicable"
           ? "Receipt does not bind a policy"
           : "Policy hash present but did not validate",
+    },
+    {
+      label: "Merkle membership",
+      status:
+        record.integrity_status === "sandbox"
+          ? "not_applicable"
+          : merkleMembershipStatus(record.merkle_root),
+      sublabel:
+        record.integrity_status === "sandbox"
+          ? "Sandbox receipt; not batched"
+          : record.merkle_root != null
+          ? "Assigned to a Merkle batch"
+          : "Not yet assigned to a batch",
     },
     {
       label: "On-chain anchor",
