@@ -92,25 +92,39 @@ describe("proof-state helpers (PR1 §1.4)", () => {
         deriveIntegrityStatus("verified", "verified", "verified", false, "verified"),
       ).toBe("failed");
     });
-    it("is FAILED when server reports failed integrity", () => {
-      expect(
-        deriveIntegrityStatus("verified", "verified", "verified", true, "failed"),
-      ).toBe("failed");
-    });
-    it("is PENDING while the anchor is pending and the fingerprint matches", () => {
-      expect(
-        deriveIntegrityStatus("verified", "verified", "pending", true, "pending_anchor"),
-      ).toBe("pending");
-    });
-    it("is FAILED when any individual check failed", () => {
+    it("is FAILED when the signature does not validate", () => {
       expect(
         deriveIntegrityStatus("failed", "verified", "verified", true, "verified"),
       ).toBe("failed");
+    });
+    it("is FAILED when a present policy hash does not validate", () => {
       expect(
         deriveIntegrityStatus("verified", "failed", "verified", true, "verified"),
       ).toBe("failed");
+    });
+
+    // Integrity is a property of the receipt document, not of its publication
+    // on-chain. Anchoring is a separate and later claim, reported on the anchor
+    // row. A receipt that is signed and whose fingerprint matches is intact
+    // whether its anchor is pending, failed, or dead-lettered — reporting
+    // "Receipt integrity: FAILED" there contradicts "fingerprint still matches"
+    // and overstates the problem.
+    it("stays VERIFIED when the anchor batch failed but the receipt is intact", () => {
       expect(
-        deriveIntegrityStatus("verified", "verified", "failed", true, "verified"),
+        deriveIntegrityStatus("verified", "verified", "failed", true, "failed"),
+      ).toBe("verified");
+    });
+    it("stays VERIFIED while the anchor is still pending", () => {
+      expect(
+        deriveIntegrityStatus("verified", "verified", "pending", true, "pending_anchor"),
+      ).toBe("verified");
+    });
+    it("still FAILS on a tampered receipt regardless of anchor state", () => {
+      expect(
+        deriveIntegrityStatus("verified", "verified", "failed", false, "failed"),
+      ).toBe("failed");
+      expect(
+        deriveIntegrityStatus("verified", "verified", "pending", false, "pending_anchor"),
       ).toBe("failed");
     });
   });

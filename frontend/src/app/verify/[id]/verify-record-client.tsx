@@ -246,17 +246,18 @@ function ProofCompletenessChecks({ record }: { record: PublicVerificationRecord 
       : record.tx_hash != null
       ? "Transaction submitted"
       : "Awaiting anchoring";
+  // Integrity describes the receipt itself, never its anchoring. A failed or
+  // pending anchor is reported on the anchor row above and must not be
+  // restated here as an integrity problem.
   const integrityLabel: string =
     fingerprintMatches === false
       ? "Fingerprint mismatch; receipt may be tampered"
       : record.integrity_status === "sandbox"
       ? "Sandbox receipt; signed & verifiable, not anchored"
-      : record.integrity_status === "failed"
-      ? "Anchor proof failed; receipt fingerprint still matches"
       : integrityStatus === "verified"
       ? "Fingerprint matches; receipt is intact"
-      : integrityStatus === "pending"
-      ? "Fingerprint matches; awaiting anchoring"
+      : integrityStatus === "failed"
+      ? "Signature or policy binding did not validate"
       : "Verifying integrity...";
 
   // Schema version gate
