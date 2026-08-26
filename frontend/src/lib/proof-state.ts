@@ -51,15 +51,31 @@ export function policyHashCheckStatus(
   return "failed";
 }
 
+export function merkleCheckStatus(
+  merkleStatus: string | null | undefined,
+  sandbox = false,
+): CheckStatus {
+  if (sandbox) {
+    return "not_applicable";
+  }
+  return merkleStatus === "assigned" ? "verified" : "pending";
+}
+
 export function anchorCheckStatus(
   txHash: string | null | undefined,
   blockNumber: number | null | undefined,
-  serverIntegrityStatus?: string | null,
+  serverAnchorStatus?: string | null,
 ): CheckStatus {
-  if (serverIntegrityStatus === "failed") {
+  if (serverAnchorStatus === "not_applicable") {
+    return "not_applicable";
+  }
+  if (serverAnchorStatus === "failed") {
     return "failed";
   }
-  if (txHash != null && blockNumber != null) {
+  if (serverAnchorStatus === "confirmed") {
+    return txHash != null && blockNumber != null ? "verified" : "failed";
+  }
+  if (serverAnchorStatus == null && txHash != null && blockNumber != null) {
     return "verified";
   }
   if (txHash != null) {

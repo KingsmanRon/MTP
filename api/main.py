@@ -24,7 +24,7 @@ import time
 from contextlib import suppress
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID, uuid4
 
 import asyncpg
@@ -94,6 +94,7 @@ from api.webhooks import (
 # grep-friendly.
 if os.getenv("INNTRIS_JSON_LOGS") == "1":
     from api.observability import configure_json_logging
+
     configure_json_logging(level=logging.INFO)
 else:
     logging.basicConfig(
@@ -167,15 +168,9 @@ def _positive_int_setting(name: str, default: int) -> int:
     return value
 
 
-VERIFY_SOURCE_ATTEMPTS_PER_MINUTE = _positive_int_setting(
-    "VERIFY_SOURCE_ATTEMPTS_PER_MINUTE", 300
-)
-VERIFY_AGENT_ATTEMPTS_PER_MINUTE = _positive_int_setting(
-    "VERIFY_AGENT_ATTEMPTS_PER_MINUTE", 120
-)
-VERIFY_AGENT_SIGNATURE_CONCURRENCY = _positive_int_setting(
-    "VERIFY_AGENT_SIGNATURE_CONCURRENCY", 20
-)
+VERIFY_SOURCE_ATTEMPTS_PER_MINUTE = _positive_int_setting("VERIFY_SOURCE_ATTEMPTS_PER_MINUTE", 300)
+VERIFY_AGENT_ATTEMPTS_PER_MINUTE = _positive_int_setting("VERIFY_AGENT_ATTEMPTS_PER_MINUTE", 120)
+VERIFY_AGENT_SIGNATURE_CONCURRENCY = _positive_int_setting("VERIFY_AGENT_SIGNATURE_CONCURRENCY", 20)
 if VERIFY_AGENT_SIGNATURE_CONCURRENCY > 500:
     raise RuntimeError("VERIFY_AGENT_SIGNATURE_CONCURRENCY must be between 1 and 500")
 
@@ -192,9 +187,7 @@ TRUST_PROXY_HEADERS = os.getenv("TRUST_PROXY_HEADERS", "").strip().lower() in {
 }
 TRUSTED_PROXY_HOPS = _positive_int_setting("TRUSTED_PROXY_HOPS", 1)
 if TRUSTED_PROXY_HOPS > MAX_TRUSTED_PROXY_HOPS:
-    raise RuntimeError(
-        f"TRUSTED_PROXY_HOPS must be between 1 and {MAX_TRUSTED_PROXY_HOPS}"
-    )
+    raise RuntimeError(f"TRUSTED_PROXY_HOPS must be between 1 and {MAX_TRUSTED_PROXY_HOPS}")
 AGENT_LIFECYCLE_METADATA_KEYS = {
     "production_approval_reference",
     "production_approved_at",
@@ -227,9 +220,7 @@ SERVER_SECRET = (SERVER_SECRET_RAW or "dev-secret-do-not-use-in-production").enc
 # New tokens are always signed with the current SERVER_SECRET.
 _SERVER_SECRET_PREVIOUS_RAW = os.getenv("SERVER_SECRET_PREVIOUS")
 SERVER_SECRETS = [SERVER_SECRET] + (
-    [_SERVER_SECRET_PREVIOUS_RAW.encode("utf-8")]
-    if _SERVER_SECRET_PREVIOUS_RAW
-    else []
+    [_SERVER_SECRET_PREVIOUS_RAW.encode("utf-8")] if _SERVER_SECRET_PREVIOUS_RAW else []
 )
 
 
@@ -289,19 +280,33 @@ def canonical_wire_timestamp(dt: datetime) -> str:
 
 
 def _compute_integrity_status(
-    tx_hash: "str | None",
-    proof_status: "str | None" = None,
-) -> str:
-    """Return integrity_status reflecting whether the receipt has been anchored.
+    *,
+    signature_valid: bool,
+    sandbox: bool = False,
+) -> Literal["verified", "failed", "sandbox"]:
+    """Return receipt integrity without folding in Base publication state."""
 
-    - ``"verified"``       — receipt exists and is anchored on-chain
-    - ``"pending_anchor"`` — receipt exists but anchor batch not yet submitted
-    """
+    if sandbox:
+        return "sandbox"
+    return "verified" if signature_valid else "failed"
+
+
+def _compute_anchor_status(
+    proof_status: "str | None",
+    tx_hash: "str | None",
+    block_number: "int | None",
+    *,
+    sandbox: bool = False,
+) -> Literal["pending", "confirmed", "failed", "not_applicable"]:
+    """Return the persisted Base lifecycle independently of receipt integrity."""
+
+    if sandbox:
+        return "not_applicable"
     if proof_status in {"failed", "dead_letter"}:
         return "failed"
-    if tx_hash and proof_status in {None, "confirmed"}:
-        return "verified"
-    return "pending_anchor"
+    if proof_status == "confirmed":
+        return "confirmed" if tx_hash and block_number is not None else "failed"
+    return "pending"
 
 
 app = FastAPI(
@@ -326,33 +331,25 @@ app = FastAPI(
 #       - Each origin must parse as http(s)://host[:port]; no wildcards,
 #         no "null", no path suffix (CORS origins have no path).
 
+
 def _resolve_cors_origins(environment: str, raw: str) -> list[str]:
     raw = (raw or "").strip()
     if environment == "development":
-        return ["*"] if not raw or raw == "*" else [
-            o.strip() for o in raw.split(",") if o.strip()
-        ]
+        return ["*"] if not raw or raw == "*" else [o.strip() for o in raw.split(",") if o.strip()]
 
     if not raw:
-        raise SystemExit(
-            "FATAL: ALLOWED_ORIGINS is required when ENVIRONMENT != development"
-        )
+        raise SystemExit("FATAL: ALLOWED_ORIGINS is required when ENVIRONMENT != development")
     origins = [o.strip() for o in raw.split(",") if o.strip()]
     if any(o == "*" for o in origins):
-        raise SystemExit(
-            "FATAL: ALLOWED_ORIGINS=* is not permitted outside development"
-        )
+        raise SystemExit("FATAL: ALLOWED_ORIGINS=* is not permitted outside development")
     from urllib.parse import urlparse
+
     for o in origins:
         u = urlparse(o)
         if u.scheme not in ("http", "https") or not u.netloc or "*" in u.netloc:
-            raise SystemExit(
-                f"FATAL: invalid CORS origin {o!r} — expected scheme://host[:port]"
-            )
+            raise SystemExit(f"FATAL: invalid CORS origin {o!r} — expected scheme://host[:port]")
         if u.path not in ("", "/") or u.query or u.fragment:
-            raise SystemExit(
-                f"FATAL: CORS origin {o!r} must not include a path/query/fragment"
-            )
+            raise SystemExit(f"FATAL: CORS origin {o!r} must not include a path/query/fragment")
     return origins
 
 
@@ -431,10 +428,12 @@ webhook_recovery_task: asyncio.Task[None] | None = None
 # DEPENDENCIES
 # =============================================================================
 
+
 async def get_db() -> Database:
     if db_pool is None:
         raise HTTPException(status_code=503, detail="Database not initialized")
     return db_pool
+
 
 async def get_redis() -> redis.Redis | None:
     """Return the global Redis connection pool."""
@@ -488,7 +487,9 @@ async def verify_api_key(
         )
 
     # Development mode: accept dev keys
-    if ENVIRONMENT == "development" and (x_api_key.startswith("dev_") or x_api_key.startswith("test_")):
+    if ENVIRONMENT == "development" and (
+        x_api_key.startswith("dev_") or x_api_key.startswith("test_")
+    ):
         # Return a mock org for development
         return {
             "org_id": UUID("00000000-0000-0000-0000-000000000001"),
@@ -569,7 +570,7 @@ def require_api_scope(scope: str):
 def _api_key_prefix(raw_key: str) -> str:
     for marker in ("inntris_live_sk_", "inntris_"):
         if raw_key.startswith(marker):
-            return raw_key[len(marker):len(marker) + API_KEY_PREFIX_LENGTH]
+            return raw_key[len(marker) : len(marker) + API_KEY_PREFIX_LENGTH]
     return raw_key[:API_KEY_PREFIX_LENGTH]
 
 
@@ -892,9 +893,11 @@ async def _record_invalid_signature_telemetry(
         )
         return None
 
+
 # =============================================================================
 # STARTUP / SHUTDOWN
 # =============================================================================
+
 
 @app.on_event("startup")
 async def startup_event():
@@ -923,6 +926,7 @@ async def startup_event():
         logger.warning(f"Redis connection failed: {e}. Continuing without Redis.")
         redis_pool = None
 
+
 @app.on_event("shutdown")
 async def shutdown_event():
     global db_pool, redis_pool, webhook_recovery_task
@@ -938,9 +942,11 @@ async def shutdown_event():
         await redis_pool.close()
         logger.info("Redis connection closed")
 
+
 # =============================================================================
 # HEALTH CHECK
 # =============================================================================
+
 
 @app.get("/health", response_model=HealthResponse, tags=["System"])
 async def health_check(
@@ -968,6 +974,7 @@ async def health_check(
         timestamp=datetime.now(UTC),
     )
 
+
 # =============================================================================
 # SCHEMA ENDPOINTS
 # =============================================================================
@@ -979,13 +986,22 @@ RECEIPT_SCHEMA_V1 = {
     "description": "Public, read-only verification receipt for an AI agent action. Schema version v1.",
     "type": "object",
     "required": [
-        "audit_id", "timestamp", "verdict", "action_type",
-        "agent_id", "action_hash", "schema_version", "receipt_fingerprint",
+        "audit_id",
+        "timestamp",
+        "verdict",
+        "action_type",
+        "agent_id",
+        "action_hash",
+        "schema_version",
+        "receipt_fingerprint",
     ],
     "properties": {
         "audit_id": {"type": "string", "format": "uuid"},
         "timestamp": {"type": "string", "format": "date-time"},
-        "verdict": {"type": "string", "enum": ["approved", "blocked", "rate_limited", "signature_invalid"]},
+        "verdict": {
+            "type": "string",
+            "enum": ["approved", "blocked", "rate_limited", "signature_invalid"],
+        },
         "verdict_reason": {"type": ["string", "null"]},
         "action_type": {"type": "string"},
         "agent_id": {"type": "string", "format": "uuid"},
@@ -994,20 +1010,41 @@ RECEIPT_SCHEMA_V1 = {
         "trust_score": {"type": "integer", "minimum": 0, "maximum": 100},
         "risk_level": {"type": ["string", "null"]},
         "violations": {"type": "array", "items": {"type": "string"}},
-        "policy_hash": {"type": ["string", "null"], "pattern": "^[a-f0-9]{64}$", "description": "SHA-256 hash of the adapter-specific governing policy contract at verification time. Meaning depends on the adapter (e.g. .inntris.yml for the default adapter, a promptfoo config hash for the promptfoo adapter)."},
+        "policy_hash": {
+            "type": ["string", "null"],
+            "pattern": "^[a-f0-9]{64}$",
+            "description": "SHA-256 hash of the adapter-specific governing policy contract at verification time. Meaning depends on the adapter (e.g. .inntris.yml for the default adapter, a promptfoo config hash for the promptfoo adapter).",
+        },
         "action_hash": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
         "signature_valid": {"type": "boolean"},
-        "signature_b64": {"type": ["string", "null"], "description": "Base64 Ed25519 signature over the action hash, for independent re-verification (null unless a 64-byte signature was supplied)."},
-        "public_key_b64": {"type": ["string", "null"], "description": "Base64 Ed25519 public key the signature verifies against."},
+        "signature_b64": {
+            "type": ["string", "null"],
+            "description": "Base64 Ed25519 signature over the action hash, for independent re-verification (null unless a 64-byte signature was supplied).",
+        },
+        "public_key_b64": {
+            "type": ["string", "null"],
+            "description": "Base64 Ed25519 public key the signature verifies against.",
+        },
         "merkle_root": {"type": ["string", "null"]},
         "tx_hash": {"type": ["string", "null"], "pattern": "^0x[a-fA-F0-9]{64}$"},
         "block_number": {"type": ["integer", "null"]},
-        "chain_id": {"type": "integer", "default": 8453, "description": "Chain ID. Public receipts are always 8453 (Base Mainnet)."},
+        "chain_id": {
+            "type": "integer",
+            "default": 8453,
+            "description": "Chain ID. Public receipts are always 8453 (Base Mainnet).",
+        },
         "anchored_at": {"type": ["string", "null"], "format": "date-time"},
         "schema_version": {"type": "string", "enum": ["v1", "v2"]},
         "receipt_fingerprint": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
-        "integrity_status": {"type": "string", "enum": ["verified", "pending_anchor", "failed", "sandbox"]},
-        "sandbox": {"type": "boolean", "default": False, "description": "True for sandbox/test receipts that never anchor on-chain."},
+        "integrity_status": {
+            "type": "string",
+            "enum": ["verified", "pending_anchor", "failed", "sandbox"],
+        },
+        "sandbox": {
+            "type": "boolean",
+            "default": False,
+            "description": "True for sandbox/test receipts that never anchor on-chain.",
+        },
     },
     "additionalProperties": False,
 }
@@ -1022,6 +1059,7 @@ async def get_receipt_schema_v1():
 # =============================================================================
 # PUBLIC ENDPOINTS (No Auth Required)
 # =============================================================================
+
 
 @app.get("/public/agent/{agent_id}", tags=["Public"])
 async def get_public_agent_info(
@@ -1042,9 +1080,7 @@ async def get_public_agent_info(
             and agent_metadata.get("production_approved_at")
             and agent_metadata.get("production_approved_by")
         )
-        is_verified = bool(
-            agent.status == AgentStatus.ACTIVE and production_approved
-        )
+        is_verified = bool(agent.status == AgentStatus.ACTIVE and production_approved)
 
         return {
             "agent_id": str(agent.id),
@@ -1056,9 +1092,7 @@ async def get_public_agent_info(
             "sandbox": sandbox,
             "production_approved": production_approved,
             "verified_since": (
-                str(agent_metadata["production_approved_at"])
-                if is_verified
-                else None
+                str(agent_metadata["production_approved_at"]) if is_verified else None
             ),
             "total_actions": agent.total_actions_count,
             "last_action_at": agent.last_action_at.isoformat() if agent.last_action_at else None,
@@ -1096,7 +1130,9 @@ async def public_register_agent(
     except Exception:
         raise HTTPException(status_code=400, detail="public_key must be valid base64")
     if len(public_key_bytes) != 32:
-        raise HTTPException(status_code=400, detail="public_key must decode to exactly 32 bytes (Ed25519)")
+        raise HTTPException(
+            status_code=400, detail="public_key must decode to exactly 32 bytes (Ed25519)"
+        )
 
     fingerprint = CryptoService.compute_public_key_fingerprint(public_key_bytes)
 
@@ -1189,7 +1225,9 @@ async def public_register_promptfoo_agent(
     except Exception:
         raise HTTPException(status_code=400, detail="public_key must be valid base64")
     if len(public_key_bytes) != 32:
-        raise HTTPException(status_code=400, detail="public_key must decode to exactly 32 bytes (Ed25519)")
+        raise HTTPException(
+            status_code=400, detail="public_key must decode to exactly 32 bytes (Ed25519)"
+        )
 
     fingerprint = CryptoService.compute_public_key_fingerprint(public_key_bytes)
 
@@ -1381,7 +1419,11 @@ async def get_public_verification_record(
         org_name = "Unknown"
 
     # Extract risk_level and violations from payload
-    payload = row["payload"] if isinstance(row["payload"], dict) else json.loads(row["payload"]) if row["payload"] else {}
+    payload = (
+        row["payload"]
+        if isinstance(row["payload"], dict)
+        else json.loads(row["payload"]) if row["payload"] else {}
+    )
     risk_level = payload.get("risk_level")
     violations: list[str] = []
     if row["verdict_reason"]:
@@ -1448,6 +1490,15 @@ async def get_public_verification_record(
     # explicitly so the UI/clients don't show "pending_anchor" forever.
     record_metadata = _json_dict(row.get("metadata"))
     is_sandbox = bool(record_metadata.get("sandbox") or record_metadata.get("test_request"))
+    anchor_status = _compute_anchor_status(
+        row.get("proof_status"),
+        row.get("tx_hash"),
+        row.get("block_number"),
+        sandbox=is_sandbox,
+    )
+    merkle_status: Literal["assigned", "unassigned"] = (
+        "assigned" if row.get("merkle_root_id") else "unassigned"
+    )
 
     return PublicVerificationRecord(
         audit_id=row["id"],
@@ -1467,16 +1518,17 @@ async def get_public_verification_record(
         signature_b64=signature_b64,
         public_key_b64=public_key_b64,
         merkle_root=row.get("merkle_root"),
+        merkle_status=merkle_status,
+        anchor_status=anchor_status,
         tx_hash=row.get("tx_hash"),
-        block_number=row.get("block_number"),
+        block_number=(row.get("block_number") if anchor_status == "confirmed" else None),
         chain_id=row.get("chain_id") or 8453,
-        anchored_at=row.get("anchored_at"),
+        anchored_at=(row.get("anchored_at") if anchor_status == "confirmed" else None),
         schema_version=schema_version,
         receipt_fingerprint=receipt_fingerprint,
-        integrity_status=(
-            "sandbox"
-            if is_sandbox
-            else _compute_integrity_status(row.get("tx_hash"), row.get("proof_status"))
+        integrity_status=_compute_integrity_status(
+            signature_valid=bool(row["signature_valid"]),
+            sandbox=is_sandbox,
         ),
         sandbox=is_sandbox,
     )
@@ -1530,6 +1582,8 @@ async def get_public_proof(
             proof=[],
             positions=[],
             merkle_root=None,
+            merkle_status="unassigned",
+            anchor_status="not_applicable" if is_sandbox else "pending",
             tx_hash=None,
             chain_id=None,
             block_number=None,
@@ -1537,7 +1591,9 @@ async def get_public_proof(
             submitter=None,
             receipt_fingerprint=None,
             policy_hash=log_row["policy_hash"],
-            timestamp=canonical_wire_timestamp(log_row["timestamp"]) if log_row["timestamp"] else None,
+            timestamp=(
+                canonical_wire_timestamp(log_row["timestamp"]) if log_row["timestamp"] else None
+            ),
         )
 
     # Anchored: fetch proof record
@@ -1550,63 +1606,50 @@ async def get_public_proof(
     if not proof_row:
         raise HTTPException(status_code=404, detail="Merkle proof record not found")
 
-    proof_status = proof_row.get("status")
-    if proof_status in {"failed", "dead_letter"}:
-        return PublicProofResponse(
-            audit_id=str(log_row["id"]),
-            status="failed",
-            action_hash=log_row["action_hash"],
-            proof=[],
-            positions=[],
-            merkle_root=proof_row["root_hash"],
-            tx_hash=proof_row.get("transaction_hash"),
-            chain_id=proof_row.get("chain_id") or 8453,
-            block_number=proof_row.get("block_number"),
-            anchored_at=None,
-            submitter=proof_row.get("submitted_by"),
-            receipt_fingerprint=None,
-            policy_hash=log_row["policy_hash"],
-            timestamp=canonical_wire_timestamp(log_row["timestamp"]) if log_row["timestamp"] else None,
-        )
-
-    if proof_status != "confirmed" or not proof_row.get("transaction_hash"):
-        return PublicProofResponse(
-            audit_id=str(log_row["id"]),
-            status="pending_anchor",
-            action_hash=log_row["action_hash"],
-            proof=[],
-            positions=[],
-            merkle_root=None,
-            tx_hash=None,
-            chain_id=None,
-            block_number=None,
-            anchored_at=None,
-            submitter=None,
-            receipt_fingerprint=None,
-            policy_hash=log_row["policy_hash"],
-            timestamp=canonical_wire_timestamp(log_row["timestamp"]) if log_row["timestamp"] else None,
-        )
-
     leaf_hashes = proof_row["leaf_hashes"]
     leaf_index = log_row["merkle_leaf_index"]
 
     from workers.anchor_worker import compute_merkle_proof
+
     try:
         proof_path = compute_merkle_proof(leaf_hashes, leaf_index)
     except Exception:
         proof_path = []
 
+    proof_status = proof_row.get("status")
+    anchor_status = _compute_anchor_status(
+        proof_status,
+        proof_row.get("transaction_hash"),
+        proof_row.get("block_number"),
+    )
+    legacy_status = (
+        "sandbox"
+        if anchor_status == "not_applicable"
+        else {
+            "confirmed": "anchored",
+            "failed": "failed",
+            "pending": "pending_anchor",
+        }[anchor_status]
+    )
+    is_confirmed = anchor_status == "confirmed"
+
     return PublicProofResponse(
         audit_id=str(log_row["id"]),
-        status="anchored",
+        status=legacy_status,
         action_hash=log_row["action_hash"],
         proof=[p["hash"] for p in proof_path],
         positions=[p["position"] == 1 for p in proof_path],
         merkle_root=proof_row["root_hash"],
-        tx_hash=proof_row["transaction_hash"],
+        merkle_status="assigned",
+        anchor_status=anchor_status,
+        tx_hash=proof_row.get("transaction_hash"),
         chain_id=proof_row.get("chain_id") or 8453,
-        block_number=proof_row.get("block_number"),
-        anchored_at=proof_row["confirmed_at"].isoformat() if proof_row["confirmed_at"] else None,
+        block_number=proof_row.get("block_number") if is_confirmed else None,
+        anchored_at=(
+            proof_row["confirmed_at"].isoformat()
+            if is_confirmed and proof_row["confirmed_at"]
+            else None
+        ),
         submitter=proof_row.get("submitted_by"),
         receipt_fingerprint=None,
         policy_hash=log_row["policy_hash"],
@@ -1714,6 +1757,7 @@ def _idempotent_verify_response(record: dict[str, Any]) -> VerifyActionResponse 
         idempotency_status="replayed",
     )
 
+
 @app.post(
     "/verify",
     response_model=VerifyActionResponse,
@@ -1748,9 +1792,7 @@ async def verify_action(
     from api.observability import verify_stage_latency_seconds
 
     def observe_stage(stage: str, started_at: float) -> None:
-        verify_stage_latency_seconds.labels(stage=stage).observe(
-            time.perf_counter() - started_at
-        )
+        verify_stage_latency_seconds.labels(stage=stage).observe(time.perf_counter() - started_at)
 
     try:
         # STEP 1: Reserve bounded unauthenticated attempt budgets. This runs
@@ -1815,6 +1857,7 @@ async def verify_action(
             # Count the unauthenticated attack signal independently of the
             # agent audit chain. Invalid signatures never reach an audit insert.
             from api.observability import signature_failures_total, verify_requests_total
+
             signature_failures_total.inc()
             verify_requests_total.labels(verdict="invalid_signature").inc()
 
@@ -1943,9 +1986,12 @@ async def verify_action(
             # security-relevant event; we want the metric even if the
             # raised HTTPException short-circuits the rest of the handler.
             from api.observability import nonce_replays_total, verify_requests_total
+
             nonce_replays_total.inc()
             verify_requests_total.labels(verdict="replay").inc()
-            raise HTTPException(status_code=401, detail="Nonce already used - possible replay attack")
+            raise HTTPException(
+                status_code=401, detail="Nonce already used - possible replay attack"
+            )
         nonce_reserved = True
         observe_stage("nonce", stage_started)
 
@@ -1954,9 +2000,7 @@ async def verify_action(
         now = datetime.now(UTC)
         minute_start = now.replace(second=0, microsecond=0)
         stage_started = time.perf_counter()
-        minute_count, _ = await database.get_rate_limit_count(
-            agent.id, "minute", minute_start
-        )
+        minute_count, _ = await database.get_rate_limit_count(agent.id, "minute", minute_start)
         observe_stage("rate_limit_lookup", stage_started)
         stage_started = time.perf_counter()
         daily_spend = await database.get_daily_spend(agent.id)
@@ -2004,6 +2048,7 @@ async def verify_action(
             # dashboards reflect reality even if a downstream exception
             # prevents us from reaching the raise.
             from api.observability import rate_limit_trips_total, verify_requests_total
+
             if verdict == ActionVerdict.RATE_LIMITED:
                 rate_limit_trips_total.labels(window="tenant_minute").inc()
                 verify_requests_total.labels(verdict="rate_limited").inc()
@@ -2036,9 +2081,7 @@ async def verify_action(
                     sandbox=is_sandbox,
                     extra={
                         "violation": (
-                            policy_result.violation.value
-                            if policy_result.violation
-                            else None
+                            policy_result.violation.value if policy_result.violation else None
                         ),
                         "policy_binding": policy_binding_state,
                     },
@@ -2052,7 +2095,11 @@ async def verify_action(
             await _dispatch_verdict_webhook(
                 database=database,
                 org_id=agent.org_id,
-                event="verification.blocked" if verdict == ActionVerdict.BLOCKED else "verification.rate_limited",
+                event=(
+                    "verification.blocked"
+                    if verdict == ActionVerdict.BLOCKED
+                    else "verification.rate_limited"
+                ),
                 agent_id=agent.id,
                 audit_id=audit_id,
                 action_type=request_data.action_type,
@@ -2064,10 +2111,16 @@ async def verify_action(
             # Update trust score and counters for blocked action
             new_trust_score = TrustScorer.calculate_adjustment(
                 current_score=agent.trust_score,
-                event_type="action_blocked_policy" if verdict == ActionVerdict.BLOCKED else "action_blocked_rate_limit",
+                event_type=(
+                    "action_blocked_policy"
+                    if verdict == ActionVerdict.BLOCKED
+                    else "action_blocked_rate_limit"
+                ),
             )
             stage_started = time.perf_counter()
-            await database.update_agent_after_verification(agent.id, new_trust_score, was_approved=False)
+            await database.update_agent_after_verification(
+                agent.id, new_trust_score, was_approved=False
+            )
             observe_stage("trust_update", stage_started)
 
             violation_code = (
@@ -2151,6 +2204,7 @@ async def verify_action(
                 )
 
             from api.observability import rate_limit_trips_total, verify_requests_total
+
             if exc.kind == "rate":
                 rate_limit_trips_total.labels(window="tenant_minute").inc()
                 verify_requests_total.labels(verdict="rate_limited").inc()
@@ -2159,7 +2213,9 @@ async def verify_action(
 
             logger.warning(
                 "Reservation rejected for agent %s: %s limit (%s)",
-                agent.id, exc.kind, exc.observed,
+                agent.id,
+                exc.kind,
+                exc.observed,
             )
 
             audit_entry = AuditLogEntry(
@@ -2183,8 +2239,7 @@ async def verify_action(
                     sandbox=is_sandbox,
                     extra={
                         "violation": (
-                            "rate_limit_exceeded" if exc.kind == "rate"
-                            else "daily_limit_exceeded"
+                            "rate_limit_exceeded" if exc.kind == "rate" else "daily_limit_exceeded"
                         )
                     },
                 ),
@@ -2198,8 +2253,7 @@ async def verify_action(
                 database=database,
                 org_id=agent.org_id,
                 event=(
-                    "verification.rate_limited" if exc.kind == "rate"
-                    else "verification.blocked"
+                    "verification.rate_limited" if exc.kind == "rate" else "verification.blocked"
                 ),
                 agent_id=agent.id,
                 audit_id=audit_id,
@@ -2212,8 +2266,7 @@ async def verify_action(
             new_trust_score = TrustScorer.calculate_adjustment(
                 current_score=agent.trust_score,
                 event_type=(
-                    "action_blocked_rate_limit" if exc.kind == "rate"
-                    else "action_blocked_policy"
+                    "action_blocked_rate_limit" if exc.kind == "rate" else "action_blocked_policy"
                 ),
             )
             stage_started = time.perf_counter()
@@ -2222,9 +2275,7 @@ async def verify_action(
             )
             observe_stage("trust_update", stage_started)
 
-            violation_code = (
-                "rate_limit_exceeded" if exc.kind == "rate" else "daily_limit_exceeded"
-            )
+            violation_code = "rate_limit_exceeded" if exc.kind == "rate" else "daily_limit_exceeded"
             response_timestamp = datetime.now(UTC)
             http_status = (
                 status.HTTP_429_TOO_MANY_REQUESTS
@@ -2351,6 +2402,7 @@ async def verify_action(
         # and trust-score update so the counter reflects a fully-processed
         # approval, not one that might have partially failed.
         from api.observability import verify_latency_seconds, verify_requests_total
+
         verify_requests_total.labels(verdict="approved").inc()
         verify_latency_seconds.observe(time.time() - start_time)
 
@@ -2430,9 +2482,7 @@ async def verify_debug(
     401. Once ``signature_valid`` is true, switch to ``POST /verify``. See
     docs/REQUEST_SIGNING.md.
     """
-    await _check_public_rate_limit(
-        request, redis_conn, key_prefix="verify_debug", max_per_hour=120
-    )
+    await _check_public_rate_limit(request, redis_conn, key_prefix="verify_debug", max_per_hour=120)
 
     try:
         canonical_ts = CryptoService.canonicalize_timestamp(request_data.timestamp)
@@ -2532,18 +2582,14 @@ async def _record_token_consumption(
     agent_metadata = _json_dict(agent_row["metadata"])
     is_sandbox = bool(token_sandbox or agent_metadata.get("sandbox"))
     if is_sandbox:
-        raise SandboxExecutionDeniedError(
-            "Sandbox approvals cannot authorize production execution"
-        )
+        raise SandboxExecutionDeniedError("Sandbox approvals cannot authorize production execution")
 
     consumed_at = datetime.now(UTC).isoformat().replace("+00:00", "Z")
     payload = {
         "event": "token_consumed",
         "original_action_hash": token_action_hash,
         "token_verdict": token_verdict,
-        "token_expires_at": (
-            expires_at.isoformat().replace("+00:00", "Z") if expires_at else None
-        ),
+        "token_expires_at": (expires_at.isoformat().replace("+00:00", "Z") if expires_at else None),
         "action_hash_matches": action_hash_matches,
         "execution_ref": execution_ref,
         "consumed_at": consumed_at,
@@ -2627,9 +2673,7 @@ async def verify_token(
     later. If that event cannot be recorded, the consumption fails closed
     (``valid: false``) and the token is not burned.
     """
-    claims = CryptoService.verify_approval_token(
-        request_data.approval_token, SERVER_SECRETS
-    )
+    claims = CryptoService.verify_approval_token(request_data.approval_token, SERVER_SECRETS)
     if claims is None:
         return VerifyTokenResponse(
             valid=False,
@@ -2642,9 +2686,7 @@ async def verify_token(
     verdict = claims.get("verdict")
     token_sandbox = bool(claims.get("sandbox"))
     exp = claims.get("exp")
-    expires_at = (
-        datetime.fromtimestamp(exp, tz=UTC) if isinstance(exp, (int, float)) else None
-    )
+    expires_at = datetime.fromtimestamp(exp, tz=UTC) if isinstance(exp, (int, float)) else None
 
     # Optional agent_id cross-check.
     if request_data.agent_id is not None and str(request_data.agent_id) != token_agent_id:
@@ -2699,9 +2741,7 @@ async def verify_token(
                 action_hash=token_action_hash,
                 expires_at=expires_at,
             )
-        action_hash_matches = secrets.compare_digest(
-            recomputed, token_action_hash or ""
-        )
+        action_hash_matches = secrets.compare_digest(recomputed, token_action_hash or "")
         if not action_hash_matches:
             return VerifyTokenResponse(
                 valid=False,
@@ -2753,9 +2793,7 @@ async def verify_token(
             consumption_audit_id, consumption_status = await _record_token_consumption(
                 database=database,
                 token_id=token_id,
-                token_digest=hashlib.sha256(
-                    request_data.approval_token.encode("utf-8")
-                ).digest(),
+                token_digest=hashlib.sha256(request_data.approval_token.encode("utf-8")).digest(),
                 token_agent_id=token_agent_id or "",
                 token_action_hash=token_action_hash or "",
                 token_verdict=verdict,
@@ -2860,9 +2898,7 @@ async def test_verify_action(
         # Get current limits from database
         now = datetime.now(UTC)
         minute_start = now.replace(second=0, microsecond=0)
-        minute_count, _ = await database.get_rate_limit_count(
-            agent.id, "minute", minute_start
-        )
+        minute_count, _ = await database.get_rate_limit_count(agent.id, "minute", minute_start)
         daily_spend = await database.get_daily_spend(agent.id)
 
         # Initialize PolicyEngine with current state
@@ -2950,6 +2986,7 @@ async def test_verify_action(
 # signed /verify traffic. Ingested events flow through the same Merkle
 # anchoring pipeline as /verify entries.
 
+
 async def _verify_bearer_token(
     authorization: str | None,
     database: "Database",
@@ -3025,9 +3062,7 @@ async def _get_or_create_events_agent(
     if agent_id:
         return agent_id
 
-    placeholder_pubkey = hashlib.sha256(
-        f"events-v1-ingest:{org_id}".encode()
-    ).digest()
+    placeholder_pubkey = hashlib.sha256(f"events-v1-ingest:{org_id}".encode()).digest()
     agent_id = await database.create_agent(
         org_id=org_id,
         name="events-v1-ingest",
@@ -3073,11 +3108,7 @@ async def ingest_event_v1(
 
     event_payload = body if isinstance(body, dict) else {"raw": body}
     action_type = (
-        str(
-            event_payload.get("event_type")
-            or event_payload.get("type")
-            or "events_v1"
-        )[:100]
+        str(event_payload.get("event_type") or event_payload.get("type") or "events_v1")[:100]
         or "events_v1"
     )
 
@@ -3147,6 +3178,7 @@ async def ingest_event_v1(
 # ADMIN ENDPOINTS - AGENTS
 # =============================================================================
 
+
 @app.get("/admin/agents", tags=["Admin - Agents"], response_model=list[AgentSummary])
 async def list_agents(
     auth: dict = Depends(require_api_scope("read")),
@@ -3173,27 +3205,36 @@ async def list_agents(
 
     agents = []
     for row in rows:
-        agents.append({
-            "id": str(row["id"]),
-            "org_id": str(row["org_id"]),
-            "name": row["name"],
-            "public_key_fingerprint": row["public_key_fingerprint"],
-            "trust_score": row["trust_score"],
-            "status": row["status"],
-            "daily_limit_usd": float(row["daily_limit_usd"]),
-            "per_action_limit_usd": float(row["per_action_limit_usd"]),
-            "allowed_actions": list(row["allowed_actions"]) if row["allowed_actions"] else [],
-            "blocked_actions": list(row["blocked_actions"]) if row["blocked_actions"] else [],
-            "rate_limit_per_minute": row["rate_limit_per_minute"],
-            "last_action_at": row["last_action_at"].isoformat() if row["last_action_at"] else None,
-            "total_actions_count": row["total_actions_count"],
-            "total_blocked_count": row["total_blocked_count"],
-            "metadata": row["metadata"] if isinstance(row["metadata"], dict) else json.loads(row["metadata"]) if row["metadata"] else {},
-            "created_at": row["created_at"].isoformat(),
-            "updated_at": row["updated_at"].isoformat() if row["updated_at"] else None,
-        })
+        agents.append(
+            {
+                "id": str(row["id"]),
+                "org_id": str(row["org_id"]),
+                "name": row["name"],
+                "public_key_fingerprint": row["public_key_fingerprint"],
+                "trust_score": row["trust_score"],
+                "status": row["status"],
+                "daily_limit_usd": float(row["daily_limit_usd"]),
+                "per_action_limit_usd": float(row["per_action_limit_usd"]),
+                "allowed_actions": list(row["allowed_actions"]) if row["allowed_actions"] else [],
+                "blocked_actions": list(row["blocked_actions"]) if row["blocked_actions"] else [],
+                "rate_limit_per_minute": row["rate_limit_per_minute"],
+                "last_action_at": (
+                    row["last_action_at"].isoformat() if row["last_action_at"] else None
+                ),
+                "total_actions_count": row["total_actions_count"],
+                "total_blocked_count": row["total_blocked_count"],
+                "metadata": (
+                    row["metadata"]
+                    if isinstance(row["metadata"], dict)
+                    else json.loads(row["metadata"]) if row["metadata"] else {}
+                ),
+                "created_at": row["created_at"].isoformat(),
+                "updated_at": row["updated_at"].isoformat() if row["updated_at"] else None,
+            }
+        )
 
     return agents
+
 
 @app.get("/admin/agents/{agent_id}", tags=["Admin - Agents"], response_model=AgentDetail)
 async def get_agent(
@@ -3232,6 +3273,7 @@ async def get_agent(
         }
     except AgentNotFoundError:
         raise HTTPException(status_code=404, detail="Agent not found")
+
 
 @app.get("/admin/agents/{agent_id}/dashboard", tags=["Admin - Agents"])
 async def get_agent_dashboard(
@@ -3310,10 +3352,12 @@ async def get_agent_dashboard(
         trust_history = []
         for i in range(6, -1, -1):
             day = now - timedelta(days=i)
-            trust_history.append({
-                "date": day.strftime("%a"),
-                "score": agent.trust_score,  # Would track historical values in production
-            })
+            trust_history.append(
+                {
+                    "date": day.strftime("%a"),
+                    "score": agent.trust_score,  # Would track historical values in production
+                }
+            )
 
         return {
             "agent": {
@@ -3340,6 +3384,7 @@ async def get_agent_dashboard(
     except AgentNotFoundError:
         raise HTTPException(status_code=404, detail="Agent not found")
 
+
 @app.post("/admin/agents", tags=["Admin - Agents"], status_code=201)
 async def register_agent(
     request_data: RegisterAgentRequest,
@@ -3349,7 +3394,9 @@ async def register_agent(
     """Register a new sandbox agent pending explicit production approval."""
     # Verify org_id matches authenticated org
     if request_data.org_id != auth["org_id"]:
-        raise HTTPException(status_code=403, detail="Cannot register agent for another organization")
+        raise HTTPException(
+            status_code=403, detail="Cannot register agent for another organization"
+        )
 
     try:
         public_key = base64.b64decode(request_data.public_key)
@@ -3393,6 +3440,7 @@ async def register_agent(
             detail="Agent registration failed. Check input and retry.",
         )
 
+
 @app.patch("/admin/agents/{agent_id}", tags=["Admin - Agents"])
 async def update_agent(
     agent_id: UUID,
@@ -3422,9 +3470,7 @@ async def update_agent(
                 )
 
         resulting_daily_limit = updates.get("daily_limit_usd", agent.daily_limit_usd)
-        resulting_per_action_limit = updates.get(
-            "per_action_limit_usd", agent.per_action_limit_usd
-        )
+        resulting_per_action_limit = updates.get("per_action_limit_usd", agent.per_action_limit_usd)
         if resulting_per_action_limit > resulting_daily_limit:
             raise HTTPException(
                 status_code=400,
@@ -3442,9 +3488,14 @@ async def update_agent(
 
         # Build update query dynamically
         allowed_fields = [
-            "name", "daily_limit_usd", "per_action_limit_usd",
-            "allowed_actions", "blocked_actions", "rate_limit_per_minute",
-            "trust_score", "metadata"
+            "name",
+            "daily_limit_usd",
+            "per_action_limit_usd",
+            "allowed_actions",
+            "blocked_actions",
+            "rate_limit_per_minute",
+            "trust_score",
+            "metadata",
         ]
 
         set_clauses = []
@@ -3500,7 +3551,11 @@ async def update_agent(
             "last_action_at": row["last_action_at"].isoformat() if row["last_action_at"] else None,
             "total_actions_count": row["total_actions_count"],
             "total_blocked_count": row["total_blocked_count"],
-            "metadata": row["metadata"] if isinstance(row["metadata"], dict) else json.loads(row["metadata"]) if row["metadata"] else {},
+            "metadata": (
+                row["metadata"]
+                if isinstance(row["metadata"], dict)
+                else json.loads(row["metadata"]) if row["metadata"] else {}
+            ),
             "created_at": row["created_at"].isoformat(),
             "updated_at": row["updated_at"].isoformat() if row["updated_at"] else None,
         }
@@ -3607,9 +3662,7 @@ async def register_agent_policy(
 
     # Derive the canonical hash server-side from the enforced content so it
     # always matches what the action computes (canonicalPolicyHash).
-    policy_hash = canonical_policy_hash(
-        policy_request.mapping, policy_request.protected_branches
-    )
+    policy_hash = canonical_policy_hash(policy_request.mapping, policy_request.protected_branches)
     policy = await database.register_agent_policy(
         agent_id=agent_id,
         org_id=agent.org_id,
@@ -3657,9 +3710,7 @@ async def rotate_agent_key(
 
     new_fingerprint = hashlib.sha256(new_public_key).hexdigest()
     if new_fingerprint == agent.public_key_fingerprint:
-        raise HTTPException(
-            status_code=400, detail="New key must differ from the current key"
-        )
+        raise HTTPException(status_code=400, detail="New key must differ from the current key")
 
     result = await database.rotate_agent_key(
         agent_id=agent_id,
@@ -3702,9 +3753,11 @@ async def update_agent_status(
     except AgentNotFoundError:
         raise HTTPException(status_code=404, detail="Agent not found")
 
+
 # =============================================================================
 # ADMIN ENDPOINTS - AUDIT LOGS
 # =============================================================================
+
 
 @app.get("/admin/audit/search", tags=["Admin - Audit"], response_model=AuditSearchResponse)
 async def search_audit_logs(
@@ -3790,33 +3843,40 @@ async def search_audit_logs(
 
     logs = []
     for row in rows:
-        logs.append({
-            "id": str(row["id"]),
-            "agent_id": str(row["agent_id"]),
-            "agent_name": row["agent_name"],
-            "timestamp": row["timestamp"].isoformat(),
-            "action_type": row["action_type"],
-            "action_hash": row["action_hash"],
-            "payload": row["payload"] if isinstance(row["payload"], dict) else json.loads(row["payload"]) if row["payload"] else {},
-            "verdict": row["verdict"],
-            "verdict_reason": row["verdict_reason"],
-            "signature_valid": row["signature_valid"],
-            "request_ip": str(row["request_ip"]) if row["request_ip"] else None,
-            "request_user_agent": row["request_user_agent"],
-            "response_time_ms": row["response_time_ms"],
-            "trust_score_at_time": row["trust_score_at_time"],
-            "merkle_root_id": str(row["merkle_root_id"]) if row["merkle_root_id"] else None,
-            "merkle_leaf_index": row["merkle_leaf_index"],
-            # On-chain anchor info from the joined merkle_proofs row (NULL until
-            # the batch is anchored). ``transaction_hash`` is the key the admin
-            # UI reads; ``tx_hash`` is kept as a legacy alias for the same value.
-            "transaction_hash": row.get("transaction_hash"),
-            "tx_hash": row.get("transaction_hash"),
-            "chain_id": row.get("chain_id"),
-            "block_number": row.get("block_number"),
-        })
+        logs.append(
+            {
+                "id": str(row["id"]),
+                "agent_id": str(row["agent_id"]),
+                "agent_name": row["agent_name"],
+                "timestamp": row["timestamp"].isoformat(),
+                "action_type": row["action_type"],
+                "action_hash": row["action_hash"],
+                "payload": (
+                    row["payload"]
+                    if isinstance(row["payload"], dict)
+                    else json.loads(row["payload"]) if row["payload"] else {}
+                ),
+                "verdict": row["verdict"],
+                "verdict_reason": row["verdict_reason"],
+                "signature_valid": row["signature_valid"],
+                "request_ip": str(row["request_ip"]) if row["request_ip"] else None,
+                "request_user_agent": row["request_user_agent"],
+                "response_time_ms": row["response_time_ms"],
+                "trust_score_at_time": row["trust_score_at_time"],
+                "merkle_root_id": str(row["merkle_root_id"]) if row["merkle_root_id"] else None,
+                "merkle_leaf_index": row["merkle_leaf_index"],
+                # On-chain anchor info from the joined merkle_proofs row (NULL until
+                # the batch is anchored). ``transaction_hash`` is the key the admin
+                # UI reads; ``tx_hash`` is kept as a legacy alias for the same value.
+                "transaction_hash": row.get("transaction_hash"),
+                "tx_hash": row.get("transaction_hash"),
+                "chain_id": row.get("chain_id"),
+                "block_number": row.get("block_number"),
+            }
+        )
 
     return {"logs": logs, "total": total, "limit": limit, "offset": offset}
+
 
 @app.get("/admin/audit/{log_id}", tags=["Admin - Audit"], response_model=AuditLogDetail)
 async def get_audit_log(
@@ -3870,6 +3930,7 @@ async def get_audit_log(
         "metadata": policy_context["metadata"],
     }
 
+
 @app.get("/admin/audit/{log_id}/proof", tags=["Admin - Audit"], response_model=AuditProof)
 async def get_merkle_proof(
     log_id: UUID,
@@ -3918,6 +3979,7 @@ async def get_merkle_proof(
 
     # Generate proof
     from workers.anchor_worker import compute_merkle_proof
+
     try:
         proof_path = compute_merkle_proof(leaf_hashes, leaf_index)
     except Exception:
@@ -3940,6 +4002,7 @@ async def get_merkle_proof(
         ),
         "error_message": proof_row["error_message"],
     }
+
 
 @app.get("/admin/audit/export", tags=["Admin - Audit"])
 async def export_audit_logs(
@@ -3992,54 +4055,76 @@ async def export_audit_logs(
     if format == "csv":
         output = io.StringIO()
         writer = csv.writer(output)
-        writer.writerow(["id", "agent_id", "agent_name", "timestamp", "action_type",
-                        "action_hash", "verdict", "verdict_reason", "signature_valid", "trust_score"])
+        writer.writerow(
+            [
+                "id",
+                "agent_id",
+                "agent_name",
+                "timestamp",
+                "action_type",
+                "action_hash",
+                "verdict",
+                "verdict_reason",
+                "signature_valid",
+                "trust_score",
+            ]
+        )
 
         for row in rows:
-            writer.writerow([
-                str(row["id"]),
-                str(row["agent_id"]),
-                row["agent_name"],
-                row["timestamp"].isoformat(),
-                row["action_type"],
-                row["action_hash"],
-                row["verdict"],
-                row["verdict_reason"] or "",
-                row["signature_valid"],
-                row["trust_score_at_time"],
-            ])
+            writer.writerow(
+                [
+                    str(row["id"]),
+                    str(row["agent_id"]),
+                    row["agent_name"],
+                    row["timestamp"].isoformat(),
+                    row["action_type"],
+                    row["action_hash"],
+                    row["verdict"],
+                    row["verdict_reason"] or "",
+                    row["signature_valid"],
+                    row["trust_score_at_time"],
+                ]
+            )
 
         output.seek(0)
         return StreamingResponse(
             iter([output.getvalue()]),
             media_type="text/csv",
-            headers={"Content-Disposition": f"attachment; filename=audit_logs_{datetime.now().strftime('%Y%m%d')}.csv"}
+            headers={
+                "Content-Disposition": f"attachment; filename=audit_logs_{datetime.now().strftime('%Y%m%d')}.csv"
+            },
         )
     else:
         logs = []
         for row in rows:
-            logs.append({
-                "id": str(row["id"]),
-                "agent_id": str(row["agent_id"]),
-                "agent_name": row["agent_name"],
-                "timestamp": row["timestamp"].isoformat(),
-                "action_type": row["action_type"],
-                "action_hash": row["action_hash"],
-                "verdict": row["verdict"],
-                "verdict_reason": row["verdict_reason"],
-                "signature_valid": row["signature_valid"],
-                "trust_score_at_time": row["trust_score_at_time"],
-            })
+            logs.append(
+                {
+                    "id": str(row["id"]),
+                    "agent_id": str(row["agent_id"]),
+                    "agent_name": row["agent_name"],
+                    "timestamp": row["timestamp"].isoformat(),
+                    "action_type": row["action_type"],
+                    "action_hash": row["action_hash"],
+                    "verdict": row["verdict"],
+                    "verdict_reason": row["verdict_reason"],
+                    "signature_valid": row["signature_valid"],
+                    "trust_score_at_time": row["trust_score_at_time"],
+                }
+            )
 
         return StreamingResponse(
             iter([json.dumps(logs, indent=2)]),
             media_type="application/json",
-            headers={"Content-Disposition": f"attachment; filename=audit_logs_{datetime.now().strftime('%Y%m%d')}.json"}
+            headers={
+                "Content-Disposition": f"attachment; filename=audit_logs_{datetime.now().strftime('%Y%m%d')}.json"
+            },
         )
+
 
 # =============================================================================
 # ADMIN ENDPOINTS - ALERTS
 # =============================================================================
+
 
 @app.get("/admin/alerts", tags=["Admin - Alerts"])
 async def list_alerts(
@@ -4089,24 +4174,33 @@ async def list_alerts(
 
     alerts = []
     for row in rows:
-        alerts.append({
-            "id": str(row["id"]),
-            "agent_id": str(row["agent_id"]) if row["agent_id"] else None,
-            "agent_name": row["agent_name"],
-            "severity": row["severity"],
-            "alert_type": row["alert_type"],
-            "title": row["title"],
-            "description": row["description"],
-            "evidence": row["evidence"] if isinstance(row["evidence"], dict) else json.loads(row["evidence"]) if row["evidence"] else {},
-            "acknowledged": row["acknowledged"],
-            "acknowledged_by": row["acknowledged_by"],
-            "acknowledged_at": row["acknowledged_at"].isoformat() if row["acknowledged_at"] else None,
-            "resolved": row["resolved"],
-            "resolved_at": row["resolved_at"].isoformat() if row["resolved_at"] else None,
-            "created_at": row["created_at"].isoformat(),
-        })
+        alerts.append(
+            {
+                "id": str(row["id"]),
+                "agent_id": str(row["agent_id"]) if row["agent_id"] else None,
+                "agent_name": row["agent_name"],
+                "severity": row["severity"],
+                "alert_type": row["alert_type"],
+                "title": row["title"],
+                "description": row["description"],
+                "evidence": (
+                    row["evidence"]
+                    if isinstance(row["evidence"], dict)
+                    else json.loads(row["evidence"]) if row["evidence"] else {}
+                ),
+                "acknowledged": row["acknowledged"],
+                "acknowledged_by": row["acknowledged_by"],
+                "acknowledged_at": (
+                    row["acknowledged_at"].isoformat() if row["acknowledged_at"] else None
+                ),
+                "resolved": row["resolved"],
+                "resolved_at": row["resolved_at"].isoformat() if row["resolved_at"] else None,
+                "created_at": row["created_at"].isoformat(),
+            }
+        )
 
     return {"alerts": alerts, "total": total}
+
 
 @app.post("/admin/alerts/{alert_id}/acknowledge", tags=["Admin - Alerts"])
 async def acknowledge_alert(
@@ -4124,13 +4218,16 @@ async def acknowledge_alert(
             SET acknowledged = true, acknowledged_at = NOW(), acknowledged_by = $3
             WHERE id = $1 AND org_id = $2
             """,
-            alert_id, org_id, auth.get("org_name", "API User"),
+            alert_id,
+            org_id,
+            auth.get("org_name", "API User"),
         )
 
     if result == "UPDATE 0":
         raise HTTPException(status_code=404, detail="Alert not found")
 
     return {"alert_id": str(alert_id), "acknowledged": True}
+
 
 @app.post("/admin/alerts/{alert_id}/resolve", tags=["Admin - Alerts"])
 async def resolve_alert(
@@ -4150,7 +4247,10 @@ async def resolve_alert(
             SET resolved = true, resolved_at = NOW(), resolution_notes = $3, resolved_by = $4
             WHERE id = $1 AND org_id = $2
             """,
-            alert_id, org_id, resolution, auth.get("org_name", "API User"),
+            alert_id,
+            org_id,
+            resolution,
+            auth.get("org_name", "API User"),
         )
 
     if result == "UPDATE 0":
@@ -4158,9 +4258,11 @@ async def resolve_alert(
 
     return {"alert_id": str(alert_id), "resolved": True}
 
+
 # =============================================================================
 # ADMIN ENDPOINTS - API KEYS
 # =============================================================================
+
 
 @app.get("/admin/api-keys", tags=["Admin - API Keys"])
 async def list_api_keys(
@@ -4184,19 +4286,22 @@ async def list_api_keys(
 
     keys = []
     for row in rows:
-        keys.append({
-            "id": str(row["id"]),
-            "org_id": str(row["org_id"]),
-            "key_prefix": row["key_prefix"],
-            "name": row["name"],
-            "scopes": row["scopes"] or [],
-            "is_active": row["is_active"],
-            "expires_at": row["expires_at"].isoformat() if row["expires_at"] else None,
-            "last_used_at": row["last_used_at"].isoformat() if row["last_used_at"] else None,
-            "created_at": row["created_at"].isoformat(),
-        })
+        keys.append(
+            {
+                "id": str(row["id"]),
+                "org_id": str(row["org_id"]),
+                "key_prefix": row["key_prefix"],
+                "name": row["name"],
+                "scopes": row["scopes"] or [],
+                "is_active": row["is_active"],
+                "expires_at": row["expires_at"].isoformat() if row["expires_at"] else None,
+                "last_used_at": row["last_used_at"].isoformat() if row["last_used_at"] else None,
+                "created_at": row["created_at"].isoformat(),
+            }
+        )
 
     return keys
+
 
 @app.post("/admin/api-keys", tags=["Admin - API Keys"])
 async def create_api_key(
@@ -4222,7 +4327,11 @@ async def create_api_key(
             VALUES ($1, $2, $3, $4, $5, $6)
             RETURNING id
             """,
-            org_id, key_hash, key_prefix, name, scopes,
+            org_id,
+            key_hash,
+            key_prefix,
+            name,
+            scopes,
             datetime.fromisoformat(expires_at.replace("Z", "+00:00")) if expires_at else None,
         )
 
@@ -4231,6 +4340,7 @@ async def create_api_key(
         "key_id": str(key_id),
         "key_prefix": key_prefix,
     }
+
 
 @app.delete("/admin/api-keys/{key_prefix}", tags=["Admin - API Keys"])
 async def revoke_api_key(
@@ -4248,13 +4358,15 @@ async def revoke_api_key(
             SET is_active = false
             WHERE key_prefix = $1 AND org_id = $2
             """,
-            key_prefix, org_id,
+            key_prefix,
+            org_id,
         )
 
     if result == "UPDATE 0":
         raise HTTPException(status_code=404, detail="API key not found")
 
     return {"message": "API key revoked"}
+
 
 @app.post("/admin/api-keys/rotate", tags=["Admin - API Keys"])
 async def rotate_api_key(
@@ -4282,7 +4394,9 @@ async def rotate_api_key(
             INSERT INTO api_keys (org_id, key_hash, key_prefix, name, scopes)
             VALUES ($1, $2, $3, 'Rotated Key', ARRAY['admin', 'read', 'write'])
             """,
-            org_id, key_hash, key_prefix,
+            org_id,
+            key_hash,
+            key_prefix,
         )
 
     return {
@@ -4291,9 +4405,11 @@ async def rotate_api_key(
         "message": "All previous keys revoked. Use this new key.",
     }
 
+
 # =============================================================================
 # ADMIN ENDPOINTS - USAGE & ORGANIZATION
 # =============================================================================
+
 
 @app.get("/admin/usage", tags=["Admin - Usage"])
 async def get_usage_metrics(
@@ -4321,7 +4437,9 @@ async def get_usage_metrics(
             JOIN agents a ON al.agent_id = a.id
             WHERE a.org_id = $1 AND al.timestamp BETWEEN $2 AND $3
             """,
-            org_id, start_dt, end_dt,
+            org_id,
+            start_dt,
+            end_dt,
         )
 
         # Active agents
@@ -4332,7 +4450,9 @@ async def get_usage_metrics(
             JOIN agents a ON al.agent_id = a.id
             WHERE a.org_id = $1 AND al.timestamp BETWEEN $2 AND $3
             """,
-            org_id, start_dt, end_dt,
+            org_id,
+            start_dt,
+            end_dt,
         )
 
         # Total spend from rate_limit_windows
@@ -4345,7 +4465,9 @@ async def get_usage_metrics(
               AND rlw.window_type = 'day'
               AND rlw.window_start BETWEEN $2 AND $3
             """,
-            org_id, start_dt, end_dt,
+            org_id,
+            start_dt,
+            end_dt,
         )
 
         # Daily breakdown with spend
@@ -4362,7 +4484,9 @@ async def get_usage_metrics(
             GROUP BY DATE(al.timestamp)
             ORDER BY date
             """,
-            org_id, start_dt, end_dt,
+            org_id,
+            start_dt,
+            end_dt,
         )
 
         # Get daily spend breakdown
@@ -4378,7 +4502,9 @@ async def get_usage_metrics(
               AND rlw.window_start BETWEEN $2 AND $3
             GROUP BY DATE(rlw.window_start)
             """,
-            org_id, start_dt, end_dt,
+            org_id,
+            start_dt,
+            end_dt,
         )
 
     # Convert daily spend to a lookup dict
@@ -4386,13 +4512,15 @@ async def get_usage_metrics(
 
     daily_breakdown = []
     for row in daily:
-        daily_breakdown.append({
-            "date": row["date"].isoformat(),
-            "verifications": row["verifications"],
-            "approved": row["approved"],
-            "blocked": row["blocked"],
-            "spend_usd": spend_by_date.get(row["date"], 0.0),
-        })
+        daily_breakdown.append(
+            {
+                "date": row["date"].isoformat(),
+                "verifications": row["verifications"],
+                "approved": row["approved"],
+                "blocked": row["blocked"],
+                "spend_usd": spend_by_date.get(row["date"], 0.0),
+            }
+        )
 
     return {
         "total_verifications": totals["total"] or 0,
@@ -4404,6 +4532,7 @@ async def get_usage_metrics(
         "period_end": end,
         "daily_breakdown": daily_breakdown,
     }
+
 
 @app.get("/admin/organization", tags=["Admin - Organization"], response_model=OrganizationResponse)
 async def get_organization(
@@ -4419,7 +4548,11 @@ async def get_organization(
         return {
             "id": str(org.id),
             "name": org.name,
-            "billing_tier": org.billing_tier.value if hasattr(org.billing_tier, 'value') else str(org.billing_tier),
+            "billing_tier": (
+                org.billing_tier.value
+                if hasattr(org.billing_tier, "value")
+                else str(org.billing_tier)
+            ),
             "contact_email": org.contact_email,
             "webhook_url": org.webhook_url,
             "daily_limit_usd": float(org.daily_limit_usd),
@@ -4432,7 +4565,9 @@ async def get_organization(
         raise HTTPException(status_code=404, detail="Organization not found")
     except Exception as e:
         logger.error(f"Error fetching organization {org_id}: {type(e).__name__}: {e}")
-        raise HTTPException(status_code=500, detail=f"Error fetching organization: {type(e).__name__}")
+        raise HTTPException(
+            status_code=500, detail=f"Error fetching organization: {type(e).__name__}"
+        )
 
 
 @app.patch("/admin/organization", tags=["Admin - Organization"])
@@ -4641,6 +4776,7 @@ async def list_organization_webhook_deliveries(
 # is returned plaintext exactly once — operators must capture it on the
 # response. There is no way to retrieve it later.
 
+
 @app.post("/admin/organizations", tags=["Operator"], status_code=201)
 async def create_organization_endpoint(
     body: dict,
@@ -4694,7 +4830,11 @@ async def create_organization_endpoint(
                 VALUES ($1, $2, $3, $4, $5)
                 RETURNING id
                 """,
-            name, contact_email, billing_tier, key_hash, webhook_url,
+            name,
+            contact_email,
+            billing_tier,
+            key_hash,
+            webhook_url,
         )
         if webhook_url:
             webhook_signing_secret = generate_webhook_signing_secret()

@@ -40,16 +40,19 @@ _AGENT_PRODUCTION_METADATA_KEYS = frozenset(
 
 class DatabaseError(Exception):
     """Base exception for database operations."""
+
     pass
 
 
 class AgentNotFoundError(DatabaseError):
     """Raised when an agent is not found."""
+
     pass
 
 
 class OrganizationNotFoundError(DatabaseError):
     """Raised when an organization is not found."""
+
     pass
 
 
@@ -110,9 +113,7 @@ class Database:
             yield conn
 
     @asynccontextmanager
-    async def acquire_as_tenant(
-        self, org_id: UUID
-    ) -> AsyncGenerator[Connection, None]:
+    async def acquire_as_tenant(self, org_id: UUID) -> AsyncGenerator[Connection, None]:
         """
         Acquire a connection scoped to a tenant (Phase 1C.1).
 
@@ -197,7 +198,11 @@ class Database:
             last_action_at=row["last_action_at"],
             total_actions_count=row["total_actions_count"],
             total_blocked_count=row["total_blocked_count"],
-            metadata=json.loads(row["metadata"]) if isinstance(row["metadata"], str) else (row["metadata"] or {}),
+            metadata=(
+                json.loads(row["metadata"])
+                if isinstance(row["metadata"], str)
+                else (row["metadata"] or {})
+            ),
             created_at=row["created_at"],
             updated_at=row["updated_at"],
             key_version=row["key_version"],
@@ -238,7 +243,11 @@ class Database:
             last_action_at=row["last_action_at"],
             total_actions_count=row["total_actions_count"],
             total_blocked_count=row["total_blocked_count"],
-            metadata=json.loads(row["metadata"]) if isinstance(row["metadata"], str) else (row["metadata"] or {}),
+            metadata=(
+                json.loads(row["metadata"])
+                if isinstance(row["metadata"], str)
+                else (row["metadata"] or {})
+            ),
             created_at=row["created_at"],
             updated_at=row["updated_at"],
             key_version=row["key_version"],
@@ -249,9 +258,7 @@ class Database:
     # AGENT GOVERNING POLICIES (AI PR Guard — Tier A)
     # =========================================================================
 
-    async def get_active_agent_policy(
-        self, agent_id: UUID
-    ) -> RegisteredPolicy | None:
+    async def get_active_agent_policy(self, agent_id: UUID) -> RegisteredPolicy | None:
         """Return the agent's active registered policy, or None.
 
         Read on the /verify path, which runs as ``inntris_worker`` (BYPASSRLS).
@@ -328,9 +335,7 @@ class Database:
                 json.loads(mapping_out) if isinstance(mapping_out, str) else (mapping_out or {})
             ),
             protected_branches=(
-                json.loads(branches_out)
-                if isinstance(branches_out, str)
-                else (branches_out or [])
+                json.loads(branches_out) if isinstance(branches_out, str) else (branches_out or [])
             ),
             version=row["version"],
         )
@@ -399,9 +404,7 @@ class Database:
                 new_fingerprint,
             )
 
-        logger.info(
-            f"Rotated signing key for agent {agent_id} to v{row['key_version']}"
-        )
+        logger.info(f"Rotated signing key for agent {agent_id} to v{row['key_version']}")
         return {
             "key_version": row["key_version"],
             "public_key_fingerprint": row["public_key_fingerprint"],
@@ -576,7 +579,9 @@ class Database:
             raise AgentNotFoundError(f"Agent {agent_id} not found")
 
         action_type = "approved" if was_approved else "blocked"
-        logger.info(f"Updated agent {agent_id} trust after {action_type} action (score: {trust_score})")
+        logger.info(
+            f"Updated agent {agent_id} trust after {action_type} action (score: {trust_score})"
+        )
 
     # =========================================================================
     # ORGANIZATION OPERATIONS
@@ -761,7 +766,7 @@ class Database:
         """
         async with self.acquire() as conn, conn.transaction():
             await conn.execute(
-                    """
+                """
                     UPDATE webhook_deliveries
                     SET status = 'dead_letter',
                         last_error = COALESCE(
@@ -1120,9 +1125,7 @@ class Database:
             RETURNING agent_id, request_ref, action_hash, nonce, state
         """
         async with self.acquire() as conn:
-            row = await conn.fetchrow(
-                query, agent_id, request_ref, action_hash, nonce, sandbox
-            )
+            row = await conn.fetchrow(query, agent_id, request_ref, action_hash, nonce, sandbox)
             if row is not None:
                 return "new", dict(row)
             existing = await conn.fetchrow(
@@ -1249,12 +1252,12 @@ class Database:
 
         return [dict(row) for row in rows]
 
-    async def mark_logs_as_anchored(
+    async def assign_logs_to_proof(
         self,
         log_ids: list[UUID],
         merkle_root_id: UUID,
     ) -> None:
-        """Mark audit logs as anchored to a merkle root."""
+        """Assign audit logs to a Merkle batch without claiming Base confirmation."""
         query = """
             UPDATE audit_logs
             SET merkle_root_id = $1, merkle_leaf_index = idx.leaf_index
@@ -1270,7 +1273,16 @@ class Database:
         async with self.acquire() as conn:
             await conn.execute(query, merkle_root_id, log_ids)
 
-        logger.info(f"Marked {len(log_ids)} logs as anchored to merkle root {merkle_root_id}")
+        logger.info(f"Assigned {len(log_ids)} logs to merkle proof {merkle_root_id}")
+
+    async def mark_logs_as_anchored(
+        self,
+        log_ids: list[UUID],
+        merkle_root_id: UUID,
+    ) -> None:
+        """Backward-compatible alias for the corrected assignment semantics."""
+
+        await self.assign_logs_to_proof(log_ids, merkle_root_id)
 
     # =========================================================================
     # RATE LIMITING
@@ -1428,11 +1440,7 @@ class Database:
                 agent_id,
                 day_start,
             )
-            daily_spend = (
-                Decimal(legacy_spend or 0)
-                + Decimal(reserved_spend or 0)
-                + amount
-            )
+            daily_spend = Decimal(legacy_spend or 0) + Decimal(reserved_spend or 0) + amount
             if daily_spend > daily_limit_usd:
                 raise LimitReservationError("daily", daily_spend)
 
@@ -1546,12 +1554,16 @@ class Database:
         logger.info(f"Updated merkle proof {proof_id} status to {status}")
 
     async def get_pending_merkle_proofs(self) -> list[dict[str, Any]]:
-        """Get merkle proofs pending blockchain submission."""
+        """Get proofs due for state-aware submission or reconciliation."""
         query = """
-            SELECT id, root_hash, leaf_hashes, retry_count
+            SELECT id, root_hash, leaf_hashes, log_count, retry_count,
+                   start_timestamp, end_timestamp, status,
+                   transaction_hash, submission_nonce, prepared_at,
+                   submitted_at, contract_address, chain_id
             FROM merkle_proofs
-            WHERE status IN ('pending', 'failed')
+            WHERE status IN ('pending', 'prepared', 'submitted', 'failed')
               AND retry_count < 5
+              AND (next_retry_at IS NULL OR next_retry_at <= NOW())
             ORDER BY created_at ASC
         """
         async with self.acquire() as conn:

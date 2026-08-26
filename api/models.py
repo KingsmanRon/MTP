@@ -83,6 +83,7 @@ class VerifyActionRequest(BaseModel):
     to identify the integration (e.g. ``"promptfoo"``, ``"langchain"``).
     This is surfaced in audit logs but not validated at the API level.
     """
+
     # UPDATED: strict=False allows JSON strings to be parsed into Types (UUID, Decimal)
     model_config = ConfigDict(strict=False)
 
@@ -91,34 +92,23 @@ class VerifyActionRequest(BaseModel):
         ...,
         min_length=1,
         max_length=100,
-        description="Type of action being performed (e.g., 'financial_transaction', 'email_send')"
+        description="Type of action being performed (e.g., 'financial_transaction', 'email_send')",
     )
     payload: dict[str, Any] = Field(
-        ...,
-        description="Action-specific payload containing all details"
+        ..., description="Action-specific payload containing all details"
     )
     signature: str = Field(
-        ...,
-        min_length=64,
-        description="Base64-encoded Ed25519 signature of the payload hash"
+        ..., min_length=64, description="Base64-encoded Ed25519 signature of the payload hash"
     )
     nonce: str = Field(
-        ...,
-        min_length=1,
-        max_length=64,
-        description="Unique nonce to prevent replay attacks"
+        ..., min_length=1, max_length=64, description="Unique nonce to prevent replay attacks"
     )
 
     # CRITICAL FIX: Accept timestamp as RAW STRING to prevent parsing mismatch
     # We removed the validator to ensure the string reaches the backend exactly as sent
-    timestamp: str = Field(
-        ...,
-        description="Client-side timestamp (ISO 8601 string)"
-    )
+    timestamp: str = Field(..., description="Client-side timestamp (ISO 8601 string)")
     policy_hash: str | None = Field(
-        None,
-        max_length=64,
-        description="SHA-256 hash of .inntris.yml policy file"
+        None, max_length=64, description="SHA-256 hash of .inntris.yml policy file"
     )
     request_ref: str | None = Field(
         None,
@@ -186,18 +176,15 @@ class TestVerifyRequest(BaseModel):
     Does not require cryptographic signature - uses API key auth instead.
     For testing policy evaluation without full integration.
     """
+
     model_config = ConfigDict(strict=False)
 
     agent_id: UUID = Field(..., description="Agent ID to test verification for")
     action_type: str = Field(
-        ...,
-        min_length=1,
-        max_length=100,
-        description="Type of action being performed"
+        ..., min_length=1, max_length=100, description="Type of action being performed"
     )
     payload: dict[str, Any] = Field(
-        ...,
-        description="Action-specific payload containing all details"
+        ..., description="Action-specific payload containing all details"
     )
 
     @field_validator("action_type")
@@ -217,6 +204,7 @@ class VerifyTokenRequest(BaseModel):
     parameters) to ``/verify-token`` and refuse to proceed unless the token is
     cryptographically valid, unexpired, and bound to *this* action.
     """
+
     model_config = ConfigDict(strict=False)
 
     approval_token: str = Field(
@@ -257,9 +245,13 @@ class VerifyTokenRequest(BaseModel):
 
 class VerifyTokenResponse(BaseModel):
     """Result of verifying an approval token."""
+
     model_config = ConfigDict(strict=False)
 
-    valid: bool = Field(..., description="True only if the token is authentic, unexpired, and (if action params supplied) action-bound")
+    valid: bool = Field(
+        ...,
+        description="True only if the token is authentic, unexpired, and (if action params supplied) action-bound",
+    )
     reason: str | None = Field(None, description="Why the token was rejected, when invalid")
     verdict: str | None = Field(None, description="Verdict embedded in the token (e.g. 'approved')")
     agent_id: str | None = Field(None, description="Agent the token was issued to")
@@ -296,15 +288,19 @@ class VerifyTokenResponse(BaseModel):
 
 class VerifyDebugResponse(BaseModel):
     """Dry-run signing diagnostics for POST /verify/debug (no side effects)."""
+
     model_config = ConfigDict(strict=False)
 
     agent_id: str = Field(..., description="Agent the request was built for")
-    agent_found: bool = Field(..., description="Whether the agent_id resolves to a registered agent")
+    agent_found: bool = Field(
+        ..., description="Whether the agent_id resolves to a registered agent"
+    )
     action_type: str = Field(..., description="Action type from the request")
     sig_version: int = Field(..., description="Signing-envelope version the server used")
     canonical_timestamp: str = Field(..., description="Canonical UTC timestamp the server hashed")
     expected_action_hash: str = Field(
-        ..., description="Action hash the server verifies the signature against (sign bytes.fromhex of this)"
+        ...,
+        description="Action hash the server verifies the signature against (sign bytes.fromhex of this)",
     )
     signature_valid: bool | None = Field(
         None, description="True/False when the agent exists; null when the agent is not found"
@@ -363,40 +359,30 @@ def _validate_action_list(
 
 class RegisterAgentRequest(BaseModel):
     """Request to register a new agent with the platform."""
+
     # UPDATED: strict=False allows JSON strings to be parsed into Types (UUID, Decimal)
     model_config = ConfigDict(strict=False)
 
     org_id: UUID = Field(..., description="Organization ID")
     name: str = Field(..., min_length=1, max_length=255, description="Agent display name")
     public_key: str = Field(
-        ...,
-        min_length=44,
-        max_length=64,
-        description="Base64-encoded Ed25519 public key"
+        ..., min_length=44, max_length=64, description="Base64-encoded Ed25519 public key"
     )
     daily_limit_usd: Decimal = Field(
-        default=Decimal("100.00"),
-        ge=0,
-        le=1000000,
-        description="Daily spending limit in USD"
+        default=Decimal("100.00"), ge=0, le=1000000, description="Daily spending limit in USD"
     )
     per_action_limit_usd: Decimal = Field(
-        default=Decimal("50.00"),
-        ge=0,
-        le=100000,
-        description="Per-action spending limit in USD"
+        default=Decimal("50.00"), ge=0, le=100000, description="Per-action spending limit in USD"
     )
     allowed_actions: list[str] = Field(
         default=["financial_transaction", "email_send", "api_call"],
-        description="List of allowed action types"
+        description="List of allowed action types",
     )
     metadata: dict[str, Any] = Field(default_factory=dict, description="Additional metadata")
 
     @field_validator("allowed_actions")
     @classmethod
-    def validate_allowed_actions(
-        cls, values: list[str], info: ValidationInfo
-    ) -> list[str]:
+    def validate_allowed_actions(cls, values: list[str], info: ValidationInfo) -> list[str]:
         return _validate_action_list(values, field_name=info.field_name or "") or []
 
 
@@ -472,9 +458,7 @@ class UpdateAgentRequest(BaseModel):
 
     @field_validator("metadata")
     @classmethod
-    def validate_wallet_policy_metadata(
-        cls, value: dict[str, Any] | None
-    ) -> dict[str, Any] | None:
+    def validate_wallet_policy_metadata(cls, value: dict[str, Any] | None) -> dict[str, Any] | None:
         """Reject a structurally invalid ``wallet_policy`` at write time.
 
         The authoritative fail-closed behaviour lives in the policy engine — a
@@ -535,6 +519,7 @@ class PublicRegisterAgentRequest(BaseModel):
     The agent provides its own Ed25519 public key; Inntris assigns an org and
     returns a stable agent_id that can be used immediately for /verify calls.
     """
+
     model_config = ConfigDict(strict=False)
 
     email: str = Field(
@@ -563,6 +548,7 @@ class PublicRegisterAgentRequest(BaseModel):
 
 class PublicRegisterAgentResponse(BaseModel):
     """Response from public agent registration."""
+
     model_config = ConfigDict(strict=False)
 
     agent_id: str = Field(..., description="Newly created agent UUID")
@@ -581,6 +567,7 @@ class PublicRegisterAgentResponse(BaseModel):
 
 class CreateOrganizationRequest(BaseModel):
     """Request to create a new organization."""
+
     # UPDATED: strict=False allows JSON strings to be parsed into Types (UUID, Decimal)
     model_config = ConfigDict(strict=False)
 
@@ -601,20 +588,19 @@ class VerifyActionResponse(BaseModel):
 
     Contains the verdict and an optional signed approval token.
     """
+
     model_config = ConfigDict(strict=True)
 
     verdict: ActionVerdict = Field(..., description="The verification verdict")
     verdict_reason: str | None = Field(None, description="Human-readable reason for the verdict")
     approval_token: str | None = Field(
-        None,
-        description="Signed approval token if verdict is APPROVED"
+        None, description="Signed approval token if verdict is APPROVED"
     )
     trust_score: int = Field(..., ge=0, le=100, description="Current trust score of the agent")
     audit_id: UUID = Field(..., description="Audit log entry ID for this verification")
     timestamp: datetime = Field(..., description="Server timestamp of the verification")
     limits_remaining: dict[str, Any] | None = Field(
-        None,
-        description="Remaining limits for the agent"
+        None, description="Remaining limits for the agent"
     )
     idempotency_status: Literal["new", "replayed"] | None = Field(
         None,
@@ -637,6 +623,7 @@ class VerifyActionDeniedResponse(BaseModel):
 
 class AgentPublicInfo(BaseModel):
     """Public information about an agent for the trust badge."""
+
     model_config = ConfigDict(strict=True)
 
     agent_id: UUID = Field(..., description="Agent unique identifier")
@@ -652,6 +639,7 @@ class AgentPublicInfo(BaseModel):
 
 class PublicVerificationRecord(BaseModel):
     """Public, read-only verification receipt for the shareable audit page."""
+
     model_config = ConfigDict(strict=True)
 
     # Core identity
@@ -674,7 +662,9 @@ class PublicVerificationRecord(BaseModel):
     violations: list[str] = Field(default_factory=list, description="Policy violations if any")
 
     # Policy binding
-    policy_hash: str | None = Field(None, description="SHA-256 hash of policy file at verification time")
+    policy_hash: str | None = Field(
+        None, description="SHA-256 hash of policy file at verification time"
+    )
 
     # On-chain proof
     action_hash: str = Field(..., description="SHA-256 hash of the action")
@@ -688,6 +678,14 @@ class PublicVerificationRecord(BaseModel):
         description="Base64 Ed25519 public key the signature verifies against",
     )
     merkle_root: str | None = Field(None, description="Merkle root hash")
+    merkle_status: Literal["unassigned", "assigned"] = Field(
+        default="unassigned",
+        description="Whether this receipt has been assigned to an immutable Merkle batch",
+    )
+    anchor_status: Literal["pending", "confirmed", "failed", "not_applicable"] = Field(
+        default="pending",
+        description="Base submission lifecycle, independent of receipt integrity",
+    )
     tx_hash: str | None = Field(None, description="Base L2 transaction hash")
     block_number: int | None = Field(None, description="Block number on Base L2")
     chain_id: int = Field(default=8453, description="Chain ID (Base L2)")
@@ -695,13 +693,21 @@ class PublicVerificationRecord(BaseModel):
 
     # Receipt integrity
     schema_version: str = Field(default="v1", description="Receipt schema version")
-    receipt_fingerprint: str = Field(..., description="SHA-256 of canonical core fields for integrity verification")
-    integrity_status: str = Field(default="verified", description="Server-side integrity verification status")
-    sandbox: bool = Field(default=False, description="True for sandbox/test receipts that never anchor on-chain")
+    receipt_fingerprint: str = Field(
+        ..., description="SHA-256 of canonical core fields for integrity verification"
+    )
+    integrity_status: str = Field(
+        default="verified",
+        description="Receipt integrity only; anchoring is reported by anchor_status",
+    )
+    sandbox: bool = Field(
+        default=False, description="True for sandbox/test receipts that never anchor on-chain"
+    )
 
 
 class PublicProofResponse(BaseModel):
     """Public Merkle proof response for an audit log entry."""
+
     model_config = ConfigDict(strict=False)
 
     audit_id: str = Field(..., description="Audit log ID")
@@ -713,18 +719,31 @@ class PublicProofResponse(BaseModel):
         description="True = sibling is on the right, False = on the left",
     )
     merkle_root: str | None = Field(None, description="Merkle root hash of the anchor batch")
+    merkle_status: Literal["unassigned", "assigned"] = Field(
+        default="unassigned",
+        description="Whether the audit log belongs to a Merkle batch",
+    )
+    anchor_status: Literal["pending", "confirmed", "failed", "not_applicable"] = Field(
+        default="pending",
+        description="Base lifecycle for the assigned Merkle batch",
+    )
     tx_hash: str | None = Field(None, description="On-chain transaction hash")
     chain_id: int | None = Field(None, description="Chain ID (8453 for Base Mainnet)")
     block_number: int | None = Field(None, description="Block number of the anchor transaction")
     anchored_at: str | None = Field(None, description="ISO 8601 timestamp of on-chain anchor")
     submitter: str | None = Field(None, description="Wallet address that submitted the Merkle root")
-    receipt_fingerprint: str | None = Field(None, description="SHA-256 receipt fingerprint from the audit log")
+    receipt_fingerprint: str | None = Field(
+        None, description="SHA-256 receipt fingerprint from the audit log"
+    )
     policy_hash: str | None = Field(None, description="Policy hash bound to this receipt, if any")
-    timestamp: str | None = Field(None, description="ISO 8601 timestamp of the original verification event")
+    timestamp: str | None = Field(
+        None, description="ISO 8601 timestamp of the original verification event"
+    )
 
 
 class HealthResponse(BaseModel):
     """API health check response."""
+
     status: str = Field(..., description="Service status")
     version: str = Field(..., description="API version")
     database: str = Field(..., description="Database connection status")
@@ -734,6 +753,7 @@ class HealthResponse(BaseModel):
 
 class ErrorResponse(BaseModel):
     """Standard error response."""
+
     error: str = Field(..., description="Error type")
     message: str = Field(..., description="Human-readable error message")
     details: dict[str, Any] | None = Field(None, description="Additional error details")
@@ -747,6 +767,7 @@ class ErrorResponse(BaseModel):
 
 class AgentRecord(BaseModel):
     """Internal representation of an agent from the database."""
+
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
@@ -780,6 +801,7 @@ class RegisteredPolicy(BaseModel):
     and protected_branches the server uses to re-derive a change's minimum
     action type independently of the client's asserted action_type.
     """
+
     model_config = ConfigDict(from_attributes=True)
 
     policy_hash: str
@@ -808,6 +830,7 @@ class RegisterPolicyRequest(BaseModel):
 
 class OrganizationRecord(BaseModel):
     """Internal representation of an organization from the database."""
+
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
@@ -824,6 +847,7 @@ class OrganizationRecord(BaseModel):
 
 class AuditLogEntry(BaseModel):
     """Audit log entry for database insertion."""
+
     agent_id: UUID
     action_type: str
     action_hash: str

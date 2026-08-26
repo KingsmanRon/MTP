@@ -1,4 +1,5 @@
 """Tests for GET /public/verify/{audit_id}/proof (unauthenticated)."""
+
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
@@ -29,12 +30,16 @@ def _log_row(anchored: bool):
     return m
 
 
-def _proof_row(status="confirmed", transaction_hash="0x" + "d" * 64):
+def _proof_row(
+    status="confirmed",
+    transaction_hash="0x" + "d" * 64,
+    block_number=12345,
+):
     row = {
         "id": FAKE_PROOF_ID,
         "root_hash": "c" * 64,
         "transaction_hash": transaction_hash,
-        "block_number": 12345,
+        "block_number": block_number,
         "chain_id": 8453,
         "status": status,
         "confirmed_at": datetime(2026, 4, 13, 13, 0, 0, tzinfo=UTC),
@@ -50,8 +55,17 @@ def _proof_row(status="confirmed", transaction_hash="0x" + "d" * 64):
 class TestPublicProofEndpoint:
     def test_anchored_receipt_returns_200_with_full_proof(self):
         fake_proof = [{"hash": "a" * 64, "position": 1}]
-        with patch("api.main.db_pool") as mock_pool, \
-             patch.dict("sys.modules", {"workers.anchor_worker": MagicMock(compute_merkle_proof=MagicMock(return_value=fake_proof))}):
+        with (
+            patch("api.main.db_pool") as mock_pool,
+            patch.dict(
+                "sys.modules",
+                {
+                    "workers.anchor_worker": MagicMock(
+                        compute_merkle_proof=MagicMock(return_value=fake_proof)
+                    )
+                },
+            ),
+        ):
             conn = AsyncMock()
             conn.fetchrow = AsyncMock(side_effect=[_log_row(anchored=True), _proof_row()])
             mock_pool.acquire.return_value.__aenter__ = AsyncMock(return_value=conn)
@@ -60,6 +74,8 @@ class TestPublicProofEndpoint:
         assert response.status_code == 200
         body = response.json()
         assert body["status"] == "anchored"
+        assert body["merkle_status"] == "assigned"
+        assert body["anchor_status"] == "confirmed"
         assert body["audit_id"] == str(FAKE_AUDIT_ID)
         assert body["action_hash"] == "b" * 64
         assert body["merkle_root"] == "c" * 64
@@ -78,6 +94,8 @@ class TestPublicProofEndpoint:
         assert response.status_code == 200
         body = response.json()
         assert body["status"] == "pending_anchor"
+        assert body["merkle_status"] == "unassigned"
+        assert body["anchor_status"] == "pending"
         assert body["tx_hash"] is None
         assert body["merkle_root"] is None
         assert body["proof"] == []
@@ -104,6 +122,7 @@ class TestPublicProofEndpoint:
         assert response.status_code == 200
         body = response.json()
         assert body["status"] == "sandbox"
+        assert body["anchor_status"] == "not_applicable"
         assert body["tx_hash"] is None
         assert body["merkle_root"] is None
 
@@ -122,8 +141,33 @@ class TestPublicProofEndpoint:
         assert response.status_code == 200
         body = response.json()
         assert body["status"] == "failed"
+        assert body["merkle_status"] == "assigned"
+        assert body["anchor_status"] == "failed"
         assert body["tx_hash"] is None
-        assert body["proof"] == []
+        assert body["merkle_root"] == "c" * 64
+        assert len(body["proof"]) == 1
+
+    def test_submitted_proof_exposes_assignment_and_transaction_as_pending(self):
+        with patch("api.main.db_pool") as mock_pool:
+            conn = AsyncMock()
+            conn.fetchrow = AsyncMock(
+                side_effect=[
+                    _log_row(anchored=True),
+                    _proof_row(status="submitted", block_number=None),
+                ]
+            )
+            mock_pool.acquire.return_value.__aenter__ = AsyncMock(return_value=conn)
+            mock_pool.acquire.return_value.__aexit__ = AsyncMock(return_value=False)
+            response = client.get(f"/public/verify/{FAKE_AUDIT_ID}/proof")
+        assert response.status_code == 200
+        body = response.json()
+        assert body["status"] == "pending_anchor"
+        assert body["merkle_status"] == "assigned"
+        assert body["anchor_status"] == "pending"
+        assert body["merkle_root"] == "c" * 64
+        assert body["tx_hash"] == "0x" + "d" * 64
+        assert body["block_number"] is None
+        assert len(body["proof"]) == 1
 
     def test_missing_audit_log_returns_404(self):
         with patch("api.main.db_pool") as mock_pool:

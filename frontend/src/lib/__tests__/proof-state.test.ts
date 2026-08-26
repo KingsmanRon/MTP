@@ -1,6 +1,7 @@
 import {
   signatureCheckStatus,
   policyHashCheckStatus,
+  merkleCheckStatus,
   anchorCheckStatus,
   deriveIntegrityStatus,
   isSupportedSchemaVersion,
@@ -61,6 +62,18 @@ describe("proof-state helpers (PR1 §1.4)", () => {
     });
   });
 
+  describe("Merkle membership check", () => {
+    it("is VERIFIED after immutable batch assignment", () => {
+      expect(merkleCheckStatus("assigned")).toBe("verified");
+    });
+    it("is PENDING before batch assignment", () => {
+      expect(merkleCheckStatus("unassigned")).toBe("pending");
+    });
+    it("is NOT APPLICABLE for sandbox receipts", () => {
+      expect(merkleCheckStatus("unassigned", true)).toBe("not_applicable");
+    });
+  });
+
   describe("anchor check", () => {
     it("is VERIFIED when both tx_hash and block_number present", () => {
       expect(anchorCheckStatus("0xabc", 123)).toBe("verified");
@@ -71,8 +84,12 @@ describe("proof-state helpers (PR1 §1.4)", () => {
     it("is PENDING when nothing has been submitted yet", () => {
       expect(anchorCheckStatus(null, null)).toBe("pending");
     });
-    it("is FAILED when the server reports failed receipt integrity", () => {
+    it("is FAILED when the server reports failed anchoring", () => {
       expect(anchorCheckStatus(null, null, "failed")).toBe("failed");
+    });
+    it("requires transaction and block when the server reports confirmed", () => {
+      expect(anchorCheckStatus("0xabc", 123, "confirmed")).toBe("verified");
+      expect(anchorCheckStatus("0xabc", null, "confirmed")).toBe("failed");
     });
   });
 
