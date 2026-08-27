@@ -268,6 +268,7 @@ REDIS_URL=${{Redis.REDIS_URL}}  # Railway auto-fills this
 # BLOCKCHAIN CONFIGURATION (from Step 3)
 # ============================================================================
 BLOCKCHAIN_PROVIDER_URL=https://base-rpc.publicnode.com  # Base Mainnet (or https://base-sepolia-rpc.publicnode.com for testnet)
+BLOCKCHAIN_READ_PROVIDER_URLS=https://mainnet.base.org  # Read-only failover. Reconciliation needs this when the primary 403s receipt reads.
 BLOCKCHAIN_PRIVATE_KEY=[from Step 3.2]
 ANCHOR_CONTRACT_ADDRESS=[from Step 3.4]
 ANCHOR_BATCH_SIZE=1000

@@ -85,3 +85,44 @@ groups:
         annotations:
           summary: Inntris anchor submission failed
           description: At least one proof submission failed or entered the dead letter queue.
+
+      # A transaction we already broadcast is never marked failed or dead
+      # lettered because the RPC will not serve its receipt. Without these two
+      # rules that class of incident is silent: the anchor is on chain, the
+      # proof sits at submitted, and no failure counter moves.
+      - alert: InntrisAnchorRpcReadUnavailable
+        expr: increase(inntris_anchor_submissions_total{outcome="read_unavailable"}[15m]) > 0
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: Inntris anchor reconciliation cannot read chain state
+          description: >-
+            Every configured RPC endpoint is refusing receipt or contract-state
+            reads (for example HTTP 403). Affected proofs stay retryable and are
+            not dead lettered. Add or repair BLOCKCHAIN_READ_PROVIDER_URLS, then
+            run the anchor worker with --reconcile-unresolved. See runbook 3a.
+
+      - alert: InntrisAnchorProofAwaitingReconciliation
+        expr: inntris_anchor_proof_backlog{status="awaiting_reconciliation"} > 0
+        for: 45m
+        labels:
+          severity: warning
+        annotations:
+          summary: Inntris has a broadcast anchor transaction with no confirmation
+          description: >-
+            A proof has held a transaction hash without reaching confirmed for
+            45 minutes. Verify the hash on an independent RPC or explorer before
+            any operator action, and never clear the hash. See runbook 3a.
+
+      - alert: InntrisAnchorRpcPrimaryReadFailover
+        expr: increase(inntris_anchor_rpc_read_failover_total{endpoint="primary"}[15m]) > 0
+        for: 30m
+        labels:
+          severity: info
+        annotations:
+          summary: Inntris anchor reads are running on failover RPC endpoints
+          description: >-
+            The primary RPC is not serving reads for operation
+            {{ $labels.operation }}. Anchoring still works, but the primary
+            needs attention before the failover endpoint also degrades.
