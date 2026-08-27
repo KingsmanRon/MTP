@@ -30,10 +30,13 @@ export interface PublicVerificationRecord {
   action_hash: string;
   signature_valid: boolean;
   merkle_root: string | null;
+  merkle_status: "unassigned" | "assigned";
+  anchor_status: "pending" | "confirmed" | "failed" | "not_applicable";
   tx_hash: string | null;
   block_number: number | null;
   chain_id: number;
   anchored_at: string | null;
+  sandbox: boolean;
 }
 
 export interface VerifyActionResponse {

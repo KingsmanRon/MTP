@@ -39,16 +39,12 @@ class TestComputeRetryBackoff:
 
     def test_backoff_is_capped(self) -> None:
         # Without the cap, retry 20 would be ~730 years.
-        capped = compute_retry_backoff(
-            20, base_seconds=60, max_seconds=3600
-        )
+        capped = compute_retry_backoff(20, base_seconds=60, max_seconds=3600)
         assert capped == timedelta(seconds=3600)
 
     def test_huge_retry_count_does_not_overflow(self) -> None:
         # Proof that the clamp prevents pathological left-shifts.
-        capped = compute_retry_backoff(
-            10_000, base_seconds=60, max_seconds=3600
-        )
+        capped = compute_retry_backoff(10_000, base_seconds=60, max_seconds=3600)
         assert capped == timedelta(seconds=3600)
 
     def test_negative_retry_count_raises(self) -> None:
@@ -59,7 +55,8 @@ class TestComputeRetryBackoff:
 class TestRecordFailure:
     def _make_worker(self) -> tuple[AnchorWorker, MagicMock]:
         db = MagicMock()
-        db.update_merkle_proof_status = AsyncMock()
+        db.schedule_retry = AsyncMock()
+        db.mark_proof_dead_letter = AsyncMock()
         blockchain = MagicMock()
         worker = AnchorWorker(db_service=db, blockchain_service=blockchain)
         return worker, db
@@ -74,9 +71,9 @@ class TestRecordFailure:
 
         await worker._record_failure(proof_id, current_retry_count=0, error_message="rpc timeout")
 
-        db.update_merkle_proof_status.assert_awaited_once()
-        kwargs = db.update_merkle_proof_status.await_args.kwargs
-        args = db.update_merkle_proof_status.await_args.args
+        db.schedule_retry.assert_awaited_once()
+        kwargs = db.schedule_retry.await_args.kwargs
+        args = db.schedule_retry.await_args.args
         assert args == (proof_id,)
         assert kwargs["status"] == "failed"
         assert kwargs["error_message"] == "rpc timeout"
@@ -99,8 +96,7 @@ class TestRecordFailure:
             proof_id, current_retry_count=2, error_message="insufficient gas, permanent"
         )
 
-        kwargs = db.update_merkle_proof_status.await_args.kwargs
-        assert kwargs["status"] == "dead_letter"
+        kwargs = db.mark_proof_dead_letter.await_args.kwargs
         assert kwargs["error_message"] == "insufficient gas, permanent"
         # dead_letter must not schedule a next retry.
         assert "next_retry_at" not in kwargs or kwargs["next_retry_at"] is None
@@ -117,5 +113,4 @@ class TestRecordFailure:
 
         await worker._record_failure(proof_id, current_retry_count=0, error_message="boom")
 
-        kwargs = db.update_merkle_proof_status.await_args.kwargs
-        assert kwargs["status"] == "dead_letter"
+        db.mark_proof_dead_letter.assert_awaited_once()

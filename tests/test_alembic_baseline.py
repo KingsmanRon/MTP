@@ -84,6 +84,12 @@ _WRAPPER_REVISIONS = [
         "0013_token_execution_idempotency",
         "018_highnote_core_authority.sql",
     ),
+    (
+        _REPO / "alembic" / "versions" / "0015_anchor_submission_state.py",
+        "0015_anchor_submission_state",
+        "0014_highnote_core_authority",
+        "019_anchor_submission_state.sql",
+    ),
 ]
 
 
@@ -140,9 +146,9 @@ def test_revision_ids_fit_alembic_version_column() -> None:
     versions_dir = _REPO / "alembic" / "versions"
     for path in versions_dir.glob("0*.py"):
         module = _load_revision(path)
-        assert len(module.revision) <= 32, (
-            f"{path.name}: revision id '{module.revision}' is {len(module.revision)} chars (max 32)"
-        )
+        assert (
+            len(module.revision) <= 32
+        ), f"{path.name}: revision id '{module.revision}' is {len(module.revision)} chars (max 32)"
 
 
 def test_downgrade_refuses_to_drop_forensic_data() -> None:
@@ -170,3 +176,8 @@ def test_env_py_resolves_asyncpg_dsn_as_psycopg2() -> None:
     # The translation logic must be present; if someone removes it, Alembic
     # will silently try to load the asyncpg driver synchronously and fail.
     assert "postgresql+psycopg2://" in env_src
+
+
+def test_worker_runs_migrations_before_starting() -> None:
+    config = (_REPO / "railway.worker.json").read_text(encoding="utf-8")
+    assert '"preDeployCommand": "alembic upgrade head"' in config

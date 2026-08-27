@@ -23,6 +23,7 @@ import { verdictLabel, isPassVerdict, isEscalateVerdict } from "@/lib/verdict";
 import {
   signatureCheckStatus,
   policyHashCheckStatus,
+  merkleCheckStatus,
   anchorCheckStatus,
   isSupportedSchemaVersion,
   checkStatusUiLabel,
@@ -210,7 +211,7 @@ function ProofCompletenessChecks({ record }: { record: PublicVerificationRecord 
       const nextAnchorCheck = anchorCheckStatus(
         record.tx_hash,
         record.block_number,
-        record.integrity_status,
+        record.anchor_status,
       );
       setFingerprintMatches(frontendMatch);
       setIntegrityStatus(
@@ -231,32 +232,39 @@ function ProofCompletenessChecks({ record }: { record: PublicVerificationRecord 
   // Pure deterministic checks (see lib/proof-state.ts).
   const signatureCheck: CheckStatus = signatureCheckStatus(record.signature_valid);
   const policyHashCheck: CheckStatus = policyHashCheckStatus(record.policy_hash);
+  const merkleCheck: CheckStatus = merkleCheckStatus(
+    record.merkle_status,
+    record.sandbox,
+  );
   const anchorCheck: CheckStatus = anchorCheckStatus(
     record.tx_hash,
     record.block_number,
-    record.integrity_status,
+    record.anchor_status,
   );
   const anchorLabel: string =
-    record.integrity_status === "sandbox"
-      ? "Sandbox — not anchored on-chain"
+    record.anchor_status === "not_applicable"
+      ? "Sandbox receipt; Base anchoring is not applicable"
       : anchorCheck === "failed"
-      ? "Anchor proof failed"
+      ? "Base anchoring or reconciliation failed"
       : anchorCheck === "verified"
-      ? "Confirmed on-chain"
+      ? "Confirmed on Base"
       : record.tx_hash != null
-      ? "Transaction submitted"
-      : "Awaiting anchoring";
+      ? "Transaction submitted; confirmation pending"
+      : record.merkle_status === "assigned"
+      ? "Merkle batch assigned; Base submission pending"
+      : "Awaiting Merkle batch assignment";
+  // Integrity describes the receipt itself, never its anchoring. A failed or
+  // pending anchor is reported on the anchor row above and must not be
+  // restated here as an integrity problem.
   const integrityLabel: string =
     fingerprintMatches === false
       ? "Fingerprint mismatch; receipt may be tampered"
       : record.integrity_status === "sandbox"
       ? "Sandbox receipt; signed & verifiable, not anchored"
-      : record.integrity_status === "failed"
-      ? "Anchor proof failed; receipt fingerprint still matches"
       : integrityStatus === "verified"
       ? "Fingerprint matches; receipt is intact"
-      : integrityStatus === "pending"
-      ? "Fingerprint matches; awaiting anchoring"
+      : integrityStatus === "failed"
+      ? "Signature or policy binding did not validate"
       : "Verifying integrity...";
 
   // Schema version gate
@@ -288,8 +296,18 @@ function ProofCompletenessChecks({ record }: { record: PublicVerificationRecord 
           : "Policy hash present but did not validate",
     },
     {
+      label: "Merkle membership",
+      status: merkleCheck,
+      sublabel:
+        merkleCheck === "verified"
+          ? "Receipt assigned to an immutable Merkle batch"
+          : merkleCheck === "not_applicable"
+          ? "Sandbox receipts are excluded from production batches"
+          : "Receipt has not yet been assigned to a Merkle batch",
+    },
+    {
       label: "On-chain anchor",
-      status: record.integrity_status === "sandbox" ? "not_applicable" : anchorCheck,
+      status: anchorCheck,
       sublabel: anchorLabel,
     },
     {

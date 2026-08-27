@@ -12,7 +12,10 @@
  *   - On-chain anchor:    VERIFIED or FAILED for canonical homepage demo
  *                         receipts; transient PENDING is legitimate for a
  *                         brand-new receipt that has not yet been confirmed.
- *   - Receipt integrity:  derived from the three above.
+ *   - Receipt integrity:  signature + policy binding + fingerprint. NOT a
+ *                         function of anchoring — an unanchored or
+ *                         failed-to-anchor receipt is still an intact receipt,
+ *                         and anchor state is reported on the anchor row.
  *
  * The receipt fingerprint helpers (`canonicalFingerprintPayload`,
  * `canonicalStringify`, `computeReceiptFingerprint`) live here too so they
@@ -48,15 +51,31 @@ export function policyHashCheckStatus(
   return "failed";
 }
 
+export function merkleCheckStatus(
+  merkleStatus: string | null | undefined,
+  sandbox = false,
+): CheckStatus {
+  if (sandbox) {
+    return "not_applicable";
+  }
+  return merkleStatus === "assigned" ? "verified" : "pending";
+}
+
 export function anchorCheckStatus(
   txHash: string | null | undefined,
   blockNumber: number | null | undefined,
-  serverIntegrityStatus?: string | null,
+  serverAnchorStatus?: string | null,
 ): CheckStatus {
-  if (serverIntegrityStatus === "failed") {
+  if (serverAnchorStatus === "not_applicable") {
+    return "not_applicable";
+  }
+  if (serverAnchorStatus === "failed") {
     return "failed";
   }
-  if (txHash != null && blockNumber != null) {
+  if (serverAnchorStatus === "confirmed") {
+    return txHash != null && blockNumber != null ? "verified" : "failed";
+  }
+  if (serverAnchorStatus == null && txHash != null && blockNumber != null) {
     return "verified";
   }
   if (txHash != null) {
@@ -69,22 +88,38 @@ export function anchorCheckStatus(
   return "pending";
 }
 
+/**
+ * Receipt integrity is a property of the receipt *document*: an Ed25519
+ * signature that validates over fields whose fingerprint still matches. It is
+ * deliberately NOT a function of anchoring.
+ *
+ * Anchoring is a separate and later claim — that this receipt's Merkle root was
+ * published on Base. A receipt whose anchor batch is still pending, or whose
+ * anchor batch failed outright, is nevertheless an intact receipt: nothing about
+ * it has been altered. Only the publication of its proof is outstanding.
+ *
+ * The previous behaviour folded anchor state into this result, so a receipt
+ * would report "Receipt integrity: FAILED" alongside the sublabel "receipt
+ * fingerprint still matches" — two statements that contradict each other, and
+ * an overstatement of the actual problem.
+ *
+ * Anchor state is now reported on the anchor row alone. `anchor` and
+ * `serverIntegrityStatus` stay in the parameter list so callers keep passing the
+ * full check set (and so the anchor row and this row are derived from one place),
+ * but neither can turn an intact receipt into a failed one.
+ */
 export function deriveIntegrityStatus(
   signature: CheckStatus,
   policy: CheckStatus,
-  anchor: CheckStatus,
+  _anchor: CheckStatus,
   fingerprintMatches: boolean,
-  serverIntegrityStatus: string | null | undefined,
+  _serverIntegrityStatus: string | null | undefined,
 ): CheckStatus {
-  if (!fingerprintMatches || serverIntegrityStatus === "failed") {
+  if (!fingerprintMatches) {
     return "failed";
   }
-  if (signature === "failed" || policy === "failed" || anchor === "failed") {
+  if (signature === "failed" || policy === "failed") {
     return "failed";
-  }
-  if (anchor === "pending") {
-    // Anchor still landing — integrity stays pending until anchor resolves.
-    return "pending";
   }
   return "verified";
 }

@@ -1,6 +1,7 @@
 import {
   signatureCheckStatus,
   policyHashCheckStatus,
+  merkleCheckStatus,
   anchorCheckStatus,
   deriveIntegrityStatus,
   isSupportedSchemaVersion,
@@ -61,6 +62,18 @@ describe("proof-state helpers (PR1 §1.4)", () => {
     });
   });
 
+  describe("Merkle membership check", () => {
+    it("is VERIFIED after immutable batch assignment", () => {
+      expect(merkleCheckStatus("assigned")).toBe("verified");
+    });
+    it("is PENDING before batch assignment", () => {
+      expect(merkleCheckStatus("unassigned")).toBe("pending");
+    });
+    it("is NOT APPLICABLE for sandbox receipts", () => {
+      expect(merkleCheckStatus("unassigned", true)).toBe("not_applicable");
+    });
+  });
+
   describe("anchor check", () => {
     it("is VERIFIED when both tx_hash and block_number present", () => {
       expect(anchorCheckStatus("0xabc", 123)).toBe("verified");
@@ -71,8 +84,12 @@ describe("proof-state helpers (PR1 §1.4)", () => {
     it("is PENDING when nothing has been submitted yet", () => {
       expect(anchorCheckStatus(null, null)).toBe("pending");
     });
-    it("is FAILED when the server reports failed receipt integrity", () => {
+    it("is FAILED when the server reports failed anchoring", () => {
       expect(anchorCheckStatus(null, null, "failed")).toBe("failed");
+    });
+    it("requires transaction and block when the server reports confirmed", () => {
+      expect(anchorCheckStatus("0xabc", 123, "confirmed")).toBe("verified");
+      expect(anchorCheckStatus("0xabc", null, "confirmed")).toBe("failed");
     });
   });
 
@@ -92,25 +109,39 @@ describe("proof-state helpers (PR1 §1.4)", () => {
         deriveIntegrityStatus("verified", "verified", "verified", false, "verified"),
       ).toBe("failed");
     });
-    it("is FAILED when server reports failed integrity", () => {
-      expect(
-        deriveIntegrityStatus("verified", "verified", "verified", true, "failed"),
-      ).toBe("failed");
-    });
-    it("is PENDING while the anchor is pending and the fingerprint matches", () => {
-      expect(
-        deriveIntegrityStatus("verified", "verified", "pending", true, "pending_anchor"),
-      ).toBe("pending");
-    });
-    it("is FAILED when any individual check failed", () => {
+    it("is FAILED when the signature does not validate", () => {
       expect(
         deriveIntegrityStatus("failed", "verified", "verified", true, "verified"),
       ).toBe("failed");
+    });
+    it("is FAILED when a present policy hash does not validate", () => {
       expect(
         deriveIntegrityStatus("verified", "failed", "verified", true, "verified"),
       ).toBe("failed");
+    });
+
+    // Integrity is a property of the receipt document, not of its publication
+    // on-chain. Anchoring is a separate and later claim, reported on the anchor
+    // row. A receipt that is signed and whose fingerprint matches is intact
+    // whether its anchor is pending, failed, or dead-lettered — reporting
+    // "Receipt integrity: FAILED" there contradicts "fingerprint still matches"
+    // and overstates the problem.
+    it("stays VERIFIED when the anchor batch failed but the receipt is intact", () => {
       expect(
-        deriveIntegrityStatus("verified", "verified", "failed", true, "verified"),
+        deriveIntegrityStatus("verified", "verified", "failed", true, "failed"),
+      ).toBe("verified");
+    });
+    it("stays VERIFIED while the anchor is still pending", () => {
+      expect(
+        deriveIntegrityStatus("verified", "verified", "pending", true, "pending_anchor"),
+      ).toBe("verified");
+    });
+    it("still FAILS on a tampered receipt regardless of anchor state", () => {
+      expect(
+        deriveIntegrityStatus("verified", "verified", "failed", false, "failed"),
+      ).toBe("failed");
+      expect(
+        deriveIntegrityStatus("verified", "verified", "pending", false, "pending_anchor"),
       ).toBe("failed");
     });
   });

@@ -39,6 +39,7 @@ try:
         generate_latest,
         start_http_server,
     )
+
     _HAS_PROMETHEUS = True
 except ImportError:  # pragma: no cover — exercised in no-prom environments
     _HAS_PROMETHEUS = False
@@ -61,6 +62,7 @@ def current_request_id() -> str | None:
 # Structured JSON logging
 # -----------------------------------------------------------------------------
 
+
 class JsonFormatter(logging.Formatter):
     """One-record-per-line JSON formatter.
 
@@ -74,12 +76,33 @@ class JsonFormatter(logging.Formatter):
 
     # The set of LogRecord attributes we do NOT want to leak into the JSON
     # (they are either internal state or rendered separately).
-    _STANDARD_ATTRS = frozenset({
-        "args", "asctime", "created", "exc_info", "exc_text", "filename",
-        "funcName", "levelname", "levelno", "lineno", "message", "module",
-        "msecs", "msg", "name", "pathname", "process", "processName",
-        "relativeCreated", "stack_info", "thread", "threadName", "taskName",
-    })
+    _STANDARD_ATTRS = frozenset(
+        {
+            "args",
+            "asctime",
+            "created",
+            "exc_info",
+            "exc_text",
+            "filename",
+            "funcName",
+            "levelname",
+            "levelno",
+            "lineno",
+            "message",
+            "module",
+            "msecs",
+            "msg",
+            "name",
+            "pathname",
+            "process",
+            "processName",
+            "relativeCreated",
+            "stack_info",
+            "thread",
+            "threadName",
+            "taskName",
+        }
+    )
 
     def format(self, record: logging.LogRecord) -> str:
         payload: dict[str, Any] = {
@@ -127,6 +150,7 @@ def configure_json_logging(level: int = logging.INFO) -> None:
 # Prometheus metrics
 # -----------------------------------------------------------------------------
 
+
 class _NoopMetric:
     """Stand-in for prom metrics when prometheus_client is not installed.
 
@@ -168,8 +192,10 @@ if _HAS_PROMETHEUS:
     )
     anchor_submissions_total = Counter(
         "inntris_anchor_submissions_total",
-        "Total anchor transactions attempted by the worker.",
-        ["outcome"],  # confirmed | failed | dead_letter
+        "Anchor lifecycle events recorded by the worker.",
+        ["outcome"],
+        # prepare | broadcast | receipt_pending | confirmed | reconciled |
+        # failed | dead_letter | already_exists
     )
     anchor_worker_heartbeat_timestamp_seconds = Gauge(
         "inntris_anchor_worker_heartbeat_timestamp_seconds",
@@ -285,15 +311,14 @@ def start_worker_metrics_endpoint(port: int, addr: str = "0.0.0.0") -> Any:
     make a dead worker indistinguishable from a quiet one.
     """
     if not _HAS_PROMETHEUS:
-        raise RuntimeError(
-            "prometheus-client is required for the anchor worker metrics endpoint"
-        )
+        raise RuntimeError("prometheus-client is required for the anchor worker metrics endpoint")
     return start_http_server(port=port, addr=addr)
 
 
 # -----------------------------------------------------------------------------
 # FastAPI middleware for request IDs
 # -----------------------------------------------------------------------------
+
 
 class RequestIdMiddleware:
     """ASGI middleware: attach an X-Request-ID to every request.

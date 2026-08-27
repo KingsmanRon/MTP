@@ -178,7 +178,9 @@ class TestBreakerOpen:
 class TestBreakerHalfOpen:
     def _half_open(self, clock: FakeClock) -> RpcCircuitBreaker:
         breaker = RpcCircuitBreaker(
-            threshold=3, open_duration_seconds=60, clock=clock,
+            threshold=3,
+            open_duration_seconds=60,
+            clock=clock,
         )
         for _ in range(3):
             with pytest.raises(requests.exceptions.Timeout):
@@ -222,7 +224,9 @@ class TestBreakerHalfOpen:
 class TestKillSwitch:
     def test_disabled_breaker_is_passthrough(self) -> None:
         breaker = RpcCircuitBreaker(
-            threshold=3, open_duration_seconds=60, enabled=False,
+            threshold=3,
+            open_duration_seconds=60,
+            enabled=False,
             clock=FakeClock(),
         )
         # Many transport failures — state never changes
@@ -240,7 +244,9 @@ class TestBreakerMetrics:
 
         before = _metric_value(observability.rpc_breaker_trips_total)
         breaker = RpcCircuitBreaker(
-            threshold=3, open_duration_seconds=60, clock=FakeClock(),
+            threshold=3,
+            open_duration_seconds=60,
+            clock=FakeClock(),
         )
         for _ in range(3):
             with pytest.raises(requests.exceptions.Timeout):
@@ -253,7 +259,9 @@ class TestBreakerMetrics:
 
         clock = FakeClock()
         breaker = RpcCircuitBreaker(
-            threshold=3, open_duration_seconds=60, clock=clock,
+            threshold=3,
+            open_duration_seconds=60,
+            clock=clock,
         )
         for _ in range(3):
             with pytest.raises(requests.exceptions.Timeout):
@@ -287,7 +295,9 @@ class TestBreakerLogging:
     def test_trip_logs_opened(self, caplog) -> None:
         caplog.set_level("WARNING", logger="workers.circuit_breaker")
         breaker = RpcCircuitBreaker(
-            threshold=3, open_duration_seconds=60, clock=FakeClock(),
+            threshold=3,
+            open_duration_seconds=60,
+            clock=FakeClock(),
         )
         for _ in range(3):
             with pytest.raises(requests.exceptions.Timeout):
@@ -299,7 +309,9 @@ class TestBreakerLogging:
         caplog.set_level("INFO", logger="workers.circuit_breaker")
         clock = FakeClock()
         breaker = RpcCircuitBreaker(
-            threshold=3, open_duration_seconds=60, clock=clock,
+            threshold=3,
+            open_duration_seconds=60,
+            clock=clock,
         )
         for _ in range(3):
             with pytest.raises(requests.exceptions.Timeout):
@@ -315,7 +327,9 @@ class TestBreakerLogging:
         caplog.set_level("WARNING", logger="workers.circuit_breaker")
         clock = FakeClock()
         breaker = RpcCircuitBreaker(
-            threshold=3, open_duration_seconds=60, clock=clock,
+            threshold=3,
+            open_duration_seconds=60,
+            clock=clock,
         )
         for _ in range(3):
             with pytest.raises(requests.exceptions.Timeout):
@@ -357,9 +371,7 @@ class TestBlockchainServiceIntegration:
         We skip the real Web3/Account wiring by constructing the
         service manually and injecting a breaker + fake w3.
         """
-        svc = anchor_worker.BlockchainService.__new__(
-            anchor_worker.BlockchainService
-        )
+        svc = anchor_worker.BlockchainService.__new__(anchor_worker.BlockchainService)
         svc.w3 = MagicMock()
         svc.contract = MagicMock()
         svc.contract_address = "0x" + "ab" * 20
@@ -377,9 +389,7 @@ class TestBlockchainServiceIntegration:
     def test_assert_chain_id_wrapped_by_breaker(self) -> None:
         svc, _clock = self._service()
         # Make w3.eth.chain_id a property-like attr that raises on every access
-        type(svc.w3.eth).chain_id = property(
-            lambda _self: (_ for _ in ()).throw(_transport_exc())
-        )
+        type(svc.w3.eth).chain_id = property(lambda _self: (_ for _ in ()).throw(_transport_exc()))
         for _ in range(3):
             with pytest.raises(requests.exceptions.Timeout):
                 svc.assert_chain_id()
@@ -394,6 +404,7 @@ class TestBlockchainServiceIntegration:
     )
     def test_revert_does_not_trip_breaker(self) -> None:
         import web3.exceptions as w3exc
+
         svc, _ = self._service()
         # send_raw_transaction raises a ContractLogicError (non-transport).
         # 8 iterations with threshold=3: if classification were broken the
@@ -420,28 +431,41 @@ class TestWorkerHandlesCircuitOpen:
 
         worker = anchor_worker.AnchorWorker.__new__(anchor_worker.AnchorWorker)
         worker.db = MagicMock()
+        worker.db.record_reconciliation_attempt = AsyncMock()
         worker.blockchain = MagicMock()
+        worker.blockchain.expected_chain_id = 8453
+        worker.blockchain.contract_address = "0x0600eA15802c8d2EA429371b2EB0aacCFe321480"
         worker.blockchain.get_balance = MagicMock(return_value=1.0)
 
-        async def _raise_open(**_kwargs):
+        def _raise_open(**_kwargs):
             raise RpcCircuitOpenError(
                 "circuit open; retries in 42.0s",
                 cooldown_remaining_seconds=42.0,
             )
 
-        worker.blockchain.anchor_batch = _raise_open
+        worker.blockchain.reconcile_anchor = _raise_open
         worker._record_failure = AsyncMock()
 
         proof_id = uuid4()
         now = datetime.now(UTC)
-        # _submit_to_blockchain must NOT let RpcCircuitOpenError propagate
-        await worker._submit_to_blockchain(
-            proof_id=proof_id,
-            merkle_root="ab" * 32,
-            log_count=1,
-            start_timestamp=now,
-            end_timestamp=now,
-            current_retry_count=0,
+        # State-aware processing must not let RpcCircuitOpenError propagate.
+        await worker._process_proof(
+            {
+                "id": proof_id,
+                "root_hash": "ab" * 32,
+                "leaf_hashes": ["cd" * 32],
+                "log_count": 1,
+                "start_timestamp": now,
+                "end_timestamp": now,
+                "status": "pending",
+                "transaction_hash": None,
+                "submission_nonce": None,
+                "prepared_at": None,
+                "submitted_at": None,
+                "retry_count": 0,
+                "contract_address": worker.blockchain.contract_address,
+                "chain_id": worker.blockchain.expected_chain_id,
+            }
         )
         # Must have recorded the failure with a message that mentions
         # the breaker, so operators can grep for it.
