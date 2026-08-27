@@ -195,7 +195,14 @@ if _HAS_PROMETHEUS:
         "Anchor lifecycle events recorded by the worker.",
         ["outcome"],
         # prepare | broadcast | receipt_pending | confirmed | reconciled |
-        # failed | dead_letter | already_exists
+        # failed | dead_letter | already_exists | read_unavailable
+    )
+    anchor_rpc_read_failover_total = Counter(
+        "inntris_anchor_rpc_read_failover_total",
+        "Reads that an RPC endpoint could not serve, by endpoint and operation. "
+        "A sustained rate on endpoint=primary means anchor reconciliation is "
+        "running on failover endpoints and the primary needs attention.",
+        ["endpoint", "operation"],
     )
     anchor_worker_heartbeat_timestamp_seconds = Gauge(
         "inntris_anchor_worker_heartbeat_timestamp_seconds",
@@ -213,7 +220,7 @@ if _HAS_PROMETHEUS:
     anchor_proof_backlog = Gauge(
         "inntris_anchor_proof_backlog",
         "Current number of anchor proofs requiring operator attention.",
-        ["status"],  # failed | dead_letter
+        ["status"],  # failed | dead_letter | awaiting_reconciliation
     )
     webhook_delivery_attempts_total = Counter(
         "inntris_webhook_delivery_attempts_total",
@@ -270,6 +277,7 @@ else:  # pragma: no cover — exercised in stub mode
     nonce_replays_total = _NoopMetric()
     rate_limit_trips_total = _NoopMetric()
     anchor_submissions_total = _NoopMetric()
+    anchor_rpc_read_failover_total = _NoopMetric()
     anchor_worker_heartbeat_timestamp_seconds = _NoopMetric()
     anchor_worker_last_success_timestamp_seconds = _NoopMetric()
     anchor_worker_cycles_total = _NoopMetric()

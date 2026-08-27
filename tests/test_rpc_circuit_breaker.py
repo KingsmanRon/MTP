@@ -445,6 +445,7 @@ class TestWorkerHandlesCircuitOpen:
 
         worker.blockchain.reconcile_anchor = _raise_open
         worker._record_failure = AsyncMock()
+        worker.db.schedule_retry = AsyncMock()
 
         proof_id = uuid4()
         now = datetime.now(UTC)
@@ -467,11 +468,15 @@ class TestWorkerHandlesCircuitOpen:
                 "chain_id": worker.blockchain.expected_chain_id,
             }
         )
-        # Must have recorded the failure with a message that mentions
-        # the breaker, so operators can grep for it.
-        assert worker._record_failure.await_count == 1
-        args, kwargs = worker._record_failure.await_args
-        err_message = kwargs.get("error_message") or (args[2] if len(args) >= 3 else "")
+        # An open breaker means the RPC did not answer, so the proof is
+        # re-queued rather than counted as a transaction failure: the retry
+        # budget is untouched and it can never dead-letter on this alone.
+        worker._record_failure.assert_not_awaited()
+        assert worker.db.schedule_retry.await_count == 1
+        err_message = worker.db.schedule_retry.await_args.kwargs["error_message"]
+        assert worker.db.schedule_retry.await_args.kwargs["increment_retry"] is False
         assert "circuit" in err_message.lower()
-        # And prefix with a stable marker for log/DB grep.
+        # Stable markers for log/DB grep: the long-standing breaker marker and
+        # the wider read-availability class it belongs to.
         assert "rpc_circuit_open" in err_message
+        assert "rpc_read_unavailable" in err_message

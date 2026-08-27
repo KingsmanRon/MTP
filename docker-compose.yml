@@ -132,6 +132,9 @@ services:
       ENVIRONMENT: ${ENVIRONMENT:-production}
       DATABASE_URL: ${DATABASE_URL:?Set the inntris_worker runtime DSN}
       BLOCKCHAIN_PROVIDER_URL: ${BLOCKCHAIN_PROVIDER_URL:-https://base-rpc.publicnode.com}
+      # Read-only failover so an already-broadcast transaction can still
+      # reconcile while the primary refuses receipt reads (for example 403).
+      BLOCKCHAIN_READ_PROVIDER_URLS: ${BLOCKCHAIN_READ_PROVIDER_URLS:-https://mainnet.base.org}
       ANCHOR_CONTRACT_ADDRESS: ${ANCHOR_CONTRACT_ADDRESS:?Set the deployed anchor contract}
       BLOCKCHAIN_PRIVATE_KEY: ${BLOCKCHAIN_PRIVATE_KEY:?Set the dedicated anchor wallet key}
       ANCHOR_BATCH_SIZE: ${ANCHOR_BATCH_SIZE:-1000}

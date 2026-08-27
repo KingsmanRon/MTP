@@ -107,7 +107,11 @@ async def test_broadcast_hash_survives_receipt_provider_failure() -> None:
     db.mark_submission_broadcast.assert_awaited_once_with(proof["id"], TX_HASH)
     retry = db.schedule_retry.await_args
     assert retry.kwargs["status"] == "submitted"
-    assert "already-broadcast" in retry.kwargs["error_message"]
+    # A 403 is an availability failure, so it must not spend the retry budget
+    # that exists to bound real faults.
+    assert retry.kwargs["increment_retry"] is False
+    assert "rpc_read_unavailable" in retry.kwargs["error_message"]
+    db.mark_proof_dead_letter.assert_not_awaited()
 
 
 @pytest.mark.asyncio

@@ -138,6 +138,10 @@ settings need adjustment.
 * `time() - inntris_anchor_worker_heartbeat_timestamp_seconds > 900`.
 * `inntris_anchor_proof_backlog{status=~"failed|dead_letter"} > 0`.
 * `increase(inntris_anchor_submissions_total{outcome=~"failed|dead_letter"}[10m]) > 0`.
+* A proof whose transaction was broadcast but whose reads keep failing appears
+  in neither of the two above. It shows as
+  `inntris_anchor_proof_backlog{status="awaiting_reconciliation"} > 0` and is
+  covered by section 3a, not this one.
 * PostgreSQL confirms the persistent state:
 
   ```sql
@@ -172,6 +176,122 @@ settings need adjustment.
 * Restart the worker after the cause is corrected. Confirm a fresh heartbeat,
   a successful cycle, backlog reduction, database status, and the on-chain
   transaction before resolving the incident.
+
+## 3a. Anchor stuck at `submitted` because the RPC refuses reads
+
+**Severity: 2. The anchor is on chain; only the platform's view of it is stale.**
+
+A transaction that broadcast successfully is anchored on Base whether or not
+we can read its receipt. An RPC answering `403 Forbidden` — an IP block, a
+referrer rule, a plan limit — tells us nothing about that transaction. The
+worker treats every such answer as an availability failure: it never
+rebroadcasts on one, never counts one against the retry budget, and never
+dead-letters an already-broadcast proof because of one.
+
+### Detect
+
+* `increase(inntris_anchor_submissions_total{outcome="read_unavailable"}[10m]) > 0`.
+* `increase(inntris_anchor_rpc_read_failover_total{endpoint="primary"}[10m]) > 0`
+  means reads are being served by failover endpoints. A rate with no
+  `endpoint="read-1"` counterpart means failover is working; a rate on every
+  endpoint means no endpoint can answer.
+* Worker logs carry `anchor_read_unavailable` and
+  `anchor_rpc_read_unavailable`, each naming the endpoint and operation.
+* `anchor_receipt_absence_uncorroborated` and
+  `anchor_registry_absence_uncorroborated` mean a proof is waiting because one
+  endpoint could not be polled, not because anything failed.
+* Persistent state — proofs holding a transaction hash but no block:
+
+  ```sql
+  SELECT id, status, transaction_hash, submission_nonce, retry_count,
+         submitted_at, last_reconciliation_at, error_message
+  FROM merkle_proofs
+  WHERE status IN ('prepared', 'submitted')
+  ORDER BY submitted_at;
+  ```
+
+  An `error_message` beginning `rpc_read_unavailable` confirms this class.
+
+### Contain
+
+1. **Do not** rotate `BLOCKCHAIN_PROVIDER_URL` as the fix, and do not clear or
+   rewrite `transaction_hash`. The hash is the identity of a transaction that
+   may already be mined; replacing it risks a second anchor for one batch.
+2. Confirm the transaction independently — `https://basescan.org/tx/<hash>`,
+   or any RPC you can reach:
+
+   ```bash
+   curl -s -X POST https://mainnet.base.org \
+     -H 'content-type: application/json' \
+     -d '{"jsonrpc":"2.0","id":1,"method":"eth_getTransactionReceipt",
+          "params":["<transaction_hash>"]}'
+   ```
+
+   A receipt with `"status":"0x1"` means the anchor exists and only the
+   database row is behind.
+
+### Recover
+
+1. Add a read endpoint that is independent of the primary, then restart the
+   worker:
+
+   ```bash
+   BLOCKCHAIN_READ_PROVIDER_URLS=https://mainnet.base.org
+   ```
+
+   The primary is unchanged and remains the only endpoint that broadcasts.
+   Every read endpoint is chain-id verified before its answers are trusted, so
+   a wrong-chain endpoint is disabled rather than believed.
+
+2. Reconcile the stranded proofs. Neither command broadcasts anything:
+
+   ```bash
+   # The transaction you just confirmed on the explorer
+   python -m workers.anchor_worker --reconcile-transaction <transaction_hash>
+
+   # One known proof
+   python -m workers.anchor_worker --reconcile-proof <proof_id>
+
+   # Every prepared, submitted, failed, and dead-lettered proof
+   python -m workers.anchor_worker --reconcile-unresolved
+   ```
+
+   Exit status `0` means the proof reached `confirmed`; `2` means chain
+   evidence was not found or could not be read, and the proof was left
+   untouched and still retryable.
+
+   Reconciliation asks about the already-persisted transaction hash first,
+   then validates the `BatchAnchored` event and the AnchorRegistry entry —
+   log count, timestamp window, batch ID, block number, and submitter must all
+   agree — before it writes anything.
+
+3. Read back the repaired row. `block_number`, `gas_used`, `confirmed_at`, and
+   `reconciliation_source` must all be populated:
+
+   ```sql
+   SELECT id, status, transaction_hash, block_number, gas_used,
+          gas_price_gwei, confirmed_at, reconciled_at, reconciliation_source
+   FROM merkle_proofs
+   WHERE transaction_hash = '<transaction_hash>';
+   ```
+
+   Expect `status = 'confirmed'`, `reconciliation_source` of
+   `transaction_receipt` (or `contract_state` when the registry supplied the
+   evidence), and a `block_number` matching the explorer.
+
+4. Confirm no duplicate anchor was created for the batch — one row per
+   `root_hash`, one transaction hash on it:
+
+   ```sql
+   SELECT root_hash, count(*) AS rows, count(DISTINCT transaction_hash) AS hashes
+   FROM merkle_proofs
+   GROUP BY root_hash
+   HAVING count(*) > 1 OR count(DISTINCT transaction_hash) > 1;
+   ```
+
+5. Resolve the incident once the primary is serving reads again, or once the
+   read endpoint is accepted as the standing configuration. Leaving
+   `BLOCKCHAIN_READ_PROVIDER_URLS` set is the recommended steady state.
 
 ## 4. Webhook retry or dead letter growth
 

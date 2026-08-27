@@ -16,6 +16,7 @@ commit them, print them in CI, or attach them to an incident record.
 | `REDIS_URL` | API Redis credential | Platform owner |
 | `BLOCKCHAIN_PRIVATE_KEY` | Anchor worker submitter EOA | Treasury and platform security |
 | `BLOCKCHAIN_PROVIDER_URL` | Worker RPC URL; treat it as secret when it embeds provider credentials | Platform owner |
+| `BLOCKCHAIN_READ_PROVIDER_URLS` | Read-only failover RPC URLs; same handling as the primary. Rotating these never affects broadcast, so they can be replaced without a submission window | Platform owner |
 | Organisation API keys | Plaintext shown once; SHA-256 hashes stored in `api_keys.key_hash` | Tenant administrator |
 | Agent Ed25519 private key | Customer agent or MCP runtime only; public key stored in `agents.public_key` | Tenant administrator |
 | Organisation webhook signing secret | Plaintext shown once; AES-GCM ciphertext stored in `organizations.webhook_secret_ciphertext` | Tenant administrator |

@@ -21,7 +21,7 @@ import signal
 import socket
 import sys
 import time
-from collections.abc import AsyncIterator, Callable, Mapping
+from collections.abc import AsyncIterator, Callable, Iterator, Mapping, Sequence
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
@@ -61,6 +61,17 @@ DATABASE_URL = os.getenv(
 
 # Blockchain
 BLOCKCHAIN_PROVIDER_URL = os.getenv("BLOCKCHAIN_PROVIDER_URL", "https://base-rpc.publicnode.com")
+# Read-only failover endpoints, comma or whitespace separated. The primary above
+# remains the *only* endpoint that ever signs or broadcasts; these are consulted,
+# in order, when the primary cannot serve a read (HTTP 403/429/5xx, transport
+# failure, or an open circuit breaker). A transaction that was broadcast
+# successfully must still be able to reconcile when the primary starts refusing
+# receipt and contract-state reads, so reconciliation reads are allowed to leave
+# the primary. Every read endpoint is chain-id verified before its answers are
+# trusted, so a wrong-chain fallback can never fabricate confirmation evidence.
+BLOCKCHAIN_READ_PROVIDER_URLS_RAW = os.getenv("BLOCKCHAIN_READ_PROVIDER_URLS") or os.getenv(
+    "BLOCKCHAIN_READ_PROVIDER_URL", ""
+)
 ANCHOR_CONTRACT_ADDRESS = os.getenv("ANCHOR_CONTRACT_ADDRESS")
 BLOCKCHAIN_PRIVATE_KEY = os.getenv("BLOCKCHAIN_PRIVATE_KEY")  # With or without 0x prefix
 
@@ -82,6 +93,21 @@ RETRY_BACKOFF_MAX_SECONDS = int(os.getenv("ANCHOR_RETRY_BACKOFF_MAX", str(60 * 6
 REPLACEMENT_MIN_AGE_SECONDS = int(os.getenv("ANCHOR_REPLACEMENT_MIN_AGE", str(10 * 60)))
 if REPLACEMENT_MIN_AGE_SECONDS < 0:
     raise ValueError("ANCHOR_REPLACEMENT_MIN_AGE must be non-negative")
+# Reconciliation policy for a proof whose chain state could not be *read*.
+# An unavailable provider is not a failed transaction, so those attempts do not
+# consume the retry budget and never dead-letter the proof. They re-poll on this
+# fixed interval instead of the exponential failure backoff, because the proof is
+# waiting on the provider to come back rather than backing off a real fault.
+RECONCILIATION_INTERVAL_SECONDS = int(os.getenv("ANCHOR_RECONCILIATION_INTERVAL", "60"))
+if RECONCILIATION_INTERVAL_SECONDS < 1:
+    raise ValueError("ANCHOR_RECONCILIATION_INTERVAL must be at least one second")
+# The worker wakes early for a due retry instead of sleeping the full batch
+# interval, so the reconciliation interval above is the real re-poll cadence
+# rather than a value the outer loop rounds up to ANCHOR_INTERVAL_MINUTES.
+# This floor stops a persistently overdue row from turning that into a spin.
+MIN_CYCLE_DELAY_SECONDS = float(os.getenv("ANCHOR_MIN_CYCLE_DELAY", "5"))
+if MIN_CYCLE_DELAY_SECONDS <= 0:
+    raise ValueError("ANCHOR_MIN_CYCLE_DELAY must be greater than zero")
 METRICS_ENABLED = os.getenv("ANCHOR_METRICS_ENABLED", "true").lower() not in (
     "0",
     "false",
@@ -137,6 +163,27 @@ class AnchorEvidenceError(RuntimeError):
     """Chain evidence exists but does not match the proof being reconciled."""
 
 
+class RpcAvailabilityError(RuntimeError):
+    """No configured RPC endpoint could serve a read.
+
+    This is a statement about the providers, never about the transaction. A
+    transaction we already broadcast is not failed, reverted, or absent merely
+    because an endpoint answered ``403 Forbidden`` when asked for its receipt.
+    Callers must therefore never treat this as evidence, never rebroadcast on
+    it, and never dead-letter a proof because of it.
+    """
+
+    def __init__(
+        self,
+        operation: str,
+        failures: Sequence[str],
+    ) -> None:
+        detail = "; ".join(failures) if failures else "no read endpoint configured"
+        super().__init__(f"rpc_read_unavailable during {operation}: {detail}")
+        self.operation = operation
+        self.failures = tuple(failures)
+
+
 @dataclass(frozen=True)
 class PreparedAnchorTransaction:
     """Signed transaction identity persisted before any network broadcast."""
@@ -161,12 +208,28 @@ class AnchorConfirmation:
     source: Literal["transaction_receipt", "contract_state"]
 
 
+TransactionState = Literal["none", "not_found", "reverted", "unknown"]
+
+
 @dataclass(frozen=True)
 class ReconciliationResult:
-    """Result of checking an existing transaction and the registry state."""
+    """Result of checking an existing transaction and the registry state.
+
+    ``transaction_state`` distinguishes *evidence* from *silence*:
+
+    ``none``
+        No persisted hash to check, or the receipt confirmed the anchor.
+    ``not_found``
+        A node looked and has no receipt for the hash.
+    ``reverted``
+        A node returned a receipt with a failed status.
+    ``unknown``
+        No endpoint could serve the receipt read. Nothing was learned about
+        the transaction, so it must not be replaced or rebroadcast.
+    """
 
     confirmation: AnchorConfirmation | None
-    transaction_state: Literal["none", "not_found", "reverted"]
+    transaction_state: TransactionState
 
 
 @dataclass(frozen=True)
@@ -264,6 +327,59 @@ def _is_transient_rpc_error(exc: BaseException) -> bool:
         "rate limit",
     )
     return any(fragment in message for fragment in transient_fragments)
+
+
+# HTTP statuses that describe the *endpoint*, not the transaction. A JSON-RPC
+# node that has the receipt answers 200 with a JSON body; a node that returns one
+# of these never looked at our transaction at all. 403 is the one this list
+# exists for: managed and public Base endpoints return it for IP, referrer, and
+# plan-level blocks, and reading it as "the transaction is gone" would rebroadcast
+# a transaction that is already mined.
+_RPC_AVAILABILITY_STATUS_CODES = frozenset({401, 402, 403, 404, 405, 407, 408, 429, 451})
+_RPC_AVAILABILITY_MESSAGE_FRAGMENTS = (
+    "forbidden",
+    "access denied",
+    "unauthorized",
+    "not authorized",
+    "too many requests",
+    "rate limit",
+    "quota",
+    "timed out",
+    "timeout",
+    "connection reset",
+    "connection aborted",
+    "connection refused",
+    "temporarily unavailable",
+    "service unavailable",
+    "bad gateway",
+    "gateway timeout",
+    "upstream connect error",
+    "cloudflare",
+)
+
+
+def is_rpc_availability_error(exc: BaseException) -> bool:
+    """Return True when the RPC endpoint failed to answer, rather than answered.
+
+    An availability failure carries no information about the transaction. It
+    must never be read as "not mined", "reverted", or "never broadcast".
+    ``TransactionNotFound`` is deliberately excluded: that is a real answer
+    from a node that looked, and the reconciliation path treats it as evidence.
+    """
+
+    if isinstance(exc, (TransactionNotFound, AnchorEvidenceError, DeterministicContractRevert)):
+        return False
+    if isinstance(exc, (RpcAvailabilityError, RpcCircuitOpenError)):
+        return True
+    if isinstance(exc, (TimeoutError, ConnectionError)):
+        return True
+    if is_transport_error(exc):
+        return True
+    status = _http_status_from_exception(exc)
+    if status is not None and (status in _RPC_AVAILABILITY_STATUS_CODES or status >= 500):
+        return True
+    message = str(exc).lower()
+    return any(fragment in message for fragment in _RPC_AVAILABILITY_MESSAGE_FRAGMENTS)
 
 
 def classify_estimation_failure(
@@ -380,6 +496,76 @@ RPC_BREAKER_ENABLED = os.getenv("ANCHOR_RPC_BREAKER_ENABLED", "true").lower() no
 )
 RPC_BREAKER_THRESHOLD = int(os.getenv("ANCHOR_RPC_BREAKER_THRESHOLD", "5"))
 RPC_BREAKER_OPEN_SECONDS = float(os.getenv("ANCHOR_RPC_BREAKER_OPEN_SECONDS", "60"))
+# How long a read endpoint's chain-id verdict is trusted before it is checked
+# again. Caching it for the life of the process would let a provider that is
+# re-pointed mid-run — DNS hijack, an operator editing a load balancer — start
+# supplying evidence from another chain on the strength of one old answer.
+CHAIN_ID_RECHECK_SECONDS = float(os.getenv("ANCHOR_RPC_CHAIN_ID_RECHECK_SECONDS", "300"))
+if CHAIN_ID_RECHECK_SECONDS < 0:
+    raise ValueError("ANCHOR_RPC_CHAIN_ID_RECHECK_SECONDS must be non-negative")
+
+
+def validate_rpc_url(url: str) -> str:
+    """Return ``url`` when it is a usable RPC endpoint, else raise.
+
+    Mirrors the network-URL guard the verification tooling uses: http(s) only,
+    a real host, no embedded credentials, and plain http only for loopback.
+    Provider API keys live in the path or query of most managed endpoints, so
+    those are preserved untouched — only userinfo credentials are rejected.
+    """
+
+    parts = urlsplit(url)
+    if parts.scheme not in {"http", "https"} or not parts.hostname:
+        raise ValueError(f"RPC URL must use http or https and include a host: {url!r}")
+    if parts.username or parts.password:
+        raise ValueError("RPC URL must not embed credentials in the host component")
+    if parts.scheme == "http" and parts.hostname.lower() not in {
+        "localhost",
+        "127.0.0.1",
+        "::1",
+    }:
+        raise ValueError("non-local RPC URLs must use https")
+    return url
+
+
+def parse_read_provider_urls(raw: str | None, *, primary_url: str) -> tuple[str, ...]:
+    """Return the ordered read-failover endpoints declared by configuration.
+
+    The primary is always the first endpoint the read path tries, so it is
+    filtered out of the failover list rather than being consulted twice.
+    Duplicates are collapsed while preserving the operator's ordering.
+    """
+
+    if not raw:
+        return ()
+    seen = {primary_url.strip()}
+    endpoints: list[str] = []
+    for candidate in re.split(r"[\s,]+", raw.strip()):
+        if not candidate or candidate in seen:
+            continue
+        seen.add(candidate)
+        endpoints.append(validate_rpc_url(candidate))
+    return tuple(endpoints)
+
+
+def redacted_rpc_url(url: str) -> str:
+    """Return an RPC URL safe to log: scheme, host, and port only.
+
+    Managed providers put the API key in the path (``/v2/<key>``) or the query,
+    so anything past the authority is dropped rather than printed into logs.
+    """
+
+    try:
+        parts = urlsplit(url)
+    except ValueError:
+        return "<unparseable-rpc-url>"
+    if not parts.hostname:
+        return "<unparseable-rpc-url>"
+    authority = parts.hostname
+    if parts.port:
+        authority = f"{authority}:{parts.port}"
+    suffix = "/…" if parts.path.strip("/") or parts.query else ""
+    return f"{parts.scheme}://{authority}{suffix}"
 
 
 def _redacted_dsn(dsn: str) -> str:
@@ -594,9 +780,103 @@ def compute_merkle_proof(leaf_hashes: list[str], leaf_index: int) -> list[dict[s
 # =============================================================================
 
 
+@dataclass(frozen=True)
+class _ContractStateRead:
+    """Outcome of confirming a root from AnchorRegistry state alone."""
+
+    confirmation: "AnchorConfirmation | None"
+    #: At least one healthy endpoint answered ``isAnchored``. When false, the
+    #: registry was not read at all and nothing here is a finding.
+    answered: bool
+    #: Every healthy endpoint agreed the root is absent. Only meaningful when
+    #: ``confirmation`` is None.
+    absence_corroborated: bool
+    failures: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class _RegistryEvidence:
+    """AnchorRegistry state for one root, and where it came from.
+
+    ``endpoint`` is the node that reported the root anchored. Follow-up reads
+    are steered back to it so a lagging node cannot supply half the evidence.
+    ``absence_corroborated`` is only meaningful when ``batch`` is None: it says
+    whether every healthy endpoint agreed the root is absent, or whether some
+    of them simply could not be reached.
+    """
+
+    batch: dict[str, Any] | None
+    endpoint: "_RpcEndpoint | None"
+    absence_corroborated: bool
+    answered: bool = True
+    failures: tuple[str, ...] = ()
+
+
+@dataclass
+class _ReadLedger:
+    """Which endpoints answered one question, and which could not.
+
+    Absence is only trustworthy when it is corroborated. A single node that
+    answers "no receipt" or "not anchored" may simply be lagging behind the
+    chain, so the worker records *who* answered before it acts on a negative.
+    """
+
+    answered: list[str] = field(default_factory=list)
+    unavailable: list[str] = field(default_factory=list)
+    failures: list[str] = field(default_factory=list)
+
+    def record_answer(self, endpoint: "_RpcEndpoint") -> None:
+        self.answered.append(endpoint.label)
+
+    def record_unavailable(self, endpoint: "_RpcEndpoint", detail: str) -> None:
+        self.unavailable.append(endpoint.label)
+        self.failures.append(f"{endpoint.label}: {detail}")
+
+    def record_unusable(self, endpoint: "_RpcEndpoint", detail: str) -> None:
+        """Note an endpoint that is not a healthy participant at all.
+
+        A wrong-chain endpoint is excluded from the vote rather than counted
+        as missing from it: it is never going to answer, so waiting for its
+        corroboration would strand every proof forever.
+        """
+
+        self.failures.append(f"{endpoint.label}: {detail}")
+
+    @property
+    def corroborated(self) -> bool:
+        """True when every healthy endpoint answered the question."""
+
+        return bool(self.answered) and not self.unavailable
+
+
+@dataclass
+class _RpcEndpoint:
+    """One RPC endpoint the read path may consult.
+
+    Each endpoint carries its own circuit breaker so a dead fallback is not
+    hammered on every read, and its own chain-id verdict so a wrong-chain
+    endpoint can never contribute confirmation evidence.
+    """
+
+    label: str
+    url: str
+    w3: Web3
+    contract: Any
+    breaker: RpcCircuitBreaker
+    is_primary: bool
+    chain_verified_at: float | None = None
+    disabled_reason: str | None = None
+
+
 class BlockchainService:
     """
     Service for interacting with the Base L2 blockchain.
+
+    Writes (gas estimation, signing, broadcast) only ever use the primary
+    endpoint. Reads used for reconciliation may fail over to the configured
+    read endpoints, because a transaction that was broadcast successfully must
+    still be able to reach ``confirmed`` when the primary starts refusing
+    receipt and contract-state reads.
     """
 
     def __init__(
@@ -605,7 +885,12 @@ class BlockchainService:
         contract_address: str,
         private_key: str,
         expected_chain_id: int = BASE_CHAIN_ID,
+        read_rpc_urls: Sequence[str] = (),
     ):
+        # The primary URL is deployment configuration that predates this guard
+        # and may legitimately be a private plaintext node, so it is taken as
+        # given. The read-failover URLs are a new surface and are validated.
+        self.rpc_url = rpc_url
         self.w3 = Web3(Web3.HTTPProvider(rpc_url))
         self.contract_address = Web3.to_checksum_address(contract_address)
         self.contract = self.w3.eth.contract(
@@ -619,7 +904,51 @@ class BlockchainService:
             enabled=RPC_BREAKER_ENABLED,
         )
         self.expected_chain_id = expected_chain_id
+        # The primary is always read endpoint #0. Its ``w3``/``contract`` are
+        # refreshed from the service attributes on every read so operator
+        # tooling that swaps ``service.w3`` still routes through this pool.
+        self._endpoints: list[_RpcEndpoint] = [
+            _RpcEndpoint(
+                label="primary",
+                url=self.rpc_url,
+                w3=self.w3,
+                contract=self.contract,
+                breaker=self._breaker,
+                is_primary=True,
+            )
+        ]
+        for index, read_url in enumerate(read_rpc_urls, start=1):
+            validated = validate_rpc_url(read_url)
+            read_w3 = Web3(Web3.HTTPProvider(validated))
+            self._endpoints.append(
+                _RpcEndpoint(
+                    label=f"read-{index}",
+                    url=validated,
+                    w3=read_w3,
+                    contract=read_w3.eth.contract(
+                        address=self.contract_address,
+                        abi=ANCHOR_REGISTRY_ABI,
+                    ),
+                    breaker=RpcCircuitBreaker(
+                        threshold=RPC_BREAKER_THRESHOLD,
+                        open_duration_seconds=RPC_BREAKER_OPEN_SECONDS,
+                        enabled=RPC_BREAKER_ENABLED,
+                    ),
+                    is_primary=False,
+                )
+            )
         logger.info(f"Blockchain service initialized. Address: {self.account.address}")
+        logger.info(
+            "RPC endpoints: primary=%s read_failover=%s",
+            redacted_rpc_url(self.rpc_url),
+            [redacted_rpc_url(endpoint.url) for endpoint in self._endpoints[1:]] or "none",
+        )
+        if len(self._endpoints) == 1:
+            logger.warning(
+                "No BLOCKCHAIN_READ_PROVIDER_URLS configured. A broadcast "
+                "transaction cannot reconcile while the primary RPC refuses "
+                "receipt reads (for example HTTP 403)."
+            )
         logger.info(
             "RPC circuit breaker: enabled=%s threshold=%d open_seconds=%.1f",
             RPC_BREAKER_ENABLED,
@@ -628,8 +957,229 @@ class BlockchainService:
         )
 
     def _rpc(self, fn: Callable[[], _T]) -> _T:
-        """Route an RPC call through the circuit breaker."""
+        """Route a primary-endpoint RPC call through the circuit breaker.
+
+        Every write — gas estimation, signing inputs, broadcast — stays here.
+        Reads that must survive a degraded primary use :meth:`_read` instead.
+        """
         return self._breaker.call(fn)
+
+    # -- read failover -----------------------------------------------------
+
+    def _read_endpoints(self) -> Iterator[_RpcEndpoint]:
+        """Yield usable read endpoints, primary first."""
+
+        primary = self._endpoints[0]
+        primary.w3 = self.w3
+        primary.contract = self.contract
+        for endpoint in self._endpoints:
+            if endpoint.disabled_reason is None:
+                yield endpoint
+
+    def _verify_endpoint_chain(self, endpoint: _RpcEndpoint) -> None:
+        """Confirm an endpoint serves the expected chain before trusting it.
+
+        A fallback pointed at the wrong chain would otherwise be able to
+        manufacture a ``BatchAnchored`` event and a registry entry for a root we
+        never anchored on Base. A mismatch permanently disables that endpoint
+        for this process; it is a configuration fault, not a transient one.
+        """
+
+        now = time.monotonic()
+        if (
+            endpoint.chain_verified_at is not None
+            and now - endpoint.chain_verified_at < CHAIN_ID_RECHECK_SECONDS
+        ):
+            return
+        actual = int(endpoint.breaker.call(lambda: endpoint.w3.eth.chain_id))
+        if actual != self.expected_chain_id:
+            endpoint.disabled_reason = (
+                f"serves chain {actual}, expected {self.expected_chain_id}"
+            )
+            logger.error(
+                "anchor_rpc_endpoint_disabled endpoint=%s url=%s reason=%s",
+                endpoint.label,
+                redacted_rpc_url(endpoint.url),
+                endpoint.disabled_reason,
+            )
+            raise RuntimeError(
+                f"RPC chain-id mismatch on {endpoint.label}: expected "
+                f"{self.expected_chain_id} (BASE_CHAIN_ID), got {actual}."
+            )
+        endpoint.chain_verified_at = now
+
+    def _ready_endpoints(
+        self,
+        operation: str,
+        ledger: _ReadLedger,
+        *,
+        prefer: _RpcEndpoint | None = None,
+    ) -> Iterator[_RpcEndpoint]:
+        """Yield chain-verified endpoints, recording those that cannot serve.
+
+        ``prefer`` moves one endpoint to the front. Callers use it to keep a
+        multi-read sequence on the node that already proved it has the data,
+        so a lagging node cannot answer half of one question.
+        """
+
+        ordered = list(self._read_endpoints())
+        if prefer is not None:
+            ordered = [prefer, *(e for e in ordered if e is not prefer)]
+        for endpoint in ordered:
+            try:
+                self._verify_endpoint_chain(endpoint)
+            except BaseException as exc:
+                if endpoint.disabled_reason is not None:
+                    # Wrong chain. Not a healthy endpoint, so it neither
+                    # answers nor withholds — it simply does not participate.
+                    ledger.record_unusable(endpoint, endpoint.disabled_reason)
+                    continue
+                if not is_rpc_availability_error(exc):
+                    raise
+                ledger.record_unavailable(endpoint, f"chain-id read: {exc}")
+                self._record_read_failover(endpoint, operation)
+                continue
+            yield endpoint
+
+    def _read(
+        self,
+        operation: str,
+        call: Callable[[_RpcEndpoint], _T],
+        *,
+        prefer: _RpcEndpoint | None = None,
+    ) -> _T:
+        """Run a read against the first endpoint that can serve it.
+
+        Only availability failures advance to the next endpoint. Any answer
+        that carries information about the chain — an evidence mismatch, a
+        revert — is raised immediately, because failing over on it would just
+        ask a second node the same answered question.
+
+        Use this for reads whose answer is self-validating. Reads whose
+        *negative* answer would drive a decision — "no receipt", "not
+        anchored" — must poll every endpoint instead; see
+        :meth:`_poll_transaction_receipt` and :meth:`_anchored_endpoint`.
+
+        Raises :class:`RpcAvailabilityError` when no endpoint could answer.
+        """
+
+        ledger = _ReadLedger()
+        for endpoint in self._ready_endpoints(operation, ledger, prefer=prefer):
+            try:
+                return endpoint.breaker.call(lambda bound=endpoint: call(bound))
+            except BaseException as exc:
+                if not is_rpc_availability_error(exc):
+                    raise
+                self._note_unavailable(endpoint, operation, ledger, exc)
+        raise RpcAvailabilityError(operation, ledger.failures)
+
+    def _note_unavailable(
+        self,
+        endpoint: _RpcEndpoint,
+        operation: str,
+        ledger: _ReadLedger,
+        exc: BaseException,
+    ) -> None:
+        ledger.record_unavailable(endpoint, f"{type(exc).__name__}: {exc}")
+        logger.warning(
+            "anchor_rpc_read_unavailable endpoint=%s url=%s operation=%s error=%s",
+            endpoint.label,
+            redacted_rpc_url(endpoint.url),
+            operation,
+            exc,
+        )
+        self._record_read_failover(endpoint, operation)
+
+    def _poll_transaction_receipt(
+        self,
+        transaction_hash: str,
+    ) -> tuple[Mapping[str, Any] | None, _RpcEndpoint | None, _ReadLedger]:
+        """Ask every usable endpoint for one transaction's receipt.
+
+        Returns as soon as an endpoint produces a *successful* receipt — that
+        is a positive fact and no second opinion can overturn it. Absence, by
+        contrast, is only reported once every healthy endpoint has been asked:
+        one lagging node has no standing to declare a mined transaction gone,
+        and acting on its silence is how a broadcast transaction gets replaced.
+        """
+
+        ledger = _ReadLedger()
+        reverted: tuple[Mapping[str, Any], _RpcEndpoint] | None = None
+        for endpoint in self._ready_endpoints("get_transaction_receipt", ledger):
+            try:
+                receipt = endpoint.breaker.call(
+                    lambda bound=endpoint: bound.w3.eth.get_transaction_receipt(transaction_hash)
+                )
+            except TransactionNotFound:
+                # A real answer from a node that looked, but only one vote.
+                ledger.record_answer(endpoint)
+                continue
+            except BaseException as exc:
+                if not is_rpc_availability_error(exc):
+                    raise
+                self._note_unavailable(endpoint, "get_transaction_receipt", ledger, exc)
+                continue
+            ledger.record_answer(endpoint)
+            if int(receipt.get("status", 0)) == 1:
+                if len(ledger.answered) > 1:
+                    logger.info(
+                        "anchor_receipt_found_on_failover endpoint=%s transaction_hash=%s",
+                        endpoint.label,
+                        transaction_hash,
+                    )
+                return receipt, endpoint, ledger
+            if reverted is None:
+                reverted = (receipt, endpoint)
+        if reverted is not None:
+            return reverted[0], reverted[1], ledger
+        return None, None, ledger
+
+    def _anchored_endpoint(
+        self,
+        root_bytes: bytes,
+        *,
+        prefer: _RpcEndpoint | None = None,
+    ) -> tuple[_RpcEndpoint | None, _ReadLedger]:
+        """Find an endpoint that reports this root anchored.
+
+        ``isAnchored=false`` from one node is not proof of absence either — it
+        may be behind the block that anchored the root. Every healthy endpoint
+        is asked before the registry is reported empty.
+        """
+
+        ledger = _ReadLedger()
+        for endpoint in self._ready_endpoints("isAnchored", ledger, prefer=prefer):
+            try:
+                anchored = endpoint.breaker.call(
+                    lambda bound=endpoint: bound.contract.functions.isAnchored(root_bytes).call()
+                )
+            except BaseException as exc:
+                if not is_rpc_availability_error(exc):
+                    raise
+                self._note_unavailable(endpoint, "isAnchored", ledger, exc)
+                continue
+            ledger.record_answer(endpoint)
+            if anchored:
+                if len(ledger.answered) > 1:
+                    logger.info(
+                        "anchor_registry_found_on_failover endpoint=%s root=%s",
+                        endpoint.label,
+                        root_bytes.hex(),
+                    )
+                return endpoint, ledger
+        return None, ledger
+
+    @staticmethod
+    def _record_read_failover(endpoint: _RpcEndpoint, operation: str) -> None:
+        try:
+            from api.observability import anchor_rpc_read_failover_total
+
+            anchor_rpc_read_failover_total.labels(
+                endpoint=endpoint.label,
+                operation=operation,
+            ).inc()
+        except ImportError:  # pragma: no cover — metrics are optional
+            pass
 
     def assert_chain_id(self) -> None:
         """Phase 2B hardening — verify the RPC is serving the expected chain.
@@ -818,12 +1368,31 @@ class BlockchainService:
         log_count: int,
         start_timestamp: datetime,
         end_timestamp: datetime,
-    ) -> dict[str, Any] | None:
+        *,
+        prefer: _RpcEndpoint | None = None,
+    ) -> _RegistryEvidence:
+        """Return validated registry state for a root, polling every endpoint.
+
+        The validation itself is unchanged: log count and the timestamp window
+        must match the persisted proof exactly. What changed is who is allowed
+        to answer "not anchored" — now only the whole healthy set, together.
+        """
+
         root_bytes = self._root_bytes(merkle_root)
-        anchored = self._rpc(lambda: self.contract.functions.isAnchored(root_bytes).call())
-        if not anchored:
-            return None
-        result = self._rpc(lambda: self.contract.functions.getBatchFull(root_bytes).call())
+        anchored_at, ledger = self._anchored_endpoint(root_bytes, prefer=prefer)
+        if anchored_at is None:
+            return _RegistryEvidence(
+                batch=None,
+                endpoint=None,
+                absence_corroborated=ledger.corroborated,
+                answered=bool(ledger.answered),
+                failures=tuple(ledger.failures),
+            )
+        result = self._read(
+            "getBatchFull",
+            lambda endpoint: endpoint.contract.functions.getBatchFull(root_bytes).call(),
+            prefer=anchored_at,
+        )
         (
             batch_id,
             stored_log_count,
@@ -843,15 +1412,19 @@ class BlockchainService:
             raise AnchorEvidenceError(
                 "Registry timestamp window does not match the persisted proof"
             )
-        return {
-            "batch_id": int(batch_id),
-            "log_count": int(stored_log_count),
-            "timestamp": datetime.fromtimestamp(int(timestamp), tz=UTC),
-            "block_number": int(block_number),
-            "start_timestamp": int(stored_start),
-            "end_timestamp": int(stored_end),
-            "submitter": Web3.to_checksum_address(submitter),
-        }
+        return _RegistryEvidence(
+            batch={
+                "batch_id": int(batch_id),
+                "log_count": int(stored_log_count),
+                "timestamp": datetime.fromtimestamp(int(timestamp), tz=UTC),
+                "block_number": int(block_number),
+                "start_timestamp": int(stored_start),
+                "end_timestamp": int(stored_end),
+                "submitter": Web3.to_checksum_address(submitter),
+            },
+            endpoint=anchored_at,
+            absence_corroborated=False,
+        )
 
     def _confirmation_from_receipt(
         self,
@@ -862,6 +1435,7 @@ class BlockchainService:
         start_timestamp: datetime,
         end_timestamp: datetime,
         source: Literal["transaction_receipt", "contract_state"],
+        prefer: _RpcEndpoint | None = None,
     ) -> AnchorConfirmation:
         if int(receipt.get("status", 0)) != 1:
             raise AnchorEvidenceError("A reverted receipt cannot confirm an anchor")
@@ -876,13 +1450,24 @@ class BlockchainService:
             merkle_root,
             log_count,
         )
-        batch = self._validated_batch(
+        evidence = self._validated_batch(
             merkle_root,
             log_count,
             start_timestamp,
             end_timestamp,
+            prefer=prefer,
         )
+        batch = evidence.batch
         if batch is None:
+            if not evidence.absence_corroborated:
+                # We hold a successful receipt but could not reach every node
+                # to cross-check the registry. That is a read gap, not a
+                # contradiction, so it must not surface as an evidence error.
+                raise RpcAvailabilityError(
+                    "isAnchored",
+                    evidence.failures
+                    or ("registry could not be cross-checked against a successful receipt",),
+                )
             raise AnchorEvidenceError(
                 "Receipt succeeded but registry does not report the root anchored"
             )
@@ -916,25 +1501,46 @@ class BlockchainService:
         log_count: int,
         start_timestamp: datetime,
         end_timestamp: datetime,
-    ) -> AnchorConfirmation | None:
-        batch = self._validated_batch(
+        prefer: _RpcEndpoint | None = None,
+    ) -> _ContractStateRead:
+        """Confirm from registry state alone.
+
+        Reports whether the registry was read at all, and whether an *absent*
+        root was corroborated by every healthy endpoint. An uncorroborated
+        absence is not a fact the caller may act on.
+        """
+
+        evidence = self._validated_batch(
             merkle_root,
             log_count,
             start_timestamp,
             end_timestamp,
+            prefer=prefer,
         )
+        batch = evidence.batch
         if batch is None:
-            return None
+            return _ContractStateRead(
+                confirmation=None,
+                answered=evidence.answered,
+                absence_corroborated=evidence.absence_corroborated,
+                failures=evidence.failures,
+            )
+        # Every follow-up read is steered to the node that reported the root
+        # anchored: it demonstrably has the block, and a node that is behind
+        # would answer the log query with an empty set.
+        source_endpoint = evidence.endpoint
         root_topic = "0x" + merkle_root.removeprefix("0x").lower()
-        event_logs = self._rpc(
-            lambda: self.w3.eth.get_logs(
+        event_logs = self._read(
+            "get_logs",
+            lambda endpoint: endpoint.w3.eth.get_logs(
                 {
                     "fromBlock": batch["block_number"],
                     "toBlock": batch["block_number"],
                     "address": self.contract_address,
                     "topics": ["0x" + _BATCH_ANCHORED_TOPIC, None, root_topic],
                 }
-            )
+            ),
+            prefer=source_endpoint,
         )
         if len(event_logs) != 1:
             raise AnchorEvidenceError(
@@ -942,14 +1548,28 @@ class BlockchainService:
                 f"exactly one matching event; found {len(event_logs)}"
             )
         transaction_hash = normalize_transaction_hash(event_logs[0]["transactionHash"])
-        receipt = self._rpc(lambda: self.w3.eth.get_transaction_receipt(transaction_hash))
-        return self._confirmation_from_receipt(
-            receipt,
-            merkle_root=merkle_root,
-            log_count=log_count,
-            start_timestamp=start_timestamp,
-            end_timestamp=end_timestamp,
-            source="contract_state",
+        receipt, receipt_endpoint, ledger = self._poll_transaction_receipt(transaction_hash)
+        if receipt is None:
+            raise RpcAvailabilityError(
+                "get_transaction_receipt",
+                tuple(ledger.failures)
+                or (
+                    "registry reports the root anchored but no endpoint served "
+                    f"the receipt for {transaction_hash}",
+                ),
+            )
+        return _ContractStateRead(
+            confirmation=self._confirmation_from_receipt(
+                receipt,
+                merkle_root=merkle_root,
+                log_count=log_count,
+                start_timestamp=start_timestamp,
+                end_timestamp=end_timestamp,
+                source="contract_state",
+                prefer=receipt_endpoint or source_endpoint,
+            ),
+            answered=True,
+            absence_corroborated=False,
         )
 
     def reconcile_anchor(
@@ -961,38 +1581,98 @@ class BlockchainService:
         end_timestamp: datetime,
         transaction_hash: str | None,
     ) -> ReconciliationResult:
-        """Check receipt then registry state before any new broadcast."""
+        """Check the persisted transaction first, then registry state.
 
-        self.assert_chain_id()
-        transaction_state: Literal["none", "not_found", "reverted"] = "none"
+        The already-persisted hash is the strongest identity we hold, so it is
+        always the first question asked. Its receipt is validated exactly as
+        before — ``BatchAnchored`` event, then AnchorRegistry state — and only
+        after it fails to answer do we ask the registry directly.
+
+        Every read is served by :meth:`_read`, so a primary that answers
+        ``403 Forbidden`` falls through to the configured read endpoints. If no
+        endpoint can serve the receipt, the state is ``unknown``: the caller
+        learns nothing about the transaction and must not replace it. Chain-id
+        is verified per endpoint inside :meth:`_read`, so no wrong-chain node
+        can contribute evidence here.
+        """
+
+        transaction_state: TransactionState = "none"
+        receipt_absence_corroborated = True
+        evidence_endpoint: _RpcEndpoint | None = None
         if transaction_hash:
-            try:
-                receipt = self._rpc(lambda: self.w3.eth.get_transaction_receipt(transaction_hash))
-            except TransactionNotFound:
-                transaction_state = "not_found"
-            else:
-                if int(receipt.get("status", 0)) == 1:
-                    return ReconciliationResult(
-                        confirmation=self._confirmation_from_receipt(
-                            receipt,
-                            merkle_root=merkle_root,
-                            log_count=log_count,
-                            start_timestamp=start_timestamp,
-                            end_timestamp=end_timestamp,
-                            source="transaction_receipt",
-                        ),
-                        transaction_state="none",
-                    )
+            receipt, evidence_endpoint, ledger = self._poll_transaction_receipt(transaction_hash)
+            if receipt is not None and int(receipt.get("status", 0)) == 1:
+                return ReconciliationResult(
+                    confirmation=self._confirmation_from_receipt(
+                        receipt,
+                        merkle_root=merkle_root,
+                        log_count=log_count,
+                        start_timestamp=start_timestamp,
+                        end_timestamp=end_timestamp,
+                        source="transaction_receipt",
+                        prefer=evidence_endpoint,
+                    ),
+                    transaction_state="none",
+                )
+            if receipt is not None:
+                # A node returned a receipt with a failed status. That is an
+                # observation, not silence, so it stands as evidence.
                 transaction_state = "reverted"
+            else:
+                receipt_absence_corroborated = ledger.corroborated
+                # "Nobody has a receipt" only means the transaction is absent
+                # if everyone healthy was asked and everyone agreed. Otherwise
+                # a lagging or unreachable node is being read as a verdict.
+                transaction_state = "not_found" if ledger.corroborated else "unknown"
+                if not ledger.corroborated:
+                    logger.warning(
+                        "anchor_receipt_absence_uncorroborated transaction_hash=%s "
+                        "answered=%s unavailable=%s",
+                        transaction_hash,
+                        ledger.answered or "none",
+                        ledger.unavailable or "none",
+                    )
 
-        confirmation = self._confirmation_from_contract_state(
+        # An RpcAvailabilityError from inside here propagates on purpose: a
+        # partial registry read is a provider outage, not an empty registry.
+        registry = self._confirmation_from_contract_state(
             merkle_root=merkle_root,
             log_count=log_count,
             start_timestamp=start_timestamp,
             end_timestamp=end_timestamp,
+            prefer=evidence_endpoint,
         )
+        if registry.confirmation is not None:
+            return ReconciliationResult(confirmation=registry.confirmation, transaction_state="none")
+
+        if not registry.answered:
+            # Neither the receipt nor the registry was readable anywhere. The
+            # caller must see a provider outage, not an empty result it could
+            # mistake for "this batch was never anchored".
+            raise RpcAvailabilityError(
+                "isAnchored",
+                registry.failures or ("no endpoint could serve the registry read",),
+            )
+
+        if transaction_state == "not_found" and not registry.absence_corroborated:
+            # The receipt is corroborated absent, but the registry could not be
+            # polled in full. Replacing a broadcast transaction needs both
+            # halves of the picture, so this stays "nothing was learned".
+            logger.warning(
+                "anchor_registry_absence_uncorroborated transaction_hash=%s merkle_root=%s",
+                transaction_hash,
+                merkle_root,
+            )
+            transaction_state = "unknown"
+        if transaction_hash and not receipt_absence_corroborated:
+            logger.info(
+                "anchor_registry_root_absent_after_receipt_read_failure "
+                "transaction_hash=%s merkle_root=%s",
+                transaction_hash,
+                merkle_root,
+            )
         return ReconciliationResult(
-            confirmation=confirmation,
+            confirmation=None,
             transaction_state=transaction_state,
         )
 
@@ -1005,15 +1685,39 @@ class BlockchainService:
         start_timestamp: datetime,
         end_timestamp: datetime,
     ) -> ReconciliationResult:
-        receipt = await asyncio.get_event_loop().run_in_executor(
-            None,
-            lambda: self._rpc(
-                lambda: self.w3.eth.wait_for_transaction_receipt(
-                    prepared.transaction_hash,
-                    timeout=120,
-                )
-            ),
-        )
+        loop = asyncio.get_event_loop()
+        try:
+            receipt = await loop.run_in_executor(
+                None,
+                lambda: self._rpc(
+                    lambda: self.w3.eth.wait_for_transaction_receipt(
+                        prepared.transaction_hash,
+                        timeout=120,
+                    )
+                ),
+            )
+        except BaseException as exc:
+            if not is_rpc_availability_error(exc):
+                raise
+            # The transaction is already on the wire. The primary refusing to
+            # serve its receipt (HTTP 403, rate limit, open breaker, poll
+            # timeout) is a provider problem, so ask the read endpoints for the
+            # same hash instead of giving up on the broadcast.
+            logger.warning(
+                "anchor_receipt_wait_unavailable transaction_hash=%s error=%s",
+                prepared.transaction_hash,
+                exc,
+            )
+            return await loop.run_in_executor(
+                None,
+                lambda: self.reconcile_anchor(
+                    merkle_root=merkle_root,
+                    log_count=log_count,
+                    start_timestamp=start_timestamp,
+                    end_timestamp=end_timestamp,
+                    transaction_hash=prepared.transaction_hash,
+                ),
+            )
         if int(receipt.get("status", 0)) == 1:
             return ReconciliationResult(
                 confirmation=self._confirmation_from_receipt(
@@ -1038,7 +1742,10 @@ class BlockchainService:
         """Compatibility read helper used by operator diagnostics."""
 
         root_bytes = self._root_bytes(merkle_root)
-        result = self._rpc(lambda: self.contract.functions.getBatch(root_bytes).call())
+        result = self._read(
+            "getBatch",
+            lambda endpoint: endpoint.contract.functions.getBatch(root_bytes).call(),
+        )
         batch_id, log_count, timestamp, submitter = result
         if batch_id == 0:
             return None
@@ -1131,11 +1838,22 @@ class DatabaseService:
                 await self._pool.release(connection)
 
     async def get_proof_failure_counts(self) -> dict[str, int]:
-        """Return persistent failed and dead letter proof counts for alerts."""
+        """Return persistent proof counts that operators alert on.
+
+        ``awaiting_reconciliation`` counts proofs that hold a transaction hash
+        but no confirmation. Those never become ``failed`` or ``dead_letter``
+        while only *reads* are failing, so without this count an anchor stuck
+        behind an unreadable RPC would be invisible on the dashboards.
+        """
+
         query = """
             SELECT
                 count(*) FILTER (WHERE status = 'failed') AS failed,
-                count(*) FILTER (WHERE status = 'dead_letter') AS dead_letter
+                count(*) FILTER (WHERE status = 'dead_letter') AS dead_letter,
+                count(*) FILTER (
+                    WHERE status IN ('prepared', 'submitted')
+                      AND transaction_hash IS NOT NULL
+                ) AS awaiting_reconciliation
             FROM merkle_proofs
         """
         async with self._pool.acquire() as conn:
@@ -1143,6 +1861,7 @@ class DatabaseService:
         return {
             "failed": int(row["failed"] or 0),
             "dead_letter": int(row["dead_letter"] or 0),
+            "awaiting_reconciliation": int(row["awaiting_reconciliation"] or 0),
         }
 
     async def get_unanchored_logs(self, limit: int = 1000) -> list[dict[str, Any]]:
@@ -1332,16 +2051,26 @@ class DatabaseService:
         self,
         proof_id: UUID,
         *,
-        status: Literal["failed", "prepared", "submitted"],
+        status: Literal["failed", "prepared", "submitted", "pending"],
         error_message: str,
         next_retry_at: datetime,
+        increment_retry: bool = True,
     ) -> None:
+        """Re-queue a proof.
+
+        ``increment_retry=False`` is used when the attempt failed because the
+        RPC could not be read. The retry budget exists to bound *real* faults;
+        spending it on a provider outage would eventually strand a proof
+        outside the ``retry_count < MAX_RETRIES`` window of
+        :meth:`get_retryable_proofs` even though nothing about it ever failed.
+        """
+
         query = """
             UPDATE merkle_proofs
             SET status = $2,
                 error_message = $3,
                 next_retry_at = $4,
-                retry_count = retry_count + 1
+                retry_count = retry_count + CASE WHEN $5::boolean THEN 1 ELSE 0 END
             WHERE id = $1
               AND status <> 'confirmed'
         """
@@ -1352,6 +2081,7 @@ class DatabaseService:
                 status,
                 error_message,
                 next_retry_at,
+                increment_retry,
             )
 
     async def mark_proof_dead_letter(
@@ -1466,10 +2196,77 @@ class DatabaseService:
             rows = await conn.fetch(query, MAX_RETRIES)
         return [dict(row) for row in rows]
 
+    async def get_next_retry_due_at(self) -> datetime | None:
+        """Earliest ``next_retry_at`` among proofs the retry query will take.
+
+        The predicate is deliberately identical to
+        :meth:`get_retryable_proofs`. A time reported here that the retry query
+        would then skip would wake the worker forever for a row it never
+        touches.
+        """
+
+        query = """
+            SELECT min(next_retry_at) AS due_at
+            FROM merkle_proofs
+            WHERE status IN ('pending', 'prepared', 'submitted', 'failed')
+              AND (
+                    status IN ('prepared', 'submitted')
+                    OR retry_count < $1
+              )
+              AND next_retry_at IS NOT NULL
+        """
+        async with self._pool.acquire() as conn:
+            row = await conn.fetchrow(query, MAX_RETRIES)
+        return row["due_at"] if row else None
+
     async def get_pending_proofs(self) -> list[dict[str, Any]]:
         """Backward-compatible name for the state-aware retry query."""
 
         return await self.get_retryable_proofs()
+
+    async def get_reconcilable_proofs(self) -> list[dict[str, Any]]:
+        """Return every proof whose on-chain outcome is still unresolved.
+
+        Includes ``dead_letter`` rows: a proof that was dead-lettered by an
+        older build, or by a fault unrelated to the chain, may still have a
+        transaction sitting confirmed on Base. Reconciliation never broadcasts,
+        so sweeping these is safe.
+        """
+
+        query = """
+            SELECT id, root_hash, leaf_hashes, log_count, retry_count,
+                   start_timestamp, end_timestamp, status,
+                   transaction_hash, submission_nonce, prepared_at,
+                   submitted_at, contract_address, chain_id,
+                   dead_lettered_at, error_message
+            FROM merkle_proofs
+            WHERE status IN ('prepared', 'submitted', 'failed', 'dead_letter')
+            ORDER BY created_at ASC
+        """
+        async with self._pool.acquire() as conn:
+            rows = await conn.fetch(query)
+        return [dict(row) for row in rows]
+
+    async def get_proof_by_transaction_hash(self, transaction_hash: str) -> dict[str, Any] | None:
+        """Find a proof by the transaction identity persisted before broadcast.
+
+        This is the lookup an operator has after reading a hash off a block
+        explorer, which is usually all that is known when a broadcast
+        transaction is confirmed on chain but stale in the database.
+        """
+
+        query = """
+            SELECT id, root_hash, leaf_hashes, log_count, retry_count,
+                   start_timestamp, end_timestamp, status,
+                   transaction_hash, submission_nonce, prepared_at,
+                   submitted_at, contract_address, chain_id,
+                   dead_lettered_at, error_message
+            FROM merkle_proofs
+            WHERE lower(transaction_hash) = lower($1)
+        """
+        async with self._pool.acquire() as conn:
+            row = await conn.fetchrow(query, transaction_hash)
+        return dict(row) if row else None
 
     async def get_proof_by_id(self, proof_id: UUID) -> dict[str, Any] | None:
         query = """
@@ -1525,14 +2322,8 @@ class AnchorWorker:
                     self._record_cycle_error()
                     logger.exception(f"Error in batch processing: {e}")
 
-                try:
-                    await asyncio.wait_for(
-                        self._shutdown_event.wait(),
-                        timeout=self.interval_seconds,
-                    )
+                if await self._wait_for_next_cycle(await self._next_cycle_delay()):
                     break
-                except TimeoutError:
-                    pass
         finally:
             heartbeat_task.cancel()
             with suppress(asyncio.CancelledError):
@@ -1544,6 +2335,50 @@ class AnchorWorker:
         logger.info("Stopping anchor worker...")
         self._running = False
         self._shutdown_event.set()
+
+    async def _next_cycle_delay(self) -> float:
+        """Seconds to sleep before the next cycle.
+
+        The batch interval paces *new* batches. A proof waiting on
+        reconciliation has its own, much shorter, due time, and sleeping past
+        it would make ANCHOR_RECONCILIATION_INTERVAL a fiction: a 60-second
+        re-poll would really happen every ANCHOR_INTERVAL_MINUTES. So the
+        worker wakes at whichever comes first, floored so a row that is
+        permanently overdue cannot spin the loop.
+        """
+
+        interval = float(self.interval_seconds)
+        get_due_at = getattr(self.db, "get_next_retry_due_at", None)
+        if get_due_at is None:
+            return interval
+        try:
+            due_at = await get_due_at()
+        except Exception:
+            logger.exception("Failed to read the next reconciliation due time")
+            return interval
+        if due_at is None:
+            return interval
+        if due_at.tzinfo is None:
+            due_at = due_at.replace(tzinfo=UTC)
+        remaining = (due_at - datetime.now(UTC)).total_seconds()
+        delay = max(MIN_CYCLE_DELAY_SECONDS, min(interval, remaining))
+        if delay < interval:
+            logger.debug(
+                "anchor_cycle_wake_early delay_seconds=%.1f due_at=%s batch_interval=%.1f",
+                delay,
+                due_at.isoformat(),
+                interval,
+            )
+        return delay
+
+    async def _wait_for_next_cycle(self, delay: float) -> bool:
+        """Sleep for ``delay``. Return True when shutdown was requested."""
+
+        try:
+            await asyncio.wait_for(self._shutdown_event.wait(), timeout=delay)
+            return True
+        except TimeoutError:
+            return False
 
     async def _heartbeat_loop(self) -> None:
         """Publish process liveness independently of processing outcomes."""
@@ -1625,7 +2460,7 @@ class AnchorWorker:
         try:
             from api.observability import anchor_proof_backlog
 
-            for proof_status in ("failed", "dead_letter"):
+            for proof_status in ("failed", "dead_letter", "awaiting_reconciliation"):
                 anchor_proof_backlog.labels(status=proof_status).set(counts.get(proof_status, 0))
         except ImportError:
             logger.warning("Anchor proof backlog metric is unavailable")
@@ -1765,31 +2600,31 @@ class AnchorWorker:
                 end_timestamp=proof["end_timestamp"],
                 transaction_hash=proof.get("transaction_hash"),
             )
+        except RpcAvailabilityError as exc:
+            # No endpoint could serve the read. This says nothing about the
+            # transaction, so the proof keeps its state, keeps its retry
+            # budget, and is never dead-lettered on account of it.
+            if reconciliation_only:
+                self._log_reconciliation_read_failure(proof, current_retry_count, exc)
+                return False
+            await self._record_read_unavailable(proof, current_retry_count, exc)
+            return False
         except Exception as exc:
             if reconciliation_only:
-                logger.error(
-                    "anchor_reconciliation_failed proof_id=%s merkle_root=%s "
-                    "transaction_hash=%s nonce=%s retry_count=%s rpc_stage=read error=%s",
-                    proof_id,
-                    merkle_root,
-                    proof.get("transaction_hash"),
-                    proof.get("submission_nonce"),
-                    current_retry_count,
-                    exc,
-                )
+                self._log_reconciliation_read_failure(proof, current_retry_count, exc)
+                return False
+            if is_rpc_availability_error(exc):
+                # An open breaker, a bare transport error — same verdict: the
+                # provider did not answer, so nothing was learned.
+                await self._record_read_unavailable(proof, current_retry_count, exc)
                 return False
             retry_status: Literal["failed", "prepared", "submitted"] = (
                 "submitted" if proof.get("transaction_hash") else "failed"
             )
-            reconciliation_error = (
-                f"rpc_circuit_open: {exc}"
-                if isinstance(exc, RpcCircuitOpenError)
-                else f"reconciliation read failed: {exc}"
-            )
             await self._record_failure(
                 proof_id,
                 current_retry_count,
-                reconciliation_error,
+                f"reconciliation read failed: {exc}",
                 status=retry_status,
             )
             return False
@@ -1807,14 +2642,41 @@ class AnchorWorker:
             return True
 
         if reconciliation_only:
+            # "unknown" and "not_found" must not read the same in an operator's
+            # log: one means nobody answered, the other means somebody did.
+            event = (
+                "anchor_reconciliation_read_unavailable"
+                if reconciliation.transaction_state == "unknown"
+                else "anchor_reconciliation_not_found"
+            )
             logger.warning(
-                "anchor_reconciliation_not_found proof_id=%s merkle_root=%s "
-                "transaction_hash=%s nonce=%s retry_count=%s rpc_stage=read",
+                "%s proof_id=%s merkle_root=%s transaction_hash=%s nonce=%s "
+                "retry_count=%s transaction_state=%s rpc_stage=read",
+                event,
                 proof_id,
                 merkle_root,
                 proof.get("transaction_hash"),
                 proof.get("submission_nonce"),
                 current_retry_count,
+                reconciliation.transaction_state,
+            )
+            return False
+
+        if proof.get("transaction_hash") and reconciliation.transaction_state not in (
+            "not_found",
+            "reverted",
+        ):
+            # A persisted hash with no receipt evidence means the read never
+            # landed. Replacing here would be rebroadcasting on the strength of
+            # an HTTP 403, which is exactly the failure this path exists to
+            # prevent.
+            await self._record_read_unavailable(
+                proof,
+                current_retry_count,
+                RpcAvailabilityError(
+                    "get_transaction_receipt",
+                    ("no endpoint returned a receipt or a not-found answer",),
+                ),
             )
             return False
 
@@ -1839,6 +2701,18 @@ class AnchorWorker:
 
         try:
             balance = self.blockchain.get_balance()
+        except Exception as exc:
+            if is_rpc_availability_error(exc):
+                await self._record_read_unavailable(proof, current_retry_count, exc)
+                return False
+            await self._record_failure(
+                proof_id,
+                current_retry_count,
+                f"balance read failed: {exc}",
+            )
+            return False
+
+        try:
             if balance < Decimal("0.0001"):
                 logger.error(
                     "anchor_failed proof_id=%s merkle_root=%s transaction_hash=%s "
@@ -1873,13 +2747,34 @@ class AnchorWorker:
                     end_timestamp=proof["end_timestamp"],
                     transaction_hash=proof.get("transaction_hash"),
                 )
+            except RpcAvailabilityError as exc:
+                # The registry says this root exists. We simply cannot read the
+                # evidence right now, which is not grounds for dead-lettering.
+                await self._record_read_unavailable(proof, current_retry_count, exc)
+                return False
             except Exception as exc:
+                if is_rpc_availability_error(exc):
+                    await self._record_read_unavailable(proof, current_retry_count, exc)
+                    return False
                 await self._record_terminal_failure(
                     proof_id,
                     f"RootAlreadyAnchored could not be validated: {exc}",
                 )
                 return False
             if reconciliation.confirmation is None:
+                if reconciliation.transaction_state == "unknown":
+                    # The registry disagrees with estimateGas only because the
+                    # receipt could not be read. That is not a contradiction we
+                    # are entitled to dead-letter on.
+                    await self._record_read_unavailable(
+                        proof,
+                        current_retry_count,
+                        RpcAvailabilityError(
+                            "get_transaction_receipt",
+                            ("receipt unreadable while validating RootAlreadyAnchored",),
+                        ),
+                    )
+                    return False
                 await self._record_terminal_failure(
                     proof_id,
                     "RootAlreadyAnchored was returned but registry reconciliation found no root",
@@ -1895,6 +2790,9 @@ class AnchorWorker:
             await self._record_terminal_failure(proof_id, str(exc))
             return False
         except Exception as exc:
+            if is_rpc_availability_error(exc):
+                await self._record_read_unavailable(proof, current_retry_count, exc)
+                return False
             await self._record_failure(
                 proof_id,
                 current_retry_count,
@@ -1960,37 +2858,45 @@ class AnchorWorker:
                 start_timestamp=proof["start_timestamp"],
                 end_timestamp=proof["end_timestamp"],
             )
-        except RpcCircuitOpenError as e:
-            logger.info(
-                "anchor_receipt_pending proof_id=%s merkle_root=%s "
-                "transaction_hash=%s nonce=%s retry_count=%s rpc_stage=receipt "
-                "cooldown_seconds=%.1f",
-                proof_id,
-                merkle_root,
-                transaction_hash,
-                prepared.nonce,
-                current_retry_count,
-                e.cooldown_remaining_seconds,
-            )
-            await self._record_failure(
-                proof_id,
-                current_retry_count,
-                f"rpc_circuit_open: {e}",
-                status="submitted",
-            )
-            self._record_anchor_event("receipt_pending")
-            return False
         except Exception as exc:
-            logger.warning(
-                "anchor_receipt_pending proof_id=%s merkle_root=%s "
-                "transaction_hash=%s nonce=%s retry_count=%s rpc_stage=receipt error=%s",
-                proof_id,
-                merkle_root,
-                transaction_hash,
-                prepared.nonce,
-                current_retry_count,
-                exc,
-            )
+            # The transaction is on the wire and its hash is already persisted.
+            # Whatever went wrong while reading the receipt, the proof stays
+            # ``submitted`` and reconciles on a later cycle — it is never
+            # rebroadcast and never dead-lettered because of a read.
+            broadcast_proof = dict(proof)
+            broadcast_proof["transaction_hash"] = transaction_hash
+            broadcast_proof["submission_nonce"] = prepared.nonce
+            if isinstance(exc, RpcCircuitOpenError):
+                logger.info(
+                    "anchor_receipt_pending proof_id=%s merkle_root=%s "
+                    "transaction_hash=%s nonce=%s retry_count=%s rpc_stage=receipt "
+                    "cooldown_seconds=%.1f",
+                    proof_id,
+                    merkle_root,
+                    transaction_hash,
+                    prepared.nonce,
+                    current_retry_count,
+                    exc.cooldown_remaining_seconds,
+                )
+            else:
+                logger.warning(
+                    "anchor_receipt_pending proof_id=%s merkle_root=%s "
+                    "transaction_hash=%s nonce=%s retry_count=%s rpc_stage=receipt error=%s",
+                    proof_id,
+                    merkle_root,
+                    transaction_hash,
+                    prepared.nonce,
+                    current_retry_count,
+                    exc,
+                )
+            if is_rpc_availability_error(exc):
+                await self._record_read_unavailable(
+                    broadcast_proof,
+                    current_retry_count,
+                    exc,
+                )
+                self._record_anchor_event("receipt_pending")
+                return False
             await self._record_failure(
                 proof_id,
                 current_retry_count,
@@ -2010,6 +2916,24 @@ class AnchorWorker:
             )
             return True
 
+        if result.transaction_state != "reverted":
+            # The transaction is broadcast and its outcome was never actually
+            # observed — the receipt read did not land. It stays ``submitted``
+            # and reconciles later; it is not a failure to count or bury.
+            broadcast_proof = dict(proof)
+            broadcast_proof["transaction_hash"] = transaction_hash
+            broadcast_proof["submission_nonce"] = prepared.nonce
+            await self._record_read_unavailable(
+                broadcast_proof,
+                current_retry_count,
+                RpcAvailabilityError(
+                    "get_transaction_receipt",
+                    ("no endpoint returned a receipt for the broadcast transaction",),
+                ),
+            )
+            self._record_anchor_event("receipt_pending")
+            return False
+
         await self._record_failure(
             proof_id,
             current_retry_count,
@@ -2017,6 +2941,82 @@ class AnchorWorker:
             status="failed",
         )
         return False
+
+    @staticmethod
+    def _log_reconciliation_read_failure(
+        proof: Mapping[str, Any],
+        current_retry_count: int,
+        exc: BaseException,
+    ) -> None:
+        logger.error(
+            "anchor_reconciliation_failed proof_id=%s merkle_root=%s "
+            "transaction_hash=%s nonce=%s retry_count=%s rpc_stage=read error=%s",
+            proof["id"],
+            proof["root_hash"],
+            proof.get("transaction_hash"),
+            proof.get("submission_nonce"),
+            current_retry_count,
+            exc,
+        )
+
+    async def _record_read_unavailable(
+        self,
+        proof: Mapping[str, Any],
+        current_retry_count: int,
+        exc: BaseException,
+    ) -> None:
+        """Re-queue a proof whose chain state could not be read.
+
+        An unreadable provider is not a failed transaction. So this path:
+
+        * keeps the proof in a live state (``submitted`` once a hash exists),
+        * does not spend the retry budget, so the proof stays selectable,
+        * never dead-letters, and
+        * never reaches the broadcast path.
+
+        Re-polling uses the fixed ``ANCHOR_RECONCILIATION_INTERVAL`` rather than
+        the exponential failure backoff: the proof is waiting for a provider to
+        come back, not backing off a fault of its own.
+        """
+
+        proof_id = proof["id"]
+        transaction_hash = proof.get("transaction_hash")
+        if transaction_hash:
+            status: Literal["failed", "prepared", "submitted", "pending"] = (
+                "prepared"
+                if proof.get("status") == "prepared" and not proof.get("submitted_at")
+                else "submitted"
+            )
+        else:
+            current_status = str(proof.get("status") or "pending")
+            status = "pending" if current_status in ("pending", "confirmed") else "failed"
+        next_retry_at = datetime.now(UTC) + timedelta(seconds=RECONCILIATION_INTERVAL_SECONDS)
+        logger.warning(
+            "anchor_read_unavailable proof_id=%s merkle_root=%s transaction_hash=%s "
+            "nonce=%s retry_count=%s status=%s rpc_stage=read next_retry_at=%s error=%s",
+            proof_id,
+            proof["root_hash"],
+            transaction_hash,
+            proof.get("submission_nonce"),
+            current_retry_count,
+            status,
+            next_retry_at.isoformat(),
+            exc,
+        )
+        # Both markers stay greppable: operators have alerted on
+        # ``rpc_circuit_open`` since the breaker shipped, and
+        # ``rpc_read_unavailable`` is the wider class it now belongs to.
+        markers = "rpc_read_unavailable"
+        if isinstance(exc, RpcCircuitOpenError):
+            markers = f"{markers} rpc_circuit_open"
+        await self.db.schedule_retry(
+            proof_id,
+            status=status,
+            error_message=f"{markers} (retryable, not a transaction failure): {exc}",
+            next_retry_at=next_retry_at,
+            increment_retry=False,
+        )
+        self._record_anchor_event("read_unavailable")
 
     async def _record_failure(
         self,
@@ -2113,14 +3113,70 @@ class AnchorWorker:
                 reconciliation_only=True,
             )
 
+    async def reconcile_transaction(self, transaction_hash: str) -> bool:
+        """Reconcile the proof carrying ``transaction_hash``. Never broadcasts."""
+
+        normalised = normalize_transaction_hash(transaction_hash)
+        async with self.db.anchor_cycle_lock() as acquired:
+            if not acquired:
+                raise RuntimeError("Another anchor worker owns the reconciliation lock")
+            proof = await self.db.get_proof_by_transaction_hash(normalised)
+            if proof is None:
+                raise ValueError(f"No merkle proof holds transaction hash {normalised}")
+            return await self._process_proof(proof, reconciliation_only=True)
+
+    async def reconcile_unresolved_proofs(self) -> dict[str, int]:
+        """Reconcile every proof whose chain outcome is still unresolved.
+
+        The operator recovery path for a provider outage: after adding a read
+        endpoint, this sweeps ``prepared``, ``submitted``, ``failed``, and
+        ``dead_letter`` proofs and confirms each one that chain evidence
+        supports. It never broadcasts, so it is safe to run at any time.
+        """
+
+        async with self.db.anchor_cycle_lock() as acquired:
+            if not acquired:
+                raise RuntimeError("Another anchor worker owns the reconciliation lock")
+            proofs = await self.db.get_reconcilable_proofs()
+            counts = {"examined": 0, "confirmed": 0, "unresolved": 0}
+            for proof in proofs:
+                counts["examined"] += 1
+                logger.info(
+                    "anchor_reconcile_sweep proof_id=%s merkle_root=%s "
+                    "transaction_hash=%s status=%s",
+                    proof["id"],
+                    proof["root_hash"],
+                    proof.get("transaction_hash"),
+                    proof.get("status"),
+                )
+                if await self._process_proof(proof, reconciliation_only=True):
+                    counts["confirmed"] += 1
+                else:
+                    counts["unresolved"] += 1
+            logger.info(
+                "anchor_reconcile_sweep_complete examined=%d confirmed=%d unresolved=%d",
+                counts["examined"],
+                counts["confirmed"],
+                counts["unresolved"],
+            )
+            return counts
+
 
 # =============================================================================
 # MAIN ENTRY POINT
 # =============================================================================
 
 
-async def main(reconcile_proof_id: UUID | None = None) -> int:
+async def main(
+    reconcile_proof_id: UUID | None = None,
+    *,
+    reconcile_all: bool = False,
+    reconcile_transaction_hash: str | None = None,
+) -> int:
     """Main entry point for the anchor worker."""
+    reconcile_only = (
+        reconcile_proof_id is not None or reconcile_all or reconcile_transaction_hash is not None
+    )
     # Validate configuration
     if not ANCHOR_CONTRACT_ADDRESS:
         logger.error("ANCHOR_CONTRACT_ADDRESS environment variable is required")
@@ -2133,7 +3189,7 @@ async def main(reconcile_proof_id: UUID | None = None) -> int:
     # Initialize services
     logger.info("Initializing anchor worker...")
 
-    if reconcile_proof_id is None:
+    if not reconcile_only:
         if METRICS_ENABLED:
             from api.observability import start_worker_metrics_endpoint
 
@@ -2192,16 +3248,35 @@ async def main(reconcile_proof_id: UUID | None = None) -> int:
         )
         sys.exit(1)
 
+    try:
+        read_rpc_urls = parse_read_provider_urls(
+            BLOCKCHAIN_READ_PROVIDER_URLS_RAW,
+            primary_url=BLOCKCHAIN_PROVIDER_URL,
+        )
+    except ValueError as exc:
+        logger.critical("BLOCKCHAIN_READ_PROVIDER_URLS is invalid: %s", exc)
+        await db_service.close()
+        sys.exit(1)
+
     blockchain_service = BlockchainService(
         rpc_url=BLOCKCHAIN_PROVIDER_URL,
         contract_address=ANCHOR_CONTRACT_ADDRESS,
         private_key=BLOCKCHAIN_PRIVATE_KEY,
+        read_rpc_urls=read_rpc_urls,
     )
 
     if not blockchain_service.is_connected():
-        logger.error("Failed to connect to blockchain")
-        await db_service.close()
-        return 1
+        if not read_rpc_urls:
+            logger.error("Failed to connect to blockchain")
+            await db_service.close()
+            return 1
+        # The primary is the only endpoint that broadcasts, but a worker that
+        # cannot reach it can still reconcile transactions it already sent.
+        # Exiting here is what left the incident's proof stranded.
+        logger.error(
+            "Primary RPC is unreachable. Continuing on the configured read "
+            "endpoints so already-broadcast transactions can still reconcile."
+        )
 
     worker = AnchorWorker(db_service, blockchain_service)
     if reconcile_proof_id is not None:
@@ -2211,8 +3286,42 @@ async def main(reconcile_proof_id: UUID | None = None) -> int:
         finally:
             await db_service.close()
 
-    balance = blockchain_service.get_balance()
-    logger.info(f"Blockchain connected. Balance: {balance} ETH")
+    if reconcile_transaction_hash is not None:
+        try:
+            reconciled = await worker.reconcile_transaction(reconcile_transaction_hash)
+            return 0 if reconciled else 2
+        finally:
+            await db_service.close()
+
+    if reconcile_all:
+        try:
+            counts = await worker.reconcile_unresolved_proofs()
+            logger.info(
+                "Reconciliation sweep examined %d proof(s): %d confirmed, %d unresolved.",
+                counts["examined"],
+                counts["confirmed"],
+                counts["unresolved"],
+            )
+            return 0 if counts["unresolved"] == 0 else 2
+        finally:
+            await db_service.close()
+
+    try:
+        balance = blockchain_service.get_balance()
+    except Exception as exc:
+        if not is_rpc_availability_error(exc):
+            raise
+        # A primary that will not serve a balance read still leaves work worth
+        # doing: proofs already broadcast can reconcile through the read
+        # endpoints. Starting up is strictly better than exiting here.
+        logger.error(
+            "Primary RPC could not serve a balance read at startup (%s). "
+            "Anchoring new batches will retry; reconciliation continues on the "
+            "configured read endpoints.",
+            exc,
+        )
+    else:
+        logger.info(f"Blockchain connected. Balance: {balance} ETH")
 
     # Handle shutdown signals
     def signal_handler(sig, _frame):
@@ -2242,9 +3351,47 @@ def _parse_args() -> argparse.Namespace:
             "confirmed database fields. This mode never broadcasts a transaction."
         ),
     )
-    return parser.parse_args()
+    parser.add_argument(
+        "--reconcile-transaction",
+        type=str,
+        help=(
+            "Reconcile the proof holding this transaction hash. Use when a block "
+            "explorer shows the anchor confirmed but the database does not. "
+            "This mode never broadcasts a transaction."
+        ),
+    )
+    parser.add_argument(
+        "--reconcile-unresolved",
+        action="store_true",
+        help=(
+            "Reconcile every prepared, submitted, failed, and dead-lettered proof "
+            "from chain evidence. Use after adding BLOCKCHAIN_READ_PROVIDER_URLS to "
+            "recover proofs stranded by a provider outage. Never broadcasts."
+        ),
+    )
+    arguments = parser.parse_args()
+    selected = sum(
+        1
+        for chosen in (
+            arguments.reconcile_proof is not None,
+            arguments.reconcile_transaction is not None,
+            arguments.reconcile_unresolved,
+        )
+        if chosen
+    )
+    if selected > 1:
+        parser.error("the --reconcile-* modes are mutually exclusive")
+    return arguments
 
 
 if __name__ == "__main__":
     arguments = _parse_args()
-    raise SystemExit(asyncio.run(main(arguments.reconcile_proof)))
+    raise SystemExit(
+        asyncio.run(
+            main(
+                arguments.reconcile_proof,
+                reconcile_all=arguments.reconcile_unresolved,
+                reconcile_transaction_hash=arguments.reconcile_transaction,
+            )
+        )
+    )
