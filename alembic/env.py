@@ -27,8 +27,9 @@ from __future__ import annotations
 import os
 from logging.config import fileConfig
 
+from sqlalchemy import engine_from_config, pool, text
+
 from alembic import context
-from sqlalchemy import engine_from_config, pool
 
 config = context.config
 
@@ -36,6 +37,14 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 target_metadata = None
+
+# Railway deploys the API and worker from the same commit. Both services run
+# ``alembic upgrade head`` before replacing their containers, so they can reach
+# ``alembic_version`` at the same time. A transaction-scoped Postgres advisory
+# lock serialises that critical section. The process waiting on the lock reads
+# the revision only after the first migration commits and therefore exits as a
+# clean no-op instead of racing the version-row update.
+_MIGRATION_LOCK_KEY = 4_803_921_115_399_370_837
 
 
 def _resolve_dsn() -> str:
@@ -52,9 +61,9 @@ def _resolve_dsn() -> str:
         )
     # asyncpg DSN -> psycopg2 DSN for Alembic's sync engine.
     if dsn.startswith("postgresql://") and "+" not in dsn.split("://", 1)[0]:
-        dsn = "postgresql+psycopg2://" + dsn[len("postgresql://"):]
+        dsn = "postgresql+psycopg2://" + dsn[len("postgresql://") :]
     elif dsn.startswith("postgres://"):
-        dsn = "postgresql+psycopg2://" + dsn[len("postgres://"):]
+        dsn = "postgresql+psycopg2://" + dsn[len("postgres://") :]
     return dsn
 
 
@@ -90,6 +99,10 @@ def run_migrations_online() -> None:
             target_metadata=target_metadata,
         )
         with context.begin_transaction():
+            connection.execute(
+                text("SELECT pg_advisory_xact_lock(:lock_key)"),
+                {"lock_key": _MIGRATION_LOCK_KEY},
+            )
             context.run_migrations()
 
 
