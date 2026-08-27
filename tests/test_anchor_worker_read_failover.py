@@ -23,7 +23,7 @@ The invariants pinned here:
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -281,16 +281,108 @@ def test_every_endpoint_403_raises_availability_not_a_missing_transaction() -> N
     assert excinfo.value.operation == "isAnchored"
 
 
-def test_transaction_not_found_still_reports_not_found() -> None:
-    """Failover must not blur a real not-found answer into unavailability."""
+def test_lagging_endpoint_not_found_is_overruled_by_a_confirmed_receipt() -> None:
+    """(A) A node that is behind must not declare a mined transaction gone."""
     primary = _fake_web3(anchor_worker.BASE_CHAIN_ID)
     fallback = _fake_web3(anchor_worker.BASE_CHAIN_ID)
+    # The primary is healthy — it simply has not caught up to the block.
     primary.eth.get_transaction_receipt.side_effect = web3.exceptions.TransactionNotFound(
         f"Transaction {TX_HASH} not found"
     )
+    fallback.eth.get_transaction_receipt.return_value = _receipt()
+
+    service = _build_service_with_failover(primary, fallback)
+    _configure_registry(primary, anchored=False)  # lagging here too
+    _configure_registry(fallback)
+
+    result = service.reconcile_anchor(
+        merkle_root=ROOT,
+        log_count=LOG_COUNT,
+        start_timestamp=START_TS,
+        end_timestamp=END_TS,
+        transaction_hash=TX_HASH,
+    )
+
+    confirmation = result.confirmation
+    assert confirmation is not None
+    assert confirmation.transaction_hash == TX_HASH
+    assert confirmation.block_number == BLOCK_NUMBER
+    assert confirmation.source == "transaction_receipt"
+    # Both endpoints were asked, and the one with the data won.
+    primary.eth.get_transaction_receipt.assert_called_once_with(TX_HASH)
+    fallback.eth.get_transaction_receipt.assert_called_once_with(TX_HASH)
+    # The registry cross-check followed the receipt to the endpoint that has
+    # the block, instead of trusting the lagging primary's isAnchored=false.
+    fallback.eth.contract.return_value.functions.getBatchFull.assert_called()
+    primary.eth.send_raw_transaction.assert_not_called()
+    fallback.eth.send_raw_transaction.assert_not_called()
+
+
+def test_lagging_registry_false_is_overruled_by_an_anchored_endpoint() -> None:
+    """(B) isAnchored=false from one node does not end registry reconciliation."""
+    primary = _fake_web3(anchor_worker.BASE_CHAIN_ID)
+    fallback = _fake_web3(anchor_worker.BASE_CHAIN_ID)
+
+    service = _build_service_with_failover(primary, fallback)
+    # No persisted hash: this is the contract-state path, driven by isAnchored.
+    _configure_registry(primary, anchored=False)
+    _configure_registry(fallback)
+    event_log = {
+        "address": CONTRACT,
+        "topics": [
+            "0x" + anchor_worker._BATCH_ANCHORED_TOPIC,
+            _topic(BATCH_ID),
+            "0x" + ROOT,
+            _topic(int(SUBMITTER, 16)),
+        ],
+        "data": hex(LOG_COUNT),
+        "transactionHash": TX_HASH,
+    }
+    primary.eth.get_logs.return_value = []  # behind, so it sees no event
+    fallback.eth.get_logs.return_value = [event_log]
+    primary.eth.get_transaction_receipt.side_effect = web3.exceptions.TransactionNotFound(
+        f"Transaction {TX_HASH} not found"
+    )
+    fallback.eth.get_transaction_receipt.return_value = _receipt()
+
+    result = service.reconcile_anchor(
+        merkle_root=ROOT,
+        log_count=LOG_COUNT,
+        start_timestamp=START_TS,
+        end_timestamp=END_TS,
+        transaction_hash=None,
+    )
+
+    confirmation = result.confirmation
+    assert confirmation is not None
+    assert confirmation.transaction_hash == TX_HASH
+    assert confirmation.block_number == BLOCK_NUMBER
+    assert confirmation.source == "contract_state"
+    # Both were polled, and every follow-up read stayed on the endpoint that
+    # reported the root anchored — the lagging primary's empty log query would
+    # otherwise have raised an evidence error.
+    primary.eth.contract.return_value.functions.isAnchored.assert_called()
+    fallback.eth.contract.return_value.functions.isAnchored.assert_called()
+    primary.eth.get_logs.assert_not_called()
+    fallback.eth.get_logs.assert_called_once()
+    primary.eth.send_raw_transaction.assert_not_called()
+    fallback.eth.send_raw_transaction.assert_not_called()
+
+
+def _not_found(transaction_hash: str) -> BaseException:
+    return web3.exceptions.TransactionNotFound(f"Transaction {transaction_hash} not found")
+
+
+def test_corroborated_absence_across_all_endpoints_reports_not_found() -> None:
+    """(C) Only unanimous absence produces a replacement-eligible state."""
+    primary = _fake_web3(anchor_worker.BASE_CHAIN_ID)
+    fallback = _fake_web3(anchor_worker.BASE_CHAIN_ID)
+    primary.eth.get_transaction_receipt.side_effect = _not_found(TX_HASH)
+    fallback.eth.get_transaction_receipt.side_effect = _not_found(TX_HASH)
 
     service = _build_service_with_failover(primary, fallback)
     _configure_registry(primary, anchored=False)
+    _configure_registry(fallback, anchored=False)
 
     result = service.reconcile_anchor(
         merkle_root=ROOT,
@@ -302,8 +394,64 @@ def test_transaction_not_found_still_reports_not_found() -> None:
 
     assert result.transaction_state == "not_found"
     assert result.confirmation is None
-    # A node answered, so the question was not re-asked elsewhere.
-    fallback.eth.get_transaction_receipt.assert_not_called()
+    # Every endpoint was asked. A single node's silence is not a verdict, so
+    # the question is only settled once they all answer the same way.
+    primary.eth.get_transaction_receipt.assert_called_once_with(TX_HASH)
+    fallback.eth.get_transaction_receipt.assert_called_once_with(TX_HASH)
+    primary.eth.contract.return_value.functions.isAnchored.assert_called()
+    fallback.eth.contract.return_value.functions.isAnchored.assert_called()
+
+
+def test_one_endpoint_absent_and_one_unreachable_is_not_absence() -> None:
+    """A missing vote is not a "no" vote: absence needs the whole healthy set."""
+    primary = _fake_web3(anchor_worker.BASE_CHAIN_ID)
+    fallback = _fake_web3(anchor_worker.BASE_CHAIN_ID)
+    primary.eth.get_transaction_receipt.side_effect = _not_found(TX_HASH)
+    fallback.eth.get_transaction_receipt.side_effect = _forbidden()
+
+    service = _build_service_with_failover(primary, fallback)
+    _configure_registry(primary, anchored=False)
+    _configure_registry(fallback, anchored=False)
+
+    result = service.reconcile_anchor(
+        merkle_root=ROOT,
+        log_count=LOG_COUNT,
+        start_timestamp=START_TS,
+        end_timestamp=END_TS,
+        transaction_hash=TX_HASH,
+    )
+
+    assert result.confirmation is None
+    # Not "not_found": one endpoint never answered, so the transaction is not
+    # established as absent and must not be replaced.
+    assert result.transaction_state == "unknown"
+
+
+def test_registry_absence_must_also_be_corroborated_before_replacement() -> None:
+    """Both halves of the picture are required, not just the receipt half."""
+    primary = _fake_web3(anchor_worker.BASE_CHAIN_ID)
+    fallback = _fake_web3(anchor_worker.BASE_CHAIN_ID)
+    primary.eth.get_transaction_receipt.side_effect = _not_found(TX_HASH)
+    fallback.eth.get_transaction_receipt.side_effect = _not_found(TX_HASH)
+
+    service = _build_service_with_failover(primary, fallback)
+    _configure_registry(primary, anchored=False)
+    # The receipt is unanimously absent, but the registry cannot be polled in
+    # full, so the root may already be anchored by a transaction we cannot see.
+    fallback.eth.contract.return_value.functions.isAnchored.return_value.call.side_effect = (
+        _forbidden()
+    )
+
+    result = service.reconcile_anchor(
+        merkle_root=ROOT,
+        log_count=LOG_COUNT,
+        start_timestamp=START_TS,
+        end_timestamp=END_TS,
+        transaction_hash=TX_HASH,
+    )
+
+    assert result.confirmation is None
+    assert result.transaction_state == "unknown"
 
 
 # -----------------------------------------------------------------------------
@@ -958,3 +1106,182 @@ async def test_transaction_hash_lookup_is_case_insensitive_in_sql() -> None:
 
     assert result is None
     assert "lower(transaction_hash) = lower($1)" in connection.fetchrow.await_args.args[0]
+
+
+# -----------------------------------------------------------------------------
+# 8. The reconciliation interval must be the real cadence, not a fiction
+# -----------------------------------------------------------------------------
+
+
+def _timing_worker(due_at: datetime | None) -> AnchorWorker:
+    db = MagicMock()
+    db.get_next_retry_due_at = AsyncMock(return_value=due_at)
+    worker = AnchorWorker(db, MagicMock(), interval_seconds=600)
+    return worker
+
+
+@pytest.mark.asyncio
+async def test_cycle_sleeps_the_batch_interval_when_nothing_is_due() -> None:
+    worker = _timing_worker(None)
+
+    assert await worker._next_cycle_delay() == 600.0
+
+
+@pytest.mark.asyncio
+async def test_cycle_wakes_early_for_a_due_reconciliation() -> None:
+    """The whole point: a 60s re-poll must not wait out a 600s batch interval."""
+    due_at = datetime.now(UTC) + timedelta(seconds=anchor_worker.RECONCILIATION_INTERVAL_SECONDS)
+    worker = _timing_worker(due_at)
+
+    delay = await worker._next_cycle_delay()
+
+    assert delay < 600.0
+    assert delay == pytest.approx(anchor_worker.RECONCILIATION_INTERVAL_SECONDS, abs=2)
+
+
+@pytest.mark.asyncio
+async def test_cycle_never_sleeps_past_the_batch_interval() -> None:
+    """A due time far out must not stretch the loop beyond its normal cadence."""
+    worker = _timing_worker(datetime.now(UTC) + timedelta(hours=6))
+
+    assert await worker._next_cycle_delay() == 600.0
+
+
+@pytest.mark.asyncio
+async def test_overdue_row_is_floored_instead_of_spinning_the_loop() -> None:
+    worker = _timing_worker(datetime.now(UTC) - timedelta(hours=1))
+
+    assert await worker._next_cycle_delay() == anchor_worker.MIN_CYCLE_DELAY_SECONDS
+
+
+@pytest.mark.asyncio
+async def test_naive_due_timestamps_are_read_as_utc() -> None:
+    """asyncpg can hand back a naive timestamp; it must not shift the wake."""
+    worker = _timing_worker(datetime.now(UTC).replace(tzinfo=None) + timedelta(seconds=90))
+
+    assert await worker._next_cycle_delay() == pytest.approx(90, abs=2)
+
+
+@pytest.mark.asyncio
+async def test_a_failing_due_time_lookup_falls_back_to_the_batch_interval() -> None:
+    worker = _timing_worker(None)
+    worker.db.get_next_retry_due_at = AsyncMock(side_effect=RuntimeError("database down"))
+
+    assert await worker._next_cycle_delay() == 600.0
+
+
+@pytest.mark.asyncio
+async def test_start_loop_sleeps_the_computed_delay_not_the_batch_interval() -> None:
+    """End to end through the loop: the early wake is what start() waits on."""
+    due_at = datetime.now(UTC) + timedelta(seconds=60)
+    worker = _timing_worker(due_at)
+    worker._run_processing_cycle = AsyncMock(return_value=True)
+    slept: list[float] = []
+
+    async def _record(delay: float) -> bool:
+        slept.append(delay)
+        return True  # stop after one iteration
+
+    worker._wait_for_next_cycle = _record
+
+    await worker.start()
+
+    assert len(slept) == 1
+    assert slept[0] < 600.0
+    assert slept[0] == pytest.approx(60, abs=2)
+
+
+@pytest.mark.asyncio
+async def test_due_time_query_matches_the_retry_query_predicate() -> None:
+    """A due time the retry query would skip would wake the worker forever."""
+    pool = MagicMock()
+    connection = MagicMock()
+    connection.fetchrow = AsyncMock(return_value={"due_at": None})
+
+    class _Acquire:
+        async def __aenter__(self):
+            return connection
+
+        async def __aexit__(self, *_args):
+            return False
+
+    pool.acquire.return_value = _Acquire()
+
+    assert await anchor_worker.DatabaseService(pool).get_next_retry_due_at() is None
+
+    sql = connection.fetchrow.await_args.args[0]
+    assert "status IN ('pending', 'prepared', 'submitted', 'failed')" in sql
+    assert "status IN ('prepared', 'submitted')" in sql
+    assert "OR retry_count < $1" in sql
+
+
+# -----------------------------------------------------------------------------
+# 9. Single-endpoint deployments must behave exactly as before
+# -----------------------------------------------------------------------------
+
+
+def _build_single_endpoint_service(primary: MagicMock) -> BlockchainService:
+    account = MagicMock()
+    account.address = SUBMITTER
+
+    with (
+        patch.object(anchor_worker, "Web3") as MockWeb3,
+        patch.object(anchor_worker, "Account") as MockAccount,
+    ):
+        MockWeb3.side_effect = [primary]
+        MockWeb3.HTTPProvider = MagicMock()
+        MockWeb3.to_checksum_address = lambda address: address
+        MockAccount.from_key.return_value = account
+
+        return BlockchainService(
+            rpc_url="https://primary.example",
+            contract_address=CONTRACT,
+            private_key="0x" + "11" * 32,
+        )
+
+
+def test_single_endpoint_absence_is_still_corroborated() -> None:
+    """With no fallback configured, the one healthy endpoint *is* the whole set.
+
+    Most deployments run this way. Requiring corroboration must not quietly
+    freeze their replacement path.
+    """
+    primary = _fake_web3(anchor_worker.BASE_CHAIN_ID)
+    primary.eth.get_transaction_receipt.side_effect = _not_found(TX_HASH)
+    service = _build_single_endpoint_service(primary)
+    _configure_registry(primary, anchored=False)
+
+    result = service.reconcile_anchor(
+        merkle_root=ROOT,
+        log_count=LOG_COUNT,
+        start_timestamp=START_TS,
+        end_timestamp=END_TS,
+        transaction_hash=TX_HASH,
+    )
+
+    assert result.transaction_state == "not_found"
+    assert result.confirmation is None
+
+
+def test_a_confirmed_receipt_on_the_primary_costs_no_extra_reads() -> None:
+    """Polling is the price of a negative answer, not of the happy path."""
+    primary = _fake_web3(anchor_worker.BASE_CHAIN_ID)
+    fallback = _fake_web3(anchor_worker.BASE_CHAIN_ID)
+    primary.eth.get_transaction_receipt.return_value = _receipt()
+
+    service = _build_service_with_failover(primary, fallback)
+    _configure_registry(primary)
+    _configure_registry(fallback)
+
+    result = service.reconcile_anchor(
+        merkle_root=ROOT,
+        log_count=LOG_COUNT,
+        start_timestamp=START_TS,
+        end_timestamp=END_TS,
+        transaction_hash=TX_HASH,
+    )
+
+    assert result.confirmation is not None
+    primary.eth.get_transaction_receipt.assert_called_once_with(TX_HASH)
+    fallback.eth.get_transaction_receipt.assert_not_called()
+    fallback.eth.contract.return_value.functions.isAnchored.assert_not_called()

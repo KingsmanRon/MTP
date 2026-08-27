@@ -197,6 +197,9 @@ dead-letters an already-broadcast proof because of one.
   endpoint means no endpoint can answer.
 * Worker logs carry `anchor_read_unavailable` and
   `anchor_rpc_read_unavailable`, each naming the endpoint and operation.
+* `anchor_receipt_absence_uncorroborated` and
+  `anchor_registry_absence_uncorroborated` mean a proof is waiting because one
+  endpoint could not be polled, not because anything failed.
 * Persistent state — proofs holding a transaction hash but no block:
 
   ```sql
