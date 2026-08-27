@@ -140,8 +140,8 @@ function thresholdLabel(action: string) {
 
 function statusTone(ok: boolean) {
   return ok
-    ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
-    : "border-amber-500/30 bg-amber-500/10 text-amber-300";
+    ? "border-success-line bg-success-surface text-success-ink"
+    : "border-warning-line bg-warning-surface text-warning-ink";
 }
 
 export function CiGuardPanel({
@@ -269,7 +269,7 @@ export function CiGuardPanel({
       </div>
 
       {!actionsReady && (
-        <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-200">
+        <div className="flex items-start gap-2 rounded-lg border border-warning-line bg-warning-surface p-3 text-xs text-warning-ink">
           <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
           <span>
             One or more code/release actions are blocked for this agent. The guard will
@@ -305,7 +305,7 @@ export function CiGuardPanel({
                 hash {registration.policyHash.slice(0, 12)}… · v{registration.version}
               </span>
             ) : registration.status === "error" ? (
-              <span className="text-amber-300">{registration.message}</span>
+              <span className="text-warning-ink">{registration.message}</span>
             ) : registration.status === "unregistered" ? (
               <span>No policy registered — verifications are not yet bound server-side.</span>
             ) : (
@@ -329,7 +329,7 @@ export function CiGuardPanel({
         </div>
 
         {regError && (
-          <div className="mt-3 flex items-start gap-2 rounded-md border border-red-500/30 bg-red-500/10 p-2.5 text-xs text-red-300">
+          <div className="mt-3 flex items-start gap-2 rounded-md border border-destructive-line bg-destructive-surface p-2.5 text-xs text-destructive-ink">
             <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
             {regError}
           </div>
@@ -501,7 +501,7 @@ function RegistrationBadge({ registration }: { registration: RegistrationState }
   return (
     <Badge
       variant="secondary"
-      className="shrink-0 border-amber-500/30 bg-amber-500/10 text-amber-300"
+      className="shrink-0 border-warning-line bg-warning-surface text-warning-ink"
     >
       Advisory
     </Badge>

@@ -255,7 +255,7 @@ export default async function InntrisHomePage() {
           >
             <div className="mx-auto grid max-w-7xl gap-12 px-6 pb-24 pt-14 lg:grid-cols-[1.1fr_0.9fr] lg:gap-16 lg:px-8">
               <RevealGroup className="min-w-0 max-w-3xl">
-                <div className="mb-7 inline-flex items-center gap-2 rounded-full border border-primary/25 bg-card px-4 py-2 shadow-sm">
+                <div className="mb-7 inline-flex items-center gap-2 rounded-full border border-primary/25 bg-card px-4 py-2 shadow-e1">
                   <span
                     aria-hidden="true"
                     className="live-dot h-1.5 w-1.5 rounded-full bg-primary text-primary"
@@ -305,7 +305,7 @@ export default async function InntrisHomePage() {
                   <Link
                     href="/pilot"
                     className={cn(
-                      "inline-flex min-h-12 items-center rounded-xl bg-primary px-6 text-[15px] font-semibold text-primary-foreground shadow-sm transition-colors hover:bg-brandDeep",
+                      "inline-flex min-h-12 items-center rounded-xl bg-primary px-6 text-[15px] font-semibold text-primary-foreground shadow-e2 transition-colors hover:bg-brandDeep hover:shadow-e3",
                       focusRing,
                     )}
                   >
@@ -314,7 +314,7 @@ export default async function InntrisHomePage() {
                   <Link
                     href={`/verify/${blockedId}`}
                     className={cn(
-                      "inline-flex min-h-12 items-center rounded-xl border border-tileLine bg-card px-6 text-[15px] font-semibold text-foreground shadow-sm transition-colors hover:bg-tile",
+                      "inline-flex min-h-12 items-center rounded-xl border border-tileLine bg-card px-6 text-[15px] font-semibold text-foreground shadow-e1 transition-colors hover:bg-tile",
                       focusRing,
                     )}
                   >
@@ -329,7 +329,7 @@ export default async function InntrisHomePage() {
                     91%-lightness border all but disappears. The definition
                     comes from the edge, which is why the subtitle inside can
                     stay grey instead of carrying the weight in colour. */}
-                <div className="overflow-hidden rounded-2xl border border-foreground/70 bg-card shadow-sm">
+                <div className="overflow-hidden rounded-2xl border border-foreground/70 bg-card shadow-e3">
                   <div className="px-6 pb-2 pt-6">
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
@@ -545,7 +545,7 @@ export default async function InntrisHomePage() {
                       key={item.title}
                       href={item.href}
                       className={cn(
-                        "group flex flex-col rounded-lg border border-tileLine bg-tile p-6 transition duration-200 hover:-translate-y-1 hover:border-primary/40 hover:bg-card hover:shadow-lg",
+                        "group flex flex-col rounded-xl border border-tileLine bg-tile p-6 shadow-e1 transition duration-200 hover:-translate-y-1 hover:border-primary/50 hover:bg-card hover:shadow-e3",
                         focusRing,
                       )}
                     >
@@ -668,7 +668,7 @@ export default async function InntrisHomePage() {
                   <Link
                     href="/pilot"
                     className={cn(
-                      "inline-flex min-h-12 items-center rounded-xl bg-primary px-6 text-[15px] font-semibold text-primary-foreground shadow-sm transition-colors hover:bg-brandDeep",
+                      "inline-flex min-h-12 items-center rounded-xl bg-primary px-6 text-[15px] font-semibold text-primary-foreground shadow-e2 transition-colors hover:bg-brandDeep hover:shadow-e3",
                       focusRing,
                     )}
                   >

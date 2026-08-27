@@ -165,9 +165,9 @@ export default function PlaygroundPage() {
       </div>
 
       {/* Live API Badge */}
-      <div className="flex items-center gap-2 p-3 bg-green-500/10 border border-green-500/20 rounded-lg">
-        <Zap className="h-4 w-4 text-green-500" />
-        <span className="text-sm text-green-700 dark:text-green-400">
+      <div className="flex items-center gap-2 p-3 bg-success-surface border border-success-line rounded-lg">
+        <Zap className="h-4 w-4 text-success-ink" />
+        <span className="text-sm text-success-ink">
           Connected to live API - Results reflect actual policy evaluation
         </span>
       </div>
@@ -294,7 +294,7 @@ export default function PlaygroundPage() {
                         onClick={() => handleCopy(result.approval_token!, "token")}
                       >
                         {copied === "token" ? (
-                          <Check className="h-4 w-4 text-green-500" />
+                          <Check className="h-4 w-4 text-success-ink" />
                         ) : (
                           <Copy className="h-4 w-4" />
                         )}
@@ -314,7 +314,7 @@ export default function PlaygroundPage() {
                       onClick={() => handleCopy(result.audit_id, "audit_id")}
                     >
                       {copied === "audit_id" ? (
-                        <Check className="h-4 w-4 text-green-500" />
+                        <Check className="h-4 w-4 text-success-ink" />
                       ) : (
                         <Copy className="h-4 w-4" />
                       )}
@@ -376,7 +376,7 @@ export default function PlaygroundPage() {
               }}
             >
               <div className="flex items-center gap-2 mb-2">
-                <CheckCircle className="h-4 w-4 text-green-500" />
+                <CheckCircle className="h-4 w-4 text-success-ink" />
                 <span className="font-medium">Small Transaction</span>
               </div>
               <p className="text-xs text-muted-foreground">
@@ -393,7 +393,7 @@ export default function PlaygroundPage() {
               }}
             >
               <div className="flex items-center gap-2 mb-2">
-                <AlertCircle className="h-4 w-4 text-yellow-500" />
+                <AlertCircle className="h-4 w-4 text-warning-ink" />
                 <span className="font-medium">Large Transaction</span>
               </div>
               <p className="text-xs text-muted-foreground">
@@ -410,7 +410,7 @@ export default function PlaygroundPage() {
               }}
             >
               <div className="flex items-center gap-2 mb-2">
-                <AlertCircle className="h-4 w-4 text-red-500" />
+                <AlertCircle className="h-4 w-4 text-destructive-ink" />
                 <span className="font-medium">Admin Action</span>
               </div>
               <p className="text-xs text-muted-foreground">

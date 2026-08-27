@@ -1,5 +1,5 @@
 import React from "react";
-import { ArrowUpRight, KeyRound } from "lucide-react";
+import { ArrowUpRight, KeyRound, FileArchive, ShieldCheck } from "lucide-react";
 import Link from "next/link";
 import { Eyebrow, Num, focusRing } from "@/components/landing/primitives";
 import { Reveal, RevealGroup } from "@/components/landing/reveal";
@@ -24,6 +24,8 @@ const ADAPTER_REPO = "https://github.com/Inntris/inntris-x402-policy-adapter";
 
 const verifiers = [
   {
+    icon: FileArchive,
+    artifact: "Artifact 01 · Evidence pack",
     title: "Evidence packs",
     verifies:
       "the signed pack manifest, every file hash in both directions, receipt fingerprints, agent signatures and Merkle inclusion proofs. An optional check queries a Base mainnet RPC node chosen by the verifier.",
@@ -38,6 +40,8 @@ const verifiers = [
     href: VERIFY_REPO,
   },
   {
+    icon: ShieldCheck,
+    artifact: "Artifact 02 · Decision envelope",
     title: "Payment decisions",
     verifies:
       "the decision schema, fingerprint, Ed25519 signature, action hash, action binding, expiry at a supplied execution time, policy version and payment-requirements binding.",
@@ -71,51 +75,86 @@ export function VerificationSection() {
           </p>
         </Reveal>
 
-        <RevealGroup className="mt-8 grid gap-5 md:grid-cols-2">
-          {verifiers.map((v) => (
-            <a
-              key={v.title}
-              href={v.href}
-              target="_blank"
-              rel="noopener noreferrer"
-              className={cn(
-                "group flex h-full flex-col rounded-lg border border-tileLine bg-card p-6 transition duration-200 hover:-translate-y-1 hover:border-primary/40 hover:shadow-lg md:p-8",
-                focusRing,
-              )}
-            >
-              <h3 className="text-xl font-semibold tracking-tight text-foreground">{v.title}</h3>
-              <p className="mt-3 text-sm leading-6 text-muted-foreground">
-                <span className="font-medium text-foreground">What it verifies:</span> {v.verifies}
-              </p>
-              <ul className="mt-4 flex-1 space-y-2">
-                {v.properties.map((p) => (
-                  <li key={p} className="flex gap-3 text-sm leading-6 text-muted-foreground">
-                    <span
+        <RevealGroup className="mt-8 grid gap-6 md:grid-cols-2">
+          {verifiers.map((v) => {
+            const Icon = v.icon;
+            return (
+              <a
+                key={v.title}
+                href={v.href}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={cn(
+                  // These two cards used to be a matched pair of white
+                  // rectangles on a near-white ground with a hairline that did
+                  // not read — so a reader saw one block, not two artifacts.
+                  // Elevation, an icon and a numbered artifact label give each
+                  // card its own identity before any copy is read.
+                  "group flex h-full flex-col rounded-xl border border-tileLine bg-card shadow-e2 transition duration-200",
+                  "hover:-translate-y-1 hover:border-primary/50 hover:shadow-e3",
+                  focusRing,
+                )}
+              >
+                <div className="flex items-start gap-4 border-b border-tileLine p-6 md:p-8 md:pb-6">
+                  <div
+                    className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-primary to-brandDeep text-primary-foreground shadow-e1"
+                    aria-hidden="true"
+                  >
+                    <Icon className="h-6 w-6" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-brandInk">
+                      {v.artifact}
+                    </p>
+                    <h3 className="mt-1 text-xl font-semibold tracking-tight text-foreground">
+                      {v.title}
+                    </h3>
+                  </div>
+                </div>
+
+                <div className="flex flex-1 flex-col p-6 md:p-8 md:pt-6">
+                  <p className="text-sm leading-6 text-muted-foreground">
+                    <span className="font-semibold text-foreground">What it verifies:</span>{" "}
+                    {v.verifies}
+                  </p>
+
+                  <p className="mt-6 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+                    Properties
+                  </p>
+                  <ul className="mt-3 flex-1 space-y-2 border-t border-tileLine pt-3">
+                    {v.properties.map((p) => (
+                      <li key={p} className="flex gap-3 text-sm leading-6 text-muted-foreground">
+                        <span
+                          aria-hidden="true"
+                          className="mt-2.5 h-1.5 w-1.5 shrink-0 rounded-full bg-primary"
+                        />
+                        <span>{p}</span>
+                      </li>
+                    ))}
+                  </ul>
+
+                  <span className="mt-6 inline-flex items-center gap-2 text-sm font-semibold text-brandInk">
+                    {v.cta}
+                    <ArrowUpRight
+                      className="h-4 w-4 transition-transform duration-200 group-hover:-translate-y-0.5 group-hover:translate-x-0.5"
                       aria-hidden="true"
-                      className="mt-3 h-0.5 w-3 shrink-0 rounded-full bg-primary"
                     />
-                    <span>{p}</span>
-                  </li>
-                ))}
-              </ul>
-              <span className="mt-6 inline-flex items-center gap-2 text-sm font-medium text-brandInk">
-                {v.cta}
-                <ArrowUpRight
-                  className="h-4 w-4 transition-transform duration-200 group-hover:-translate-y-0.5 group-hover:translate-x-0.5"
-                  aria-hidden="true"
-                />
-                <span className="sr-only"> (opens in a new tab)</span>
-              </span>
-              {/* The repo string has no spaces, so it needs an explicit wrap
-                  opportunity or it widens the grid track on a phone. */}
-              <Num className="mt-1.5 block break-words text-xs text-muted-foreground">{v.repo}</Num>
-            </a>
-          ))}
+                    <span className="sr-only"> (opens in a new tab)</span>
+                  </span>
+                  {/* The repo string has no spaces, so it needs an explicit wrap
+                      opportunity or it widens the grid track on a phone. */}
+                  <Num className="mt-1.5 block break-words text-xs text-muted-foreground">
+                    {v.repo}
+                  </Num>
+                </div>
+              </a>
+            );
+          })}
         </RevealGroup>
 
         {/* ── Pin the key ──────────────────────────────────────────── */}
         <Reveal className="mt-6">
-          <div className="rounded-lg border border-tileLine bg-card p-6 md:p-8">
+          <div className="rounded-xl border border-tileLine bg-card p-6 shadow-e2 md:p-8">
             <div className="flex flex-col gap-5 md:flex-row md:gap-7">
               <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-primary to-brandDeep text-primary-foreground">
                 <KeyRound className="h-5 w-5" aria-hidden="true" />
@@ -171,7 +210,7 @@ export function VerificationSection() {
 
         {/* ── The distinction we do not let a reader blur ───────────── */}
         <Reveal className="mt-6">
-          <div className="rounded-lg border-l-[3px] border-primary bg-tile px-5 py-4">
+          <div className="rounded-lg border border-tileLine border-l-[3px] border-l-primary bg-tile px-5 py-4 shadow-e1">
             <p className="text-sm font-medium text-foreground">
               An evidence pack and a decision envelope are different artifacts with different
               verifiers.

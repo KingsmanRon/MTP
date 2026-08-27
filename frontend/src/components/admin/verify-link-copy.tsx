@@ -35,7 +35,7 @@ export function VerifyLinkCopy({ auditId }: { auditId: string }) {
       >
         {copied ? (
           <>
-            <Check className="h-3 w-3 text-green-400" />
+            <Check className="h-3 w-3 text-success-ink" />
             Copied
           </>
         ) : (

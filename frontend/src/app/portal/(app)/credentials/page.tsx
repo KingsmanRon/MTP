@@ -175,9 +175,9 @@ response = requests.post(
       </div>
 
       {/* Warning Banner */}
-      <Card className="border-yellow-500/50 bg-yellow-500/5">
+      <Card className="border-warning-line bg-warning-surface">
         <CardContent className="flex items-center gap-4 py-4">
-          <AlertTriangle className="h-5 w-5 text-yellow-500" />
+          <AlertTriangle className="h-5 w-5 text-warning-ink" />
           <div>
             <p className="font-medium">Keep your private key secure</p>
             <p className="text-sm text-muted-foreground">
@@ -203,7 +203,7 @@ response = requests.post(
               onClick={() => handleCopy(agent.id, "agent_id")}
             >
               {copied === "agent_id" ? (
-                <Check className="h-4 w-4 text-green-500" />
+                <Check className="h-4 w-4 text-success-ink" />
               ) : (
                 <Copy className="h-4 w-4" />
               )}
@@ -231,7 +231,7 @@ response = requests.post(
               onClick={() => handleCopy(agent.public_key_fingerprint, "fingerprint")}
             >
               {copied === "fingerprint" ? (
-                <Check className="h-4 w-4 text-green-500" />
+                <Check className="h-4 w-4 text-success-ink" />
               ) : (
                 <Copy className="h-4 w-4" />
               )}
@@ -262,7 +262,7 @@ response = requests.post(
               onClick={() => handleCopy(integrationCode, "code")}
             >
               {copied === "code" ? (
-                <Check className="h-4 w-4 text-green-500" />
+                <Check className="h-4 w-4 text-success-ink" />
               ) : (
                 <Copy className="h-4 w-4" />
               )}

@@ -20,18 +20,31 @@ import {
 } from "lucide-react";
 import type { AlertSeverity } from "@/lib/api";
 
+/**
+ * Severity escalates by weight as well as by hue, so the four levels stay
+ * distinguishable for a reader who cannot separate amber from orange: low and
+ * medium are tinted chips, high and critical are solid fills.
+ */
 const severityColors: Record<AlertSeverity, string> = {
-  low: "bg-blue-500/10 text-blue-500 border-blue-500/20",
-  medium: "bg-yellow-500/10 text-yellow-500 border-yellow-500/20",
-  high: "bg-orange-500/10 text-orange-500 border-orange-500/20",
-  critical: "bg-red-500/10 text-red-500 border-red-500/20",
+  low: "border-info-line bg-info-surface text-info-ink",
+  medium: "border-warning-line bg-warning-surface text-warning-ink",
+  high: "border-transparent bg-warning text-warning-foreground",
+  critical: "border-transparent bg-destructive text-destructive-foreground",
 };
 
 const severityIcons: Record<AlertSeverity, React.ReactNode> = {
-  low: <Shield className="h-5 w-5 text-blue-500" />,
-  medium: <AlertTriangle className="h-5 w-5 text-yellow-500" />,
-  high: <AlertTriangle className="h-5 w-5 text-orange-500" />,
-  critical: <XCircle className="h-5 w-5 text-red-500" />,
+  low: <Shield className="h-5 w-5 text-info-ink" />,
+  medium: <AlertTriangle className="h-5 w-5 text-warning-ink" />,
+  high: <AlertTriangle className="h-5 w-5 text-warning" />,
+  critical: <XCircle className="h-5 w-5 text-destructive" />,
+};
+
+/** The 4px rail down the left edge of an alert card, same ramp as the chip. */
+const severityRail: Record<AlertSeverity, string> = {
+  low: "bg-info-line",
+  medium: "bg-warning-line",
+  high: "bg-warning",
+  critical: "bg-destructive",
 };
 
 export default function AlertsPage() {
@@ -112,8 +125,8 @@ export default function AlertsPage() {
                 <p className="text-sm text-muted-foreground">Open</p>
                 <p className="text-2xl font-bold">{openCount}</p>
               </div>
-              <div className="p-3 rounded-full bg-red-500/10">
-                <XCircle className="h-6 w-6 text-red-500" />
+              <div className="p-3 rounded-full bg-destructive-surface">
+                <XCircle className="h-6 w-6 text-destructive-ink" />
               </div>
             </div>
           </CardContent>
@@ -128,8 +141,8 @@ export default function AlertsPage() {
                 <p className="text-sm text-muted-foreground">Acknowledged</p>
                 <p className="text-2xl font-bold">{acknowledgedCount}</p>
               </div>
-              <div className="p-3 rounded-full bg-yellow-500/10">
-                <Clock className="h-6 w-6 text-yellow-500" />
+              <div className="p-3 rounded-full bg-warning-surface">
+                <Clock className="h-6 w-6 text-warning-ink" />
               </div>
             </div>
           </CardContent>
@@ -144,8 +157,8 @@ export default function AlertsPage() {
                 <p className="text-sm text-muted-foreground">Resolved</p>
                 <p className="text-2xl font-bold">{resolvedCount}</p>
               </div>
-              <div className="p-3 rounded-full bg-green-500/10">
-                <CheckCircle className="h-6 w-6 text-green-500" />
+              <div className="p-3 rounded-full bg-success-surface">
+                <CheckCircle className="h-6 w-6 text-success-ink" />
               </div>
             </div>
           </CardContent>
@@ -191,17 +204,7 @@ export default function AlertsPage() {
             <Card key={alert.id} className="overflow-hidden">
               <div className="flex">
                 {/* Severity Indicator */}
-                <div
-                  className={`w-1 ${
-                    alert.severity === "critical"
-                      ? "bg-red-500"
-                      : alert.severity === "high"
-                      ? "bg-orange-500"
-                      : alert.severity === "medium"
-                      ? "bg-yellow-500"
-                      : "bg-blue-500"
-                  }`}
-                />
+                <div className={`w-1.5 shrink-0 ${severityRail[alert.severity]}`} />
                 <CardContent className="flex-1 py-4">
                   <div className="flex items-start justify-between">
                     <div className="flex items-start gap-4">
@@ -213,12 +216,12 @@ export default function AlertsPage() {
                             {alert.severity}
                           </Badge>
                           {alert.resolved && (
-                            <Badge variant="outline" className="bg-green-500/10 text-green-500">
+                            <Badge variant="outline" className="bg-success-surface text-success-ink">
                               Resolved
                             </Badge>
                           )}
                           {alert.acknowledged && !alert.resolved && (
-                            <Badge variant="outline" className="bg-yellow-500/10 text-yellow-500">
+                            <Badge variant="outline" className="bg-warning-surface text-warning-ink">
                               Acknowledged
                             </Badge>
                           )}

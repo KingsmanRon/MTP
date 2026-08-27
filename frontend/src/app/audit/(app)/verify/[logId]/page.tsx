@@ -46,8 +46,8 @@ export default function VerificationPage() {
   if (error || !log) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-4 text-center">
-        <div className="bg-red-100 p-4 rounded-full">
-          <AlertTriangle className="h-8 w-8 text-red-600" />
+        <div className="bg-destructive-surface p-4 rounded-full">
+          <AlertTriangle className="h-8 w-8 text-destructive-ink" />
         </div>
         <h2 className="text-2xl font-bold">Verification Failed</h2>
         <p className="text-muted-foreground max-w-md">{error}</p>
@@ -76,7 +76,7 @@ export default function VerificationPage() {
             <h1 className="text-2xl font-bold flex flex-wrap items-center gap-2">
               Forensic Verification
               {isAnchored && (
-                <Badge variant="outline" className="bg-green-500/10 text-green-600 border-green-500/20">
+                <Badge variant="outline" className="bg-success-surface text-success-ink border-success-line">
                   <ShieldCheck className="w-3 h-3 mr-1" />
                   Cryptographically Secured
                 </Badge>
@@ -108,7 +108,7 @@ export default function VerificationPage() {
         
         {/* LEFT COLUMN: The Blockchain Proof */}
         <div className="md:col-span-1 space-y-6">
-          <Card className={`border-t-4 ${isAnchored ? "border-t-green-500" : "border-t-yellow-500"}`}>
+          <Card className={`border-t-4 ${isAnchored ? "border-t-success" : "border-t-warning"}`}>
             <CardHeader>
               <CardTitle className="text-lg flex items-center gap-2">
                 <ShieldCheck className="h-5 w-5" />
@@ -120,20 +120,20 @@ export default function VerificationPage() {
               <div className="flex flex-col items-center justify-center p-6 bg-muted/30 rounded-lg border border-dashed">
                 {isAnchored ? (
                   <>
-                    <div className="bg-green-100 p-3 rounded-full mb-3">
-                      <CheckCircle2 className="h-8 w-8 text-green-600" />
+                    <div className="bg-success-surface p-3 rounded-full mb-3">
+                      <CheckCircle2 className="h-8 w-8 text-success-ink" />
                     </div>
-                    <h3 className="font-bold text-green-700">Anchored on Base L2</h3>
+                    <h3 className="font-bold text-success-ink">Anchored on Base L2</h3>
                     <p className="text-xs text-muted-foreground mt-1">
                       {formatDateTime(proof.anchored_at)}
                     </p>
                   </>
                 ) : (
                   <>
-                    <div className="bg-yellow-100 p-3 rounded-full mb-3">
-                      <Clock className="h-8 w-8 text-yellow-600" />
+                    <div className="bg-warning-surface p-3 rounded-full mb-3">
+                      <Clock className="h-8 w-8 text-warning-ink" />
                     </div>
-                    <h3 className="font-bold text-yellow-700">Pending Anchor</h3>
+                    <h3 className="font-bold text-warning-ink">Pending Anchor</h3>
                     <p className="text-xs text-muted-foreground mt-1">
                       Scheduled for next batch
                     </p>
@@ -199,7 +199,7 @@ export default function VerificationPage() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <pre className="bg-slate-950 text-slate-50 p-4 rounded-lg overflow-x-auto text-sm font-mono leading-relaxed">
+              <pre className="overflow-x-auto rounded-lg bg-vault p-4 font-mono text-sm leading-relaxed text-primary-foreground/90">
                 {JSON.stringify(log.payload, null, 2)}
               </pre>
             </CardContent>
@@ -228,11 +228,11 @@ export default function VerificationPage() {
                   <dt className="text-muted-foreground text-xs uppercase tracking-wider">Signature</dt>
                   <dd className="mt-1">
                     {log.signature_valid ? (
-                      <span className="text-green-600 font-medium flex items-center gap-1">
+                      <span className="text-success-ink font-medium flex items-center gap-1">
                         <CheckCircle2 className="h-3 w-3" /> Valid Ed25519
                       </span>
                     ) : (
-                      <span className="text-red-600 font-medium">Invalid</span>
+                      <span className="text-destructive-ink font-medium">Invalid</span>
                     )}
                   </dd>
                 </div>

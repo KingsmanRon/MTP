@@ -4,12 +4,16 @@
 
 @layer base {
   /**
-   * `.theme-light` re-declares the light palette on a subtree.
+   * The light palette is the default palette.
    *
-   * The app shell sets defaultTheme="dark" (layout.tsx), so <html> always
-   * carries `.dark` and the dark block below would otherwise win everywhere
-   * by inheritance. A subtree that opts in with `.theme-light` gets the light
-   * tokens back without changing the global theme or any other route.
+   * The app shell sets defaultTheme="light" with enableSystem={false}
+   * (layout.tsx), so <html> carries no `.dark` class unless a viewer toggles
+   * it in the dashboard. Everything below therefore has to be legible on a
+   * white ground first — a colour that only works against `.dark` is a bug
+   * on every route as shipped.
+   *
+   * `.theme-light` re-declares the same palette so a subtree can pin itself
+   * to light even when a viewer has toggled the app to dark.
    */
   :root,
   .theme-light {
@@ -21,28 +25,75 @@
     --popover-foreground: 222.9 25.9% 5.3%;
     --primary: 224.3 76.3% 48%;
     --primary-foreground: 0 0% 100%;
-    --secondary: 216 29.4% 96.7%;
+    --secondary: 215 28% 94%;
     --secondary-foreground: 220 19.4% 12.2%;
-    --muted: 216 29.4% 96.7%;
-    --muted-foreground: 217.5 10.3% 45.9%;
+    --muted: 215 28% 94%;
+    --muted-foreground: 217 12% 42%;
     --accent: 223.3 90% 96.1%;
     --accent-foreground: 226.5 76% 42.5%;
-    --destructive: 350.1 63.9% 55.5%;
-    --destructive-foreground: 0 0% 100%;
-    --success: 156.3 80.3% 35.9%;
-    --success-foreground: 0 0% 100%;
-    --warning: 35.5 71% 42%;
-    --warning-foreground: 0 0% 100%;
-    --border: 217.5 17.4% 91%;
-    --input: 220 27.3% 91.4%;
+    --border: 214 22% 86%;
+    --input: 214 22% 84%;
     --ring: 224.3 76.3% 48%;
     --radius: 0.75rem;
 
-    --tile: 216 29.4% 96.7%;        /* #F4F6F9 tile ground */
-    --tile-line: 220 27.3% 91.4%;   /* #E3E7EF tile border */
+    /* ---- Status ramp ------------------------------------------------
+       Each status carries four values, because one colour cannot do four
+       jobs on a light ground:
+
+         --x            solid fill; carries --x-foreground on top
+         --x-ink        text and icons, on white or on --x-surface
+         --x-surface    tinted region behind --x-ink
+         --x-line       hairline border for that region
+
+       Every text pairing here clears WCAG AA (4.5:1). The old single
+       --warning was 3.64:1 on white and raw `text-yellow-500` was 1.92:1,
+       which is what made amber unreadable on this ground. */
+    --destructive: 356 72% 43%;
+    --destructive-foreground: 0 0% 100%;
+    --destructive-ink: 356 72% 41%;
+    --destructive-surface: 0 80% 94%;
+    --destructive-line: 356 68% 72%;
+
+    --success: 158 90% 24%;
+    --success-foreground: 0 0% 100%;
+    --success-ink: 158 90% 24%;
+    --success-surface: 152 58% 90%;
+    --success-line: 154 48% 62%;
+
+    --warning: 28 92% 34%;
+    --warning-foreground: 0 0% 100%;
+    --warning-ink: 33 92% 31%;
+    --warning-surface: 42 88% 90%;
+    --warning-line: 36 74% 64%;
+
+    --info: 224.3 76.3% 48%;
+    --info-foreground: 0 0% 100%;
+    --info-ink: 226.5 76% 42.5%;
+    --info-surface: 223.3 90% 96.1%;
+    --info-line: 224 74% 82%;
+
+    --tile: 215 28% 94%;             /* #EBEFF4 tile ground */
+    --tile-line: 214 22% 84%;        /* #CDD5DF tile border */
     --brand-deep: 227.7 75.1% 33.1%; /* #152F94 hover/gradient end */
     --brand-ink: 226.5 76% 42.5%;    /* #1A3FBF text-on-light blue */
     --vault: 225.8 65.5% 11.4%;      /* #0A1330 code panels */
+
+    /* ---- Elevation --------------------------------------------------
+       A card reads as a separate surface only when the ground, the
+       hairline and the shadow all say so. Tailwind's default shadows are
+       neutral black, which goes muddy over a blue-grey ground, so these
+       are tinted with the page's own navy and layered (a tight contact
+       shadow under a wider ambient one) the way a real object casts. */
+    --shadow-color: 222 45% 26%;
+    --elevation-1:
+      0 1px 2px -1px hsl(var(--shadow-color) / 0.10),
+      0 1px 3px 0 hsl(var(--shadow-color) / 0.07);
+    --elevation-2:
+      0 2px 4px -2px hsl(var(--shadow-color) / 0.12),
+      0 6px 12px -2px hsl(var(--shadow-color) / 0.09);
+    --elevation-3:
+      0 4px 8px -3px hsl(var(--shadow-color) / 0.16),
+      0 14px 28px -6px hsl(var(--shadow-color) / 0.14);
   }
 
   .dark {
@@ -60,15 +111,55 @@
     --muted-foreground: 215 20.2% 65.1%;
     --accent: 217.2 32.6% 17.5%;
     --accent-foreground: 210 40% 98%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
-    --success: 142 76% 36%;
-    --success-foreground: 210 40% 98%;
-    --warning: 38 92% 50%;
-    --warning-foreground: 222.2 47.4% 11.2%;
     --border: 217.2 32.6% 17.5%;
     --input: 217.2 32.6% 17.5%;
     --ring: 224.3 76.3% 48%;
+
+    /* Same four roles as the light ramp, inverted: ink lightens instead of
+       darkening, and the surface is a low-alpha wash rather than a tint, so
+       it sits on the dark ground without turning into a grey block. */
+    --destructive: 0 72% 45%;
+    --destructive-foreground: 0 0% 100%;
+    --destructive-ink: 0 88% 71%;
+    --destructive-surface: 0 62% 16%;
+    --destructive-line: 0 62% 32%;
+
+    --success: 158 72% 28%;
+    --success-foreground: 0 0% 100%;
+    --success-ink: 152 62% 52%;
+    --success-surface: 158 54% 13%;
+    --success-line: 156 46% 26%;
+
+    --warning: 38 92% 55%;
+    --warning-foreground: 222.2 47.4% 11.2%;
+    --warning-ink: 38 96% 62%;
+    --warning-surface: 32 60% 14%;
+    --warning-line: 34 56% 28%;
+
+    --info: 217.2 91.2% 59.8%;
+    --info-foreground: 222.2 47.4% 11.2%;
+    --info-ink: 213 94% 74%;
+    --info-surface: 222 55% 18%;
+    --info-line: 220 52% 32%;
+
+    --tile: 217.2 32.6% 14%;
+    --tile-line: 217.2 32.6% 24%;
+    --brand-deep: 224.3 76.3% 48%;
+    --brand-ink: 213 94% 74%;
+    --vault: 225.8 65.5% 8%;
+
+    /* Over a near-black ground a tinted shadow is invisible; depth there
+       comes from a brighter hairline plus a deeper, darker cast. */
+    --shadow-color: 222 60% 2%;
+    --elevation-1:
+      0 1px 2px -1px hsl(var(--shadow-color) / 0.50),
+      0 1px 3px 0 hsl(var(--shadow-color) / 0.40);
+    --elevation-2:
+      0 2px 4px -2px hsl(var(--shadow-color) / 0.55),
+      0 6px 12px -2px hsl(var(--shadow-color) / 0.45);
+    --elevation-3:
+      0 4px 8px -3px hsl(var(--shadow-color) / 0.60),
+      0 14px 28px -6px hsl(var(--shadow-color) / 0.55);
   }
 }
 

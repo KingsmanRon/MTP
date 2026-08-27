@@ -88,7 +88,7 @@ export function AuditTable({
             </TableCell>
             <TableCell>
               {log.transaction_hash ? (
-                <span className="inline-flex items-center gap-1 text-xs text-green-400">
+                <span className="inline-flex items-center gap-1 text-xs text-success-ink">
                   <Link2 className="h-3 w-3" />
                   Anchored
                 </span>

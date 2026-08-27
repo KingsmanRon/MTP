@@ -372,10 +372,10 @@ function RegisterAgentDialog({
 function TrustScoreDisplay({ score }: { score: number }) {
   const color =
     score >= 70
-      ? "text-green-400"
+      ? "text-success-ink"
       : score >= 40
-        ? "text-yellow-400"
-        : "text-red-400";
+        ? "text-warning-ink"
+        : "text-destructive-ink";
   return (
     <span className={`font-mono text-xs font-medium ${color}`}>
       {score}
