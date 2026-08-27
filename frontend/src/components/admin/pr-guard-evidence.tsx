@@ -81,7 +81,7 @@ export function PrGuardEvidence({ record }: { record: MappedAuditDetail }) {
           {policyBinding ? (
             <span
               className={`inline-flex items-center gap-1.5 text-xs ${
-                enforcing ? "text-emerald-300" : "text-amber-300"
+                enforcing ? "text-success-ink" : "text-warning-ink"
               }`}
             >
               {enforcing ? (
@@ -115,7 +115,7 @@ export function PrGuardEvidence({ record }: { record: MappedAuditDetail }) {
       </div>
 
       {protectedBranch && (
-        <div className="rounded-lg border border-amber-500/25 bg-amber-500/5 px-4 py-3 text-xs text-amber-200">
+        <div className="rounded-lg border border-warning-line bg-warning-surface px-4 py-3 text-xs text-warning-ink">
           Target branch <span className="font-mono">{baseRef ?? "?"}</span> matched protected
           branch <span className="font-mono">{protectedBranch}</span> — gated as a
           protected-branch merge.

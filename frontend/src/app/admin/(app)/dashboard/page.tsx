@@ -150,9 +150,9 @@ export default function AdminDashboard() {
 
       {/* Alerts Banner */}
       {openAlerts > 0 && (
-        <Card className="border-yellow-500/50 bg-yellow-500/5">
+        <Card className="border-warning-line bg-warning-surface">
           <CardContent className="flex items-center gap-4 py-4">
-            <AlertTriangle className="h-5 w-5 text-yellow-500" />
+            <AlertTriangle className="h-5 w-5 text-warning-ink" />
             <div className="flex-1">
               <p className="font-medium">
                 {openAlerts} open security alert{openAlerts > 1 ? "s" : ""}
@@ -236,7 +236,7 @@ export default function AdminDashboard() {
                     <div className="flex items-center gap-3">
                       <div
                         className={`w-2 h-2 rounded-full ${
-                          log.verdict === "approved" ? "bg-green-500" : "bg-red-500"
+                          log.verdict === "approved" ? "bg-success" : "bg-destructive"
                         }`}
                       />
                       <div>
@@ -268,8 +268,8 @@ export default function AdminDashboard() {
         <Card>
           <CardContent className="pt-6">
             <div className="flex items-center gap-4">
-              <div className="p-3 rounded-full bg-green-500/10">
-                <CheckCircle className="h-6 w-6 text-green-500" />
+              <div className="p-3 rounded-full bg-success-surface">
+                <CheckCircle className="h-6 w-6 text-success-ink" />
               </div>
               <div>
                 <p className="text-2xl font-bold">{approvedCount.toLocaleString()}</p>
@@ -281,8 +281,8 @@ export default function AdminDashboard() {
         <Card>
           <CardContent className="pt-6">
             <div className="flex items-center gap-4">
-              <div className="p-3 rounded-full bg-red-500/10">
-                <XCircle className="h-6 w-6 text-red-500" />
+              <div className="p-3 rounded-full bg-destructive-surface">
+                <XCircle className="h-6 w-6 text-destructive-ink" />
               </div>
               <div>
                 <p className="text-2xl font-bold">{blockedCount.toLocaleString()}</p>

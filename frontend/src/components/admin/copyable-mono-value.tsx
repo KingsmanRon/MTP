@@ -35,7 +35,7 @@ export function CopyableMonoValue({
     >
       <span>{display}</span>
       {copied ? (
-        <Check className="h-3 w-3 text-green-400" />
+        <Check className="h-3 w-3 text-success-ink" />
       ) : (
         <Copy className="h-3 w-3 opacity-0 group-hover:opacity-100" />
       )}

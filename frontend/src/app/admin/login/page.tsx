@@ -92,7 +92,7 @@ export default function AdminLoginPage() {
             </div>
 
             {error && (
-              <div className="flex items-center gap-2 rounded-lg bg-red-500/10 p-3 text-red-400">
+              <div className="flex items-center gap-2 rounded-lg bg-destructive-surface p-3 text-destructive-ink">
                 <AlertCircle className="h-4 w-4 flex-shrink-0" />
                 <span className="text-sm">{error}</span>
               </div>

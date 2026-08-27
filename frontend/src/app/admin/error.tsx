@@ -26,8 +26,8 @@ export default function AdminError({
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-background px-6 text-center text-foreground">
-      <div className="mb-4 rounded-full bg-red-500/10 p-4">
-        <AlertTriangle className="h-8 w-8 text-red-400" />
+      <div className="mb-4 rounded-full bg-destructive-surface p-4">
+        <AlertTriangle className="h-8 w-8 text-destructive-ink" />
       </div>
       <h1 className="mb-1 text-lg font-semibold">Something went wrong</h1>
       <p className="mb-6 max-w-md text-sm text-muted-foreground">

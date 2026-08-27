@@ -116,13 +116,13 @@ export function OnboardingChecklist({
               href={step.href}
               className={`flex items-center gap-4 p-3 rounded-lg transition-colors ${
                 step.completed
-                  ? "bg-green-500/5 hover:bg-green-500/10"
+                  ? "border-success-line bg-success-surface"
                   : "bg-muted/50 hover:bg-muted"
               }`}
             >
               <div className="flex-shrink-0">
                 {step.completed ? (
-                  <CheckCircle2 className="h-6 w-6 text-green-500" />
+                  <CheckCircle2 className="h-6 w-6 text-success-ink" />
                 ) : (
                   <div className="relative">
                     <Circle className="h-6 w-6 text-muted-foreground" />
@@ -133,13 +133,13 @@ export function OnboardingChecklist({
                 )}
               </div>
               <div className="flex-1 min-w-0">
-                <p className={`font-medium ${step.completed ? "text-green-700 dark:text-green-400" : ""}`}>
+                <p className={`font-medium ${step.completed ? "text-success-ink" : ""}`}>
                   {step.title}
                 </p>
                 <p className="text-sm text-muted-foreground">{step.description}</p>
               </div>
               <step.icon className={`h-5 w-5 flex-shrink-0 ${
-                step.completed ? "text-green-500" : "text-muted-foreground"
+                step.completed ? "text-success-ink" : "text-muted-foreground"
               }`} />
               {!step.completed && (
                 <ArrowRight className="h-4 w-4 text-muted-foreground" />
@@ -149,11 +149,11 @@ export function OnboardingChecklist({
         </div>
 
         {isComplete && (
-          <div className="mt-4 p-4 rounded-lg bg-green-500/10 border border-green-500/20">
+          <div className="mt-4 p-4 rounded-lg bg-success-surface border border-success-line">
             <div className="flex items-center gap-3">
-              <CheckCircle2 className="h-5 w-5 text-green-500" />
+              <CheckCircle2 className="h-5 w-5 text-success-ink" />
               <div>
-                <p className="font-medium text-green-700 dark:text-green-400">
+                <p className="font-medium text-success-ink">
                   Setup Complete!
                 </p>
                 <p className="text-sm text-muted-foreground">

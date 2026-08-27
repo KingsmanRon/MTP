@@ -6,13 +6,16 @@ export interface BadgeProps extends React.HTMLAttributes<HTMLDivElement> {
 }
 
 function Badge({ className, variant = "default", ...props }: BadgeProps) {
+  // Status variants use surface + line + ink rather than a low-alpha wash of
+  // a mid palette shade. The old `bg-warning-surface text-warning-ink` measured
+  // 1.92:1 on the white ground this app renders by default; these clear AA.
   const variants = {
     default: "border-transparent bg-primary text-primary-foreground",
-    secondary: "border-transparent bg-secondary text-secondary-foreground",
+    secondary: "border-border bg-secondary text-secondary-foreground",
     destructive: "border-transparent bg-destructive text-destructive-foreground",
-    outline: "text-foreground",
-    success: "border-transparent bg-green-500/10 text-green-500",
-    warning: "border-transparent bg-yellow-500/10 text-yellow-500",
+    outline: "border-border text-foreground",
+    success: "border-success-line bg-success-surface text-success-ink",
+    warning: "border-warning-line bg-warning-surface text-warning-ink",
   };
 
   return (

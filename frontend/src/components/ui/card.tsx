@@ -5,7 +5,13 @@ const Card = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElemen
   ({ className, ...props }, ref) => (
     <div
       ref={ref}
-      className={cn("rounded-lg border bg-card text-card-foreground shadow-sm", className)}
+      className={cn(
+        // A card separates from its ground by three things at once: a defined
+        // hairline, a tinted shadow and the ground being darker than the card.
+        // shadow-sm alone left cards floating invisibly on near-white sections.
+        "rounded-lg border border-border bg-card text-card-foreground shadow-e1",
+        className,
+      )}
       {...props}
     />
   )

@@ -325,7 +325,7 @@ export function AgentControlPanel({
                       className={`rounded-xl border p-4 ${
                         isAllowed
                           ? "border-primary/30 bg-primary/5"
-                          : "border-red-500/25 bg-red-500/5"
+                          : "border-destructive-line bg-destructive-surface"
                       }`}
                     >
                       <div className="flex items-start justify-between gap-4">
@@ -383,13 +383,13 @@ export function AgentControlPanel({
           className={`flex items-start gap-3 rounded-xl border p-4 text-sm ${
             message.kind === "success"
               ? "border-primary/30 bg-primary/10 text-muted-foreground"
-              : "border-red-500/30 bg-red-500/10 text-red-300"
+              : "border-destructive-line bg-destructive-surface text-destructive-ink"
           }`}
         >
           {message.kind === "success" ? (
             <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
           ) : (
-            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-red-400" />
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive-ink" />
           )}
           {message.text}
         </div>

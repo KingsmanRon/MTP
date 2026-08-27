@@ -9,11 +9,11 @@ import { cn } from "@/lib/utils";
  *
  *  - Tile ground flips against its section. On a white section a tile sits on
  *    `bg-tile` with a `tile-line` border; on a tinted (`bg-muted`) section the
- *    tile is white. Hover inverts that ground and lifts the tile.
+ *    tile is white. Hover lifts the tile by elevation, not by swapping ground.
  *  - Section eyebrows carry a 3px blue bar on their left edge.
  */
 
-/** Which ground the tile is sitting on — drives the flip and its hover inverse. */
+/** Which ground the tile is sitting on — drives the flip. */
 export type Ground = "white" | "tinted";
 
 export function Eyebrow({
@@ -73,8 +73,13 @@ export function SectionHeading({
 
 /**
  * The flipping tile. `ground` is the colour of the section behind it, not the
- * colour of the tile — the tile always contrasts with its section, and hover
- * swaps the two.
+ * colour of the tile — the tile always contrasts with its section.
+ *
+ * Hover raises the tile rather than swapping its ground. The old behaviour
+ * swapped white <-> `bg-tile`, but `--tile` and `--muted` are the same value,
+ * so on a tinted section hovering dropped the tile onto its own background and
+ * the card visibly dissolved into the page. Elevation is the safer signal: it
+ * reads the same on either ground and never costs contrast.
  */
 export function Tile({
   ground,
@@ -92,9 +97,9 @@ export function Tile({
     <div
       className={cn(
         "rounded-lg border border-tileLine transition duration-200",
-        ground === "white" ? "bg-tile" : "bg-card",
-        interactive && "hover:-translate-y-1 hover:border-primary/40 hover:shadow-lg",
-        interactive && (ground === "white" ? "hover:bg-card" : "hover:bg-tile"),
+        ground === "white" ? "bg-tile shadow-e1" : "bg-card shadow-e2",
+        interactive &&
+          "hover:-translate-y-1 hover:border-primary/50 hover:shadow-e3",
         className,
       )}
     >

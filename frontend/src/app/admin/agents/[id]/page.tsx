@@ -101,10 +101,10 @@ function AgentDetailContent({ id }: { id: string }) {
                       <span
                         className={`font-mono font-medium ${
                           agent.trust_score >= 70
-                            ? "text-green-400"
+                            ? "text-success-ink"
                             : agent.trust_score >= 40
-                              ? "text-yellow-400"
-                              : "text-red-400"
+                              ? "text-warning-ink"
+                              : "text-destructive-ink"
                         }`}
                       >
                         {agent.trust_score}

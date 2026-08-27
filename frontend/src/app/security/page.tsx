@@ -294,7 +294,7 @@ export default function SecurityPage() {
                   target="_blank"
                   rel="noopener noreferrer"
                   className={cn(
-                    "group flex h-full flex-col rounded-lg border border-tileLine bg-card p-6 transition duration-200 hover:-translate-y-1 hover:border-primary/40 hover:shadow-lg",
+                    "group flex h-full flex-col rounded-xl border border-tileLine bg-card p-6 shadow-e2 transition duration-200 hover:-translate-y-1 hover:border-primary/50 hover:shadow-e3",
                     focusRing,
                   )}
                 >

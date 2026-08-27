@@ -85,7 +85,7 @@ export default function AuditSearchPage() {
         <Card>
           <CardContent className="pt-6">
             <p className="text-sm text-muted-foreground">Approved</p>
-            <p className="text-2xl font-bold text-green-500">
+            <p className="text-2xl font-bold text-success-ink">
               {loading ? "-" : approvedCount}
             </p>
           </CardContent>
@@ -93,7 +93,7 @@ export default function AuditSearchPage() {
         <Card>
           <CardContent className="pt-6">
             <p className="text-sm text-muted-foreground">Blocked</p>
-            <p className="text-2xl font-bold text-red-500">
+            <p className="text-2xl font-bold text-destructive-ink">
               {loading ? "-" : blockedCount}
             </p>
           </CardContent>
@@ -101,7 +101,7 @@ export default function AuditSearchPage() {
         <Card>
           <CardContent className="pt-6">
             <p className="text-sm text-muted-foreground">Security Alerts</p>
-            <p className="text-2xl font-bold text-yellow-500">
+            <p className="text-2xl font-bold text-warning-ink">
               {loading ? "-" : alertCount}
             </p>
           </CardContent>
@@ -155,7 +155,7 @@ export default function AuditSearchPage() {
         </CardHeader>
         <CardContent>
           {error ? (
-            <div className="flex flex-col items-center justify-center py-10 text-red-500">
+            <div className="flex flex-col items-center justify-center py-10 text-destructive-ink">
               <AlertCircle className="h-10 w-10 mb-2" />
               <p>{error}</p>
             </div>
@@ -208,12 +208,12 @@ export default function AuditSearchPage() {
                     </TableCell>
                     <TableCell>
                       {log.signature_valid ? (
-                        <div className="flex items-center text-green-500 text-xs font-medium">
+                        <div className="flex items-center text-success-ink text-xs font-medium">
                           <CheckCircle2 className="h-3 w-3 mr-1" />
                           Valid
                         </div>
                       ) : (
-                        <Badge variant="outline" className="bg-red-500/10 text-red-500 border-red-500/20">
+                        <Badge variant="outline" className="bg-destructive-surface text-destructive-ink border-destructive-line">
                           Invalid
                         </Badge>
                       )}
@@ -221,13 +221,13 @@ export default function AuditSearchPage() {
                     <TableCell>
                       {log.merkle_root_id ? (
                         <Link href={`/audit/verify/${log.id}`}>
-                          <Badge variant="outline" className="bg-blue-500/10 text-blue-600 border-blue-500/20 cursor-pointer hover:bg-blue-500/20 transition-colors group">
-                            <Shield className="h-3 w-3 mr-1 group-hover:text-blue-700" />
+                          <Badge variant="outline" className="bg-info-surface text-info-ink border-info-line cursor-pointer hover:bg-info-surface transition-colors group">
+                            <Shield className="h-3 w-3 mr-1 group-hover:text-info-ink" />
                             Anchored
                           </Badge>
                         </Link>
                       ) : (
-                        <Badge variant="outline" className="text-muted-foreground bg-gray-100">
+                        <Badge variant="outline" className="border-border bg-muted text-muted-foreground">
                           Pending Batch
                         </Badge>
                       )}

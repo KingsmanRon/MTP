@@ -117,9 +117,9 @@ export default function APIKeysPage() {
       </div>
 
       {/* Warning Banner */}
-      <Card className="border-yellow-500/50 bg-yellow-500/5">
+      <Card className="border-warning-line bg-warning-surface">
         <CardContent className="flex items-center gap-4 py-4">
-          <AlertTriangle className="h-5 w-5 text-yellow-500" />
+          <AlertTriangle className="h-5 w-5 text-warning-ink" />
           <div>
             <p className="font-medium">Keep your API keys secure</p>
             <p className="text-sm text-muted-foreground">
@@ -183,11 +183,11 @@ export default function APIKeysPage() {
                     </TableCell>
                     <TableCell>
                       {key.is_active ? (
-                        <Badge variant="outline" className="bg-green-500/10 text-green-500">
+                        <Badge variant="outline" className="bg-success-surface text-success-ink">
                           Active
                         </Badge>
                       ) : (
-                        <Badge variant="outline" className="bg-red-500/10 text-red-500">
+                        <Badge variant="outline" className="bg-destructive-surface text-destructive-ink">
                           Revoked
                         </Badge>
                       )}

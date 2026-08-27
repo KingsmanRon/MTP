@@ -87,40 +87,78 @@ function ReceiptCard({ record }: { record: PublicVerificationRecord }) {
   const escalate = isEscalateVerdict(record.verdict);
   const Icon = pass ? CheckCircle2 : escalate ? AlertTriangle : XOctagon;
 
+  // One verdict, one colour, applied to every part of the card that carries
+  // the verdict — rail, header band, icon, label and hover edge. A reader
+  // should be able to tell the two cards apart from across the room, before
+  // reading a single word.
+  const tone = pass
+    ? {
+        rail: "bg-success",
+        band: "border-success-line bg-success-surface",
+        ink: "text-success-ink",
+        chip: "border-success-line bg-card",
+        edge: "hover:border-success/60",
+      }
+    : escalate
+      ? {
+          rail: "bg-warning",
+          band: "border-warning-line bg-warning-surface",
+          ink: "text-warning-ink",
+          chip: "border-warning-line bg-card",
+          edge: "hover:border-warning/60",
+        }
+      : {
+          rail: "bg-destructive",
+          band: "border-destructive-line bg-destructive-surface",
+          ink: "text-destructive-ink",
+          chip: "border-destructive-line bg-card",
+          edge: "hover:border-destructive/60",
+        };
+
   return (
     <Link
       href={`/verify/${record.audit_id}`}
       className={cn(
-        "group block rounded-lg border border-tileLine bg-card p-6 transition duration-200 hover:-translate-y-1 hover:border-primary/40 hover:bg-tile hover:shadow-lg md:p-8",
+        // The card stays white on hover and gains elevation instead of
+        // swapping ground: `bg-tile` is the same value as the section's
+        // `bg-muted`, so the old hover made the card sink into the page.
+        "group block overflow-hidden rounded-xl border border-tileLine bg-card shadow-e2 transition duration-200",
+        "hover:-translate-y-1 hover:shadow-e3",
+        tone.edge,
         focusRing,
       )}
     >
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      {/* Verdict rail. 4px of saturated colour along the top edge is the
+          cheapest possible way to make two outcomes scannable at a glance. */}
+      <div className={cn("h-1 w-full", tone.rail)} aria-hidden="true" />
+
+      {/* Verdict band — a labelled tinted region, not coloured text adrift
+          on the card ground. */}
+      <div
+        className={cn(
+          "flex flex-col gap-4 border-b px-6 py-5 sm:flex-row sm:items-center sm:justify-between md:px-8",
+          tone.band,
+        )}
+      >
         <div className="flex items-center gap-3">
           <div
             className={cn(
-              "flex h-10 w-10 shrink-0 items-center justify-center rounded-full",
-              pass ? "bg-success/10" : escalate ? "bg-warning/10" : "bg-destructive/10",
+              "flex h-11 w-11 shrink-0 items-center justify-center rounded-full border",
+              tone.chip,
             )}
           >
-            <Icon
-              className={cn(
-                "h-5 w-5",
-                pass ? "text-success" : escalate ? "text-warning" : "text-destructive",
-              )}
-              aria-hidden="true"
-            />
+            <Icon className={cn("h-5 w-5", tone.ink)} aria-hidden="true" />
           </div>
           <div className="min-w-0">
             <span
               className={cn(
-                "text-lg font-bold tracking-tight",
-                pass ? "text-success" : escalate ? "text-warning" : "text-destructive",
+                "text-xl font-bold uppercase tracking-tight",
+                tone.ink,
               )}
             >
               {verdictLabel(record.verdict)}
             </span>
-            <p className="text-xs text-muted-foreground">
+            <p className="text-xs leading-5 text-foreground/75">
               {record.verdict_reason ??
                 (pass
                   ? "The proposed payment passed the configured policy checks."
@@ -128,7 +166,7 @@ function ReceiptCard({ record }: { record: PublicVerificationRecord }) {
             </p>
           </div>
         </div>
-        <span className="inline-flex shrink-0 items-center gap-2 text-sm font-medium text-brandInk">
+        <span className={cn("inline-flex shrink-0 items-center gap-2 text-sm font-semibold", tone.ink)}>
           {pass ? "Inspect approved receipt" : "Inspect blocked receipt"}
           <ChevronRight
             className="h-4 w-4 transition-transform duration-200 group-hover:translate-x-1"
@@ -137,57 +175,59 @@ function ReceiptCard({ record }: { record: PublicVerificationRecord }) {
         </span>
       </div>
 
-      <p className="mt-4 text-sm leading-6 text-muted-foreground">
-        {pass
-          ? "The receipt records the agent, action, policy result and cryptographic proof."
-          : "The payment request was blocked and the receipt records the verdict and policy reason."}
-      </p>
-
-      <div className="mt-5 grid grid-cols-2 gap-x-6 gap-y-4 border-t border-tileLine pt-5">
-        <div className="min-w-0">
-          <p className="text-[10px] font-medium uppercase tracking-widest text-muted-foreground">
-            Agent
-          </p>
-          <p className="mt-1 truncate text-sm font-medium text-foreground">{record.agent_name}</p>
-          <p className="truncate text-xs text-muted-foreground">{record.organization_name}</p>
-        </div>
-        <div className="min-w-0">
-          <p className="text-[10px] font-medium uppercase tracking-widest text-muted-foreground">
-            Action
-          </p>
-          <Num className="mt-1 block truncate text-xs text-foreground">{record.action_type}</Num>
-        </div>
-        <div className="min-w-0">
-          <p className="text-[10px] font-medium uppercase tracking-widest text-muted-foreground">
-            Signature
-          </p>
-          <p
-            className={cn(
-              "mt-1 truncate text-sm font-medium",
-              record.signature_valid ? "text-success" : "text-destructive",
-            )}
-          >
-            {record.signature_valid ? "Valid Ed25519" : "Invalid"}
-          </p>
-          <p className="truncate text-xs text-muted-foreground">
-            {record.tx_hash ? "Anchored on Base L2" : "Pending anchor"}
-          </p>
-        </div>
-        <div className="min-w-0">
-          <p className="text-[10px] font-medium uppercase tracking-widest text-muted-foreground">
-            Receipt ID
-          </p>
-          <Num className="mt-1 block truncate text-xs text-muted-foreground">
-            {record.audit_id}
-          </Num>
-        </div>
-      </div>
-
-      {formatReceiptTimestamp(record.timestamp) && (
-        <p className="mt-4 text-[11px] text-muted-foreground">
-          {formatReceiptTimestamp(record.timestamp)}
+      <div className="p-6 md:p-8">
+        <p className="text-sm leading-6 text-muted-foreground">
+          {pass
+            ? "The receipt records the agent, action, policy result and cryptographic proof."
+            : "The payment request was blocked and the receipt records the verdict and policy reason."}
         </p>
-      )}
+
+        <div className="mt-5 grid grid-cols-2 gap-x-6 gap-y-4 border-t border-tileLine pt-5">
+          <div className="min-w-0">
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+              Agent
+            </p>
+            <p className="mt-1 truncate text-sm font-medium text-foreground">{record.agent_name}</p>
+            <p className="truncate text-xs text-muted-foreground">{record.organization_name}</p>
+          </div>
+          <div className="min-w-0">
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+              Action
+            </p>
+            <Num className="mt-1 block truncate text-xs text-foreground">{record.action_type}</Num>
+          </div>
+          <div className="min-w-0">
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+              Signature
+            </p>
+            <p
+              className={cn(
+                "mt-1 truncate text-sm font-medium",
+                record.signature_valid ? "text-success-ink" : "text-destructive-ink",
+              )}
+            >
+              {record.signature_valid ? "Valid Ed25519" : "Invalid"}
+            </p>
+            <p className="truncate text-xs text-muted-foreground">
+              {record.tx_hash ? "Anchored on Base L2" : "Pending anchor"}
+            </p>
+          </div>
+          <div className="min-w-0">
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+              Receipt ID
+            </p>
+            <Num className="mt-1 block truncate text-xs text-muted-foreground">
+              {record.audit_id}
+            </Num>
+          </div>
+        </div>
+
+        {formatReceiptTimestamp(record.timestamp) && (
+          <p className="mt-4 text-[11px] text-muted-foreground">
+            {formatReceiptTimestamp(record.timestamp)}
+          </p>
+        )}
+      </div>
     </Link>
   );
 }

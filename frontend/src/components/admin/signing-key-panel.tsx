@@ -122,12 +122,12 @@ export function SigningKeyPanel({ agent }: { agent: MappedAgent }) {
 
       {phase.kind === "rotated" ? (
         <div className="mt-4 space-y-3">
-          <div className="flex items-start gap-2 rounded-md border border-emerald-500/30 bg-emerald-500/10 p-3 text-xs text-emerald-200">
+          <div className="flex items-start gap-2 rounded-md border border-success-line bg-success-surface p-3 text-xs text-success-ink">
             <Check className="mt-0.5 h-3.5 w-3.5 shrink-0" />
             Rotated to key v{phase.version}. The previous key no longer verifies.
           </div>
-          <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3">
-            <p className="text-xs font-medium text-amber-200">
+          <div className="rounded-md border border-warning-line bg-warning-surface p-3">
+            <p className="text-xs font-medium text-warning-ink">
               New private key — shown once. Update the secret now.
             </p>
             <p className="mt-1 text-[11px] text-muted-foreground">
@@ -153,14 +153,14 @@ export function SigningKeyPanel({ agent }: { agent: MappedAgent }) {
       ) : (
         <div className="mt-4 space-y-3">
           {phase.kind === "error" && (
-            <div className="flex items-start gap-2 rounded-md border border-red-500/30 bg-red-500/10 p-2.5 text-xs text-red-300">
+            <div className="flex items-start gap-2 rounded-md border border-destructive-line bg-destructive-surface p-2.5 text-xs text-destructive-ink">
               <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
               {phase.message}
             </div>
           )}
           {confirming ? (
-            <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3">
-              <div className="flex items-start gap-2 text-xs text-amber-200">
+            <div className="rounded-md border border-warning-line bg-warning-surface p-3">
+              <div className="flex items-start gap-2 text-xs text-warning-ink">
                 <ShieldAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                 This immediately invalidates the current key. Any workflow still using the old
                 secret will fail until you update it.

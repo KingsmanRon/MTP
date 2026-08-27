@@ -96,51 +96,57 @@ export function truncateHash(hash: string, startLen = 6, endLen = 4): string {
  * Get trust score color
  */
 export function getTrustScoreColor(score: number): string {
-  if (score >= 70) return "text-[#22c55e]";
-  if (score >= 40) return "text-[#f59e0b]";
-  return "text-[#ef4444]";
+  if (score >= 70) return "text-success-ink";
+  if (score >= 40) return "text-warning-ink";
+  return "text-destructive-ink";
 }
 
 /**
  * Get trust score background color
  */
 export function getTrustScoreBgColor(score: number): string {
-  if (score >= 70) return "bg-[#22c55e]/10";
-  if (score >= 40) return "bg-[#f59e0b]/10";
-  return "bg-[#ef4444]/10";
+  if (score >= 70) return "bg-success-surface";
+  if (score >= 40) return "bg-warning-surface";
+  return "bg-destructive-surface";
 }
 
 /**
- * Get verdict color
+ * Get verdict color.
+ *
+ * Returns the status *ink* token, not a raw palette shade. The app renders
+ * light by default, and the palette shades these used to return were tuned
+ * for a dark ground and measured as low as 1.92:1 on white, well under the
+ * 4.5:1 AA floor. Every ink token clears AA on both grounds.
  */
 export function getVerdictColor(verdict: string): string {
   switch (verdict.toLowerCase()) {
     case "approved":
-      return "text-green-500";
+      return "text-success-ink";
     case "blocked":
-      return "text-red-500";
-    case "rate_limited":
-      return "text-yellow-500";
     case "signature_invalid":
-      return "text-red-600";
+      return "text-destructive-ink";
+    case "rate_limited":
+      return "text-warning-ink";
     default:
       return "text-muted-foreground";
   }
 }
 
 /**
- * Get verdict badge styles
+ * Get verdict badge styles.
+ *
+ * Surface + line + ink, so the chip reads as a tinted region with a defined
+ * edge rather than coloured text floating on the card ground.
  */
 export function getVerdictBadgeStyles(verdict: string): string {
   switch (verdict.toLowerCase()) {
     case "approved":
-      return "bg-green-500/20 text-green-400 border-green-500/30";
+      return "bg-success-surface text-success-ink border-success-line";
     case "blocked":
-      return "bg-red-500/20 text-red-400 border-red-500/30";
-    case "rate_limited":
-      return "bg-yellow-500/20 text-yellow-400 border-yellow-500/30";
     case "signature_invalid":
-      return "bg-red-600/20 text-red-400 border-red-600/30";
+      return "bg-destructive-surface text-destructive-ink border-destructive-line";
+    case "rate_limited":
+      return "bg-warning-surface text-warning-ink border-warning-line";
     default:
       return "bg-muted text-muted-foreground border-border";
   }

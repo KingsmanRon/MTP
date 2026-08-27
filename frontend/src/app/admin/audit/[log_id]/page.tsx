@@ -230,7 +230,7 @@ function PolicySection({ record }: { record: MappedAuditDetail }) {
               {record.violations.map((v, i) => (
                 <span
                   key={i}
-                  className="rounded-md border border-red-500/20 bg-red-500/5 px-2 py-1 font-mono text-xs text-red-400"
+                  className="rounded-md border border-destructive-line bg-destructive-surface px-2 py-1 font-mono text-xs text-destructive-ink"
                 >
                   {v}
                 </span>
@@ -348,8 +348,8 @@ function ProofSection({
         </div>
       )}
       {proof.error_message && (
-        <div className="flex items-center justify-between gap-4 rounded-lg border border-red-500/30 bg-red-500/5 px-4 py-3">
-          <span className="text-xs text-red-300">Anchor Error</span>
+        <div className="flex items-center justify-between gap-4 rounded-lg border border-destructive-line bg-destructive-surface px-4 py-3">
+          <span className="text-xs text-destructive-ink">Anchor Error</span>
           <CopyableMonoValue value={proof.error_message} />
         </div>
       )}
@@ -376,10 +376,10 @@ function ProofStatusBadge({ status }: { status: string }) {
   const isConfirmed = normalised === "confirmed" || normalised === "anchored";
   const isFailed = normalised === "failed" || normalised === "dead_letter";
   const className = isConfirmed
-    ? "border-green-500/20 bg-green-500/10 text-green-400"
+    ? "border-success-line bg-success-surface text-success-ink"
     : isFailed
-      ? "border-red-500/20 bg-red-500/10 text-red-400"
-      : "border-amber-500/20 bg-amber-500/10 text-amber-300";
+      ? "border-destructive-line bg-destructive-surface text-destructive-ink"
+      : "border-warning-line bg-warning-surface text-warning-ink";
 
   return (
     <span className={`rounded-full border px-2 py-1 font-mono text-xs uppercase ${className}`}>
@@ -391,7 +391,7 @@ function ProofStatusBadge({ status }: { status: string }) {
 function SignatureStatus({ signatureValid }: { signatureValid?: boolean }) {
   if (signatureValid === true) {
     return (
-      <span className="inline-flex items-center gap-2 text-xs font-semibold text-green-400">
+      <span className="inline-flex items-center gap-2 text-xs font-semibold text-success-ink">
         <CheckCircle className="h-4 w-4" />
         Valid Ed25519
       </span>
@@ -400,7 +400,7 @@ function SignatureStatus({ signatureValid }: { signatureValid?: boolean }) {
 
   if (signatureValid === false) {
     return (
-      <span className="inline-flex items-center gap-2 text-xs font-semibold text-red-400">
+      <span className="inline-flex items-center gap-2 text-xs font-semibold text-destructive-ink">
         <AlertTriangle className="h-4 w-4" />
         Invalid
       </span>

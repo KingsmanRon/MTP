@@ -139,7 +139,7 @@ export default function SettingsPage() {
               </div>
               <div className="flex items-center justify-end gap-3">
                 {generalSaveStatus === "success" && (
-                  <span className="flex items-center gap-1 text-sm text-green-500">
+                  <span className="flex items-center gap-1 text-sm text-success-ink">
                     <Check className="h-4 w-4" /> Saved
                   </span>
                 )}
@@ -263,7 +263,7 @@ export default function SettingsPage() {
               </div>
               <div className="flex items-center justify-end gap-3">
                 {webhookSaveStatus === "success" && (
-                  <span className="flex items-center gap-1 text-sm text-green-500">
+                  <span className="flex items-center gap-1 text-sm text-success-ink">
                     <Check className="h-4 w-4" /> Saved
                   </span>
                 )}

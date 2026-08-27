@@ -177,7 +177,7 @@ export default function PortalDashboard() {
             <div className="h-2 bg-muted rounded-full overflow-hidden">
               <div
                 className={`h-full transition-all ${
-                  dailyUsagePercent > 80 ? "bg-red-500" : dailyUsagePercent > 50 ? "bg-yellow-500" : "bg-green-500"
+                  dailyUsagePercent > 80 ? "bg-destructive" : dailyUsagePercent > 50 ? "bg-warning" : "bg-success"
                 }`}
                 style={{ width: `${Math.min(dailyUsagePercent, 100)}%` }}
               />
@@ -274,10 +274,10 @@ export default function PortalDashboard() {
                       <div
                         className={`w-2 h-2 rounded-full ${
                           activity.verdict === "approved"
-                            ? "bg-green-500"
+                            ? "bg-success"
                             : activity.verdict === "blocked"
-                            ? "bg-red-500"
-                            : "bg-yellow-500"
+                            ? "bg-destructive"
+                            : "bg-warning"
                         }`}
                       />
                       <div>
