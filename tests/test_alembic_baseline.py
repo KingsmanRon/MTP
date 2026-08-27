@@ -178,6 +178,17 @@ def test_env_py_resolves_asyncpg_dsn_as_psycopg2() -> None:
     assert "postgresql+psycopg2://" in env_src
 
 
+def test_online_migrations_are_serialized_before_revision_reads() -> None:
+    """Concurrent Railway pre-deploys must not race alembic_version updates."""
+    env_src = (_REPO / "alembic" / "env.py").read_text(encoding="utf-8")
+    online_src = env_src.split("def run_migrations_online()", maxsplit=1)[1]
+
+    lock_position = online_src.index("pg_advisory_xact_lock")
+    migration_position = online_src.index("context.run_migrations()")
+
+    assert lock_position < migration_position
+
+
 def test_worker_runs_migrations_before_starting() -> None:
     config = (_REPO / "railway.worker.json").read_text(encoding="utf-8")
     assert '"preDeployCommand": "alembic upgrade head"' in config
