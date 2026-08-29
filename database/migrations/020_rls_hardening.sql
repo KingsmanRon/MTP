@@ -128,11 +128,11 @@ END $$;
 -- exist, the leaked-grant predicate naturally returns false.
 DO $$
 DECLARE
-    table_name text;
+    target_table text;
     rls_on boolean;
     leaked_grant boolean;
 BEGIN
-    FOREACH table_name IN ARRAY ARRAY[
+    FOREACH target_table IN ARRAY ARRAY[
         'agents',
         'audit_logs',
         'merkle_proofs',
@@ -143,24 +143,24 @@ BEGIN
         SELECT c.relrowsecurity INTO rls_on
         FROM pg_class c
         JOIN pg_namespace n ON n.oid = c.relnamespace
-        WHERE n.nspname = 'public' AND c.relname = table_name;
+        WHERE n.nspname = 'public' AND c.relname = target_table;
 
         IF rls_on IS DISTINCT FROM true THEN
-            RAISE EXCEPTION 'RLS is not enabled on public.%', table_name;
+            RAISE EXCEPTION 'RLS is not enabled on public.%', target_table;
         END IF;
 
         SELECT EXISTS (
             SELECT 1
             FROM information_schema.role_table_grants g
             WHERE g.table_schema = 'public'
-              AND g.table_name = table_name
+              AND g.table_name = target_table
               AND g.grantee IN ('anon', 'authenticated')
         ) INTO leaked_grant;
 
         IF leaked_grant THEN
             RAISE EXCEPTION
                 'direct anon/authenticated table privilege remains on public.%',
-                table_name;
+                target_table;
         END IF;
     END LOOP;
 
