@@ -75,6 +75,14 @@ def test_existing_tenant_policies_are_asserted() -> None:
     assert "'inntris_api' = ANY(roles)" in sql
 
 
+def test_assertion_loop_does_not_shadow_information_schema_table_name() -> None:
+    sql = _SQL.read_text(encoding="utf-8")
+    assert "target_table text;" in sql
+    assert "FOREACH target_table IN ARRAY" in sql
+    assert "g.table_name = target_table" in sql
+    assert "table_name text;" not in sql
+
+
 def test_downgrade_is_forward_only() -> None:
     module = _load_revision()
     with pytest.raises(NotImplementedError):
