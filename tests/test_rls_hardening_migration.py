@@ -28,7 +28,7 @@ def test_revision_is_wired_after_anchor_submission_state() -> None:
     assert module._SQL_FILE.is_file()
 
 
-def test_sensitive_tables_enable_rls_and_revoke_client_roles() -> None:
+def test_sensitive_tables_enable_rls() -> None:
     sql = _SQL.read_text(encoding="utf-8")
     tables = (
         "agents",
@@ -40,7 +40,17 @@ def test_sensitive_tables_enable_rls_and_revoke_client_roles() -> None:
 
     for table in tables:
         assert f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY;" in sql
-        assert f"REVOKE ALL PRIVILEGES ON TABLE {table} FROM anon, authenticated;" in sql
+
+
+def test_supabase_client_roles_are_conditionally_revoked() -> None:
+    sql = _SQL.read_text(encoding="utf-8")
+    assert "ARRAY['anon', 'authenticated']" in sql
+    assert "EXISTS (SELECT 1 FROM pg_roles WHERE rolname = client_role)" in sql
+    assert "REVOKE ALL PRIVILEGES ON TABLE public.agents FROM %I" in sql
+    assert "REVOKE ALL PRIVILEGES ON TABLE public.audit_logs FROM %I" in sql
+    assert "REVOKE ALL PRIVILEGES ON TABLE public.merkle_proofs FROM %I" in sql
+    assert "public.administrative_audit_events" in sql
+    assert "public.approval_token_consumptions" in sql
 
 
 def test_worker_bypass_is_precondition_not_created_by_migration() -> None:
@@ -53,8 +63,9 @@ def test_worker_bypass_is_precondition_not_created_by_migration() -> None:
 
 def test_future_postgres_tables_do_not_inherit_public_client_grants() -> None:
     sql = _SQL.read_text(encoding="utf-8")
+    assert "EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'postgres')" in sql
     assert "ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public" in sql
-    assert "REVOKE ALL ON TABLES FROM anon, authenticated;" in sql
+    assert "REVOKE ALL ON TABLES FROM %I" in sql
 
 
 def test_existing_tenant_policies_are_asserted() -> None:
