@@ -57,40 +57,75 @@ ALTER TABLE administrative_audit_events ENABLE ROW LEVEL SECURITY;
 ALTER TABLE approval_token_consumptions ENABLE ROW LEVEL SECURITY;
 
 -- Defense in depth: remove table privileges from direct Supabase client roles.
--- RLS would already deny them, but privilege revocation means an accidental
--- permissive policy added later is not sufficient by itself to expose data.
-REVOKE ALL PRIVILEGES ON TABLE agents FROM anon, authenticated;
-REVOKE ALL PRIVILEGES ON TABLE audit_logs FROM anon, authenticated;
-REVOKE ALL PRIVILEGES ON TABLE merkle_proofs FROM anon, authenticated;
-REVOKE ALL PRIVILEGES ON TABLE administrative_audit_events FROM anon, authenticated;
-REVOKE ALL PRIVILEGES ON TABLE approval_token_consumptions FROM anon, authenticated;
+-- Supabase defines anon/authenticated; a plain PostgreSQL CI database does not.
+-- Guard every role-specific REVOKE so the same migration tree remains portable
+-- and can still be replayed from zero outside Supabase.
+DO $$
+DECLARE
+    client_role text;
+BEGIN
+    FOREACH client_role IN ARRAY ARRAY['anon', 'authenticated']
+    LOOP
+        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = client_role) THEN
+            EXECUTE format(
+                'REVOKE ALL PRIVILEGES ON TABLE public.agents FROM %I',
+                client_role
+            );
+            EXECUTE format(
+                'REVOKE ALL PRIVILEGES ON TABLE public.audit_logs FROM %I',
+                client_role
+            );
+            EXECUTE format(
+                'REVOKE ALL PRIVILEGES ON TABLE public.merkle_proofs FROM %I',
+                client_role
+            );
+            EXECUTE format(
+                'REVOKE ALL PRIVILEGES ON TABLE public.administrative_audit_events FROM %I',
+                client_role
+            );
+            EXECUTE format(
+                'REVOKE ALL PRIVILEGES ON TABLE public.approval_token_consumptions FROM %I',
+                client_role
+            );
 
--- Existing tenant-scoped auxiliary/security tables already have RLS enabled,
--- but Supabase's broad table grants are unnecessary because Inntris does not
--- use direct browser-to-PostgREST access. Tighten those grants too.
-REVOKE ALL PRIVILEGES ON TABLE
-    organizations,
-    agent_key_history,
-    agent_policies,
-    api_keys,
-    erasure_requests,
-    policy_rules,
-    rate_limit_windows,
-    security_alerts,
-    spend_reservations,
-    verify_request_idempotency,
-    webhook_deliveries
-FROM anon, authenticated;
+            -- Existing tenant-scoped auxiliary/security tables already have RLS
+            -- enabled. Inntris does not use direct browser-to-PostgREST access,
+            -- so their broad Supabase client grants are unnecessary too.
+            EXECUTE format(
+                'REVOKE ALL PRIVILEGES ON TABLE '
+                'public.organizations, '
+                'public.agent_key_history, '
+                'public.agent_policies, '
+                'public.api_keys, '
+                'public.erasure_requests, '
+                'public.policy_rules, '
+                'public.rate_limit_windows, '
+                'public.security_alerts, '
+                'public.spend_reservations, '
+                'public.verify_request_idempotency, '
+                'public.webhook_deliveries FROM %I',
+                client_role
+            );
 
--- Stop the same exposure pattern from reappearing for future tables created by
--- postgres-owned Alembic migrations. Explicit grants can still be added in a
--- future migration if Inntris intentionally introduces direct PostgREST access.
-ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public
-    REVOKE ALL ON TABLES FROM anon, authenticated;
+            -- Stop the same exposure pattern from reappearing for future tables
+            -- created by postgres-owned Alembic migrations. Vanilla CI may not
+            -- have a role named postgres when POSTGRES_USER is overridden, so
+            -- this Supabase-specific default-privilege hardening is conditional.
+            IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'postgres') THEN
+                EXECUTE format(
+                    'ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public '
+                    'REVOKE ALL ON TABLES FROM %I',
+                    client_role
+                );
+            END IF;
+        END IF;
+    END LOOP;
+END $$;
 
 -- Assertions: these are intentionally inside the migration so a partial or
 -- environment-specific application fails loudly instead of silently leaving a
--- sensitive table exposed.
+-- sensitive table exposed. On plain PostgreSQL, where anon/authenticated do not
+-- exist, the leaked-grant predicate naturally returns false.
 DO $$
 DECLARE
     table_name text;
