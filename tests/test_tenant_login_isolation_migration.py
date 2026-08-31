@@ -61,6 +61,15 @@ def test_pg16_plus_membership_is_non_inheriting_but_settable() -> None:
     assert "including production PG17" in sql
 
 
+def test_migration_preflights_role_administration_capability() -> None:
+    sql = _SQL.read_text(encoding="utf-8")
+    assert "rolcreaterole" in sql
+    assert "m.admin_option" in sql
+    assert "requires ADMIN OPTION on inntris_api" in sql
+    assert "requires ADMIN OPTION on existing inntris_tenant_login" in sql
+    assert "CI superusers would otherwise hide" in sql
+
+
 def test_login_receives_no_direct_table_or_sequence_grants() -> None:
     sql = _SQL.read_text(encoding="utf-8")
     assert "REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public" in sql
@@ -83,13 +92,14 @@ def test_role_guardrails_and_search_path_are_pinned() -> None:
     assert "search_path=pg_catalog, public" in assertions
 
 
-def test_force_rls_preflights_owner_and_migration_bypass() -> None:
+def test_force_rls_preflights_owner_and_documents_bypass_semantics() -> None:
     sql = _SQL.read_text(encoding="utf-8")
     assert "migration_super" in sql
     assert "migration_bypass" in sql
     assert "does not own public.%" in sql
-    assert "SUPERUSER or BYPASSRLS migration identity" in sql
-    assert "IMPORTANT FOR FUTURE ALEMBIC DATA MIGRATIONS" in sql
+    assert "reviewed SUPERUSER/BYPASSRLS migration plane" in sql
+    assert "FORCE ROW LEVEL SECURITY closes the table-owner exemption only" in sql
+    assert "Production" in sql and "postgres currently has BYPASSRLS" in sql
 
 
 def test_assertions_cover_privileged_membership_and_alternate_paths() -> None:
@@ -106,9 +116,10 @@ def test_assertions_cover_privileged_membership_and_alternate_paths() -> None:
     assert "has_schema_privilege" in sql
 
 
-def test_rls_drift_guard_has_explicit_table_classification() -> None:
+def test_rls_drift_guard_is_deny_by_default() -> None:
     sql = _ASSERTIONS.read_text(encoding="utf-8")
     assert "unknown public table(s) are outside the reviewed RLS classification" in sql
+    assert "c.relname <> ALL(ARRAY[" in sql
     assert "relforcerowsecurity" in sql
     for table in (
         "administrative_audit_events",
@@ -130,6 +141,14 @@ def test_rls_drift_guard_has_explicit_table_classification() -> None:
         "webhook_deliveries",
     ):
         assert f"'{table}'" in sql
+
+
+def test_security_definer_guard_is_a_standing_assertion() -> None:
+    sql = _ASSERTIONS.read_text(encoding="utf-8")
+    assert "reachable_definer_count" in sql
+    assert "n.nspname IN ('public', 'app')" in sql
+    assert "p.prosecdef" in sql
+    assert "tenant authority can execute SECURITY DEFINER" in sql
 
 
 def test_downgrade_is_forward_only() -> None:
