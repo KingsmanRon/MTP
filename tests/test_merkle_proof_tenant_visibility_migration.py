@@ -11,13 +11,13 @@ from alembic.config import Config  # noqa: E402
 from alembic.script import ScriptDirectory  # noqa: E402
 
 _REPO = Path(__file__).resolve().parents[1]
-_REVISION = _REPO / "alembic" / "versions" / "0018_merkle_proof_tenant_visibility.py"
+_REVISION = _REPO / "alembic" / "versions" / "0018_merkle_anchor_visibility.py"
 _SQL = _REPO / "database" / "migrations" / "022_merkle_proof_tenant_visibility.sql"
 
 
 def _load_revision():
     spec = importlib.util.spec_from_file_location(
-        "alembic_0018_merkle_proof_tenant_visibility", _REVISION
+        "alembic_0018_merkle_anchor_visibility", _REVISION
     )
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
@@ -27,7 +27,7 @@ def _load_revision():
 
 def test_revision_follows_tenant_login_isolation() -> None:
     module = _load_revision()
-    assert module.revision == "0018_merkle_proof_tenant_visibility"
+    assert module.revision == "0018_merkle_anchor_visibility"
     assert module.down_revision == "0017_tenant_login_isolation"
     assert module._SQL_FILE == _SQL
 
@@ -36,7 +36,7 @@ def test_alembic_has_exactly_one_head() -> None:
     config = Config(str(_REPO / "alembic.ini"))
     config.set_main_option("script_location", str(_REPO / "alembic"))
     assert ScriptDirectory.from_config(config).get_heads() == [
-        "0018_merkle_proof_tenant_visibility"
+        "0018_merkle_anchor_visibility"
     ]
 
 
