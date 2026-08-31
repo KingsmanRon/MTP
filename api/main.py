@@ -20,8 +20,11 @@ from api.tenant_runtime import start_tenant_database, stop_tenant_database
 TENANT_BOUNDARY_PATHS = frozenset(install_tenant_route_boundary(_legacy_main.app))
 _legacy_main.TENANT_BOUNDARY_PATHS = TENANT_BOUNDARY_PATHS
 
-_legacy_main.app.add_event_handler("startup", start_tenant_database)
-_legacy_main.app.add_event_handler("shutdown", stop_tenant_database)
+# Match the existing application's lifecycle registration mechanism. FastAPI
+# 0.141 no longer exposes app.add_event_handler(), while APIRouter.on_event()
+# remains the compatibility path already used by legacy_main.
+_legacy_main.app.router.on_event("startup")(start_tenant_database)
+_legacy_main.app.router.on_event("shutdown")(stop_tenant_database)
 
 # Preserve the historical api.main module surface for existing tests and
 # operational tooling that monkeypatch globals such as db_pool. The ASGI app is
