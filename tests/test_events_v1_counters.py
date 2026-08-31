@@ -12,6 +12,7 @@ from uuid import uuid4
 from fastapi.testclient import TestClient
 
 from api.main import app, get_db
+from api.tenant_boundary import get_events_tenant_database
 
 client = TestClient(app)
 
@@ -19,43 +20,22 @@ EVENT_BODY = {"event_type": "page_view", "data": {"path": "/pricing"}}
 
 
 def _make_db_mock(existing_agent_id=None, *, existing_agent_metadata=None):
-    """Database-like mock for the /v1/events path.
+    """Database-like mock for the tenant-scoped /v1/events handler.
 
-    ``acquire()`` yields a shared ``conn`` whose ``fetchrow`` answers the
-    ``api_keys`` bearer lookup and whose ``fetchval`` answers the
-    ``events-v1-ingest`` agent lookup. Pass ``existing_agent_id`` to simulate an
-    already-provisioned agent (which skips the create + activation path).
+    Authentication has separate coverage. These route-behaviour tests override
+    the already-authenticated tenant dependency directly, so the shared mock
+    connection only models tenant event-agent and audit work.
     """
-    org_id = uuid4()
-    key_id = uuid4()
     new_agent_id = uuid4()
     audit_id = uuid4()
 
     conn = AsyncMock()
-    conn.fetchrow = AsyncMock(
-        return_value={
-            "id": key_id,
-            "org_id": org_id,
-            "scopes": ["verify"],
-            "is_active": True,
-            "expires_at": None,
-        }
-    )
     conn.fetchval = AsyncMock(return_value=existing_agent_id)
     conn.fetchrow = AsyncMock(
-        side_effect=[
-            {
-                "id": key_id,
-                "org_id": org_id,
-                "scopes": ["verify"],
-                "is_active": True,
-                "expires_at": None,
-            },
-            {
-                "trust_score": 73,
-                "metadata": existing_agent_metadata or {"sandbox": True},
-            },
-        ]
+        return_value={
+            "trust_score": 73,
+            "metadata": existing_agent_metadata or {"sandbox": True},
+        }
     )
     conn.execute = AsyncMock(return_value="UPDATE 1")
 
@@ -78,13 +58,12 @@ def _executed_sql(conn):
     searchable string. The counter UPDATE moved to fetchval (... RETURNING
     trust_score), so both call sinks must be inspected."""
     calls = list(conn.execute.call_args_list) + list(conn.fetchval.call_args_list)
-    return " ".join(
-        " ".join(str(arg) for arg in call.args) for call in calls
-    )
+    return " ".join(" ".join(str(arg) for arg in call.args) for call in calls)
 
 
 def _post_event(db_mock):
     app.dependency_overrides[get_db] = lambda: db_mock
+    app.dependency_overrides[get_events_tenant_database] = lambda: db_mock
     try:
         return client.post(
             "/v1/events",
