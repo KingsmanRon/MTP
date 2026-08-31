@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 
 from api.main import app, get_db, verify_api_key
 from api.models import AgentRecord, AgentStatus
+from api.tenant_boundary import get_admin_tenant_database
 
 client = TestClient(app)
 
@@ -46,6 +47,11 @@ def _acquire_returning(conn):
     return db
 
 
+def _override_tenant_db(db_mock):
+    app.dependency_overrides[get_db] = lambda: db_mock
+    app.dependency_overrides[get_admin_tenant_database] = lambda: db_mock
+
+
 def test_update_agent_policy_controls_are_validated_and_saved():
     org_id = uuid4()
     agent_id = uuid4()
@@ -77,7 +83,7 @@ def test_update_agent_policy_controls_are_validated_and_saved():
     db_mock = _acquire_returning(conn)
     db_mock.get_agent_by_id = AsyncMock(return_value=agent)
 
-    app.dependency_overrides[get_db] = lambda: db_mock
+    _override_tenant_db(db_mock)
     app.dependency_overrides[verify_api_key] = lambda: {
         "org_id": org_id,
         "scopes": ["write"],
@@ -127,7 +133,7 @@ def test_update_agent_metadata_is_merged_not_replaced():
     db_mock = _acquire_returning(conn)
     db_mock.get_agent_by_id = AsyncMock(return_value=agent)
 
-    app.dependency_overrides[get_db] = lambda: db_mock
+    _override_tenant_db(db_mock)
     app.dependency_overrides[verify_api_key] = lambda: {"org_id": org_id, "scopes": ["write"]}
     try:
         response = client.patch(
@@ -154,7 +160,7 @@ def test_update_agent_rejects_per_action_limit_above_resulting_daily_limit():
     db_mock = _acquire_returning(AsyncMock())
     db_mock.get_agent_by_id = AsyncMock(return_value=agent)
 
-    app.dependency_overrides[get_db] = lambda: db_mock
+    _override_tenant_db(db_mock)
     app.dependency_overrides[verify_api_key] = lambda: {
         "org_id": org_id,
         "scopes": ["write"],
@@ -177,7 +183,7 @@ def test_update_agent_rejects_action_overlap_against_existing_policy():
     db_mock = _acquire_returning(AsyncMock())
     db_mock.get_agent_by_id = AsyncMock(return_value=agent)
 
-    app.dependency_overrides[get_db] = lambda: db_mock
+    _override_tenant_db(db_mock)
     app.dependency_overrides[verify_api_key] = lambda: {
         "org_id": org_id,
         "scopes": ["write"],
@@ -200,7 +206,7 @@ def test_update_agent_rejects_explicit_null_controls():
     db_mock = _acquire_returning(AsyncMock())
     db_mock.get_agent_by_id = AsyncMock(return_value=_agent_record(id=agent_id, org_id=org_id))
 
-    app.dependency_overrides[get_db] = lambda: db_mock
+    _override_tenant_db(db_mock)
     app.dependency_overrides[verify_api_key] = lambda: {
         "org_id": org_id,
         "scopes": ["write"],
