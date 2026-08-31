@@ -9,10 +9,8 @@ Database._pool directly.
 from __future__ import annotations
 
 import ast
-import inspect
 from pathlib import Path
 
-from api.database import Database
 from api.system_tenant_adapter import TenantScopedDatabase
 
 
@@ -23,7 +21,7 @@ _SELF_POOL_METHODS = frozenset({"__init__", "close", "acquire", "acquire_as_tena
 
 
 def _database_class_ast() -> ast.ClassDef:
-    source_path = Path(inspect.getsourcefile(Database))
+    source_path = Path("api/database.py")
     tree = ast.parse(source_path.read_text(encoding="utf-8"))
     for node in tree.body:
         if isinstance(node, ast.ClassDef) and node.name == "Database":
