@@ -49,8 +49,18 @@ BEGIN
             CONNECTION LIMIT 20;
     END IF;
 
-    -- Re-establish the one permitted membership deterministically.
-    REVOKE inntris_api FROM inntris_tenant_login;
+    -- Re-establish the one permitted direct membership deterministically.
+    -- Guard the REVOKE so a first migration does not emit a misleading warning.
+    IF EXISTS (
+        SELECT 1
+          FROM pg_auth_members m
+          JOIN pg_roles parent ON parent.oid = m.roleid
+          JOIN pg_roles child ON child.oid = m.member
+         WHERE parent.rolname = 'inntris_api'
+           AND child.rolname = 'inntris_tenant_login'
+    ) THEN
+        REVOKE inntris_api FROM inntris_tenant_login;
+    END IF;
 
     IF server_version >= 160000 THEN
         -- PG16+ (including production PG17): inheritance and SET capability
