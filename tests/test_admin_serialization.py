@@ -20,6 +20,7 @@ from uuid import uuid4
 from fastapi.testclient import TestClient
 
 from api.main import app, get_db, verify_api_key
+from api.tenant_boundary import get_admin_tenant_database
 
 client = TestClient(app)
 
@@ -34,6 +35,11 @@ def _acquire_returning(conn):
     db = MagicMock()
     db.acquire = MagicMock(return_value=acm)
     return db
+
+
+def _override_tenant_db(db_mock):
+    app.dependency_overrides[get_db] = lambda: db_mock
+    app.dependency_overrides[get_admin_tenant_database] = lambda: db_mock
 
 
 def test_list_agents_parses_jsonb_metadata_string():
@@ -54,7 +60,6 @@ def test_list_agents_parses_jsonb_metadata_string():
         "last_action_at": None,
         "total_actions_count": 0,
         "total_blocked_count": 0,
-        # asyncpg hands back JSONB as a raw string when no codec is registered
         "metadata": '{"source": "events_v1_bootstrap", "non_cryptographic": true}',
         "created_at": now,
         "updated_at": None,
@@ -64,7 +69,7 @@ def test_list_agents_parses_jsonb_metadata_string():
     conn.fetch = AsyncMock(return_value=[agent_row])
     db_mock = _acquire_returning(conn)
 
-    app.dependency_overrides[get_db] = lambda: db_mock
+    _override_tenant_db(db_mock)
     app.dependency_overrides[verify_api_key] = lambda: {"org_id": ORG_ID}
     try:
         response = client.get("/admin/agents")
@@ -93,7 +98,6 @@ def test_search_audit_logs_serializes_inet_request_ip():
         "verdict": "approved",
         "verdict_reason": None,
         "signature_valid": True,
-        # asyncpg decodes INET columns into ipaddress objects
         "request_ip": IPv4Address("100.64.0.10"),
         "request_user_agent": None,
         "response_time_ms": 0,
@@ -107,7 +111,7 @@ def test_search_audit_logs_serializes_inet_request_ip():
     conn.fetch = AsyncMock(return_value=[log_row])
     db_mock = _acquire_returning(conn)
 
-    app.dependency_overrides[get_db] = lambda: db_mock
+    _override_tenant_db(db_mock)
     app.dependency_overrides[verify_api_key] = lambda: {"org_id": ORG_ID}
     try:
         response = client.get("/admin/audit/search?limit=10&offset=0")
@@ -118,22 +122,14 @@ def test_search_audit_logs_serializes_inet_request_ip():
     body = response.json()
     assert body["total"] == 1
     assert body["logs"][0]["request_ip"] == "100.64.0.10"
-    # Unanchored row (no joined merkle_proofs match): on-chain fields are null,
-    # so the admin UI correctly shows "Pending".
     assert body["logs"][0]["transaction_hash"] is None
     assert body["logs"][0]["tx_hash"] is None
 
 
 def test_search_audit_logs_surfaces_transaction_hash_when_anchored():
-    """Anchored rows must expose the on-chain tx hash so the UI shows 'Anchored'.
-
-    Regression: GET /admin/audit/search previously returned only merkle_root_id,
-    so the dashboard/audit list badge (which keys on transaction_hash) was stuck
-    on "Pending" even after a batch was confirmed on Base. The LEFT JOIN to
-    merkle_proofs surfaces transaction_hash / chain_id / block_number per row.
-    """
+    """Anchored rows must expose the on-chain tx hash so the UI shows 'Anchored'."""
     now = datetime.now(UTC)
-    tx_hash = "0x" + "ab" * 32  # 66-char Base L2 tx hash
+    tx_hash = "0x" + "ab" * 32
     log_row = {
         "id": uuid4(),
         "agent_id": uuid4(),
@@ -151,7 +147,6 @@ def test_search_audit_logs_surfaces_transaction_hash_when_anchored():
         "trust_score_at_time": 100,
         "merkle_root_id": uuid4(),
         "merkle_leaf_index": 0,
-        # Columns produced by the LEFT JOIN merkle_proofs in the query.
         "transaction_hash": tx_hash,
         "chain_id": 8453,
         "block_number": 46764053,
@@ -162,7 +157,7 @@ def test_search_audit_logs_surfaces_transaction_hash_when_anchored():
     conn.fetch = AsyncMock(return_value=[log_row])
     db_mock = _acquire_returning(conn)
 
-    app.dependency_overrides[get_db] = lambda: db_mock
+    _override_tenant_db(db_mock)
     app.dependency_overrides[verify_api_key] = lambda: {"org_id": ORG_ID}
     try:
         response = client.get("/admin/audit/search?limit=10&offset=0")

@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 
 from api.main import app, get_db, verify_api_key
 from api.models import AgentRecord, AgentStatus
+from api.tenant_boundary import get_admin_tenant_database
 
 client = TestClient(app)
 
@@ -46,6 +47,11 @@ def _acquire_returning(conn):
     return db
 
 
+def _override_tenant_db(db_mock):
+    app.dependency_overrides[get_db] = lambda: db_mock
+    app.dependency_overrides[get_admin_tenant_database] = lambda: db_mock
+
+
 def test_update_agent_policy_controls_are_validated_and_saved():
     org_id = uuid4()
     agent_id = uuid4()
@@ -77,7 +83,7 @@ def test_update_agent_policy_controls_are_validated_and_saved():
     db_mock = _acquire_returning(conn)
     db_mock.get_agent_by_id = AsyncMock(return_value=agent)
 
-    app.dependency_overrides[get_db] = lambda: db_mock
+    _override_tenant_db(db_mock)
     app.dependency_overrides[verify_api_key] = lambda: {
         "org_id": org_id,
         "scopes": ["write"],
@@ -112,23 +118,35 @@ def test_update_agent_metadata_is_merged_not_replaced():
     )
     now = datetime.now(UTC)
     updated_row = {
-        "id": agent_id, "org_id": org_id, "name": "Policy Agent",
-        "public_key_fingerprint": "ab:cd", "trust_score": 80, "status": "active",
-        "daily_limit_usd": Decimal("1000"), "per_action_limit_usd": Decimal("100"),
-        "allowed_actions": ["api_call"], "blocked_actions": [],
-        "rate_limit_per_minute": 60, "last_action_at": None,
-        "total_actions_count": 0, "total_blocked_count": 0,
+        "id": agent_id,
+        "org_id": org_id,
+        "name": "Policy Agent",
+        "public_key_fingerprint": "ab:cd",
+        "trust_score": 80,
+        "status": "active",
+        "daily_limit_usd": Decimal("1000"),
+        "per_action_limit_usd": Decimal("100"),
+        "allowed_actions": ["api_call"],
+        "blocked_actions": [],
+        "rate_limit_per_minute": 60,
+        "last_action_at": None,
+        "total_actions_count": 0,
+        "total_blocked_count": 0,
         # The real DB || merge keeps "source"; the mock returns the merged shape.
         "metadata": {"source": "public_registration", "customer_label": "finance"},
-        "created_at": now, "updated_at": now,
+        "created_at": now,
+        "updated_at": now,
     }
     conn = AsyncMock()
     conn.fetchrow = AsyncMock(return_value=updated_row)
     db_mock = _acquire_returning(conn)
     db_mock.get_agent_by_id = AsyncMock(return_value=agent)
 
-    app.dependency_overrides[get_db] = lambda: db_mock
-    app.dependency_overrides[verify_api_key] = lambda: {"org_id": org_id, "scopes": ["write"]}
+    _override_tenant_db(db_mock)
+    app.dependency_overrides[verify_api_key] = lambda: {
+        "org_id": org_id,
+        "scopes": ["write"],
+    }
     try:
         response = client.patch(
             f"/admin/agents/{agent_id}",
@@ -154,7 +172,7 @@ def test_update_agent_rejects_per_action_limit_above_resulting_daily_limit():
     db_mock = _acquire_returning(AsyncMock())
     db_mock.get_agent_by_id = AsyncMock(return_value=agent)
 
-    app.dependency_overrides[get_db] = lambda: db_mock
+    _override_tenant_db(db_mock)
     app.dependency_overrides[verify_api_key] = lambda: {
         "org_id": org_id,
         "scopes": ["write"],
@@ -177,7 +195,7 @@ def test_update_agent_rejects_action_overlap_against_existing_policy():
     db_mock = _acquire_returning(AsyncMock())
     db_mock.get_agent_by_id = AsyncMock(return_value=agent)
 
-    app.dependency_overrides[get_db] = lambda: db_mock
+    _override_tenant_db(db_mock)
     app.dependency_overrides[verify_api_key] = lambda: {
         "org_id": org_id,
         "scopes": ["write"],
@@ -200,7 +218,7 @@ def test_update_agent_rejects_explicit_null_controls():
     db_mock = _acquire_returning(AsyncMock())
     db_mock.get_agent_by_id = AsyncMock(return_value=_agent_record(id=agent_id, org_id=org_id))
 
-    app.dependency_overrides[get_db] = lambda: db_mock
+    _override_tenant_db(db_mock)
     app.dependency_overrides[verify_api_key] = lambda: {
         "org_id": org_id,
         "scopes": ["write"],

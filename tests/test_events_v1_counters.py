@@ -12,6 +12,7 @@ from uuid import uuid4
 from fastapi.testclient import TestClient
 
 from api.main import app, get_db
+from api.tenant_boundary import get_events_tenant_database
 
 client = TestClient(app)
 
@@ -19,12 +20,12 @@ EVENT_BODY = {"event_type": "page_view", "data": {"path": "/pricing"}}
 
 
 def _make_db_mock(existing_agent_id=None, *, existing_agent_metadata=None):
-    """Database-like mock for the /v1/events path.
+    """Database-like mock for the tenant-scoped /v1/events handler.
 
-    ``acquire()`` yields a shared ``conn`` whose ``fetchrow`` answers the
-    ``api_keys`` bearer lookup and whose ``fetchval`` answers the
-    ``events-v1-ingest`` agent lookup. Pass ``existing_agent_id`` to simulate an
-    already-provisioned agent (which skips the create + activation path).
+    The FastAPI dependency performs the trusted SYSTEM bearer lookup before it
+    returns a tenant-scoped database. The handler then re-validates the bearer
+    key through that tenant-scoped database, so the shared connection returns
+    the API-key row first and the event-agent trust row second.
     """
     org_id = uuid4()
     key_id = uuid4()
@@ -32,15 +33,6 @@ def _make_db_mock(existing_agent_id=None, *, existing_agent_metadata=None):
     audit_id = uuid4()
 
     conn = AsyncMock()
-    conn.fetchrow = AsyncMock(
-        return_value={
-            "id": key_id,
-            "org_id": org_id,
-            "scopes": ["verify"],
-            "is_active": True,
-            "expires_at": None,
-        }
-    )
     conn.fetchval = AsyncMock(return_value=existing_agent_id)
     conn.fetchrow = AsyncMock(
         side_effect=[
@@ -78,13 +70,12 @@ def _executed_sql(conn):
     searchable string. The counter UPDATE moved to fetchval (... RETURNING
     trust_score), so both call sinks must be inspected."""
     calls = list(conn.execute.call_args_list) + list(conn.fetchval.call_args_list)
-    return " ".join(
-        " ".join(str(arg) for arg in call.args) for call in calls
-    )
+    return " ".join(" ".join(str(arg) for arg in call.args) for call in calls)
 
 
 def _post_event(db_mock):
     app.dependency_overrides[get_db] = lambda: db_mock
+    app.dependency_overrides[get_events_tenant_database] = lambda: db_mock
     try:
         return client.post(
             "/v1/events",

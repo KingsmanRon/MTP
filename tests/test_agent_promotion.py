@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 
 from api.main import app, get_db, verify_api_key
 from api.models import AgentRecord, AgentStatus
+from api.tenant_boundary import get_admin_tenant_database
 
 client = TestClient(app)
 
@@ -63,12 +64,17 @@ def _database(agent):
     return database
 
 
+def _override_tenant_db(database):
+    app.dependency_overrides[get_db] = lambda: database
+    app.dependency_overrides[get_admin_tenant_database] = lambda: database
+
+
 def test_organisation_admin_can_explicitly_promote_sandbox_agent():
     org_id = uuid4()
     agent_id = uuid4()
     database = _database(_agent_record(agent_id, org_id))
 
-    app.dependency_overrides[get_db] = lambda: database
+    _override_tenant_db(database)
     app.dependency_overrides[verify_api_key] = lambda: {
         "org_id": org_id,
         "scopes": ["admin"],
@@ -99,7 +105,7 @@ def test_non_cryptographic_ingestion_agent_cannot_be_promoted():
     )
     database = _database(agent)
 
-    app.dependency_overrides[get_db] = lambda: database
+    _override_tenant_db(database)
     app.dependency_overrides[verify_api_key] = lambda: {
         "org_id": org_id,
         "scopes": ["admin"],
@@ -122,7 +128,7 @@ def test_write_scope_alone_cannot_promote_sandbox_agent():
     agent_id = uuid4()
     database = _database(_agent_record(agent_id, org_id))
 
-    app.dependency_overrides[get_db] = lambda: database
+    _override_tenant_db(database)
     app.dependency_overrides[verify_api_key] = lambda: {
         "org_id": org_id,
         "scopes": ["write"],
@@ -144,7 +150,7 @@ def test_generic_agent_patch_cannot_clear_sandbox():
     agent_id = uuid4()
     database = _database(_agent_record(agent_id, org_id))
 
-    app.dependency_overrides[get_db] = lambda: database
+    _override_tenant_db(database)
     app.dependency_overrides[verify_api_key] = lambda: {
         "org_id": org_id,
         "scopes": ["write"],
@@ -168,7 +174,7 @@ def test_authenticated_registration_cannot_create_production_agent():
     database = MagicMock()
     database.create_agent = AsyncMock(return_value=agent_id)
 
-    app.dependency_overrides[get_db] = lambda: database
+    _override_tenant_db(database)
     app.dependency_overrides[verify_api_key] = lambda: {
         "org_id": org_id,
         "scopes": ["write"],
