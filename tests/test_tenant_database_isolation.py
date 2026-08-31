@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import inspect
+from pathlib import Path
 from uuid import uuid4
 
 import pytest
 
 from api.tenant_database import TenantDatabase, TenantDatabaseError
+
+_REPO = Path(__file__).resolve().parents[1]
 
 
 def test_tenant_database_exposes_no_generic_acquire() -> None:
@@ -24,13 +27,14 @@ def test_pool_disables_asyncpg_statement_cache() -> None:
     assert "statement_cache_size=0" in source
 
 
-def test_startup_assertion_requires_exact_login_and_canary() -> None:
+def test_startup_assertion_requires_exact_session_login_and_canary() -> None:
     source = inspect.getsource(TenantDatabase.assert_safe_identity)
+    assert "session_user" in source
+    assert "current_user" in source
     assert "inntris_tenant_login" in source
     assert "rolbypassrls" in source
     assert "rolsuper" in source
     assert "inntris_worker" in source
-    assert "SET LOCAL ROLE" in source
     assert "SELECT count(*) FROM agents" in source
 
 
@@ -40,9 +44,21 @@ async def test_missing_dsn_fails_closed() -> None:
         await TenantDatabase.create("")
 
 
-def test_tenant_method_installs_transaction_local_context() -> None:
+def test_tenant_method_installs_transaction_local_context_and_search_path() -> None:
     source = inspect.getsource(TenantDatabase.tenant)
-    assert "SET LOCAL ROLE" in source
+    helper = inspect.getsource(TenantDatabase._enter_tenant_role)
+    assert "SET LOCAL ROLE" in helper
+    assert "search_path" in helper
+    assert "statement_timeout" in helper
+    assert "idle_in_transaction_session_timeout" in helper
     assert "set_config('app.current_org_id', $1, true)" in source
     assert "conn.transaction()" in source
     assert str(uuid4())
+
+
+def test_phase_one_is_inert_without_tenant_database_url() -> None:
+    """PR 1 must not wire the tenant pool into web startup before credentials exist."""
+    main_source = (_REPO / "api" / "main.py").read_text(encoding="utf-8")
+    assert "TENANT_DATABASE_URL" not in main_source
+    assert "TenantDatabase" not in main_source
+    assert "api.tenant_database" not in main_source
