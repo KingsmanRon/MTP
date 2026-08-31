@@ -97,6 +97,7 @@ def test_assertions_cover_privileged_membership_and_alternate_paths() -> None:
     assert "pg_has_role('inntris_tenant_login', 'inntris_worker', 'MEMBER')" in sql
     assert "pg_has_role('inntris_api', 'inntris_worker', 'MEMBER')" in sql
     assert "ARRAY['service_role', 'postgres', 'supabase_admin']" in sql
+    assert "safe short-circuit boundary" in sql
     assert "acl.grantee IN (0, tenant_oid)" in sql
     assert "has_table_privilege(" in sql
     assert "has_function_privilege('inntris_tenant_login'" in sql
