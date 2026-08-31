@@ -36,8 +36,8 @@ class TenantDatabase:
     async def create(
         cls,
         dsn: str,
-        min_size: int = 2,
-        max_size: int = 10,
+        min_size: int = 1,
+        max_size: int = 5,
     ) -> TenantDatabase:
         """Create and verify the tenant pool.
 
@@ -83,30 +83,24 @@ class TenantDatabase:
         if org_id is None:
             await conn.execute(
                 """
-                SELECT set_config('role', $1, true),
-                       set_config('search_path', $2, true),
-                       set_config('statement_timeout', $3, true),
-                       set_config('idle_in_transaction_session_timeout', $4, true)
-                """,
-                TENANT_POLICY_ROLE,
-                TENANT_SEARCH_PATH,
-                TENANT_STATEMENT_TIMEOUT,
-                TENANT_IDLE_TX_TIMEOUT,
+                SELECT
+                  set_config('role','inntris_api',true),
+                  set_config('search_path','pg_catalog, public',true),
+                  set_config('statement_timeout','30s',true),
+                  set_config('idle_in_transaction_session_timeout','15s',true)
+                """
             )
             return
 
         await conn.execute(
             """
-            SELECT set_config('role', $1, true),
-                   set_config('search_path', $2, true),
-                   set_config('statement_timeout', $3, true),
-                   set_config('idle_in_transaction_session_timeout', $4, true),
-                   set_config('app.current_org_id', $5, true)
+            SELECT
+              set_config('role','inntris_api',true),
+              set_config('search_path','pg_catalog, public',true),
+              set_config('statement_timeout','30s',true),
+              set_config('idle_in_transaction_session_timeout','15s',true),
+              set_config('app.current_org_id',$1,true)
             """,
-            TENANT_POLICY_ROLE,
-            TENANT_SEARCH_PATH,
-            TENANT_STATEMENT_TIMEOUT,
-            TENANT_IDLE_TX_TIMEOUT,
             str(org_id),
         )
 
