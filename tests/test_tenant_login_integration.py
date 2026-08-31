@@ -3,7 +3,9 @@
 Run after migration 0017 is applied. A real TENANT_DATABASE_URL is preferred.
 In GitHub Actions only, if that variable is absent, the fixture generates an
 ephemeral random password, assigns it to inntris_tenant_login, authenticates a
-new connection as that role, then removes the password at teardown. This keeps
+new connection as that role, then removes the password in fixture teardown and
+verifies no password remains. The harness refuses to install the password when
+Postgres statement logging could retain DDL text. This keeps
 session_user == inntris_tenant_login, which is required for SET ROLE reachability
 tests to be sound.
 """
@@ -94,6 +96,11 @@ async def tenant_db():
             password = secrets.token_urlsafe(32)
             admin = await asyncpg.connect(MIGRATOR_DSN, statement_cache_size=0)
             try:
+                log_statement = await admin.fetchval("SHOW log_statement")
+                assert log_statement == "none", (
+                    "CI tenant password harness requires log_statement=none so the "
+                    "ephemeral ALTER ROLE PASSWORD statement cannot be retained"
+                )
                 statement = await admin.fetchval(
                     "SELECT format('ALTER ROLE inntris_tenant_login PASSWORD %L', $1::text)",
                     password,
@@ -112,6 +119,11 @@ async def tenant_db():
             admin = await asyncpg.connect(MIGRATOR_DSN, statement_cache_size=0)
             try:
                 await admin.execute("ALTER ROLE inntris_tenant_login PASSWORD NULL")
+                password_is_null = await admin.fetchval(
+                    "SELECT rolpassword IS NULL FROM pg_authid WHERE rolname = $1",
+                    TENANT_LOGIN_ROLE,
+                )
+                assert password_is_null is True, "ephemeral tenant password cleanup failed"
             finally:
                 await admin.close()
 
