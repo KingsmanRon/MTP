@@ -28,7 +28,10 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: postgres:16.14-alpine3.23
+        # Production Supabase mtp-production is PostgreSQL 17.6. Keep CI on the
+        # same major/minor so role-membership and RLS DDL are exercised against
+        # the branch that will actually run in production.
+        image: postgres:17.6-alpine3.22
         env:
           POSTGRES_USER: inntris_migrator
           POSTGRES_PASSWORD: ci_migrator_only_not_a_secret_2026
