@@ -13,7 +13,36 @@ import { AdminVerdictBadge } from "./verdict-badge";
 import { AdminEmptyState } from "./empty-state";
 import { ExternalLink, FileSearch, Link2 } from "lucide-react";
 import { formatDateTime } from "@/lib/utils";
+import { getAdminAnchorDisplayState } from "@/lib/admin/anchor-status";
 import type { MappedAuditLog } from "@/lib/admin/types";
+
+function AnchorStatus({ log }: { log: MappedAuditLog }) {
+  const state = getAdminAnchorDisplayState(log);
+
+  if (state === "anchored") {
+    return (
+      <span className="inline-flex items-center gap-1 text-xs text-success-ink">
+        <Link2 className="h-3 w-3" />
+        Anchored
+      </span>
+    );
+  }
+
+  if (state === "submitted") {
+    return (
+      <span className="inline-flex items-center gap-1 text-xs text-brandInk">
+        <Link2 className="h-3 w-3" />
+        Submitted
+      </span>
+    );
+  }
+
+  return (
+    <span className="text-xs text-muted-foreground">
+      {state === "pending" ? "Pending" : "Awaiting batch"}
+    </span>
+  );
+}
 
 export function AuditTable({
   logs,
@@ -87,14 +116,7 @@ export function AuditTable({
               )}
             </TableCell>
             <TableCell>
-              {log.transaction_hash ? (
-                <span className="inline-flex items-center gap-1 text-xs text-success-ink">
-                  <Link2 className="h-3 w-3" />
-                  Anchored
-                </span>
-              ) : (
-                <span className="text-xs text-muted-foreground">Pending</span>
-              )}
+              <AnchorStatus log={log} />
             </TableCell>
             <TableCell>
               <Link
