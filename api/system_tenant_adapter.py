@@ -28,7 +28,7 @@ class TenantScopedDatabase(Database):
         self._trusted_org_id = trusted_org_id
 
     @classmethod
-    async def create(cls, *args, **kwargs):  # pragma: no cover - architecture guard
+    async def create(cls, *_args, **_kwargs):  # pragma: no cover - architecture guard
         raise RuntimeError("TenantScopedDatabase cannot create a database pool")
 
     async def close(self) -> None:  # pragma: no cover - owned by tenant_runtime
@@ -39,7 +39,7 @@ class TenantScopedDatabase(Database):
         raise RuntimeError("Privileged/raw pool access is forbidden on tenant routes")
 
     @_pool.setter
-    def _pool(self, value):  # pragma: no cover
+    def _pool(self, _value):  # pragma: no cover
         raise RuntimeError("Privileged/raw pool access is forbidden on tenant routes")
 
     @property
