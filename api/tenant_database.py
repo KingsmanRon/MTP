@@ -73,23 +73,41 @@ class TenantDatabase:
         await self._pool.close()
 
     @staticmethod
-    async def _enter_tenant_role(conn: Connection) -> None:
-        """Enter the policy role with transaction-local hardening."""
+    async def _enter_tenant_role(conn: Connection, org_id: UUID | None = None) -> None:
+        """Enter the tenant policy role and pin local context in one round trip.
 
-        await conn.execute(f"SET LOCAL ROLE {TENANT_POLICY_ROLE}")
-        # ALTER ROLE ... SET settings on inntris_api are not applied by SET ROLE.
-        # Pin the resolution path and timeouts on every tenant transaction.
+        ``set_config(..., true)`` is transaction-local, equivalent to SET LOCAL.
+        Role-level defaults attached to ``inntris_api`` are not applied by a role
+        switch, so search_path and timeout guardrails are pinned here as well.
+        """
+        if org_id is None:
+            await conn.execute(
+                """
+                SELECT set_config('role', $1, true),
+                       set_config('search_path', $2, true),
+                       set_config('statement_timeout', $3, true),
+                       set_config('idle_in_transaction_session_timeout', $4, true)
+                """,
+                TENANT_POLICY_ROLE,
+                TENANT_SEARCH_PATH,
+                TENANT_STATEMENT_TIMEOUT,
+                TENANT_IDLE_TX_TIMEOUT,
+            )
+            return
+
         await conn.execute(
-            "SELECT set_config('search_path', $1, true)",
+            """
+            SELECT set_config('role', $1, true),
+                   set_config('search_path', $2, true),
+                   set_config('statement_timeout', $3, true),
+                   set_config('idle_in_transaction_session_timeout', $4, true),
+                   set_config('app.current_org_id', $5, true)
+            """,
+            TENANT_POLICY_ROLE,
             TENANT_SEARCH_PATH,
-        )
-        await conn.execute(
-            "SELECT set_config('statement_timeout', $1, true)",
             TENANT_STATEMENT_TIMEOUT,
-        )
-        await conn.execute(
-            "SELECT set_config('idle_in_transaction_session_timeout', $1, true)",
             TENANT_IDLE_TX_TIMEOUT,
+            str(org_id),
         )
 
     async def assert_safe_identity(self) -> None:
@@ -128,7 +146,7 @@ class TenantDatabase:
                 raise TenantDatabaseError("Tenant database identity can reach inntris_worker")
 
             # Canary: with the tenant policy role but no tenant context, RLS must
-            # reveal no tenant rows. This also proves SET ROLE is permitted.
+            # reveal no tenant rows. This also proves the role switch is permitted.
             async with conn.transaction():
                 await self._enter_tenant_role(conn)
                 row_count = await conn.fetchval("SELECT count(*) FROM agents")
@@ -144,11 +162,7 @@ class TenantDatabase:
             raise TypeError("org_id must be a UUID resolved from trusted authentication context")
 
         async with self._pool.acquire() as conn, conn.transaction():
-            await self._enter_tenant_role(conn)
-            await conn.execute(
-                "SELECT set_config('app.current_org_id', $1, true)",
-                str(org_id),
-            )
+            await self._enter_tenant_role(conn, org_id)
             yield conn
 
     async def health_check(self) -> bool:
