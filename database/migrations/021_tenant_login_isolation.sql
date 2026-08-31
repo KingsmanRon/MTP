@@ -11,16 +11,22 @@
 -- No password is stored here. No application route is switched by this
 -- migration. Production credentials are an operator concern.
 --
--- IMPORTANT FOR FUTURE ALEMBIC DATA MIGRATIONS:
--- FORCE ROW LEVEL SECURITY removes the table-owner bypass. PostgreSQL roles
--- with SUPERUSER/BYPASSRLS still bypass RLS, which is why the migration
--- identity is asserted below to retain one of those attributes. Do not run
--- data migrations through inntris_tenant_login or another non-bypass owner.
+-- FORCE RLS SEMANTICS:
+-- FORCE ROW LEVEL SECURITY closes the table-owner exemption only. SUPERUSER
+-- and BYPASSRLS roles still bypass row security unconditionally. Production
+-- postgres currently has BYPASSRLS, so FORCE does not constrain that migration
+-- identity today. It is defence in depth if ownership or role attributes later
+-- change; future migration conventions must re-check the effective identity.
 -- =============================================================================
 
 DO $$
 DECLARE
     server_version integer := current_setting('server_version_num')::integer;
+    migration_super boolean;
+    migration_createrole boolean;
+    has_api_admin boolean;
+    has_tenant_admin boolean;
+    tenant_exists boolean;
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'inntris_api') THEN
         RAISE EXCEPTION 'tenant login isolation requires inntris_api';
@@ -29,7 +35,66 @@ BEGIN
         RAISE EXCEPTION 'tenant login isolation requires inntris_worker';
     END IF;
 
-    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'inntris_tenant_login') THEN
+    SELECT rolsuper, rolcreaterole
+      INTO migration_super, migration_createrole
+      FROM pg_roles
+     WHERE rolname = current_user;
+
+    IF migration_super IS NULL THEN
+        RAISE EXCEPTION 'cannot resolve migration role %', current_user;
+    END IF;
+    IF NOT migration_super AND NOT migration_createrole THEN
+        RAISE EXCEPTION
+            'migration role % requires CREATEROLE to provision inntris_tenant_login',
+            current_user;
+    END IF;
+
+    -- PostgreSQL 16+ role administration is deliberately explicit: a
+    -- non-superuser needs ADMIN OPTION on inntris_api to grant/revoke its
+    -- membership or alter that role. CI superusers would otherwise hide a
+    -- production-only release failure here.
+    SELECT EXISTS (
+        SELECT 1
+          FROM pg_auth_members m
+          JOIN pg_roles parent ON parent.oid = m.roleid
+          JOIN pg_roles member_role ON member_role.oid = m.member
+         WHERE parent.rolname = 'inntris_api'
+           AND member_role.rolname = current_user
+           AND m.admin_option
+    ) INTO has_api_admin;
+
+    IF NOT migration_super AND NOT has_api_admin THEN
+        RAISE EXCEPTION
+            'migration role % requires ADMIN OPTION on inntris_api',
+            current_user;
+    END IF;
+
+    SELECT EXISTS (
+        SELECT 1 FROM pg_roles WHERE rolname = 'inntris_tenant_login'
+    ) INTO tenant_exists;
+
+    -- If the role already exists, a non-superuser must also be allowed to
+    -- administer it before ALTER ROLE is attempted. On first creation a
+    -- CREATEROLE user receives ADMIN OPTION on the role automatically.
+    IF tenant_exists AND NOT migration_super THEN
+        SELECT EXISTS (
+            SELECT 1
+              FROM pg_auth_members m
+              JOIN pg_roles parent ON parent.oid = m.roleid
+              JOIN pg_roles member_role ON member_role.oid = m.member
+             WHERE parent.rolname = 'inntris_tenant_login'
+               AND member_role.rolname = current_user
+               AND m.admin_option
+        ) INTO has_tenant_admin;
+
+        IF NOT has_tenant_admin THEN
+            RAISE EXCEPTION
+                'migration role % requires ADMIN OPTION on existing inntris_tenant_login',
+                current_user;
+        END IF;
+    END IF;
+
+    IF NOT tenant_exists THEN
         CREATE ROLE inntris_tenant_login
             LOGIN
             NOSUPERUSER
@@ -75,25 +140,26 @@ BEGIN
 END $$;
 
 -- Login-level guardrails. Role GUCs apply when the tenant login authenticates.
--- SET ROLE does not apply ALTER ROLE ... SET values for the target role, so the
--- application also pins search_path transaction-locally after SET LOCAL ROLE.
+-- A role switch does not apply ALTER ROLE ... SET values for the target role,
+-- so the application also pins these values transaction-locally.
 ALTER ROLE inntris_tenant_login SET search_path TO pg_catalog, public;
 ALTER ROLE inntris_tenant_login SET statement_timeout TO '30s';
 ALTER ROLE inntris_tenant_login SET idle_in_transaction_session_timeout TO '15s';
 ALTER ROLE inntris_api SET search_path TO pg_catalog, public;
 
--- The login identity owns nothing. All data access begins only after
--- SET LOCAL ROLE inntris_api inside a transaction.
+-- The login identity owns nothing. All data access begins only after a
+-- transaction-local role switch to inntris_api.
 REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM inntris_tenant_login;
 REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM inntris_tenant_login;
 REVOKE ALL PRIVILEGES ON SCHEMA public FROM inntris_tenant_login;
 REVOKE CREATE ON SCHEMA public FROM inntris_api, inntris_tenant_login;
 REVOKE CREATE ON SCHEMA app FROM inntris_api, inntris_tenant_login;
 
--- FORCE RLS is intentionally database-wide for Inntris public tables. System
--- roles with BYPASSRLS retain their documented system-plane access; ordinary
--- table ownership no longer bypasses policy. Fail before DDL if the migration
--- identity could not safely perform this change in production.
+-- FORCE RLS is intentionally database-wide for Inntris public tables. It
+-- removes only the ordinary table-owner exemption. SUPERUSER/BYPASSRLS roles
+-- retain unrestricted access; production postgres currently falls in that
+-- category. Fail before DDL if the migration identity cannot own/alter these
+-- tables or is not the reviewed privileged migration plane.
 DO $$
 DECLARE
     target_table text;
@@ -112,7 +178,7 @@ BEGIN
     END IF;
     IF NOT (migration_super OR migration_bypass) THEN
         RAISE EXCEPTION
-            'FORCE RLS migration requires a SUPERUSER or BYPASSRLS migration identity';
+            'FORCE RLS migration requires the reviewed SUPERUSER/BYPASSRLS migration plane';
     END IF;
 
     FOREACH target_table IN ARRAY ARRAY[
