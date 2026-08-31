@@ -44,14 +44,16 @@ async def test_missing_dsn_fails_closed() -> None:
         await TenantDatabase.create("")
 
 
-def test_tenant_method_installs_transaction_local_context_and_search_path() -> None:
+def test_tenant_method_installs_context_in_one_round_trip() -> None:
     source = inspect.getsource(TenantDatabase.tenant)
     helper = inspect.getsource(TenantDatabase._enter_tenant_role)
-    assert "SET LOCAL ROLE" in helper
-    assert "search_path" in helper
-    assert "statement_timeout" in helper
-    assert "idle_in_transaction_session_timeout" in helper
-    assert "set_config('app.current_org_id', $1, true)" in source
+    assert "set_config('role', $1, true)" in helper
+    assert "set_config('search_path', $2, true)" in helper
+    assert "set_config('statement_timeout', $3, true)" in helper
+    assert "set_config('idle_in_transaction_session_timeout', $4, true)" in helper
+    assert "set_config('app.current_org_id', $5, true)" in helper
+    assert "SET LOCAL ROLE" not in helper
+    assert "await self._enter_tenant_role(conn, org_id)" in source
     assert "conn.transaction()" in source
     assert str(uuid4())
 
