@@ -23,6 +23,7 @@ import pytest
 asyncpg = pytest.importorskip("asyncpg")
 
 from api.database import Database  # noqa: E402
+from api.system_tenant_adapter import TenantScopedDatabase  # noqa: E402
 from api.tenant_database import TENANT_LOGIN_ROLE, TenantDatabase  # noqa: E402
 
 ENABLED = os.getenv("INNTRIS_DB_INTEGRATION") == "1"
@@ -176,15 +177,20 @@ async def test_tenant_login_sees_only_its_org(system_db, tenant_db) -> None:
     await _make_agent(system_db, org_b, "tenant-b-agent")
 
     async with tenant_db.tenant(org_a) as conn:
-        seen = {row["org_id"] for row in await conn.fetch("SELECT org_id FROM agents")}
+        seen_a = {row["org_id"] for row in await conn.fetch("SELECT org_id FROM agents")}
+    async with tenant_db.tenant(org_b) as conn:
+        seen_b = {row["org_id"] for row in await conn.fetch("SELECT org_id FROM agents")}
 
-    assert seen == {org_a}
+    assert seen_a == {org_a}
+    assert seen_b == {org_b}
+    assert org_b not in seen_a
+    assert org_a not in seen_b
 
 
 @pytest.mark.asyncio
-async def test_cross_tenant_write_is_blocked(system_db, tenant_db) -> None:
-    org_a = await _make_org(system_db, f"tenant-write-a-{uuid4().hex[:8]}")
-    org_b = await _make_org(system_db, f"tenant-write-b-{uuid4().hex[:8]}")
+async def test_cross_tenant_update_is_blocked(system_db, tenant_db) -> None:
+    org_a = await _make_org(system_db, f"tenant-update-a-{uuid4().hex[:8]}")
+    org_b = await _make_org(system_db, f"tenant-update-b-{uuid4().hex[:8]}")
     agent_b = await _make_agent(system_db, org_b, "foreign-agent")
 
     async with tenant_db.tenant(org_a) as conn:
@@ -193,6 +199,48 @@ async def test_cross_tenant_write_is_blocked(system_db, tenant_db) -> None:
             agent_b,
         )
     assert status.endswith(" 0")
+
+
+@pytest.mark.asyncio
+async def test_cross_tenant_delete_is_blocked(system_db, tenant_db) -> None:
+    org_a = await _make_org(system_db, f"tenant-delete-a-{uuid4().hex[:8]}")
+    org_b = await _make_org(system_db, f"tenant-delete-b-{uuid4().hex[:8]}")
+    agent_b = await _make_agent(system_db, org_b, "foreign-delete-agent")
+
+    async with tenant_db.tenant(org_a) as conn:
+        status = await conn.execute("DELETE FROM agents WHERE id = $1", agent_b)
+    assert status.endswith(" 0")
+
+    async with system_db.acquire() as conn:
+        assert await conn.fetchval("SELECT count(*) FROM agents WHERE id = $1", agent_b) == 1
+
+
+@pytest.mark.asyncio
+async def test_cross_tenant_child_insert_is_blocked(system_db, tenant_db) -> None:
+    org_a = await _make_org(system_db, f"tenant-child-a-{uuid4().hex[:8]}")
+    org_b = await _make_org(system_db, f"tenant-child-b-{uuid4().hex[:8]}")
+    agent_b = await _make_agent(system_db, org_b, "foreign-child-agent")
+
+    async with tenant_db.tenant(org_a) as conn:
+        with pytest.raises(asyncpg.InsufficientPrivilegeError):
+            await conn.execute(
+                """
+                INSERT INTO agent_policies (agent_id, policy_hash, mapping, protected_branches)
+                VALUES ($1, $2, '{}'::jsonb, '[]'::jsonb)
+                """,
+                agent_b,
+                hashlib.sha256(secrets.token_bytes(32)).hexdigest(),
+            )
+
+
+@pytest.mark.asyncio
+async def test_no_org_context_returns_zero_tenant_rows(system_db, tenant_db) -> None:
+    org_a = await _make_org(system_db, f"tenant-no-context-{uuid4().hex[:8]}")
+    await _make_agent(system_db, org_a, "no-context-agent")
+
+    async with tenant_db._pool.acquire() as conn, conn.transaction():
+        await TenantDatabase._enter_tenant_role(conn)
+        assert await conn.fetchval("SELECT count(*) FROM agents") == 0
 
 
 @pytest.mark.asyncio
@@ -215,6 +263,19 @@ async def test_context_does_not_leak_when_same_pool_connection_is_reused(
 
 
 @pytest.mark.asyncio
+async def test_commit_clears_context(system_db, tenant_db) -> None:
+    org_a = await _make_org(system_db, f"tenant-commit-a-{uuid4().hex[:8]}")
+    await _make_agent(system_db, org_a, "commit-a")
+
+    async with tenant_db.tenant(org_a) as conn:
+        assert await conn.fetchval("SELECT app.current_tenant()") == org_a
+
+    async with tenant_db._pool.acquire() as conn, conn.transaction():
+        await TenantDatabase._enter_tenant_role(conn)
+        assert await conn.fetchval("SELECT count(*) FROM agents") == 0
+
+
+@pytest.mark.asyncio
 async def test_rollback_does_not_leak_context(system_db, tenant_db) -> None:
     org_a = await _make_org(system_db, f"tenant-rollback-a-{uuid4().hex[:8]}")
     await _make_agent(system_db, org_a, "rollback-a")
@@ -224,9 +285,24 @@ async def test_rollback_does_not_leak_context(system_db, tenant_db) -> None:
             assert await conn.fetchval("SELECT app.current_tenant()") == org_a
             raise RuntimeError("force rollback")
 
-    org_b = await _make_org(system_db, f"tenant-rollback-b-{uuid4().hex[:8]}")
-    async with tenant_db.tenant(org_b) as conn:
-        assert await conn.fetchval("SELECT app.current_tenant()") == org_b
+    async with tenant_db._pool.acquire() as conn, conn.transaction():
+        await TenantDatabase._enter_tenant_role(conn)
+        assert await conn.fetchval("SELECT count(*) FROM agents") == 0
+
+
+@pytest.mark.asyncio
+async def test_api_key_org_a_plus_org_b_uuid_cannot_cross_boundary(system_db, tenant_db) -> None:
+    org_a = await _make_org(system_db, f"tenant-key-a-{uuid4().hex[:8]}")
+    org_b = await _make_org(system_db, f"tenant-key-b-{uuid4().hex[:8]}")
+    agent_b = await _make_agent(system_db, org_b, "foreign-api-key-agent")
+    scoped = TenantScopedDatabase(tenant_db, org_a)
+
+    # A request can carry B's object UUID, but the authenticated org remains A.
+    async with scoped.acquire() as conn:
+        assert await conn.fetchval("SELECT count(*) FROM agents WHERE id = $1", agent_b) == 0
+    with pytest.raises(PermissionError):
+        async with scoped.acquire_as_tenant(org_b):
+            pass
 
 
 @pytest.mark.asyncio
