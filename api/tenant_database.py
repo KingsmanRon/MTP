@@ -17,6 +17,9 @@ from asyncpg import Connection, Pool
 TENANT_LOGIN_ROLE = "inntris_tenant_login"
 TENANT_POLICY_ROLE = "inntris_api"
 SYSTEM_ROLE = "inntris_worker"
+TENANT_SEARCH_PATH = "pg_catalog, public"
+TENANT_STATEMENT_TIMEOUT = "30s"
+TENANT_IDLE_TX_TIMEOUT = "15s"
 
 
 class TenantDatabaseError(RuntimeError):
@@ -69,12 +72,33 @@ class TenantDatabase:
     async def close(self) -> None:
         await self._pool.close()
 
+    @staticmethod
+    async def _enter_tenant_role(conn: Connection) -> None:
+        """Enter the policy role with transaction-local hardening."""
+
+        await conn.execute(f"SET LOCAL ROLE {TENANT_POLICY_ROLE}")
+        # ALTER ROLE ... SET settings on inntris_api are not applied by SET ROLE.
+        # Pin the resolution path and timeouts on every tenant transaction.
+        await conn.execute(
+            "SELECT set_config('search_path', $1, true)",
+            TENANT_SEARCH_PATH,
+        )
+        await conn.execute(
+            "SELECT set_config('statement_timeout', $1, true)",
+            TENANT_STATEMENT_TIMEOUT,
+        )
+        await conn.execute(
+            "SELECT set_config('idle_in_transaction_session_timeout', $1, true)",
+            TENANT_IDLE_TX_TIMEOUT,
+        )
+
     async def assert_safe_identity(self) -> None:
         """Fail unless the DSN authenticates as the intended restricted role."""
         async with self._pool.acquire() as conn:
             identity = await conn.fetchrow(
                 """
-                SELECT current_user AS current_user,
+                SELECT session_user AS session_user,
+                       current_user AS current_user,
                        r.rolsuper AS is_superuser,
                        r.rolbypassrls AS bypass_rls
                 FROM pg_roles r
@@ -83,7 +107,10 @@ class TenantDatabase:
             )
             if identity is None:
                 raise TenantDatabaseError("Unable to resolve tenant database identity")
-            if identity["current_user"] != TENANT_LOGIN_ROLE:
+            if (
+                identity["session_user"] != TENANT_LOGIN_ROLE
+                or identity["current_user"] != TENANT_LOGIN_ROLE
+            ):
                 raise TenantDatabaseError(
                     "TENANT_DATABASE_URL must authenticate as inntris_tenant_login"
                 )
@@ -103,7 +130,7 @@ class TenantDatabase:
             # Canary: with the tenant policy role but no tenant context, RLS must
             # reveal no tenant rows. This also proves SET ROLE is permitted.
             async with conn.transaction():
-                await conn.execute(f"SET LOCAL ROLE {TENANT_POLICY_ROLE}")
+                await self._enter_tenant_role(conn)
                 row_count = await conn.fetchval("SELECT count(*) FROM agents")
                 if row_count != 0:
                     raise TenantDatabaseError(
@@ -117,7 +144,7 @@ class TenantDatabase:
             raise TypeError("org_id must be a UUID resolved from trusted authentication context")
 
         async with self._pool.acquire() as conn, conn.transaction():
-            await conn.execute(f"SET LOCAL ROLE {TENANT_POLICY_ROLE}")
+            await self._enter_tenant_role(conn)
             await conn.execute(
                 "SELECT set_config('app.current_org_id', $1, true)",
                 str(org_id),
