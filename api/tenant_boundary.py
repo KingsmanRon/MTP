@@ -35,9 +35,7 @@ def is_tenant_route(path: str) -> bool:
         return True
     if path == "/admin/organization" or path.startswith("/admin/organization/"):
         return True
-    if path.startswith("/admin/webhook"):
-        return True
-    return False
+    return path.startswith("/admin/webhook")
 
 
 async def get_admin_tenant_database(
