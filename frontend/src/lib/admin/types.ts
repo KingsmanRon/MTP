@@ -123,6 +123,7 @@ export interface MappedAuditLog {
   merkle_root_id?: string | null;
   transaction_hash?: string | null;
   chain_id?: number | null;
+  block_number?: number | null;
   response_time_ms?: number | null;
   policy_hash?: string | null;
 }

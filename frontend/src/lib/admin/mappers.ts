@@ -138,6 +138,7 @@ export function mapAuditLog(raw: unknown): MappedAuditLog | null {
     merkle_root_id: strOrNull(raw.merkle_root_id),
     transaction_hash: strOrNull(raw.transaction_hash),
     chain_id: numOrNull(raw.chain_id),
+    block_number: numOrNull(raw.block_number),
     response_time_ms: numOrNull(raw.response_time_ms),
     policy_hash: strOrNull(raw.policy_hash),
   };
