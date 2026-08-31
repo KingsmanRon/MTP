@@ -13,6 +13,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from api.main import app, get_db, verify_api_key, verify_master_admin_key
+from api.tenant_boundary import get_admin_tenant_database
 from api.webhooks import (
     MAX_WEBHOOK_RESPONSE_BYTES,
     ParsedWebhookDestination,
@@ -388,6 +389,7 @@ def test_tenant_update_rejects_private_webhook_before_database_work() -> None:
     org_id = uuid4()
     database = MagicMock()
     app.dependency_overrides[get_db] = lambda: database
+    app.dependency_overrides[get_admin_tenant_database] = lambda: database
     app.dependency_overrides[verify_api_key] = lambda: {
         "org_id": org_id,
         "scopes": ["admin"],
