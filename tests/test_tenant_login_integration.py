@@ -85,27 +85,29 @@ async def system_db():
 async def tenant_db():
     generated_password = False
     tenant_dsn = TENANT_DSN
+    database = None
 
-    if not tenant_dsn:
-        assert CI and MIGRATOR_DSN, "migrator fallback is CI-only"
-        generated_password = True
-        password = secrets.token_urlsafe(32)
-        admin = await asyncpg.connect(MIGRATOR_DSN, statement_cache_size=0)
-        try:
-            statement = await admin.fetchval(
-                "SELECT format('ALTER ROLE inntris_tenant_login PASSWORD %L', $1)",
-                password,
-            )
-            await admin.execute(statement)
-        finally:
-            await admin.close()
-        tenant_dsn = _tenant_dsn_from_migrator(MIGRATOR_DSN, password)
-
-    database = await TenantDatabase.create(tenant_dsn, min_size=1, max_size=1)
     try:
+        if not tenant_dsn:
+            assert CI and MIGRATOR_DSN, "migrator fallback is CI-only"
+            generated_password = True
+            password = secrets.token_urlsafe(32)
+            admin = await asyncpg.connect(MIGRATOR_DSN, statement_cache_size=0)
+            try:
+                statement = await admin.fetchval(
+                    "SELECT format('ALTER ROLE inntris_tenant_login PASSWORD %L', $1::text)",
+                    password,
+                )
+                await admin.execute(statement)
+            finally:
+                await admin.close()
+            tenant_dsn = _tenant_dsn_from_migrator(MIGRATOR_DSN, password)
+
+        database = await TenantDatabase.create(tenant_dsn, min_size=1, max_size=1)
         yield database
     finally:
-        await database.close()
+        if database is not None:
+            await database.close()
         if generated_password:
             admin = await asyncpg.connect(MIGRATOR_DSN, statement_cache_size=0)
             try:
