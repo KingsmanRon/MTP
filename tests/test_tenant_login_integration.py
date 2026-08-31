@@ -1,11 +1,10 @@
 """Real-Postgres checks for the isolated tenant login.
 
-Run only after migration 0017 is applied:
-
-    INNTRIS_DB_INTEGRATION=1 \
-    DATABASE_URL=<inntris_worker dsn> \
-    TENANT_DATABASE_URL=<inntris_tenant_login dsn> \
-    pytest tests/test_tenant_login_integration.py
+Run after migration 0017 is applied. In normal environments, provide
+TENANT_DATABASE_URL. CI may instead use ALEMBIC_DATABASE_URL to create a
+superuser-backed test pool whose connections immediately switch session
+authorisation to inntris_tenant_login; all tested queries then execute as the
+restricted login role.
 """
 
 from __future__ import annotations
@@ -25,10 +24,11 @@ from api.tenant_database import TenantDatabase  # noqa: E402
 ENABLED = os.getenv("INNTRIS_DB_INTEGRATION") == "1"
 SYSTEM_DSN = os.getenv("DATABASE_URL", "")
 TENANT_DSN = os.getenv("TENANT_DATABASE_URL", "")
+MIGRATOR_DSN = os.getenv("ALEMBIC_DATABASE_URL", "")
 
 pytestmark = pytest.mark.skipif(
-    not (ENABLED and SYSTEM_DSN and TENANT_DSN),
-    reason="requires real Postgres plus system and tenant DSNs",
+    not (ENABLED and SYSTEM_DSN and (TENANT_DSN or MIGRATOR_DSN)),
+    reason="requires real Postgres plus system DSN and tenant or migrator DSN",
 )
 
 
@@ -44,7 +44,27 @@ async def system_db():
 @pytest.fixture
 async def tenant_db():
     # Single connection makes context-leak tests non-vacuous.
-    database = await TenantDatabase.create(TENANT_DSN, min_size=1, max_size=1)
+    if TENANT_DSN:
+        database = await TenantDatabase.create(TENANT_DSN, min_size=1, max_size=1)
+    else:
+        # CI migration credentials are superuser credentials for the ephemeral
+        # test database. Drop that authority immediately at session level so
+        # TenantDatabase sees exactly the login identity it is meant to guard.
+        async def _become_tenant(conn):
+            await conn.execute("SET SESSION AUTHORIZATION inntris_tenant_login")
+
+        pool = await asyncpg.create_pool(
+            MIGRATOR_DSN,
+            min_size=1,
+            max_size=1,
+            command_timeout=30,
+            statement_cache_size=0,
+            init=_become_tenant,
+        )
+        assert pool is not None
+        database = TenantDatabase(pool)
+        await database.assert_safe_identity()
+
     try:
         yield database
     finally:
@@ -109,7 +129,10 @@ async def test_cross_tenant_write_is_blocked(system_db, tenant_db) -> None:
 
 
 @pytest.mark.asyncio
-async def test_context_does_not_leak_when_same_pool_connection_is_reused(system_db, tenant_db) -> None:
+async def test_context_does_not_leak_when_same_pool_connection_is_reused(
+    system_db,
+    tenant_db,
+) -> None:
     org_a = await _make_org(system_db, f"tenant-reuse-a-{uuid4().hex[:8]}")
     org_b = await _make_org(system_db, f"tenant-reuse-b-{uuid4().hex[:8]}")
     await _make_agent(system_db, org_a, "reuse-a")
