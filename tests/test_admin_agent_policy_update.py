@@ -118,15 +118,24 @@ def test_update_agent_metadata_is_merged_not_replaced():
     )
     now = datetime.now(UTC)
     updated_row = {
-        "id": agent_id, "org_id": org_id, "name": "Policy Agent",
-        "public_key_fingerprint": "ab:cd", "trust_score": 80, "status": "active",
-        "daily_limit_usd": Decimal("1000"), "per_action_limit_usd": Decimal("100"),
-        "allowed_actions": ["api_call"], "blocked_actions": [],
-        "rate_limit_per_minute": 60, "last_action_at": None,
-        "total_actions_count": 0, "total_blocked_count": 0,
+        "id": agent_id,
+        "org_id": org_id,
+        "name": "Policy Agent",
+        "public_key_fingerprint": "ab:cd",
+        "trust_score": 80,
+        "status": "active",
+        "daily_limit_usd": Decimal("1000"),
+        "per_action_limit_usd": Decimal("100"),
+        "allowed_actions": ["api_call"],
+        "blocked_actions": [],
+        "rate_limit_per_minute": 60,
+        "last_action_at": None,
+        "total_actions_count": 0,
+        "total_blocked_count": 0,
         # The real DB || merge keeps "source"; the mock returns the merged shape.
         "metadata": {"source": "public_registration", "customer_label": "finance"},
-        "created_at": now, "updated_at": now,
+        "created_at": now,
+        "updated_at": now,
     }
     conn = AsyncMock()
     conn.fetchrow = AsyncMock(return_value=updated_row)
@@ -134,7 +143,10 @@ def test_update_agent_metadata_is_merged_not_replaced():
     db_mock.get_agent_by_id = AsyncMock(return_value=agent)
 
     _override_tenant_db(db_mock)
-    app.dependency_overrides[verify_api_key] = lambda: {"org_id": org_id, "scopes": ["write"]}
+    app.dependency_overrides[verify_api_key] = lambda: {
+        "org_id": org_id,
+        "scopes": ["write"],
+    }
     try:
         response = client.patch(
             f"/admin/agents/{agent_id}",
