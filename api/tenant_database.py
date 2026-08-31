@@ -38,7 +38,7 @@ class TenantDatabase:
         dsn: str,
         min_size: int = 2,
         max_size: int = 10,
-    ) -> "TenantDatabase":
+    ) -> TenantDatabase:
         """Create and verify the tenant pool.
 
         ``statement_cache_size=0`` is required for Supavisor transaction
