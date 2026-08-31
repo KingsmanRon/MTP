@@ -22,20 +22,32 @@ EVENT_BODY = {"event_type": "page_view", "data": {"path": "/pricing"}}
 def _make_db_mock(existing_agent_id=None, *, existing_agent_metadata=None):
     """Database-like mock for the tenant-scoped /v1/events handler.
 
-    Authentication has separate coverage. These route-behaviour tests override
-    the already-authenticated tenant dependency directly, so the shared mock
-    connection only models tenant event-agent and audit work.
+    The FastAPI dependency performs the trusted SYSTEM bearer lookup before it
+    returns a tenant-scoped database. The handler then re-validates the bearer
+    key through that tenant-scoped database, so the shared connection returns
+    the API-key row first and the event-agent trust row second.
     """
+    org_id = uuid4()
+    key_id = uuid4()
     new_agent_id = uuid4()
     audit_id = uuid4()
 
     conn = AsyncMock()
     conn.fetchval = AsyncMock(return_value=existing_agent_id)
     conn.fetchrow = AsyncMock(
-        return_value={
-            "trust_score": 73,
-            "metadata": existing_agent_metadata or {"sandbox": True},
-        }
+        side_effect=[
+            {
+                "id": key_id,
+                "org_id": org_id,
+                "scopes": ["verify"],
+                "is_active": True,
+                "expires_at": None,
+            },
+            {
+                "trust_score": 73,
+                "metadata": existing_agent_metadata or {"sandbox": True},
+            },
+        ]
     )
     conn.execute = AsyncMock(return_value="UPDATE 1")
 
