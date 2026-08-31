@@ -6,12 +6,8 @@ through acquisition methods overridden by the tenant facade, never by touching
 Database._pool directly.
 """
 
-from __future__ import annotations
-
 import ast
 from pathlib import Path
-
-from api.system_tenant_adapter import TenantScopedDatabase
 
 
 _RAW_CONNECTION_PRIMITIVES = frozenset(
@@ -41,6 +37,8 @@ def _touches_self_pool(node: ast.AST) -> bool:
 
 def test_tenant_facade_overrides_every_raw_connection_primitive() -> None:
     """Inherited code cannot fall back to the privileged constructor/pool API."""
+    from api.system_tenant_adapter import TenantScopedDatabase
+
     missing = sorted(
         name for name in _RAW_CONNECTION_PRIMITIVES if name not in TenantScopedDatabase.__dict__
     )
