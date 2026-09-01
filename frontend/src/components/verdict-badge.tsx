@@ -27,7 +27,7 @@ export function VerdictBadge({ verdict, showIcon = true }: VerdictBadgeProps) {
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border",
+        "inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border px-2 py-0.5 text-xs font-medium",
         getVerdictBadgeStyles(verdict)
       )}
     >

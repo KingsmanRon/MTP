@@ -2,7 +2,6 @@
 
 import { Suspense, useState, useCallback, useMemo } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import { AdminShell } from "@/components/admin/admin-shell";
 import { useAdminFetch } from "@/lib/admin/use-admin-fetch";
 import { mapAgents, mapAuditSearchResult } from "@/lib/admin/mappers";
 import type { MappedAgent, MappedAuditSearchResult, ActionVerdict } from "@/lib/admin/types";
@@ -288,10 +287,8 @@ function SkeletonRows({ count }: { count: number }) {
 
 export default function AdminAuditPage() {
   return (
-    <AdminShell>
-      <Suspense fallback={<SkeletonRows count={8} />}>
-        <AuditContent />
-      </Suspense>
-    </AdminShell>
+    <Suspense fallback={<SkeletonRows count={8} />}>
+      <AuditContent />
+    </Suspense>
   );
 }

@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { AdminShell } from "@/components/admin/admin-shell";
 import { useAdminFetch } from "@/lib/admin/use-admin-fetch";
 import { mapAgents } from "@/lib/admin/mappers";
 import type { MappedAgent, AgentStatus } from "@/lib/admin/types";
@@ -394,9 +393,5 @@ function SkeletonRows({ count }: { count: number }) {
 }
 
 export default function AdminAgentsPage() {
-  return (
-    <AdminShell>
-      <AgentsContent />
-    </AdminShell>
-  );
+  return <AgentsContent />;
 }

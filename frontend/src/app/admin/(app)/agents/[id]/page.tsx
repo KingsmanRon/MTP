@@ -1,7 +1,6 @@
 "use client";
 
 import { useParams } from "next/navigation";
-import { AdminShell } from "@/components/admin/admin-shell";
 import { useAdminFetch } from "@/lib/admin/use-admin-fetch";
 import { mapAgent, mapAuditSearchResult } from "@/lib/admin/mappers";
 import type { MappedAgent, MappedAuditSearchResult, AgentStatus } from "@/lib/admin/types";
@@ -304,9 +303,5 @@ function SkeletonRows({ count }: { count: number }) {
 
 export default function AdminAgentDetailPage() {
   const { id } = useParams<{ id: string }>();
-  return (
-    <AdminShell>
-      <AgentDetailContent id={id} />
-    </AdminShell>
-  );
+  return <AgentDetailContent id={id} />;
 }

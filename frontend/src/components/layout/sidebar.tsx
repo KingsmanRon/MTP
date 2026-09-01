@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import {
   LayoutDashboard,
+  LayoutGrid,
   Bot,
   AlertTriangle,
   Key,
@@ -12,7 +13,6 @@ import {
   Settings,
   ChevronLeft,
   Menu,
-  CheckCircle2,
 } from "lucide-react";
 import { InntrisLogo } from "@/components/inntris-logo";
 import { useState } from "react";
@@ -25,8 +25,14 @@ interface SidebarProps {
 
 const navItems = {
   admin: [
+    // Every authenticated /admin route lives in the (app) group and renders
+    // this sidebar, so all of them belong here — a page reachable from the
+    // console but missing from the nav is a page that looks like it dropped
+    // the menu when you land on it.
+    { href: "/admin", icon: LayoutGrid, label: "Overview" },
     { href: "/admin/dashboard", icon: LayoutDashboard, label: "Dashboard" },
     { href: "/admin/agents", icon: Bot, label: "Agents" },
+    { href: "/admin/audit", icon: FileSearch, label: "Audit Log" },
     { href: "/admin/alerts", icon: AlertTriangle, label: "Alerts" },
     { href: "/admin/api-keys", icon: Key, label: "API Keys" },
     { href: "/admin/settings", icon: Settings, label: "Settings" },
@@ -35,11 +41,11 @@ const navItems = {
     { href: "/portal/dashboard", icon: LayoutDashboard, label: "Dashboard" },
     { href: "/portal/credentials", icon: Key, label: "Credentials" },
     { href: "/portal/playground", icon: Bot, label: "Playground" },
-    { href: "/portal/logs", icon: FileSearch, label: "Activity Logs" },
   ],
   audit: [
+    // Verification opens from a Search result row (/audit/verify/<logId>);
+    // there is no bare /audit/verify index to link to.
     { href: "/audit/search", icon: FileSearch, label: "Search" },
-    { href: "/audit/verify", icon: CheckCircle2, label: "Verify" },
     { href: "/audit/exports", icon: Key, label: "Exports" },
   ],
 };
@@ -55,6 +61,14 @@ export function Sidebar({ variant, onNavigate }: SidebarProps) {
   const [collapsed, setCollapsed] = useState(false);
   const items = navItems[variant];
   const title = titles[variant];
+
+  // Highlight the deepest matching item so detail routes keep their parent lit
+  // (/admin/agents/<id> highlights Agents) without also lighting up the
+  // section root (/admin), which is a prefix of every other admin route.
+  const activeHref = items
+    .filter((i) => pathname === i.href || pathname.startsWith(`${i.href}/`))
+    .sort((a, b) => b.href.length - a.href.length)[0]?.href;
+
   // Inside the mobile drawer the backdrop handles closing, so the
   // collapse toggle would only waste tap space.
   const collapsible = !onNavigate;
@@ -95,7 +109,7 @@ export function Sidebar({ variant, onNavigate }: SidebarProps) {
       {/* Navigation */}
       <nav className="flex-1 p-2 space-y-1 overflow-y-auto">
         {items.map((item) => {
-          const isActive = pathname === item.href;
+          const isActive = item.href === activeHref;
           return (
             <Link
               key={item.href}

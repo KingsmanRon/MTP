@@ -1,6 +1,5 @@
 "use client";
 
-import { AdminShell } from "@/components/admin/admin-shell";
 import { useAdminFetch } from "@/lib/admin/use-admin-fetch";
 import { mapAgents, mapAuditSearchResult } from "@/lib/admin/mappers";
 import type { MappedAgent, MappedAuditSearchResult } from "@/lib/admin/types";
@@ -33,8 +32,10 @@ function DashboardContent() {
     <div className="space-y-6">
       {/* Page header */}
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
-        <p className="text-sm text-muted-foreground">Operational overview</p>
+        <h1 className="text-2xl font-semibold tracking-tight">Overview</h1>
+        <p className="text-sm text-muted-foreground">
+          Operational snapshot of agents and the audit trail
+        </p>
       </div>
 
       {/* Summary cards */}
@@ -148,10 +149,6 @@ function SkeletonTable({ rows }: { rows: number }) {
   );
 }
 
-export default function AdminDashboardPage() {
-  return (
-    <AdminShell>
-      <DashboardContent />
-    </AdminShell>
-  );
+export default function AdminOverviewPage() {
+  return <DashboardContent />;
 }

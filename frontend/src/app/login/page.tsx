@@ -63,32 +63,33 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background to-muted p-4">
-      <Card className="w-full max-w-md">
+    <div className="relative flex min-h-screen items-center justify-center bg-background p-4">
+      <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-accent/50 via-transparent to-transparent" />
+      <Card className="relative w-full max-w-md border-tileLine bg-tile">
         <CardHeader className="text-center">
-          <div className="mx-auto mb-4 p-3 rounded-full bg-primary/10 w-fit">
+          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl border border-tileLine bg-card">
             <InntrisLogo className="h-8 w-8" />
           </div>
-          <CardTitle className="text-2xl">Welcome to Inntris</CardTitle>
-          <CardDescription>
-            Enter your API key to access the admin console
+          <CardTitle className="text-xl text-foreground">Admin Console</CardTitle>
+          <CardDescription className="text-muted-foreground">
+            Enter your API key to sign in
           </CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
-              <label htmlFor="apiKey" className="text-sm font-medium">
+              <label htmlFor="apiKey" className="text-sm font-medium text-muted-foreground">
                 API Key
               </label>
               <div className="relative">
-                <Key className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Key className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
                   id="apiKey"
                   type="password"
                   placeholder="ink_..."
                   value={apiKey}
                   onChange={(e) => setApiKey(e.target.value)}
-                  className="pl-10"
+                  className="border-tileLine bg-card pl-10 text-foreground placeholder:text-muted-foreground"
                   autoComplete="off"
                   autoFocus
                 />
@@ -99,33 +100,39 @@ export default function LoginPage() {
             </div>
 
             {error && (
-              <div className="flex items-center gap-2 p-3 bg-destructive/10 text-destructive rounded-lg">
+              <div className="flex items-center gap-2 rounded-lg bg-destructive-surface p-3 text-destructive-ink">
                 <AlertCircle className="h-4 w-4 flex-shrink-0" />
                 <span className="text-sm">{error}</span>
               </div>
             )}
 
-            <Button type="submit" className="w-full" disabled={isLoading}>
+            <Button
+              type="submit"
+              className="w-full bg-primary text-white hover:bg-primary"
+              disabled={isLoading}
+            >
               {isLoading ? (
                 <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   Verifying...
                 </>
               ) : (
                 <>
                   Sign In
-                  <ArrowRight className="h-4 w-4 ml-2" />
+                  <ArrowRight className="ml-2 h-4 w-4" />
                 </>
               )}
             </Button>
           </form>
 
-          <div className="mt-6 pt-6 border-t">
-            <p className="text-sm text-muted-foreground text-center">
-              For development, you can use{" "}
-              <code className="px-1 py-0.5 bg-muted rounded text-xs">dev_test_key</code>
-            </p>
-          </div>
+          {process.env.NODE_ENV !== "production" && (
+            <div className="mt-6 border-t border-tileLine pt-6">
+              <p className="text-center text-sm text-muted-foreground">
+                For local development you can use{" "}
+                <code className="rounded bg-card px-1 py-0.5 text-xs">dev_test_key</code>
+              </p>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

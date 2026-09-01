@@ -1,7 +1,6 @@
 "use client";
 
 import { useParams } from "next/navigation";
-import { AdminShell } from "@/components/admin/admin-shell";
 import { useAdminFetch } from "@/lib/admin/use-admin-fetch";
 import { mapAuditDetail, mapAuditProof } from "@/lib/admin/mappers";
 import type { MappedAuditDetail, MappedAuditProof } from "@/lib/admin/types";
@@ -444,9 +443,5 @@ function BackLink() {
 
 export default function AuditDetailPage() {
   const { log_id } = useParams<{ log_id: string }>();
-  return (
-    <AdminShell>
-      <AuditDetailContent logId={log_id} />
-    </AdminShell>
-  );
+  return <AuditDetailContent logId={log_id} />;
 }

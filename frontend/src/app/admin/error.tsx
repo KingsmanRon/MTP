@@ -32,7 +32,7 @@ export default function AdminError({
       <h1 className="mb-1 text-lg font-semibold">Something went wrong</h1>
       <p className="mb-6 max-w-md text-sm text-muted-foreground">
         This page hit an unexpected error and couldn&apos;t be displayed. You
-        can try again or head back to the dashboard.
+        can try again or head back to the console.
       </p>
       <div className="flex items-center gap-3">
         <button
@@ -47,7 +47,7 @@ export default function AdminError({
           className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm text-brandInk hover:underline"
         >
           <ArrowLeft className="h-4 w-4" />
-          Back to dashboard
+          Back to console
         </Link>
       </div>
     </div>

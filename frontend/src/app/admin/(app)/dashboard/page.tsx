@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState, useEffect } from "react";
+import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { StatsCard } from "@/components/stats-card";
 import { LoadingState } from "@/components/loading-state";
@@ -161,12 +162,12 @@ export default function AdminDashboard() {
                 Review and acknowledge alerts to maintain security posture
               </p>
             </div>
-            <a
+            <Link
               href="/admin/alerts"
-              className="text-sm font-medium text-primary hover:underline"
+              className="shrink-0 text-sm font-medium text-primary hover:underline"
             >
               View Alerts
-            </a>
+            </Link>
           </CardContent>
         </Card>
       )}
@@ -231,23 +232,27 @@ export default function AdminDashboard() {
                 recentLogs.map((log) => (
                   <div
                     key={log.id}
-                    className="flex items-center justify-between py-2 border-b last:border-0"
+                    className="flex items-center justify-between gap-3 py-2 border-b last:border-0"
                   >
-                    <div className="flex items-center gap-3">
+                    <div className="flex min-w-0 items-center gap-3">
                       <div
-                        className={`w-2 h-2 rounded-full ${
+                        className={`h-2 w-2 shrink-0 rounded-full ${
                           log.verdict === "approved" ? "bg-success" : "bg-destructive"
                         }`}
                       />
-                      <div>
-                        <p className="font-medium text-sm">{log.agent_name || "Unknown Agent"}</p>
-                        <span className="inline-block text-xs font-mono bg-muted px-1.5 py-0.5 rounded">{log.action_type}</span>
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium">
+                          {log.agent_name || "Unknown Agent"}
+                        </p>
+                        <span className="inline-block max-w-full truncate rounded bg-muted px-1.5 py-0.5 align-bottom text-xs font-mono">
+                          {log.action_type}
+                        </span>
                       </div>
                     </div>
-                    <div className="flex items-center gap-4">
+                    <div className="flex shrink-0 items-center gap-2 sm:gap-3">
                       <TrustScoreBadge score={log.trust_score_at_time} />
                       <VerdictBadge verdict={log.verdict} showIcon={false} />
-                      <span className="text-xs text-muted-foreground w-16 text-right">
+                      <span className="whitespace-nowrap text-right text-xs text-muted-foreground">
                         {formatRelative(log.timestamp)}
                       </span>
                     </div>

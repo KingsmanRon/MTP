@@ -67,7 +67,7 @@ export function TrustScoreBadge({ score }: TrustScoreBadgeProps) {
   return (
     <span
       className={cn(
-        "inline-flex items-center justify-center px-2 py-0.5 rounded-full text-xs font-medium",
+        "inline-flex shrink-0 items-center justify-center whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium tabular-nums",
         getTrustScoreBgColor(score),
         getTrustScoreColor(score)
       )}
