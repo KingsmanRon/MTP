@@ -29,13 +29,21 @@ import pytest
 
 asyncpg = pytest.importorskip("asyncpg")
 
+from asyncpg.exceptions import InterfaceError  # noqa: E402
+
 from api.core.authority.decision import DecisionReason  # noqa: E402
 from api.core.authority.lifecycle import ConsumptionOutcome  # noqa: E402
 from api.database import Database  # noqa: E402
+from api.models import ActionVerdict, AuditLogEntry  # noqa: E402
 from api.persistence.authority_store import (  # noqa: E402
+    MAX_EXECUTION_AUTHORITY_TTL,
+    AuthorityState,
     AuthorityStore,
+    GrantLifetimeError,
     IssueOutcome,
+    OutcomeState,
     authority_scope_digest,
+    clamp_grant_expiry,
     issuance_digest,
 )
 
@@ -55,6 +63,10 @@ POLICY_HASH = "b" * 64
 BINDING = "c" * 64
 FORMAT = "inntris-payment-authority-policy-v1"
 
+#: Set by the fixture so helpers do not have to thread the organisation
+#: through every call. Identity still comes from the fixture, never a payload.
+ORG_BY_AGENT: dict[UUID, UUID] = {}
+
 
 def action_hash(seed: str) -> str:
     return hashlib.sha256(seed.encode("utf-8")).hexdigest()
@@ -71,7 +83,12 @@ async def db() -> AsyncIterator[Database]:
 
 @pytest.fixture
 async def org_and_agent(db: Database):
-    """A fresh organisation and agent, cleaned up afterwards."""
+    async for pair in _make_org_and_agent(db):
+        yield pair
+
+
+async def _make_org_and_agent(db: Database):
+    """A fresh organisation and its production-approved agent."""
     org_id = uuid4()
     agent_id = uuid4()
     async with db.acquire() as conn:
@@ -114,7 +131,15 @@ async def org_and_agent(db: Database):
                 }
             ),
         )
+    ORG_BY_AGENT[agent_id] = org_id
     yield org_id, agent_id
+
+
+@pytest.fixture
+async def second_org_and_agent(db: Database):
+    """A second, unrelated tenant for the isolation assertions."""
+    async for pair in _make_org_and_agent(db):
+        yield pair
 
 
 def _static_policy(policy_hash: str = POLICY_HASH):
@@ -131,24 +156,31 @@ async def issue(
     agent_id: UUID,
     *,
     issuance_ref: str,
+    org_id: UUID | None = None,
     amount: Decimal = Decimal("0"),
     seed: str = "act-1",
     daily_limit: Decimal = Decimal("10000"),
     scope_digest: str | None = None,
     policy_hash: str = POLICY_HASH,
+    policy_revision: str = "revision-1",
+    binding: str = BINDING,
+    authority_expires_at: datetime | None = None,
+    expires_at: datetime | None = None,
 ):
     now = datetime.now(UTC)
     return await store.issue(
         agent_id=agent_id,
+        organisation_id=org_id if org_id is not None else ORG_BY_AGENT[agent_id],
         issuance_ref=issuance_ref,
         execution_action_hash=action_hash(seed),
         policy_hash=policy_hash,
         policy_snapshot_format=FORMAT,
-        policy_revision="revision-1",
-        executor_binding_digest=BINDING,
+        policy_revision=policy_revision,
+        executor_binding_digest=binding,
         domain="payment",
         action_type="financial_transaction",
-        expires_at=now + timedelta(minutes=5),
+        expires_at=expires_at if expires_at is not None else now + timedelta(minutes=5),
+        authority_expires_at=authority_expires_at,
         minute_start=now.replace(second=0, microsecond=0),
         day_start=now.replace(hour=0, minute=0, second=0, microsecond=0),
         rate_limit_per_minute=1000,
@@ -898,11 +930,13 @@ class TestTenantIsolation:
 class TestIssuanceDigest:
     def test_it_ignores_timestamps_so_a_late_retry_still_matches(self) -> None:
         common = {
+            "organisation_id": UUID(int=2),
             "agent_id": UUID(int=1),
             "issuance_ref": "ref",
             "execution_action_hash": action_hash("x"),
             "signed_action_hash": None,
             "policy_hash": POLICY_HASH,
+            "policy_revision": "revision-1",
             "executor_binding_digest": BINDING,
             "amount_usd": Decimal("10.00"),
             "domain": "payment",
@@ -921,15 +955,19 @@ class TestIssuanceDigest:
             ("amount_usd", Decimal("11.00")),
             ("action_type", "wallet_transaction"),
             ("authority_scope_digest", DIGEST_A),
+            ("organisation_id", UUID(int=99)),
+            ("policy_revision", "revision-2"),
         ],
     )
     def test_changed_material_changes_the_digest(self, field, value) -> None:
         common = {
+            "organisation_id": UUID(int=2),
             "agent_id": UUID(int=1),
             "issuance_ref": "ref",
             "execution_action_hash": action_hash("x"),
             "signed_action_hash": None,
             "policy_hash": POLICY_HASH,
+            "policy_revision": "revision-1",
             "executor_binding_digest": BINDING,
             "amount_usd": Decimal("10.00"),
             "domain": "payment",
@@ -938,3 +976,664 @@ class TestIssuanceDigest:
             "authority_scope_digest": None,
         }
         assert issuance_digest(**{**common, field: value}) != issuance_digest(**common)
+
+
+class TestARefusalDoesNotBurnTheGrant:
+    """A mismatch must not spend authority the caller was never granted.
+
+    Otherwise a wrong executor, or a caller presenting the wrong act, could
+    destroy a legitimate grant by simply failing at it.
+    """
+
+    async def test_a_wrong_executor_leaves_the_grant_consumable(
+        self, db, org_and_agent
+    ) -> None:
+        _org, agent_id = org_and_agent
+        store = AuthorityStore(db, current_policy_resolver=_static_policy())
+        issued = await issue(store, agent_id, issuance_ref="b-1", seed="b-1")
+
+        refused = await store.consume(
+            grant_id=issued.grant_id,
+            execution_action_hash=action_hash("b-1"),
+            executor_binding_digest="d" * 64,
+            execution_ref="exec-b1-wrong",
+        )
+        assert refused.rejection_reason is DecisionReason.GRANT_EXECUTOR_MISMATCH
+        assert (await store.get(issued.grant_id))["status"] == "active"
+
+        correct = await store.consume(
+            grant_id=issued.grant_id,
+            execution_action_hash=action_hash("b-1"),
+            executor_binding_digest=BINDING,
+            execution_ref="exec-b1-right",
+        )
+        assert correct.outcome is ConsumptionOutcome.AUTHORISED
+
+    async def test_a_changed_action_leaves_the_grant_consumable(
+        self, db, org_and_agent
+    ) -> None:
+        _org, agent_id = org_and_agent
+        store = AuthorityStore(db, current_policy_resolver=_static_policy())
+        issued = await issue(store, agent_id, issuance_ref="b-2", seed="b-2")
+
+        refused = await store.consume(
+            grant_id=issued.grant_id,
+            execution_action_hash=action_hash("a-tampered-act"),
+            executor_binding_digest=BINDING,
+            execution_ref="exec-b2-wrong",
+        )
+        assert refused.rejection_reason is DecisionReason.GRANT_ACTION_MISMATCH
+        assert (await store.get(issued.grant_id))["status"] == "active"
+
+        original = await store.consume(
+            grant_id=issued.grant_id,
+            execution_action_hash=action_hash("b-2"),
+            executor_binding_digest=BINDING,
+            execution_ref="exec-b2-right",
+        )
+        assert original.outcome is ConsumptionOutcome.AUTHORISED
+
+    async def test_a_refused_consumption_claims_no_token(
+        self, db, org_and_agent
+    ) -> None:
+        _org, agent_id = org_and_agent
+        store = AuthorityStore(db, current_policy_resolver=_static_policy())
+        issued = await issue(store, agent_id, issuance_ref="b-3", seed="b-3")
+        await store.consume(
+            grant_id=issued.grant_id,
+            execution_action_hash=action_hash("wrong"),
+            executor_binding_digest=BINDING,
+            execution_ref="exec-b3",
+        )
+        async with db.acquire() as conn:
+            claims = await conn.fetchval(
+                "SELECT COUNT(*) FROM approval_token_consumptions WHERE token_id = $1",
+                issued.approval_token_id,
+            )
+        assert claims == 0
+
+
+class TestDatabaseFailureFailsClosed:
+    async def test_a_broken_connection_yields_no_authority(
+        self, org_and_agent
+    ) -> None:
+        """No database, no grant. Never an optimistic success."""
+        _org, agent_id = org_and_agent
+        broken = await Database.create(DATABASE_URL, min_size=1, max_size=2)
+        await broken.close()
+        store = AuthorityStore(broken, current_policy_resolver=_static_policy())
+        with pytest.raises((asyncpg.PostgresError, InterfaceError, RuntimeError)):
+            await issue(store, agent_id, issuance_ref="f-1", seed="f-1")
+
+    async def test_a_broken_connection_yields_no_consumption(
+        self, db, org_and_agent
+    ) -> None:
+        _org, agent_id = org_and_agent
+        store = AuthorityStore(db, current_policy_resolver=_static_policy())
+        issued = await issue(store, agent_id, issuance_ref="f-2", seed="f-2")
+
+        broken = await Database.create(DATABASE_URL, min_size=1, max_size=2)
+        await broken.close()
+        failing = AuthorityStore(broken, current_policy_resolver=_static_policy())
+        with pytest.raises((asyncpg.PostgresError, InterfaceError, RuntimeError)):
+            await failing.consume(
+                grant_id=issued.grant_id,
+                execution_action_hash=action_hash("f-2"),
+                executor_binding_digest=BINDING,
+                execution_ref="exec-f2",
+            )
+        assert (await store.get(issued.grant_id))["status"] == "active"
+        async with db.acquire() as conn:
+            claims = await conn.fetchval(
+                "SELECT COUNT(*) FROM approval_token_consumptions WHERE token_id = $1",
+                issued.approval_token_id,
+            )
+        assert claims == 0
+
+    async def test_a_resolver_that_cannot_answer_refuses(
+        self, db, org_and_agent
+    ) -> None:
+        """A policy that cannot be re-derived is not a policy that permits."""
+        _org, agent_id = org_and_agent
+        store = AuthorityStore(db, current_policy_resolver=_static_policy())
+        issued = await issue(store, agent_id, issuance_ref="f-3", seed="f-3")
+
+        def unavailable(_agent, _action_type, _domain):
+            raise ValueError("policy source unavailable")
+
+        blind = AuthorityStore(db, current_policy_resolver=unavailable)
+        result = await blind.consume(
+            grant_id=issued.grant_id,
+            execution_action_hash=action_hash("f-3"),
+            executor_binding_digest=BINDING,
+            execution_ref="exec-f3",
+        )
+        assert result.rejection_reason is DecisionReason.POLICY_HASH_MISMATCH
+
+
+class TestGrantLifetimeIsClamped:
+    def test_the_configured_ttl_is_the_ceiling(self) -> None:
+        issued = datetime(2026, 4, 17, 12, 0, tzinfo=UTC)
+        assert clamp_grant_expiry(
+            issued_at=issued, requested_expires_at=issued + timedelta(days=1)
+        ) == issued + MAX_EXECUTION_AUTHORITY_TTL
+
+    def test_a_delegated_expiry_wins_when_it_is_tighter(self) -> None:
+        issued = datetime(2026, 4, 17, 12, 0, tzinfo=UTC)
+        assert clamp_grant_expiry(
+            issued_at=issued,
+            requested_expires_at=issued + timedelta(minutes=5),
+            authority_expires_at=issued + timedelta(minutes=2),
+        ) == issued + timedelta(minutes=2)
+
+    def test_any_tighter_trusted_bound_wins(self) -> None:
+        issued = datetime(2026, 4, 17, 12, 0, tzinfo=UTC)
+        assert clamp_grant_expiry(
+            issued_at=issued,
+            authority_expires_at=issued + timedelta(minutes=4),
+            additional_bounds=(issued + timedelta(seconds=30),),
+        ) == issued + timedelta(seconds=30)
+
+    async def test_a_grant_never_outlives_its_delegated_authority(
+        self, db, org_and_agent
+    ) -> None:
+        _org, agent_id = org_and_agent
+        store = AuthorityStore(db, current_policy_resolver=_static_policy())
+        cap = datetime.now(UTC) + timedelta(minutes=1)
+        issued = await issue(
+            store, agent_id, issuance_ref="l-1", seed="l-1", authority_expires_at=cap
+        )
+        row = await store.get(issued.grant_id)
+        assert row["expires_at"] <= cap
+
+    async def test_an_already_expired_delegation_issues_nothing(
+        self, db, org_and_agent
+    ) -> None:
+        _org, agent_id = org_and_agent
+        store = AuthorityStore(db, current_policy_resolver=_static_policy())
+        with pytest.raises(GrantLifetimeError):
+            await issue(
+                store,
+                agent_id,
+                issuance_ref="l-2",
+                seed="l-2",
+                authority_expires_at=datetime.now(UTC) - timedelta(minutes=1),
+            )
+
+    async def test_the_database_refuses_a_grant_beyond_its_delegation(
+        self, db, org_and_agent
+    ) -> None:
+        """Belt and braces: the clamp is application code, this is the schema."""
+        org_id, agent_id = org_and_agent
+        async with db.acquire() as conn:
+            with pytest.raises(asyncpg.CheckViolationError, match="within_delegated"):
+                await conn.execute(
+                    """
+                    INSERT INTO execution_authority_grants (
+                        agent_id, org_id, issuance_ref, issuance_digest,
+                        execution_action_hash, policy_hash,
+                        policy_snapshot_format, policy_revision,
+                        executor_binding_digest, domain, action_type,
+                        approval_token_id, expires_at, authority_expires_at
+                    ) VALUES (
+                        $1, $2, 'beyond', $3, $4, $5, $6, 'r', $7,
+                        'payment', 'financial_transaction', $8,
+                        NOW() + INTERVAL '10 min', NOW() + INTERVAL '1 min'
+                    )
+                    """,
+                    agent_id,
+                    org_id,
+                    DIGEST_A,
+                    action_hash("beyond"),
+                    POLICY_HASH,
+                    FORMAT,
+                    BINDING,
+                    secrets.token_urlsafe(24),
+                )
+
+
+class TestDelegationRevocationAndExpiry:
+    async def test_a_revoked_delegation_is_refused_distinctly(
+        self, db, org_and_agent
+    ) -> None:
+        _org, agent_id = org_and_agent
+        store = AuthorityStore(db, current_policy_resolver=_static_policy())
+        issued = await issue(store, agent_id, issuance_ref="d-1", seed="d-1")
+        result = await store.consume(
+            grant_id=issued.grant_id,
+            execution_action_hash=action_hash("d-1"),
+            executor_binding_digest=BINDING,
+            execution_ref="exec-d1",
+            authority_state=AuthorityState(revoked=True),
+        )
+        assert result.rejection_reason is DecisionReason.AUTHORITY_REVOKED
+
+    async def test_an_expired_delegation_is_refused_distinctly(
+        self, db, org_and_agent
+    ) -> None:
+        _org, agent_id = org_and_agent
+        store = AuthorityStore(db, current_policy_resolver=_static_policy())
+        issued = await issue(store, agent_id, issuance_ref="d-2", seed="d-2")
+        result = await store.consume(
+            grant_id=issued.grant_id,
+            execution_action_hash=action_hash("d-2"),
+            executor_binding_digest=BINDING,
+            execution_ref="exec-d2",
+            authority_state=AuthorityState(
+                expires_at=datetime.now(UTC) - timedelta(seconds=1)
+            ),
+        )
+        assert result.rejection_reason is DecisionReason.AUTHORITY_EXPIRED
+
+    async def test_a_delegation_that_no_longer_verifies_is_refused(
+        self, db, org_and_agent
+    ) -> None:
+        _org, agent_id = org_and_agent
+        store = AuthorityStore(db, current_policy_resolver=_static_policy())
+        issued = await issue(store, agent_id, issuance_ref="d-3", seed="d-3")
+        result = await store.consume(
+            grant_id=issued.grant_id,
+            execution_action_hash=action_hash("d-3"),
+            executor_binding_digest=BINDING,
+            execution_ref="exec-d3",
+            authority_state=AuthorityState(verified=False),
+        )
+        assert result.rejection_reason is DecisionReason.AUTHORITY_VERIFICATION_FAILED
+
+    async def test_a_still_valid_delegation_consumes(self, db, org_and_agent) -> None:
+        _org, agent_id = org_and_agent
+        store = AuthorityStore(db, current_policy_resolver=_static_policy())
+        issued = await issue(store, agent_id, issuance_ref="d-4", seed="d-4")
+        result = await store.consume(
+            grant_id=issued.grant_id,
+            execution_action_hash=action_hash("d-4"),
+            executor_binding_digest=BINDING,
+            execution_ref="exec-d4",
+            authority_state=AuthorityState(
+                expires_at=datetime.now(UTC) + timedelta(minutes=10)
+            ),
+        )
+        assert result.outcome is ConsumptionOutcome.AUTHORISED
+
+
+class TestOutcomeNeverReleasesReservedSpend:
+    """A timeout is not proof that no money moved."""
+
+    async def _consumed_grant(self, db, agent_id, ref):
+        store = AuthorityStore(db, current_policy_resolver=_static_policy())
+        issued = await issue(
+            store, agent_id, issuance_ref=ref, seed=ref, amount=Decimal("250")
+        )
+        await store.consume(
+            grant_id=issued.grant_id,
+            execution_action_hash=action_hash(ref),
+            executor_binding_digest=BINDING,
+            execution_ref=f"exec-{ref}",
+        )
+        return store, issued
+
+    async def _reserved_total(self, db, agent_id) -> Decimal:
+        async with db.acquire() as conn:
+            return Decimal(
+                await conn.fetchval(
+                    """
+                    SELECT COALESCE(SUM(amount_usd), 0) FROM spend_reservations
+                    WHERE agent_id = $1 AND status IN ('reserved', 'consumed')
+                    """,
+                    agent_id,
+                )
+            )
+
+    @pytest.mark.parametrize(
+        "state",
+        [
+            OutcomeState.SUCCEEDED,
+            OutcomeState.FAILED_FINAL,
+            OutcomeState.OUTCOME_UNKNOWN,
+        ],
+    )
+    async def test_no_outcome_releases_the_reservation(
+        self, db, org_and_agent, state
+    ) -> None:
+        _org, agent_id = org_and_agent
+        store, issued = await self._consumed_grant(db, agent_id, f"o-{state.value}")
+        before = await self._reserved_total(db, agent_id)
+        assert await store.record_outcome(grant_id=issued.grant_id, outcome_state=state)
+        assert await self._reserved_total(db, agent_id) == before
+
+        async with db.acquire() as conn:
+            status = await conn.fetchval(
+                "SELECT status FROM spend_reservations WHERE approval_token_id = $1",
+                issued.approval_token_id,
+            )
+        assert status == "consumed", "a recorded outcome never un-charges the spend"
+
+    async def test_an_unknown_outcome_may_later_be_resolved_by_evidence(
+        self, db, org_and_agent
+    ) -> None:
+        _org, agent_id = org_and_agent
+        store, issued = await self._consumed_grant(db, agent_id, "o-resolve")
+        await store.record_outcome(
+            grant_id=issued.grant_id, outcome_state=OutcomeState.OUTCOME_UNKNOWN
+        )
+        assert await store.record_outcome(
+            grant_id=issued.grant_id,
+            outcome_state=OutcomeState.SUCCEEDED,
+            outcome_reference="rail-reference-1",
+        )
+        row = await store.get(issued.grant_id)
+        assert row["outcome_state"] == "succeeded"
+        assert row["outcome_reference"] == "rail-reference-1"
+
+    async def test_a_settled_outcome_cannot_be_reopened(
+        self, db, org_and_agent
+    ) -> None:
+        _org, agent_id = org_and_agent
+        store, issued = await self._consumed_grant(db, agent_id, "o-final")
+        await store.record_outcome(
+            grant_id=issued.grant_id, outcome_state=OutcomeState.SUCCEEDED
+        )
+        async with db.acquire() as conn:
+            with pytest.raises(asyncpg.RaiseError, match="cannot transition"):
+                await conn.execute(
+                    """
+                    UPDATE execution_authority_grants
+                    SET outcome_state = 'outcome_unknown' WHERE id = $1
+                    """,
+                    issued.grant_id,
+                )
+
+    async def test_an_unconsumed_grant_cannot_carry_an_outcome(
+        self, db, org_and_agent
+    ) -> None:
+        _org, agent_id = org_and_agent
+        store = AuthorityStore(db, current_policy_resolver=_static_policy())
+        issued = await issue(store, agent_id, issuance_ref="o-unspent", seed="o-unspent")
+        assert not await store.record_outcome(
+            grant_id=issued.grant_id, outcome_state=OutcomeState.SUCCEEDED
+        )
+        assert (await store.get(issued.grant_id))["outcome_state"] == "pending"
+
+
+class TestLegacyApprovalTokenCompatibility:
+    """One authoritative consumption state, reached two ways.
+
+    A legacy approval token simply has no grant row. Nothing about its
+    behaviour changes, nothing is converted, and both paths claim through
+    the same table -- so the two can never disagree about whether authority
+    was consumed.
+    """
+
+    def _entry(self, agent_id) -> AuditLogEntry:
+        return AuditLogEntry(
+            agent_id=agent_id,
+            action_type="financial_transaction",
+            action_hash=action_hash("legacy"),
+            payload={"amount": "1.00"},
+            verdict=ActionVerdict.APPROVED,
+            verdict_reason="legacy path",
+            signature=b"LEGACY_TEST_SIGNATURE",
+            signature_valid=True,
+            request_ip=None,
+            request_user_agent=None,
+            response_time_ms=None,
+            trust_score_at_time=80,
+            chain_previous_hash=None,
+            policy_hash=POLICY_HASH,
+        )
+
+    async def test_a_legacy_token_still_consumes_exactly_once(
+        self, db, org_and_agent
+    ) -> None:
+        _org, agent_id = org_and_agent
+        token_id = secrets.token_urlsafe(24)
+        digest = hashlib.sha256(token_id.encode()).digest()
+
+        first = await db.insert_token_consumption(
+            self._entry(agent_id),
+            token_id=token_id,
+            token_digest=digest,
+            approved_action_hash=action_hash("legacy"),
+            execution_ref="legacy-exec-1",
+        )
+        assert first is not None
+        assert first[1] == "consumed"
+
+        second = await db.insert_token_consumption(
+            self._entry(agent_id),
+            token_id=token_id,
+            token_digest=digest,
+            approved_action_hash=action_hash("legacy"),
+            execution_ref="legacy-exec-1",
+        )
+        assert second == (first[0], "idempotent"), "same ref replays the original"
+
+        third = await db.insert_token_consumption(
+            self._entry(agent_id),
+            token_id=token_id,
+            token_digest=digest,
+            approved_action_hash=action_hash("legacy"),
+            execution_ref="legacy-exec-2",
+        )
+        assert third is None, "a different ref is still refused"
+
+    async def test_a_legacy_token_has_no_grant_and_needs_none(
+        self, db, org_and_agent
+    ) -> None:
+        _org, agent_id = org_and_agent
+        token_id = secrets.token_urlsafe(24)
+        await db.insert_token_consumption(
+            self._entry(agent_id),
+            token_id=token_id,
+            token_digest=hashlib.sha256(token_id.encode()).digest(),
+            approved_action_hash=action_hash("legacy"),
+            execution_ref="legacy-exec-3",
+        )
+        async with db.acquire() as conn:
+            grants = await conn.fetchval(
+                """
+                SELECT COUNT(*) FROM execution_authority_grants
+                WHERE approval_token_id = $1
+                """,
+                token_id,
+            )
+            claims = await conn.fetchval(
+                "SELECT COUNT(*) FROM approval_token_consumptions WHERE token_id = $1",
+                token_id,
+            )
+        assert grants == 0, "no conversion, no backfill, no shadow row"
+        assert claims == 1, "the same table is still the authority"
+
+    async def test_both_paths_share_one_consumption_table(
+        self, db, org_and_agent
+    ) -> None:
+        """The property that makes two sources of truth impossible."""
+        _org, agent_id = org_and_agent
+        store = AuthorityStore(db, current_policy_resolver=_static_policy())
+        issued = await issue(store, agent_id, issuance_ref="mix-1", seed="mix-1")
+        await store.consume(
+            grant_id=issued.grant_id,
+            execution_action_hash=action_hash("mix-1"),
+            executor_binding_digest=BINDING,
+            execution_ref="exec-mix-1",
+        )
+        legacy_token = secrets.token_urlsafe(24)
+        await db.insert_token_consumption(
+            self._entry(agent_id),
+            token_id=legacy_token,
+            token_digest=hashlib.sha256(legacy_token.encode()).digest(),
+            approved_action_hash=action_hash("legacy"),
+            execution_ref="legacy-exec-4",
+        )
+        async with db.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT token_id FROM approval_token_consumptions
+                WHERE token_id = ANY($1::TEXT[])
+                """,
+                [issued.approval_token_id, legacy_token],
+            )
+        assert {row["token_id"] for row in rows} == {
+            issued.approval_token_id,
+            legacy_token,
+        }
+
+    async def test_a_grant_backed_token_cannot_be_double_claimed_legacily(
+        self, db, org_and_agent
+    ) -> None:
+        """The legacy path cannot spend a grant behind the store's back."""
+        _org, agent_id = org_and_agent
+        store = AuthorityStore(db, current_policy_resolver=_static_policy())
+        issued = await issue(store, agent_id, issuance_ref="mix-2", seed="mix-2")
+        await store.consume(
+            grant_id=issued.grant_id,
+            execution_action_hash=action_hash("mix-2"),
+            executor_binding_digest=BINDING,
+            execution_ref="exec-mix-2",
+        )
+        replay = await db.insert_token_consumption(
+            self._entry(agent_id),
+            token_id=issued.approval_token_id,
+            token_digest=hashlib.sha256(issued.approval_token_id.encode()).digest(),
+            approved_action_hash=action_hash("mix-2"),
+            execution_ref="a-different-ref",
+        )
+        assert replay is None
+
+
+class TestCrossTenantIdempotency:
+    async def test_two_tenants_may_use_the_same_issuance_reference(
+        self, db, org_and_agent, second_org_and_agent
+    ) -> None:
+        """Idempotency is scoped per principal, not globally."""
+        _org_a, agent_a = org_and_agent
+        _org_b, agent_b = second_org_and_agent
+        store = AuthorityStore(db, current_policy_resolver=_static_policy())
+
+        first = await issue(store, agent_a, issuance_ref="shared-ref", seed="x-a")
+        second = await issue(store, agent_b, issuance_ref="shared-ref", seed="x-b")
+        assert first.outcome is IssueOutcome.ISSUED
+        assert second.outcome is IssueOutcome.ISSUED
+        assert first.grant_id != second.grant_id
+
+    async def test_one_tenants_reference_cannot_return_anothers_grant(
+        self, db, org_and_agent, second_org_and_agent
+    ) -> None:
+        _org_a, agent_a = org_and_agent
+        _org_b, agent_b = second_org_and_agent
+        store = AuthorityStore(db, current_policy_resolver=_static_policy())
+        mine = await issue(store, agent_a, issuance_ref="ref-mine", seed="same-act")
+        theirs = await issue(store, agent_b, issuance_ref="ref-mine", seed="same-act")
+        assert theirs.grant_id != mine.grant_id
+        assert theirs.approval_token_id != mine.approval_token_id
+
+
+class TestCompositeOwnershipIntegrity:
+    async def test_a_grant_cannot_name_an_organisation_that_does_not_own_it(
+        self, db, org_and_agent, second_org_and_agent
+    ) -> None:
+        _org_a, agent_a = org_and_agent
+        org_b, _agent_b = second_org_and_agent
+        async with db.acquire() as conn:
+            with pytest.raises(asyncpg.ForeignKeyViolationError):
+                await conn.execute(
+                    """
+                    INSERT INTO execution_authority_grants (
+                        agent_id, org_id, issuance_ref, issuance_digest,
+                        execution_action_hash, policy_hash,
+                        policy_snapshot_format, policy_revision,
+                        executor_binding_digest, domain, action_type,
+                        approval_token_id, expires_at
+                    ) VALUES (
+                        $1, $2, 'mismatched-owner', $3, $4, $5, $6, 'r', $7,
+                        'payment', 'financial_transaction', $8,
+                        NOW() + INTERVAL '5 min'
+                    )
+                    """,
+                    agent_a,
+                    org_b,
+                    DIGEST_A,
+                    action_hash("mismatch"),
+                    POLICY_HASH,
+                    FORMAT,
+                    BINDING,
+                    secrets.token_urlsafe(24),
+                )
+
+    async def test_a_grant_cannot_be_repointed_to_another_tenant(
+        self, db, org_and_agent, second_org_and_agent
+    ) -> None:
+        _org_a, agent_a = org_and_agent
+        org_b, _agent_b = second_org_and_agent
+        store = AuthorityStore(db, current_policy_resolver=_static_policy())
+        issued = await issue(store, agent_a, issuance_ref="own-1", seed="own-1")
+        async with db.acquire() as conn:
+            with pytest.raises(asyncpg.RaiseError, match="immutable"):
+                await conn.execute(
+                    "UPDATE execution_authority_grants SET org_id = $2 WHERE id = $1",
+                    issued.grant_id,
+                    org_b,
+                )
+
+
+class TestRestrictedRoleExecution:
+    """The isolation that matters is the one the service actually runs under."""
+
+    async def test_the_restricted_role_sees_only_its_own_tenants_grant(
+        self, db, org_and_agent, second_org_and_agent
+    ) -> None:
+        org_a, agent_a = org_and_agent
+        org_b, _agent_b = second_org_and_agent
+        store = AuthorityStore(db, current_policy_resolver=_static_policy())
+        mine = await issue(store, agent_a, issuance_ref="role-1", seed="role-1")
+
+        async with db.acquire_as_tenant(org_a) as conn:
+            assert await conn.fetchval("SELECT current_user") == "inntris_api"
+            assert (
+                await conn.fetchval(
+                    "SELECT COUNT(*) FROM execution_authority_grants WHERE id = $1",
+                    mine.grant_id,
+                )
+                == 1
+            )
+        async with db.acquire_as_tenant(org_b) as conn:
+            assert (
+                await conn.fetchval(
+                    "SELECT COUNT(*) FROM execution_authority_grants WHERE id = $1",
+                    mine.grant_id,
+                )
+                == 0
+            )
+
+    async def test_the_restricted_role_cannot_consume_another_tenants_grant(
+        self, db, org_and_agent, second_org_and_agent
+    ) -> None:
+        _org_a, agent_a = org_and_agent
+        org_b, _agent_b = second_org_and_agent
+        store = AuthorityStore(db, current_policy_resolver=_static_policy())
+        mine = await issue(store, agent_a, issuance_ref="role-2", seed="role-2")
+
+        async with db.acquire_as_tenant(org_b) as conn:
+            updated = await conn.execute(
+                """
+                UPDATE execution_authority_grants
+                SET status = 'consumed', consumed_at = NOW()
+                WHERE id = $1
+                """,
+                mine.grant_id,
+            )
+        assert updated == "UPDATE 0", "invisible rows cannot be transitioned"
+        assert (await store.get(mine.grant_id))["status"] == "active"
+
+    async def test_the_restricted_role_holds_no_delete_privilege(
+        self, db, org_and_agent
+    ) -> None:
+        org_id, agent_id = org_and_agent
+        store = AuthorityStore(db, current_policy_resolver=_static_policy())
+        issued = await issue(store, agent_id, issuance_ref="role-3", seed="role-3")
+        async with db.acquire_as_tenant(org_id) as conn:
+            with pytest.raises(asyncpg.InsufficientPrivilegeError):
+                await conn.execute(
+                    "DELETE FROM execution_authority_grants WHERE id = $1",
+                    issued.grant_id,
+                )

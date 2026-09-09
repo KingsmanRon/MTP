@@ -19,9 +19,20 @@
 -- snapshot the decision was made under, the executor binding, and the
 -- issuance identity that makes issuance itself idempotent.
 
+-- Composite ownership. A grant names both the principal and the organisation
+-- it belongs to, and a composite foreign key makes it impossible for those two
+-- to disagree: a grant cannot be written, or later re-pointed, at an agent that
+-- belongs to a different tenant. agents.id is already unique, so this added
+-- UNIQUE is a referencable projection of existing truth, not a new rule.
+ALTER TABLE agents
+    DROP CONSTRAINT IF EXISTS agents_id_org_unique;
+ALTER TABLE agents
+    ADD CONSTRAINT agents_id_org_unique UNIQUE (id, org_id);
+
 CREATE TABLE IF NOT EXISTS execution_authority_grants (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     agent_id UUID NOT NULL REFERENCES agents(id) ON DELETE RESTRICT,
+    org_id UUID NOT NULL REFERENCES organizations(id) ON DELETE RESTRICT,
 
     -- Issuance identity. Two attempts sharing a reference are the same
     -- logical issuance; the digest decides whether they are the same request.
@@ -69,7 +80,20 @@ CREATE TABLE IF NOT EXISTS execution_authority_grants (
     status TEXT NOT NULL DEFAULT 'active',
 
     issued_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    -- expires_at is clamped at issuance to the earliest of the configured
+    -- execution-authority TTL, the delegated authority's own expiry, and any
+    -- tighter trusted bound. authority_expires_at records the delegated bound
+    -- that participated in that clamp, so the constraint below can enforce it.
     expires_at TIMESTAMPTZ NOT NULL,
+    authority_expires_at TIMESTAMPTZ,
+
+    -- External side-effect boundary. Authority persistence owns this state;
+    -- rail settlement does not live in Core. The critical rule is encoded in
+    -- the CHECK below: an unknown outcome never releases reserved spend.
+    outcome_state TEXT NOT NULL DEFAULT 'pending',
+    outcome_reference TEXT,
+    outcome_recorded_at TIMESTAMPTZ,
+    outcome_detail TEXT,
     consumed_at TIMESTAMPTZ,
     revoked_at TIMESTAMPTZ,
     revocation_reason TEXT,
@@ -103,6 +127,9 @@ CREATE TABLE IF NOT EXISTS execution_authority_grants (
     CONSTRAINT execution_authority_action_type_not_blank CHECK (
         BTRIM(action_type) <> ''
     ),
+    -- The ownership pair must be one the agents table actually asserts.
+    CONSTRAINT execution_authority_owner_fk FOREIGN KEY (agent_id, org_id)
+        REFERENCES agents(id, org_id) ON DELETE RESTRICT,
     CONSTRAINT execution_authority_execution_ref_not_blank CHECK (
         execution_ref IS NULL
         OR (BTRIM(execution_ref) <> '' AND LENGTH(execution_ref) <= 512)
@@ -113,6 +140,21 @@ CREATE TABLE IF NOT EXISTS execution_authority_grants (
     -- from one decision.
     CONSTRAINT execution_authority_single_use_only CHECK (single_use),
     CONSTRAINT execution_authority_window_ordered CHECK (expires_at > issued_at),
+    -- A grant may never outlive the delegated authority it rests on.
+    CONSTRAINT execution_authority_within_delegated_validity CHECK (
+        authority_expires_at IS NULL OR expires_at <= authority_expires_at
+    ),
+    CONSTRAINT execution_authority_outcome_state_valid CHECK (
+        outcome_state IN ('pending', 'succeeded', 'failed_final', 'outcome_unknown')
+    ),
+    CONSTRAINT execution_authority_outcome_recorded CHECK (
+        (outcome_state = 'pending' AND outcome_recorded_at IS NULL)
+        OR (outcome_state <> 'pending' AND outcome_recorded_at IS NOT NULL)
+    ),
+    -- An outcome only exists for authority that was actually spent.
+    CONSTRAINT execution_authority_outcome_requires_consumption CHECK (
+        outcome_state = 'pending' OR status = 'consumed'
+    ),
     CONSTRAINT execution_authority_status_valid CHECK (
         status IN ('active', 'consumed', 'revoked', 'expired')
     ),
@@ -178,8 +220,29 @@ BEGIN
         RAISE EXCEPTION 'unknown execution authority status %', NEW.status;
     END IF;
 
+    -- Outcome transitions. An outcome may be recorded once from 'pending', and
+    -- an 'outcome_unknown' may later be RESOLVED by authoritative evidence into
+    -- 'succeeded' or 'failed_final'. Nothing returns to 'pending': a timeout is
+    -- not proof that no side effect occurred, so an unknown outcome is never
+    -- quietly cleared and never releases the spend it reserved.
+    IF OLD.outcome_state <> NEW.outcome_state THEN
+        IF OLD.outcome_state = 'pending' THEN
+            NULL;
+        ELSIF OLD.outcome_state = 'outcome_unknown'
+              AND NEW.outcome_state IN ('succeeded', 'failed_final') THEN
+            NULL;
+        ELSE
+            RAISE EXCEPTION
+                'execution authority outcome % cannot transition to %',
+                OLD.outcome_state, NEW.outcome_state;
+        END IF;
+    END IF;
+
     IF NEW.id <> OLD.id
        OR NEW.agent_id <> OLD.agent_id
+       OR NEW.org_id <> OLD.org_id
+       OR NEW.expires_at <> OLD.expires_at
+       OR NEW.authority_expires_at IS DISTINCT FROM OLD.authority_expires_at
        OR NEW.issuance_ref <> OLD.issuance_ref
        OR NEW.issuance_digest <> OLD.issuance_digest
        OR NEW.execution_action_hash <> OLD.execution_action_hash
@@ -201,7 +264,8 @@ BEGIN
 
     RETURN NEW;
 END;
-$$ LANGUAGE plpgsql;
+$$ LANGUAGE plpgsql
+SET search_path = pg_catalog, public;
 
 DROP TRIGGER IF EXISTS protect_execution_authority_transition
     ON execution_authority_grants;
@@ -223,25 +287,77 @@ ALTER TABLE execution_authority_grants ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS execution_authority_grants_tenant_scope
     ON execution_authority_grants;
+-- Keyed on the grant's own org_id rather than a join. The composite foreign
+-- key above guarantees that column equals the agent's owner, so this is the
+-- same predicate without a subquery an attacker could hope to influence.
 CREATE POLICY execution_authority_grants_tenant_scope
     ON execution_authority_grants
     FOR ALL
     TO inntris_api
-    USING (
-        EXISTS (
-            SELECT 1 FROM agents a
-            WHERE a.id = execution_authority_grants.agent_id
-              AND a.org_id = app.current_tenant()
-        )
-    )
-    WITH CHECK (
-        EXISTS (
-            SELECT 1 FROM agents a
-            WHERE a.id = execution_authority_grants.agent_id
-              AND a.org_id = app.current_tenant()
-        )
-    );
+    USING (org_id = app.current_tenant())
+    WITH CHECK (org_id = app.current_tenant());
 
 REVOKE ALL ON TABLE execution_authority_grants FROM PUBLIC;
 GRANT SELECT, INSERT, UPDATE ON execution_authority_grants TO inntris_api;
 GRANT SELECT, INSERT, UPDATE ON execution_authority_grants TO inntris_worker;
+
+-- Supabase defines anon/authenticated; a plain PostgreSQL database does not.
+-- Guard the REVOKE so the same migration tree stays portable, matching the
+-- convention established in 020_rls_hardening.sql.
+DO $$
+DECLARE
+    client_role TEXT;
+BEGIN
+    FOREACH client_role IN ARRAY ARRAY['anon', 'authenticated']
+    LOOP
+        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = client_role) THEN
+            EXECUTE format(
+                'REVOKE ALL PRIVILEGES ON TABLE public.execution_authority_grants FROM %I',
+                client_role
+            );
+        END IF;
+    END LOOP;
+END;
+$$;
+
+-- Drift guard, same shape as 020. Execution authority is a security-sensitive
+-- table: refuse to finish the migration if it lands without RLS, or with a
+-- direct browser-role privilege on it.
+DO $$
+DECLARE
+    rls_on BOOLEAN;
+    leaked_grant BOOLEAN;
+BEGIN
+    SELECT c.relrowsecurity INTO rls_on
+    FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'public' AND c.relname = 'execution_authority_grants';
+
+    IF rls_on IS DISTINCT FROM true THEN
+        RAISE EXCEPTION 'RLS is not enabled on public.execution_authority_grants';
+    END IF;
+
+    SELECT EXISTS (
+        SELECT 1
+        FROM information_schema.role_table_grants g
+        WHERE g.table_schema = 'public'
+          AND g.table_name = 'execution_authority_grants'
+          AND g.grantee IN ('anon', 'authenticated')
+    ) INTO leaked_grant;
+
+    IF leaked_grant THEN
+        RAISE EXCEPTION
+            'direct anon/authenticated privilege remains on public.execution_authority_grants';
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies
+        WHERE schemaname = 'public'
+          AND tablename = 'execution_authority_grants'
+          AND policyname = 'execution_authority_grants_tenant_scope'
+          AND 'inntris_api' = ANY(roles)
+    ) THEN
+        RAISE EXCEPTION 'execution_authority_grants_tenant_scope policy is missing';
+    END IF;
+END;
+$$;

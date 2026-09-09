@@ -41,7 +41,7 @@ import logging
 import secrets
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from enum import StrEnum
 from typing import Any, Final
@@ -63,6 +63,44 @@ ISSUANCE_DIGEST_FORMAT: Final[str] = "inntris-authority-issuance-v1"
 
 #: Versioned preimage identifier for the delegated-authority scope digest.
 AUTHORITY_SCOPE_DIGEST_FORMAT: Final[str] = "inntris-authority-scope-v1"
+
+#: Ceiling on how long execution authority may live, whatever a caller asks
+#: for. Bounded authority that outlives the decision it rests on is not
+#: bounded.
+MAX_EXECUTION_AUTHORITY_TTL: Final[timedelta] = timedelta(minutes=5)
+
+
+def clamp_grant_expiry(
+    *,
+    issued_at: datetime,
+    requested_expires_at: datetime | None = None,
+    authority_expires_at: datetime | None = None,
+    additional_bounds: tuple[datetime, ...] = (),
+    max_ttl: timedelta = MAX_EXECUTION_AUTHORITY_TTL,
+) -> datetime:
+    """The latest instant this grant may remain valid.
+
+    The earliest of: the configured TTL ceiling, whatever the caller asked
+    for, the delegated authority's own expiry, and any tighter trusted
+    bound. A grant must never outlive the authority it rests on, so this
+    takes a minimum and never a maximum.
+    """
+    bounds = [issued_at + max_ttl]
+    if requested_expires_at is not None:
+        bounds.append(requested_expires_at.astimezone(UTC))
+    if authority_expires_at is not None:
+        bounds.append(authority_expires_at.astimezone(UTC))
+    bounds.extend(bound.astimezone(UTC) for bound in additional_bounds)
+    return min(bounds)
+
+
+class GrantLifetimeError(ValueError):
+    """The clamped validity window is empty, so no authority can be issued.
+
+    Reached when the delegated authority has already expired, or a trusted
+    bound sits at or before issuance. Issuing a zero-length grant would be
+    issuing authority that is dead on arrival while looking valid.
+    """
 
 
 class IssueOutcome(StrEnum):
@@ -124,11 +162,13 @@ class ConsumeResult:
 
 def issuance_digest(
     *,
+    organisation_id: UUID | str,
     agent_id: UUID | str,
     issuance_ref: str,
     execution_action_hash: str,
     signed_action_hash: str | None,
     policy_hash: str,
+    policy_revision: str,
     executor_binding_digest: str,
     amount_usd: Decimal,
     domain: str,
@@ -147,11 +187,13 @@ def issuance_digest(
     return jcs.sha256_hex(
         {
             "format": ISSUANCE_DIGEST_FORMAT,
+            "organisation_id": str(organisation_id),
             "agent_id": str(agent_id),
             "issuance_ref": issuance_ref,
             "execution_action_hash": execution_action_hash,
             "signed_action_hash": signed_action_hash,
             "policy_hash": policy_hash,
+            "policy_revision": policy_revision,
             "executor_binding_digest": executor_binding_digest,
             "amount_usd": str(amount_usd),
             "domain": domain,
@@ -221,6 +263,36 @@ def default_current_policy_resolver(
     return snapshot.digest, snapshot.revision
 
 
+@dataclass(frozen=True, slots=True)
+class AuthorityState:
+    """The delegated authority as it stands RIGHT NOW, re-resolved by the caller.
+
+    Passed to ``consume`` so revocation and expiry can be reported
+    distinctly. Core cannot poll an external issuer itself; the caller that
+    can is the one that must supply this.
+    """
+
+    verified: bool = True
+    revoked: bool = False
+    expires_at: datetime | None = None
+
+
+class OutcomeState(StrEnum):
+    """What is known about the external side effect this authority permitted.
+
+    Modelled on the reconciliation failure model used by the adapter
+    repository: a thrown or timed-out executor is ``OUTCOME_UNKNOWN``, never
+    ``FAILED_FINAL``, because a timeout is not proof that nothing happened.
+    """
+
+    PENDING = "pending"
+    SUCCEEDED = "succeeded"
+    #: Proven not to have happened. Only for evidence that actually proves it.
+    FAILED_FINAL = "failed_final"
+    #: Blocks retries until authoritative evidence resolves it.
+    OUTCOME_UNKNOWN = "outcome_unknown"
+
+
 class AuthorityStore:
     """Durable execution authority, over the mechanisms that already exist."""
 
@@ -241,6 +313,7 @@ class AuthorityStore:
         self,
         *,
         agent_id: UUID,
+        organisation_id: UUID,
         issuance_ref: str,
         execution_action_hash: str,
         policy_hash: str,
@@ -249,7 +322,9 @@ class AuthorityStore:
         executor_binding_digest: str,
         domain: str,
         action_type: str,
-        expires_at: datetime,
+        expires_at: datetime | None = None,
+        authority_expires_at: datetime | None = None,
+        issued_at: datetime | None = None,
         minute_start: datetime,
         day_start: datetime,
         rate_limit_per_minute: int,
@@ -267,12 +342,26 @@ class AuthorityStore:
         and then finds the committed grant instead of reserving capacity
         a second time.
         """
+        issued = (issued_at or datetime.now(UTC)).astimezone(UTC)
+        effective_expiry = clamp_grant_expiry(
+            issued_at=issued,
+            requested_expires_at=expires_at,
+            authority_expires_at=authority_expires_at,
+        )
+        if effective_expiry <= issued:
+            raise GrantLifetimeError(
+                "the clamped validity window is empty; the delegated authority "
+                "or a trusted bound has already expired"
+            )
+
         digest = issuance_digest(
+            organisation_id=organisation_id,
             agent_id=agent_id,
             issuance_ref=issuance_ref,
             execution_action_hash=execution_action_hash,
             signed_action_hash=signed_action_hash,
             policy_hash=policy_hash,
+            policy_revision=policy_revision,
             executor_binding_digest=executor_binding_digest,
             amount_usd=amount_usd,
             domain=domain,
@@ -329,28 +418,29 @@ class AuthorityStore:
                         daily_limit_usd=daily_limit_usd,
                         action_hash=execution_action_hash,
                         approval_token_id=approval_token_id,
-                        expires_at=expires_at,
+                        expires_at=effective_expiry,
                     )
                 )
 
                 grant_id = await conn.fetchval(
                     """
                     INSERT INTO execution_authority_grants (
-                        agent_id, issuance_ref, issuance_digest,
+                        agent_id, org_id, issuance_ref, issuance_digest,
                         execution_action_hash, signed_action_hash,
                         policy_hash, policy_snapshot_format, policy_revision,
                         executor_binding_digest, executor_reference,
                         consequence_class, domain, action_type,
                         authority_scope_digest,
                         amount_usd, spend_reservation_id, approval_token_id,
-                        expires_at
+                        issued_at, expires_at, authority_expires_at
                     ) VALUES (
                         $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-                        $11, $12, $13, $14, $15, $16, $17, $18
+                        $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21
                     )
                     RETURNING id
                     """,
                     agent_id,
+                    organisation_id,
                     issuance_ref,
                     digest,
                     execution_action_hash,
@@ -367,7 +457,9 @@ class AuthorityStore:
                     amount_usd,
                     reservation_id,
                     approval_token_id,
-                    expires_at,
+                    issued,
+                    effective_expiry,
+                    authority_expires_at,
                 )
                 return IssueResult(
                     outcome=IssueOutcome.ISSUED,
@@ -397,6 +489,7 @@ class AuthorityStore:
         executor_binding_digest: str,
         execution_ref: str | None = None,
         authority_scope_digest: str | None = None,
+        authority_state: AuthorityState | None = None,
         audit_entry_factory: Callable[[Any], AuditLogEntry] | None = None,
         at: datetime | None = None,
     ) -> ConsumeResult:
@@ -480,7 +573,9 @@ class AuthorityStore:
                 )
 
             # --- Current mutable state decides, not the snapshot ---------
-            revalidation = await self._revalidate(conn, grant, authority_scope_digest)
+            revalidation = await self._revalidate(
+                conn, grant, authority_scope_digest, authority_state, now
+            )
             if revalidation is not None:
                 return ConsumeResult(
                     outcome=ConsumptionOutcome.REJECTED,
@@ -541,17 +636,54 @@ class AuthorityStore:
         conn: Any,
         grant: Any,
         presented_scope_digest: str | None,
+        authority_state: AuthorityState | None,
+        now: datetime,
     ) -> DecisionReason | None:
-        """Re-check current policy, principal and delegation. ``None`` = fine."""
+        """Re-check current policy, principal and delegation. ``None`` = fine.
+
+        Ordered most specific first, so an operator reading a refusal learns
+        the actual cause rather than whichever check happened to run first.
+        """
         agent_row = await conn.fetchrow(
-            "SELECT * FROM agents WHERE id = $1", grant["agent_id"]
+            """
+            SELECT a.*, o.id AS organisation_id
+            FROM agents a
+            JOIN organizations o ON o.id = a.org_id
+            WHERE a.id = $1
+            """,
+            grant["agent_id"],
         )
         if agent_row is None or agent_row["status"] != "active":
             return DecisionReason.AGENT_NOT_ACTIVE
+        if agent_row["org_id"] != grant["org_id"]:
+            # The composite foreign key makes this unreachable through normal
+            # writes. Checked anyway: if it is ever true, the ownership record
+            # is inconsistent and nothing below can be trusted.
+            return DecisionReason.AGENT_NOT_ACTIVE
+
+        # Delegated authority, when the caller re-resolved it. Revocation and
+        # expiry are reported distinctly from "the scope changed" so the
+        # refusal names what actually happened.
+        if authority_state is not None:
+            if authority_state.revoked:
+                return DecisionReason.AUTHORITY_REVOKED
+            if (
+                authority_state.expires_at is not None
+                and now >= authority_state.expires_at.astimezone(UTC)
+            ):
+                return DecisionReason.AUTHORITY_EXPIRED
+            if not authority_state.verified:
+                return DecisionReason.AUTHORITY_VERIFICATION_FAILED
+
+        if (
+            grant["authority_expires_at"] is not None
+            and now >= grant["authority_expires_at"]
+        ):
+            return DecisionReason.AUTHORITY_EXPIRED
 
         if grant["authority_scope_digest"] != presented_scope_digest:
             # The delegated authority is not the one the decision was made
-            # under. It may have been narrowed, re-issued or withdrawn.
+            # under. It may have been narrowed or re-issued.
             return DecisionReason.AUTHORITY_SCOPE_EXCEEDED
 
         try:
@@ -566,6 +698,50 @@ class AuthorityStore:
         return None
 
     # -- lifecycle --------------------------------------------------------
+
+    async def record_outcome(
+        self,
+        *,
+        grant_id: UUID,
+        outcome_state: OutcomeState,
+        outcome_reference: str | None = None,
+        detail: str | None = None,
+    ) -> bool:
+        """Record what became of the execution this authority permitted.
+
+        **Reserved spend is never released here, in any outcome.** A
+        reservation moved to 'consumed' when the grant was claimed, and it
+        stays charged:
+
+        * ``SUCCEEDED`` — money moved. Obviously charged.
+        * ``FAILED_FINAL`` — proven not to have happened. Still not released
+          by this call: releasing capacity belongs to a reconciliation path
+          that has the rail's own evidence, not to the executor's opinion.
+        * ``OUTCOME_UNKNOWN`` — an executor timed out or threw. This is the
+          case the rule exists for. A timeout is not proof that no money
+          moved, so releasing the reservation here would hand the same
+          capacity to a second transaction while the first may well have
+          settled. It stays charged until authoritative evidence resolves it.
+
+        An unknown outcome may later be resolved to succeeded or failed_final
+        by evidence; nothing returns to pending.
+        """
+        async with self._db.acquire() as conn:
+            result = await conn.execute(
+                """
+                UPDATE execution_authority_grants
+                SET outcome_state = $2,
+                    outcome_reference = $3,
+                    outcome_detail = $4,
+                    outcome_recorded_at = NOW()
+                WHERE id = $1 AND status = 'consumed'
+                """,
+                grant_id,
+                outcome_state.value,
+                outcome_reference,
+                (detail or None) if detail is None else detail[:1000],
+            )
+        return result == "UPDATE 1"
 
     async def revoke(self, *, grant_id: UUID, reason: str) -> bool:
         """Withdraw unspent authority. Terminal states are left alone."""

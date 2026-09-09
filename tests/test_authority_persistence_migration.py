@@ -162,8 +162,92 @@ class TestTenantIsolation:
     def test_the_policy_scopes_to_the_current_tenant_both_ways(self) -> None:
         sql = _SQL.read_text(encoding="utf-8")
         assert "CREATE POLICY execution_authority_grants_tenant_scope" in sql
-        assert sql.count("a.org_id = app.current_tenant()") == 2, "USING and WITH CHECK"
+        # Keyed on the grant's own org_id rather than a join. The composite
+        # foreign key guarantees that column equals the agent's owner, so this
+        # is the same predicate with no subquery to influence.
+        assert sql.count("org_id = app.current_tenant()") == 2, "USING and WITH CHECK"
 
     def test_public_holds_no_privileges(self) -> None:
         sql = _SQL.read_text(encoding="utf-8")
         assert "REVOKE ALL ON TABLE execution_authority_grants FROM PUBLIC" in sql
+
+
+class TestCompositeOwnership:
+    def test_the_grant_carries_its_organisation(self) -> None:
+        sql = _SQL.read_text(encoding="utf-8")
+        assert "org_id UUID NOT NULL REFERENCES organizations(id)" in sql
+
+    def test_ownership_is_enforced_by_a_composite_foreign_key(self) -> None:
+        """A grant cannot name an organisation that does not own the agent."""
+        sql = _SQL.read_text(encoding="utf-8")
+        assert "FOREIGN KEY (agent_id, org_id)" in sql
+        assert "REFERENCES agents(id, org_id)" in sql
+
+    def test_the_referencable_unique_key_is_created_first(self) -> None:
+        sql = _SQL.read_text(encoding="utf-8")
+        assert "ADD CONSTRAINT agents_id_org_unique UNIQUE (id, org_id)" in sql
+        assert sql.index("agents_id_org_unique") < sql.index("FOREIGN KEY (agent_id, org_id)")
+
+    def test_the_tenant_policy_keys_on_the_grants_own_column(self) -> None:
+        sql = _SQL.read_text(encoding="utf-8")
+        assert "USING (org_id = app.current_tenant())" in sql
+        assert "WITH CHECK (org_id = app.current_tenant())" in sql
+
+    def test_the_owning_organisation_is_immutable(self) -> None:
+        sql = _SQL.read_text(encoding="utf-8")
+        assert "NEW.org_id <> OLD.org_id" in sql
+
+
+class TestGrantLifetimeBound:
+    def test_a_grant_cannot_outlive_its_delegated_authority(self) -> None:
+        sql = _SQL.read_text(encoding="utf-8")
+        assert "CONSTRAINT execution_authority_within_delegated_validity" in sql
+        assert "expires_at <= authority_expires_at" in sql
+
+    def test_the_validity_window_is_immutable_after_issuance(self) -> None:
+        sql = _SQL.read_text(encoding="utf-8")
+        assert "NEW.expires_at <> OLD.expires_at" in sql
+        assert (
+            "NEW.authority_expires_at IS DISTINCT FROM OLD.authority_expires_at" in sql
+        )
+
+
+class TestOutcomeStateMachine:
+    def test_the_outcome_states_are_the_documented_four(self) -> None:
+        sql = _SQL.read_text(encoding="utf-8")
+        assert (
+            "outcome_state IN ('pending', 'succeeded', 'failed_final', 'outcome_unknown')"
+            in sql
+        )
+
+    def test_an_outcome_only_exists_for_spent_authority(self) -> None:
+        sql = _SQL.read_text(encoding="utf-8")
+        assert "CONSTRAINT execution_authority_outcome_requires_consumption" in sql
+
+    def test_an_unknown_outcome_may_only_be_resolved_forward(self) -> None:
+        """A timeout is never quietly cleared back to pending."""
+        sql = _SQL.read_text(encoding="utf-8")
+        assert "OLD.outcome_state = 'outcome_unknown'" in sql
+        assert "NEW.outcome_state IN ('succeeded', 'failed_final')" in sql
+        assert "outcome % cannot transition to %" in sql
+
+
+class TestSecurityConventions:
+    def test_browser_roles_are_conditionally_revoked(self) -> None:
+        """Portable across Supabase and plain PostgreSQL, as 020 established."""
+        sql = _SQL.read_text(encoding="utf-8")
+        assert "ARRAY['anon', 'authenticated']" in sql
+        assert "EXISTS (SELECT 1 FROM pg_roles WHERE rolname = client_role)" in sql
+
+    def test_the_migration_asserts_its_own_posture(self) -> None:
+        sql = _SQL.read_text(encoding="utf-8")
+        assert "RLS is not enabled on public.execution_authority_grants" in sql
+        assert (
+            "direct anon/authenticated privilege remains on "
+            "public.execution_authority_grants" in sql
+        )
+        assert "execution_authority_grants_tenant_scope policy is missing" in sql
+
+    def test_the_trigger_function_pins_its_search_path(self) -> None:
+        sql = _SQL.read_text(encoding="utf-8")
+        assert "SET search_path = pg_catalog, public;" in sql
