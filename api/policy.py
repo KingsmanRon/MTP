@@ -9,14 +9,55 @@ import hashlib
 import json
 import logging
 import re
-from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
-from enum import Enum
 from typing import Any
 
+from api.domains.payment.amounts import (
+    AMOUNT_FIELDS,
+    AMOUNT_REQUIRED_ACTIONS,
+    AmountError,
+    extract_amount,
+)
+from api.domains.payment.policy import check_spending_limits, check_wallet_policy
+from api.domains.payment.wallet import (
+    WALLET_ACTION_TYPES,
+    WALLET_ALLOWLIST_ACTION_TYPES,
+    WalletPolicyError,
+    recipient_in_allowlist,
+    validate_wallet_policy,
+)
 from api.models import ActionVerdict, AgentRecord, AgentStatus, RegisteredPolicy
 from api.observability import spend_check_skipped_total
+from api.policy_contracts import PolicyResult, PolicyViolation
+
+# Re-exported for backwards compatibility. These symbols were defined in this
+# module before the payment domain was split out into api/domains/payment/ and
+# the shared decision contracts into api/policy_contracts.py. Every existing
+# import site — the API, the models validator, the SDKs and the test suite —
+# keeps importing them from here.
+__all__ = [
+    "AMOUNT_FIELDS",
+    "AMOUNT_REQUIRED_ACTIONS",
+    "CI_GUARD_ACTIONS",
+    "KNOWN_ACTION_TYPES",
+    "RISK_RANK",
+    "WALLET_ACTION_TYPES",
+    "WALLET_ALLOWLIST_ACTION_TYPES",
+    "AmountError",
+    "PolicyEngine",
+    "PolicyResult",
+    "PolicyViolation",
+    "TrustScorer",
+    "WalletPolicyError",
+    "canonical_policy_hash",
+    "extract_amount",
+    "glob_to_regex",
+    "match_protected_branch",
+    "recipient_in_allowlist",
+    "strongest_required_action_type",
+    "validate_wallet_policy",
+]
 
 logger = logging.getLogger(__name__)
 
@@ -144,136 +185,12 @@ def strongest_required_action_type(
 
 
 # ---------------------------------------------------------------------------
-# WalletConnect CWP wallet policy (Track A)
+# Payment domain
 # ---------------------------------------------------------------------------
-# An opt-in, per-agent chain and recipient allowlist stored at
-# ``agent.metadata["wallet_policy"]``. It governs only the wallet_* action
-# types the WalletConnect CWP adapter submits; every other action type is
-# untouched, and an agent with no wallet_policy behaves exactly as before.
-#
-# Deliberately no amount or budget semantics: a CWP transaction may express
-# native-token or atomic-unit value, which cannot be interpreted as USD without
-# an authoritative asset-normalisation layer. Adding a fabricated conversion
-# here would corrupt the existing USD-denominated spend controls.
-
-WALLET_ACTION_TYPES = frozenset({"wallet_transaction", "wallet_signature"})
-
-# The action types whose chain and recipient are enforced. Signature actions
-# carry no recipient and are not chain-scoped, so only transactions are gated
-# on the allowlists.
-WALLET_ALLOWLIST_ACTION_TYPES = frozenset({"wallet_transaction"})
-
-
-class WalletPolicyError(ValueError):
-    """Raised when a configured ``wallet_policy`` is structurally invalid.
-
-    A policy the server cannot interpret is a fail-closed signal: the operator
-    expressed an intent that cannot be evaluated, and guessing at it would be
-    worse than refusing. Distinct from "no policy configured", which simply
-    means no chain or recipient restriction applies.
-    """
-
-
-def validate_wallet_policy(raw: Any) -> tuple[list[str] | None, dict[str, list[str]] | None]:
-    """Validate a ``wallet_policy`` document and return its two allowlists.
-
-    Unknown top-level keys are tolerated so a future field does not brick a
-    deployed policy, but every recognised key is type-checked strictly.
-
-    Raises ``WalletPolicyError`` when the document cannot be interpreted.
-    """
-    if not isinstance(raw, dict):
-        raise WalletPolicyError("wallet_policy must be an object")
-
-    allowed_chains = raw.get("allowed_chains")
-    if allowed_chains is not None:
-        if not isinstance(allowed_chains, list) or not allowed_chains:
-            raise WalletPolicyError("wallet_policy.allowed_chains must be a non-empty list")
-        for chain in allowed_chains:
-            if not isinstance(chain, str) or not chain.strip():
-                raise WalletPolicyError(
-                    "wallet_policy.allowed_chains entries must be non-empty CAIP-2 strings"
-                )
-
-    allowed_recipients = raw.get("allowed_recipients")
-    if allowed_recipients is not None:
-        if not isinstance(allowed_recipients, dict):
-            raise WalletPolicyError(
-                "wallet_policy.allowed_recipients must be an object keyed by CAIP-2 chain"
-            )
-        for chain, entries in allowed_recipients.items():
-            if not isinstance(chain, str) or not chain.strip():
-                raise WalletPolicyError(
-                    "wallet_policy.allowed_recipients keys must be non-empty CAIP-2 strings"
-                )
-            if not isinstance(entries, list):
-                raise WalletPolicyError(
-                    f"wallet_policy.allowed_recipients['{chain}'] must be a list"
-                )
-            for entry in entries:
-                if not isinstance(entry, str) or not entry.strip():
-                    raise WalletPolicyError(
-                        f"wallet_policy.allowed_recipients['{chain}'] entries must be "
-                        "non-empty address strings"
-                    )
-
-    return allowed_chains, allowed_recipients
-
-
-def recipient_in_allowlist(chain: str, recipient: str, allowlist: list[str]) -> bool:
-    """Whether ``recipient`` appears in ``allowlist`` for ``chain``.
-
-    EVM addresses are compared case-insensitively because EIP-55 checksum
-    casing is presentational and two spellings of the same address must not
-    produce different decisions. The address is otherwise never rewritten — no
-    checksumming, no trimming — so what the policy authorises is exactly what
-    was submitted.
-    """
-    if chain.split(":", 1)[0].lower() == "eip155":
-        target = recipient.lower()
-        return any(entry.lower() == target for entry in allowlist)
-    return recipient in allowlist
-
-
-class AmountError(ValueError):
-    """Raised when a payload amount field is present but malformed.
-
-    Distinct from "no amount field at all": a malformed amount (non-numeric,
-    boolean, NaN, infinite, or negative) is a fail-closed signal, whereas an
-    absent amount is only fatal for action types that require one.
-    """
-
-
-class PolicyViolation(Enum):
-    """Types of policy violations."""
-    AGENT_NOT_ACTIVE = "agent_not_active"
-    ACTION_NOT_ALLOWED = "action_not_allowed"
-    ACTION_BLOCKED = "action_blocked"
-    DAILY_LIMIT_EXCEEDED = "daily_limit_exceeded"
-    PER_ACTION_LIMIT_EXCEEDED = "per_action_limit_exceeded"
-    RATE_LIMIT_EXCEEDED = "rate_limit_exceeded"
-    TRUST_SCORE_TOO_LOW = "trust_score_too_low"
-    TIMESTAMP_INVALID = "timestamp_invalid"
-    AMOUNT_INVALID = "amount_invalid"
-    POLICY_HASH_MISMATCH = "policy_hash_mismatch"
-    ACTION_TYPE_DOWNGRADE = "action_type_downgrade"
-    ACTION_TYPE_UNKNOWN = "action_type_unknown"
-    # WalletConnect CWP rail (Track A). These apply only to the wallet_* action
-    # types and only when the agent has an opt-in wallet_policy configured.
-    WALLET_CHAIN_NOT_ALLOWED = "wallet_chain_not_allowed"
-    WALLET_RECIPIENT_NOT_ALLOWED = "wallet_recipient_not_allowed"
-    WALLET_RECIPIENT_REQUIRED = "wallet_recipient_required"
-    WALLET_POLICY_INVALID = "wallet_policy_invalid"
-
-
-@dataclass
-class PolicyResult:
-    """Result of policy evaluation."""
-    allowed: bool
-    verdict: ActionVerdict
-    violation: PolicyViolation | None = None
-    reason: str | None = None
-    limits_remaining: dict[str, Any] | None = None
+# Amount extraction, spend limits and the wallet chain/recipient allowlists now
+# live in api/domains/payment/. They are imported above and re-exported so
+# existing call sites are unaffected; the engine calls into them at exactly the
+# points, and in exactly the order, it used to run them inline.
 
 
 class PolicyEngine:
@@ -293,18 +210,13 @@ class PolicyEngine:
         "repo_change",
     })
 
-    # Action types that MUST carry a parseable spend amount. A financial
-    # action with no recognized amount field fails closed (BLOCKED) rather
-    # than being silently treated as a $0 transaction that bypasses the
-    # daily/per-action caps entirely.
-    AMOUNT_REQUIRED_ACTIONS: frozenset = frozenset({
-        "financial_transaction",
-    })
-
-    # Payload fields that may carry a transaction amount, in priority order.
-    # The first field present wins; if it is malformed the request is blocked
-    # rather than falling through to a later field.
-    AMOUNT_FIELDS: tuple = ("amount", "amount_usd", "value", "total")
+    # Owned by the payment domain (api/domains/payment/amounts.py) and aliased
+    # here so existing readers of PolicyEngine.AMOUNT_REQUIRED_ACTIONS and
+    # PolicyEngine.AMOUNT_FIELDS see the same values they always have. The
+    # membership of AMOUNT_REQUIRED_ACTIONS is a live telemetry experiment; it
+    # is not widened to tidy up a refactor.
+    AMOUNT_REQUIRED_ACTIONS: frozenset = AMOUNT_REQUIRED_ACTIONS
+    AMOUNT_FIELDS: tuple = AMOUNT_FIELDS
 
     # Runtime actions: PASS/BLOCK/ESCALATE semantics.
     # The caller is asking the system to authorize a live operation.
@@ -639,119 +551,13 @@ class PolicyEngine:
         action_type: str,
         payload: dict[str, Any],
     ) -> PolicyResult:
-        """Evaluate the agent's opt-in WalletConnect chain/recipient allowlists.
+        """Evaluate the agent's opt-in chain/recipient allowlists.
 
-        Three layers, each fail-closed:
-
-        1. No ``wallet_policy`` configured => no chain or recipient restriction.
-           Every other Core policy check still applies.
-        2. A ``wallet_policy`` that cannot be interpreted blocks every wallet
-           action, including signatures. The operator expressed an intent the
-           server cannot evaluate, and proceeding would mean ignoring it.
-        3. Chain and recipient allowlists gate ``wallet_transaction`` only.
-           A signature carries no recipient and is not chain-scoped.
-
-        Amounts are deliberately not considered here; see the module notes on
-        ``WALLET_ACTION_TYPES``.
+        The rules moved to ``api.domains.payment.policy.check_wallet_policy``
+        unchanged; this is the engine's dispatch point into the payment
+        domain and it stays at the same position in ``evaluate``.
         """
-        if action_type not in WALLET_ACTION_TYPES:
-            return PolicyResult(allowed=True, verdict=ActionVerdict.APPROVED)
-
-        metadata = agent.metadata if isinstance(agent.metadata, dict) else {}
-        raw_policy = metadata.get("wallet_policy")
-        if raw_policy is None:
-            return PolicyResult(allowed=True, verdict=ActionVerdict.APPROVED)
-
-        try:
-            allowed_chains, allowed_recipients = validate_wallet_policy(raw_policy)
-        except WalletPolicyError as exc:
-            logger.error(
-                "Agent %s has an invalid wallet_policy; blocking wallet actions: %s",
-                agent.id,
-                exc,
-            )
-            return PolicyResult(
-                allowed=False,
-                verdict=ActionVerdict.BLOCKED,
-                violation=PolicyViolation.WALLET_POLICY_INVALID,
-                reason=f"The configured wallet policy is invalid: {exc}",
-            )
-
-        if action_type not in WALLET_ALLOWLIST_ACTION_TYPES:
-            return PolicyResult(allowed=True, verdict=ActionVerdict.APPROVED)
-
-        chain = payload.get("chain") if isinstance(payload, dict) else None
-        chain = chain if isinstance(chain, str) and chain.strip() else None
-
-        if allowed_chains is not None:
-            if chain is None:
-                return PolicyResult(
-                    allowed=False,
-                    verdict=ActionVerdict.BLOCKED,
-                    violation=PolicyViolation.WALLET_CHAIN_NOT_ALLOWED,
-                    reason=(
-                        "payload.chain is required because this agent has a wallet "
-                        "chain allowlist configured."
-                    ),
-                )
-            if chain not in allowed_chains:
-                return PolicyResult(
-                    allowed=False,
-                    verdict=ActionVerdict.BLOCKED,
-                    violation=PolicyViolation.WALLET_CHAIN_NOT_ALLOWED,
-                    reason=(
-                        f"Chain '{chain}' is not in the agent's allowed chains: "
-                        f"{', '.join(allowed_chains)}."
-                    ),
-                )
-
-        if allowed_recipients is None:
-            return PolicyResult(allowed=True, verdict=ActionVerdict.APPROVED)
-
-        if chain is None:
-            # A recipient allowlist is keyed by chain, so without a chain the
-            # applicable list cannot be selected. Guessing would mean either
-            # skipping the allowlist or applying an unrelated one.
-            return PolicyResult(
-                allowed=False,
-                verdict=ActionVerdict.BLOCKED,
-                violation=PolicyViolation.WALLET_CHAIN_NOT_ALLOWED,
-                reason=(
-                    "payload.chain is required to select the recipient allowlist "
-                    "configured for this agent."
-                ),
-            )
-
-        allowlist = allowed_recipients.get(chain)
-        if allowlist is None:
-            # No allowlist for this chain: the chain check above already decided
-            # whether the chain itself is permitted.
-            return PolicyResult(allowed=True, verdict=ActionVerdict.APPROVED)
-
-        recipient = payload.get("recipient") if isinstance(payload, dict) else None
-        if not isinstance(recipient, str) or not recipient.strip():
-            return PolicyResult(
-                allowed=False,
-                verdict=ActionVerdict.BLOCKED,
-                violation=PolicyViolation.WALLET_RECIPIENT_REQUIRED,
-                reason=(
-                    f"payload.recipient is required because a recipient allowlist is "
-                    f"configured for chain '{chain}'."
-                ),
-            )
-
-        if not recipient_in_allowlist(chain, recipient, allowlist):
-            return PolicyResult(
-                allowed=False,
-                verdict=ActionVerdict.BLOCKED,
-                violation=PolicyViolation.WALLET_RECIPIENT_NOT_ALLOWED,
-                reason=(
-                    f"Recipient '{recipient}' is not in the allowlist configured for "
-                    f"chain '{chain}'."
-                ),
-            )
-
-        return PolicyResult(allowed=True, verdict=ActionVerdict.APPROVED)
+        return check_wallet_policy(agent, action_type, payload)
 
     def _check_timestamp(self, timestamp: datetime) -> PolicyResult:
         """Check if timestamp is within acceptable range."""
@@ -787,61 +593,25 @@ class PolicyEngine:
         agent: AgentRecord,
         amount: Decimal,
     ) -> PolicyResult:
-        """Check spending limits for financial transactions."""
-        # Check per-action limit
-        if amount > agent.per_action_limit_usd:
-            return PolicyResult(
-                allowed=False,
-                verdict=ActionVerdict.BLOCKED,
-                violation=PolicyViolation.PER_ACTION_LIMIT_EXCEEDED,
-                reason=f"Amount ${amount} exceeds per-action limit of ${agent.per_action_limit_usd}.",
-            )
+        """Check spending limits for amount-bearing actions.
 
-        # Check daily limit
-        projected_daily = self.daily_spend + amount
-        if projected_daily > agent.daily_limit_usd:
-            remaining = agent.daily_limit_usd - self.daily_spend
-            return PolicyResult(
-                allowed=False,
-                verdict=ActionVerdict.BLOCKED,
-                violation=PolicyViolation.DAILY_LIMIT_EXCEEDED,
-                reason=f"Amount ${amount} would exceed daily limit. Remaining: ${remaining}.",
-            )
-
-        return PolicyResult(allowed=True, verdict=ActionVerdict.APPROVED)
+        The rules moved to
+        ``api.domains.payment.policy.check_spending_limits`` unchanged.
+        This dispatch is deliberately NOT gated on the action type being a
+        payment action: every amount-bearing request was subject to the
+        organisation's caps before the split, and still is.
+        """
+        return check_spending_limits(agent, amount, self.daily_spend)
 
     def _extract_amount(self, payload: dict[str, Any]) -> Decimal | None:
         """Extract and validate a transaction amount from the payload.
 
-        Returns the amount from the first recognized field (priority order in
-        ``AMOUNT_FIELDS``), or ``None`` when no amount field is present.
-
-        Raises ``AmountError`` when an amount field is present but malformed —
-        non-numeric, boolean, NaN, infinite, or negative. The previous
-        implementation silently skipped unparseable values, which let a
-        compromised agent bypass spend limits two ways: send ``{"amount":
-        "NaN"}`` (NaN compares False against every limit, so the check passes)
-        or omit the recognized field so ``None`` short-circuits the check
-        entirely. Both now fail closed.
+        The rules moved to ``api.domains.payment.amounts.extract_amount``
+        unchanged. Kept as a method because ``api/legacy_main.py`` calls it
+        to compute the reservation amount, and the test suite calls it
+        directly.
         """
-        for field in self.AMOUNT_FIELDS:
-            if field not in payload:
-                continue
-            raw = payload[field]
-            # bool is an int subclass; reject it explicitly so True/False
-            # cannot be coerced into 1/0 spend.
-            if isinstance(raw, bool):
-                raise AmountError(f"Field '{field}' must be a number, not a boolean.")
-            try:
-                value = Decimal(str(raw))
-            except (ValueError, TypeError, ArithmeticError):
-                raise AmountError(f"Field '{field}' is not a valid decimal amount.")
-            if not value.is_finite():
-                raise AmountError(f"Field '{field}' must be a finite amount (got {raw!r}).")
-            if value < 0:
-                raise AmountError(f"Field '{field}' must not be negative (got {value}).")
-            return value
-        return None
+        return extract_amount(payload)
 
     def _compute_limits_remaining(
         self,

@@ -91,6 +91,10 @@ class DecisionReason(StrEnum):
     AUTHORITY_PRINCIPAL_MISMATCH = "authority_principal_mismatch"
     AUTHORITY_DELEGATE_NOT_BOUND = "authority_delegate_not_bound"
     AUTHORITY_SCOPE_EXCEEDED = "authority_scope_exceeded"
+    #: The scope carries a machine-enforceable constraint this build cannot
+    #: safely interpret. Enforcing the subset it does understand would be
+    #: broader than what the issuer granted, so the decision fails closed.
+    AUTHORITY_SCOPE_UNSUPPORTED = "authority_scope_unsupported"
 
     # --- New: execution-authority grant lifecycle ---
     GRANT_NOT_FOUND = "grant_not_found"

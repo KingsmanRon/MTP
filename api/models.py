@@ -466,13 +466,14 @@ class UpdateAgentRequest(BaseModel):
         bag. Validating here as well means an operator finds out when they set
         the policy rather than when a transaction is unexpectedly denied.
 
-        Imported locally: ``api.policy`` imports from this module, so a
-        top-level import would be circular.
+        Imported locally: the payment domain is layered above this module,
+        so a top-level import would be circular. The validator itself is
+        pure and imports nothing from the API.
         """
         if value is None or "wallet_policy" not in value:
             return value
 
-        from api.policy import WalletPolicyError, validate_wallet_policy
+        from api.domains.payment.wallet import WalletPolicyError, validate_wallet_policy
 
         try:
             validate_wallet_policy(value["wallet_policy"])

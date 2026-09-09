@@ -1,0 +1,174 @@
+"""The versioned policy snapshot a payment grant is issued under.
+
+This does **not** redefine ``_effective_policy_hash`` or v1/v2 receipt
+semantics. Those stay exactly as they are: they describe the legacy
+``/verify`` decision and appear in deployed receipts. This is a separate,
+explicitly versioned digest for delegated-payment execution authority,
+under the format identifier ``inntris-payment-authority-policy-v1``.
+
+Why a second digest exists
+--------------------------
+The legacy effective-policy hash covers the agent's status, allowed and
+blocked actions, limits and trust score. It does **not** cover the wallet
+chain and recipient allowlists, which live in agent metadata and which
+absolutely do decide whether a payment is permitted. A grant that claimed
+the legacy hash as its policy binding would be claiming to bind rules it
+never covered. So this snapshot covers every rule actually applied to the
+canonical payment action, the wallet allowlists included.
+
+Determinism and secrecy
+-----------------------
+The preimage is canonicalized with the repository's RFC 8785
+implementation, so the digest is stable across processes and languages.
+It carries policy content only — limits, allowlists, statuses, versions.
+No key material, no API keys, no agent metadata beyond the wallet policy
+allowlists, nothing that would turn a published snapshot into a
+disclosure.
+
+Change detection for Phase 3
+----------------------------
+``revision`` is a cheap comparison key derived from the mutable inputs
+(the agent's ``updated_at`` and key version). ``digest`` is the
+authoritative one. Phase 3 compares both before first consumption:
+``revision`` catches the ordinary case, ``digest`` catches everything,
+including a change that leaves ``updated_at`` untouched.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from decimal import Decimal
+from typing import Any, Final
+
+from api import jcs
+from api.core.authority.decision import PolicySnapshot
+from api.domains.payment.amounts import AMOUNT_REQUIRED_ACTIONS
+from api.domains.payment.delegation import KNOWN_SCOPE_KEYS
+from api.domains.payment.wallet import validate_wallet_policy
+
+#: The versioned preimage identifier for this snapshot.
+PAYMENT_AUTHORITY_POLICY_FORMAT: Final[str] = "inntris-payment-authority-policy-v1"
+
+
+def _instant(value: Any) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, datetime):
+        return str(value)
+    normalised = value if value.tzinfo is not None else value.replace(tzinfo=UTC)
+    iso = normalised.astimezone(UTC).isoformat()
+    return iso[:-6] + "Z" if iso.endswith("+00:00") else iso
+
+
+def _amount(value: Any) -> str:
+    return str(value if isinstance(value, Decimal) else Decimal(str(value)))
+
+
+@dataclass(frozen=True, slots=True)
+class PaymentAuthorityPolicySnapshot:
+    """A deterministic digest of every rule applied to one payment act."""
+
+    digest: str
+    revision: str
+    captured_at: datetime
+    preimage: dict[str, Any]
+
+    def as_policy_snapshot(self) -> PolicySnapshot:
+        """The core-layer snapshot a grant or decision carries."""
+        return PolicySnapshot(
+            policy_hash=self.digest,
+            captured_at=self.captured_at,
+            source=PAYMENT_AUTHORITY_POLICY_FORMAT,
+        )
+
+
+def build_payment_authority_policy_snapshot(
+    agent: Any,
+    action_type: str,
+    *,
+    trust_threshold: int | None,
+    registered_policy_hash: str | None = None,
+    captured_at: datetime | None = None,
+) -> PaymentAuthorityPolicySnapshot:
+    """Snapshot the organisation policy governing ``action_type`` for ``agent``.
+
+    ``agent`` is the trusted server-side record, never anything derived
+    from the request. An unreadable ``wallet_policy`` is recorded as
+    ``"invalid"`` rather than omitted: a snapshot that quietly dropped a
+    policy it could not parse would claim to cover a rule it did not.
+    """
+    metadata = agent.metadata if isinstance(getattr(agent, "metadata", None), dict) else {}
+    raw_wallet_policy = metadata.get("wallet_policy")
+
+    wallet_section: dict[str, Any]
+    if raw_wallet_policy is None:
+        wallet_section = {"configured": False}
+    else:
+        try:
+            allowed_chains, allowed_recipients = validate_wallet_policy(raw_wallet_policy)
+        except Exception:
+            wallet_section = {"configured": True, "state": "invalid"}
+        else:
+            wallet_section = {
+                "configured": True,
+                "state": "valid",
+                "allowed_chains": sorted(allowed_chains) if allowed_chains else None,
+                "allowed_recipients": (
+                    {
+                        chain: sorted(entries)
+                        for chain, entries in sorted(allowed_recipients.items())
+                    }
+                    if allowed_recipients
+                    else None
+                ),
+            }
+
+    captured = (captured_at or datetime.now(UTC)).astimezone(UTC)
+    revision = "|".join(
+        (
+            PAYMENT_AUTHORITY_POLICY_FORMAT,
+            str(getattr(agent, "id", "")),
+            _instant(getattr(agent, "updated_at", None)) or "",
+            str(getattr(agent, "key_version", "")),
+        )
+    )
+
+    preimage: dict[str, Any] = {
+        "format": PAYMENT_AUTHORITY_POLICY_FORMAT,
+        "action_type": action_type,
+        "principal": {
+            "agent_id": str(agent.id),
+            "organisation_id": str(agent.org_id),
+            "status": (
+                agent.status.value if hasattr(agent.status, "value") else str(agent.status)
+            ),
+            "trust_score": int(agent.trust_score),
+            "key_version": int(getattr(agent, "key_version", 1)),
+            "updated_at": _instant(getattr(agent, "updated_at", None)),
+        },
+        "action_permissions": {
+            "allowed_actions": sorted(agent.allowed_actions or []),
+            "blocked_actions": sorted(agent.blocked_actions or []),
+        },
+        "limits": {
+            "daily_limit_usd": _amount(agent.daily_limit_usd),
+            "per_action_limit_usd": _amount(agent.per_action_limit_usd),
+            "rate_limit_per_minute": int(agent.rate_limit_per_minute),
+        },
+        "trust": {"threshold": trust_threshold},
+        "amount": {"required": action_type in AMOUNT_REQUIRED_ACTIONS},
+        "wallet_policy": wallet_section,
+        "registered_policy_hash": registered_policy_hash,
+        # Which delegated constraints this build is able to enforce. A later
+        # build that understands more keys produces a different digest, which
+        # is correct: it is a different rule set.
+        "enforceable_delegation_scope_keys": sorted(KNOWN_SCOPE_KEYS),
+    }
+
+    return PaymentAuthorityPolicySnapshot(
+        digest=jcs.sha256_hex(preimage),
+        revision=revision,
+        captured_at=captured,
+        preimage=preimage,
+    )
