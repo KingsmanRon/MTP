@@ -467,13 +467,23 @@ class PaymentDomainPolicy:
                 return block(DecisionReason.AUTHORITY_NOT_YET_VALID)
             return block(DecisionReason.AUTHORITY_EXPIRED)
 
-        if constraints.max_amount is not None:
-            if money is None:
-                return block(DecisionReason.AMOUNT_INVALID)
-            if money.currency != constraints.max_amount.currency:
-                return block(DecisionReason.AUTHORITY_SCOPE_EXCEEDED)
-            if not money <= constraints.max_amount:
-                return block(DecisionReason.AUTHORITY_SCOPE_EXCEEDED)
+        # The scope may be denominated in one currency, and that restricts the
+        # act on its own — with or without an amount cap. An act whose currency
+        # cannot be determined has not been shown to fall inside the authority,
+        # and an act in another currency plainly falls outside it. Both fail
+        # closed.
+        if constraints.currency is not None and (
+            money is None or money.currency != constraints.currency
+        ):
+            return block(DecisionReason.AUTHORITY_SCOPE_EXCEEDED)
+
+        if constraints.max_amount is not None and (
+            money is None or not money <= constraints.max_amount
+        ):
+            # A max_amount is always denominated in the parsed currency
+            # constraint, so the check above has already established that the
+            # currencies agree.
+            return block(DecisionReason.AUTHORITY_SCOPE_EXCEEDED)
 
         if constraints.allowed_payees is not None:
             payee_reason = self._check_payee_binding(constraints.allowed_payees, destination)

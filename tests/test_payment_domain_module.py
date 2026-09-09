@@ -750,3 +750,188 @@ class TestTrustedContextMustAgree:
             at=NOW,
         )
         assert DecisionReason.AUTHORITY_PRINCIPAL_MISMATCH in decision.reasons
+
+
+def envelope_without_currency(subject, amount=None, account=BOUND_ACCOUNT):
+    """A wallet transaction whose currency cannot be determined.
+
+    ``wallet_transaction`` does not require an amount, so with no amount and
+    no currency field the normalised money is ``None`` — the case a currency
+    constraint must still fail closed on.
+    """
+    payload = {"chain": CHAIN, "recipient": account}
+    if amount is not None:
+        payload["amount"] = amount
+    return build_action_envelope(
+        agent=subject, action_type="wallet_transaction", payload=payload, timestamp=NOW
+    )
+
+
+class TestDelegatedCurrencyIsParsedIndependently:
+    """Regression: ``currency`` was only read when ``max_amount`` was present.
+
+    A verified scope of ``{"currency": "EUR"}`` therefore parsed to a fully
+    enforceable constraint set that constrained nothing, and a USD payment
+    proceeded — a scope that restricted the authority was read as a scope
+    that restricted nothing.
+    """
+
+    def test_currency_is_retained_without_a_max_amount(self) -> None:
+        constraints = parse_delegation_constraints({"currency": "USD"})
+        assert constraints.currency == "USD"
+        assert constraints.max_amount is None
+        assert constraints.is_fully_enforceable
+
+    def test_an_unsupported_currency_alone_is_not_fully_enforceable(self) -> None:
+        constraints = parse_delegation_constraints({"currency": "EUR"})
+        assert constraints.currency is None
+        assert constraints.unsupported_constraints == ("currency",)
+        assert not constraints.is_fully_enforceable
+
+    def test_currency_case_is_normalised(self) -> None:
+        assert parse_delegation_constraints({"currency": "usd"}).currency == "USD"
+
+    def test_a_malformed_currency_is_a_provider_fault(self) -> None:
+        with pytest.raises(DelegationScopeError, match="scope.currency"):
+            parse_delegation_constraints({"currency": 840})
+        with pytest.raises(DelegationScopeError, match="scope.currency"):
+            parse_delegation_constraints({"currency": "  "})
+
+    def test_a_max_amount_uses_the_same_parsed_currency(self) -> None:
+        constraints = parse_delegation_constraints(
+            {"max_amount": "20.00", "currency": "usd"}
+        )
+        assert constraints.currency == "USD"
+        assert constraints.max_amount == Money("USD", 2000)
+        assert constraints.max_amount.currency == constraints.currency
+
+    def test_an_unsupported_currency_makes_its_limit_unenforceable_too(self) -> None:
+        constraints = parse_delegation_constraints(
+            {"max_amount": "20.00", "currency": "EUR"}
+        )
+        assert constraints.currency is None
+        assert constraints.max_amount is None
+        assert set(constraints.unsupported_constraints) == {"currency", "max_amount"}
+        assert not constraints.is_fully_enforceable
+
+    def test_a_max_amount_still_requires_a_currency(self) -> None:
+        with pytest.raises(DelegationScopeError, match="requires scope.currency"):
+            parse_delegation_constraints({"max_amount": "20.00"})
+
+    def test_an_absent_currency_constrains_nothing(self) -> None:
+        constraints = parse_delegation_constraints({"allowed_payees": [SUPPLIER_A]})
+        assert constraints.currency is None
+        assert constraints.is_fully_enforceable
+
+
+class TestDelegatedCurrencyIsEnforcedIndependently:
+    """The parsed currency constraint must actually decide something."""
+
+    def test_a_matching_currency_may_continue(self) -> None:
+        subject = agent()
+        decision = PaymentDomainPolicy(agent=subject).evaluate(
+            envelope(subject, amount="10.00"), resolved({"currency": "USD"}), at=NOW
+        )
+        assert decision.decision is Decision.ALLOW
+
+    def test_an_unsupported_scope_currency_fails_closed(self) -> None:
+        """The reported fail-open, pinned shut."""
+        subject = agent()
+        decision = PaymentDomainPolicy(agent=subject).evaluate(
+            envelope(subject, amount="10.00"), resolved({"currency": "EUR"}), at=NOW
+        )
+        assert decision.decision is Decision.BLOCK
+        assert DecisionReason.AUTHORITY_SCOPE_UNSUPPORTED in decision.reasons
+
+    def test_an_undeterminable_action_currency_blocks(self) -> None:
+        subject = agent()
+        payment = envelope_without_currency(subject)
+        assert normalise_payment_money(dict(payment.action.payload)) is None
+        decision = PaymentDomainPolicy(agent=subject).evaluate(
+            payment, resolved({"currency": "USD"}), at=NOW
+        )
+        assert decision.decision is Decision.BLOCK
+        assert DecisionReason.AUTHORITY_SCOPE_EXCEEDED in decision.reasons
+
+    def test_an_amount_with_no_currency_still_fails_closed(self) -> None:
+        """A different route to the same refusal: unreadable money blocks first."""
+        subject = agent()
+        decision = PaymentDomainPolicy(agent=subject).evaluate(
+            envelope_without_currency(subject, amount="10.00"),
+            resolved({"currency": "USD"}),
+            at=NOW,
+        )
+        assert decision.decision is Decision.BLOCK
+        assert DecisionReason.AMOUNT_INVALID in decision.reasons
+
+    def test_a_currency_constraint_does_not_disturb_an_unscoped_payment(self) -> None:
+        """No currency in the scope means the currency is not constrained."""
+        subject = agent()
+        decision = PaymentDomainPolicy(agent=subject).evaluate(
+            envelope_without_currency(subject), resolved({}), at=NOW
+        )
+        assert decision.decision is Decision.ALLOW
+
+    def test_a_cap_with_a_matching_currency_behaves_as_before(self) -> None:
+        subject = agent()
+        within = PaymentDomainPolicy(agent=subject).evaluate(
+            envelope(subject, amount="10.00"),
+            resolved({"max_amount": "20.00", "currency": "USD"}),
+            at=NOW,
+        )
+        assert within.decision is Decision.ALLOW
+
+        over = PaymentDomainPolicy(agent=subject).evaluate(
+            envelope(subject, amount="50.00"),
+            resolved({"max_amount": "20.00", "currency": "USD"}),
+            at=NOW,
+        )
+        assert over.decision is Decision.BLOCK
+        assert DecisionReason.AUTHORITY_SCOPE_EXCEEDED in over.reasons
+
+    def test_a_cap_in_an_unsupported_currency_still_blocks(self) -> None:
+        subject = agent()
+        decision = PaymentDomainPolicy(agent=subject).evaluate(
+            envelope(subject, amount="10.00"),
+            resolved({"max_amount": "20.00", "currency": "EUR"}),
+            at=NOW,
+        )
+        assert decision.decision is Decision.BLOCK
+        assert DecisionReason.AUTHORITY_SCOPE_UNSUPPORTED in decision.reasons
+
+    def test_a_currency_scope_still_cannot_widen_an_organisation_denial(self) -> None:
+        subject = agent()
+        decision = PaymentDomainPolicy(agent=subject).evaluate(
+            envelope(subject, amount="500.00"), resolved({"currency": "USD"}), at=NOW
+        )
+        assert decision.decision is Decision.BLOCK
+        assert DecisionReason.PER_ACTION_LIMIT_EXCEEDED in decision.reasons
+
+    def test_every_declared_known_scope_key_actually_constrains_something(self) -> None:
+        """The invariant the regression violated.
+
+        A key listed in ``KNOWN_SCOPE_KEYS`` claims this build enforces it. A
+        key that parses to no retained constraint and no unenforceable marker
+        is a silent fail-open, which is how this bug reached the branch.
+        """
+        samples: dict[str, dict] = {
+            "currency": {"currency": "USD"},
+            "max_amount": {"max_amount": "20.00", "currency": "USD"},
+            "allowed_payees": {"allowed_payees": [SUPPLIER_A]},
+            "not_before": {"not_before": (NOW - timedelta(hours=1)).isoformat()},
+            "not_after": {"not_after": (NOW + timedelta(hours=1)).isoformat()},
+        }
+        assert set(samples) == set(KNOWN_SCOPE_KEYS)
+        for key, scope in samples.items():
+            constraints = parse_delegation_constraints(scope)
+            retained = {
+                "currency": constraints.currency,
+                "max_amount": constraints.max_amount,
+                "allowed_payees": constraints.allowed_payees,
+                "not_before": constraints.not_before,
+                "not_after": constraints.not_after,
+            }
+            assert retained[key] is not None, (
+                f"scope key {key!r} is declared enforceable but parses to no "
+                "retained constraint"
+            )

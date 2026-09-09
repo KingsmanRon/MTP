@@ -32,7 +32,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Final
 
-from api.domains.payment.money import Money, MoneyError
+from api.domains.payment.money import SUPPORTED_CURRENCIES, Money, MoneyError
 
 #: Scope keys this build understands and enforces.
 KNOWN_SCOPE_KEYS: Final[frozenset[str]] = frozenset(
@@ -79,6 +79,10 @@ class PaymentDelegationConstraints:
     """The subset of an external payment authority this domain can enforce."""
 
     max_amount: Money | None = None
+    #: The currency the authority is denominated in, when the scope names one.
+    #: Independent of ``max_amount``: a scope may restrict the currency without
+    #: capping the amount, and that restriction is enforced on its own.
+    currency: str | None = None
     allowed_payees: frozenset[str] | None = None
     not_before: datetime | None = None
     not_after: datetime | None = None
@@ -110,26 +114,46 @@ def parse_delegation_constraints(scope: Mapping[str, Any] | None) -> PaymentDele
     if not isinstance(scope, Mapping):
         raise DelegationScopeError(f"scope must be a mapping, got {type(scope).__name__}")
 
-    unsupported = tuple(sorted(key for key in scope if key not in KNOWN_SCOPE_KEYS))
+    unenforceable = {key for key in scope if key not in KNOWN_SCOPE_KEYS}
+
+    # Currency is parsed whenever it is present. It is a constraint in its own
+    # right: a scope naming a currency this build cannot handle grants authority
+    # that cannot be enforced, and treating it as "no constraint" would let a
+    # payment in a different currency through untouched.
+    currency: str | None = None
+    raw_currency = scope.get("currency")
+    if raw_currency is not None:
+        if not isinstance(raw_currency, str) or not raw_currency.strip():
+            raise DelegationScopeError(
+                "scope.currency must be a non-empty ISO 4217 code"
+            )
+        code = raw_currency.strip().upper()
+        if code in SUPPORTED_CURRENCIES:
+            currency = code
+        else:
+            # Not a provider fault — the issuer granted authority in a currency
+            # this release does not support. Record it so the decision path
+            # fails closed rather than silently ignoring the restriction.
+            unenforceable.add("currency")
 
     max_amount: Money | None = None
     raw_amount = scope.get("max_amount")
     if raw_amount is not None:
-        currency = scope.get("currency")
-        if currency is None:
+        if raw_currency is None:
             raise DelegationScopeError(
                 "scope.max_amount requires scope.currency; an amount without a "
                 "currency cannot be compared against anything"
             )
-        try:
-            max_amount = Money.from_decimal(raw_amount, currency)
-        except MoneyError as exc:
-            # An unsupported currency is not a provider fault — the issuer
-            # granted authority this build cannot enforce, so record it as
-            # unsupported and let the decision path fail closed.
-            unsupported = tuple(sorted({*unsupported, "max_amount"}))
-            max_amount = None
-            del exc
+        if currency is None:
+            # The limit is denominated in the currency constraint that could not
+            # be enforced, so the limit cannot be enforced either.
+            unenforceable.add("max_amount")
+        else:
+            try:
+                max_amount = Money.from_decimal(raw_amount, currency)
+            except MoneyError:
+                unenforceable.add("max_amount")
+                max_amount = None
 
     allowed_payees: frozenset[str] | None = None
     raw_payees = scope.get("allowed_payees")
@@ -162,8 +186,9 @@ def parse_delegation_constraints(scope: Mapping[str, Any] | None) -> PaymentDele
 
     return PaymentDelegationConstraints(
         max_amount=max_amount,
+        currency=currency,
         allowed_payees=allowed_payees,
         not_before=not_before,
         not_after=not_after,
-        unsupported_constraints=unsupported,
+        unsupported_constraints=tuple(sorted(unenforceable)),
     )
