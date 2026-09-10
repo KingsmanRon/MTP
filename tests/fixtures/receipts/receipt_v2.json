@@ -1,0 +1,14 @@
+{
+  "canonicalisation": "json.dumps(sort_keys=True, separators=(',',':'))",
+  "fingerprint_payload": {
+    "action_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "action_type": "financial_transaction",
+    "agent_id": "11111111-2222-3333-4444-555555555555",
+    "audit_id": "99999999-8888-7777-6666-555555555555",
+    "policy_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "timestamp": "2026-04-17T12:00:00Z",
+    "verdict": "approved"
+  },
+  "receipt_fingerprint": "28f77f63bc0a413d930118fed7e82b39daec3cffb3d7cc702b3e3d48d561d8af",
+  "schema_version": "v2"
+}

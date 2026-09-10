@@ -47,10 +47,21 @@ class TestRevisionChain:
         """
         assert len(_REVISION_ID) <= 32
 
-    def test_this_revision_is_the_single_head(self) -> None:
+    def test_there_is_exactly_one_head(self) -> None:
+        """One head, and this revision is on the path to it.
+
+        Pinning the head to THIS revision would fail the moment a later
+        migration is added, which is not a defect. What must stay true is
+        that the tree does not fork and that this revision is still part
+        of the history the head descends from.
+        """
         config = Config(str(_REPO / "alembic.ini"))
         config.set_main_option("script_location", str(_REPO / "alembic"))
-        assert ScriptDirectory.from_config(config).get_heads() == [_REVISION_ID]
+        script = ScriptDirectory.from_config(config)
+        heads = script.get_heads()
+        assert len(heads) == 1, heads
+        ancestry = {rev.revision for rev in script.walk_revisions("base", heads[0])}
+        assert _REVISION_ID in ancestry
 
     def test_downgrade_refuses_rather_than_dropping_evidence(self) -> None:
         module = _load_revision()

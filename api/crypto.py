@@ -306,6 +306,7 @@ class CryptoService:
         sandbox: bool = False,
         token_id: str | None = None,
         expires_at: datetime | int | float | None = None,
+        extra_claims: dict[str, Any] | None = None,
     ) -> str:
         """
         Generate a signed approval token.
@@ -323,6 +324,13 @@ class CryptoService:
                 The signed claim is propagated to the consumption receipt so a
                 later agent promotion cannot turn test activity into a mainnet
                 eligible record.
+            extra_claims: Additional claims folded into the signed token body.
+                Used by the execution-authority path to bind a token to a
+                grant and a semantic act, so that lifecycle reuses this
+                primitive rather than growing a second bearer-token scheme.
+                Omitted (the default) leaves the token bytes byte-identical
+                to every token issued before this parameter existed, and a
+                supplied claim may never overwrite a base claim.
 
         Returns:
             Base64-encoded approval token.
@@ -342,6 +350,14 @@ class CryptoService:
             "exp": int(expiry),
             "sandbox": bool(sandbox),
         }
+
+        if extra_claims:
+            collisions = sorted(set(extra_claims) & set(token_data))
+            if collisions:
+                raise CryptoError(
+                    f"extra_claims may not overwrite base token claims: {collisions}"
+                )
+            token_data.update(extra_claims)
 
         token_json = json.dumps(token_data, sort_keys=True, separators=(",", ":"))
         token_bytes = token_json.encode("utf-8")
@@ -373,6 +389,30 @@ class CryptoService:
         Returns:
             Decoded token data if valid, None if invalid or expired.
         """
+        claims, expired = CryptoService.authenticate_approval_token(token_b64, server_secret)
+        if claims is None or expired:
+            return None
+        return claims
+
+    @staticmethod
+    def authenticate_approval_token(
+        token_b64: str,
+        server_secret: "bytes | Iterable[bytes]",
+    ) -> "tuple[dict[str, Any] | None, bool]":
+        """Verify a token's authenticity WITHOUT deciding on expiry.
+
+        Returns ``(claims, expired)``. ``claims`` is ``None`` when the token
+        is unreadable or its HMAC matches no accepted secret — that is a
+        forgery and there is nothing further to discuss. ``expired`` says
+        only whether the ``exp`` claim has passed.
+
+        The split exists because expiry and authenticity answer different
+        questions. Recovering an ALREADY COMMITTED consumption after the
+        token expired is returning a historical fact, not authorising a new
+        execution, and the caller still has to prove the token is genuine to
+        ask for it. ``verify_approval_token`` keeps its original meaning —
+        authentic AND unexpired — so no legacy caller sees a change.
+        """
         secrets_list: list[bytes] = (
             [server_secret]
             if isinstance(server_secret, (bytes, bytearray))
@@ -383,7 +423,7 @@ class CryptoService:
             parts = combined.rsplit(b".", 1)
 
             if len(parts) != 2:
-                return None
+                return None, True
 
             token_bytes, signature_b64 = parts  # gitleaks:allow parsed values, not a credential
             signature = base64.b64decode(signature_b64)
@@ -396,17 +436,14 @@ class CryptoService:
                     matched = True
                     break
             if not matched:
-                return None
+                return None, True
 
-            # Decode and check expiry
             token_data = json.loads(token_bytes.decode("utf-8"))
-            if token_data.get("exp", 0) < datetime.now(UTC).timestamp():
-                return None
-
-            return token_data
+            expired = token_data.get("exp", 0) < datetime.now(UTC).timestamp()
+            return token_data, expired
 
         except Exception:
-            return None
+            return None, True
 
     # NOTE: Merkle tree operations are handled by workers/anchor_worker.py
     # which uses keccak256 to match the on-chain AnchorRegistry contract.

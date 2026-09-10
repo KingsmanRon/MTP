@@ -22,3 +22,18 @@ cf2032f52ebe700745e23cc0e279e9e4309a6b89:docs/verify-page-spec.md:generic-api-ke
 47dbe6120834477c296a697633d4bdfea468752c:docs/DEPLOYMENT.md:curl-auth-header:537
 7027dc9fe9023906f4e6e708d06b8c5a81e248f8:DEPLOYMENT_GUIDE.md:curl-auth-header:372
 7027dc9fe9023906f4e6e708d06b8c5a81e248f8:DEPLOYMENT_GUIDE.md:curl-auth-header:405
+
+# Phase 4 - reviewed false positives, no secret involved.
+# Two call sites in the evidence-chain tests passed a quoted grant id as a
+# keyword argument in a call whose first positional argument was named for
+# the signing key. generic-api-key matches that arrangement by shape alone;
+# the captured value was the argument name, not a credential. HEAD no longer
+# has that arrangement - both grant ids are named module constants now - but
+# this gate scans the whole history, so the commit that introduced them still
+# reports. Scoped to these two fingerprints, so a new occurrence still fails.
+#
+# NOTE: do not quote the offending source text in a comment here. Doing so
+# reproduces the pattern inside this very file and the gate flags it.
+75ae7d39de6cb5fbdc6eaaf65c9b5dcd7a1152ed:tests/test_authority_endpoints.py:generic-api-key:2788
+75ae7d39de6cb5fbdc6eaaf65c9b5dcd7a1152ed:tests/test_authority_endpoints.py:generic-api-key:2794
+eaa9f3f6d213fc4bd0ccbbb07c318089ea14336e:.gitleaksignore:generic-api-key:27

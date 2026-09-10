@@ -39,6 +39,32 @@ async def _tenant_lifespan(app):
 
 _legacy_main.app.router.lifespan_context = _tenant_lifespan
 
+# Execution-authority HTTP surface. It is registered here, on the same app,
+# and calls the same internal services the legacy routes call -- there is no
+# second evaluation or consumption path behind it.
+from api.routes import authority as _authority_routes  # noqa: E402
+
+
+async def _get_agent_or_404(database, agent_id):
+    from fastapi import HTTPException
+
+    try:
+        agent = await database.get_agent_by_id(agent_id)
+    except Exception as exc:  # AgentNotFoundError and any lookup failure
+        raise HTTPException(status_code=404, detail="Agent not found") from exc
+    if agent is None:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    return agent
+
+
+_authority_routes.register(
+    _legacy_main.app,
+    get_db=_legacy_main.get_db,
+    require_api_scope=_legacy_main.require_api_scope,
+    get_agent_or_404=_get_agent_or_404,
+    server_secret_provider=lambda: list(_legacy_main.SERVER_SECRETS),
+)
+
 # Preserve the historical api.main module surface for existing tests and
 # operational tooling that monkeypatch globals such as db_pool. The ASGI app is
 # the same object; only its tenant-facing dependency graph has been hardened.

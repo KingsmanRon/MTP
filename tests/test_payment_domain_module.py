@@ -398,13 +398,51 @@ class TestAuthorityPolicySnapshot:
         )
         assert snapshot.preimage["wallet_policy"] == {"configured": True, "state": "invalid"}
 
-    def test_it_carries_revision_metadata_for_change_detection(self) -> None:
+    def test_the_revision_is_semantic_not_a_row_mtime(self) -> None:
+        """The revision is bound into the issuance identity, so it must
+        change for policy and for nothing else.
+
+        It used to carry ``agents.updated_at``, which an audit-log trigger
+        bumps on ordinary activity — so a retry of one request computed a
+        different issuance digest and was refused as a different request.
+        """
+        subject = agent()
         snapshot = build_payment_authority_policy_snapshot(
-            agent(), "financial_transaction", trust_threshold=30, captured_at=NOW
+            subject, "financial_transaction", trust_threshold=30, captured_at=NOW
         )
         assert PAYMENT_AUTHORITY_POLICY_FORMAT in snapshot.revision
-        assert "2026-01-01T00:00:00Z" in snapshot.revision
+        assert snapshot.digest in snapshot.revision
+        assert "2026-01-01T00:00:00Z" not in snapshot.revision
         assert snapshot.preimage["principal"]["key_version"] == 1
+
+    def test_a_bumped_row_mtime_does_not_move_the_revision(self) -> None:
+        """Same principal, same policy, later mtime: the same revision."""
+        identity = {"id": uuid4(), "org_id": uuid4()}
+        before = build_payment_authority_policy_snapshot(
+            agent(**identity), "financial_transaction", trust_threshold=30, captured_at=NOW
+        )
+        after = build_payment_authority_policy_snapshot(
+            agent(**identity, updated_at=datetime(2027, 6, 1, tzinfo=UTC)),
+            "financial_transaction",
+            trust_threshold=30,
+            captured_at=NOW,
+        )
+        assert after.revision == before.revision
+        assert after.digest == before.digest
+
+    def test_a_real_policy_change_does_move_the_revision(self) -> None:
+        identity = {"id": uuid4(), "org_id": uuid4()}
+        before = build_payment_authority_policy_snapshot(
+            agent(**identity), "financial_transaction", trust_threshold=30, captured_at=NOW
+        )
+        after = build_payment_authority_policy_snapshot(
+            agent(**identity, per_action_limit_usd=Decimal("1")),
+            "financial_transaction",
+            trust_threshold=30,
+            captured_at=NOW,
+        )
+        assert after.revision != before.revision
+        assert after.digest != before.digest
 
     def test_it_contains_no_secrets(self) -> None:
         import json

@@ -631,6 +631,7 @@ class AuthorityStore:
         execution_ref: str | None = None,
         authority_evidence: ResolvedAuthorityEvidence | None = None,
         audit_entry_factory: Callable[[Any], AuditLogEntry] | None = None,
+        recovery_only: bool = False,
         at: datetime | None = None,
     ) -> ConsumeResult:
         """Spend the grant once, or recover the record of an earlier spend.
@@ -689,7 +690,21 @@ class AuthorityStore:
                     rejection_reason=DecisionReason.GRANT_NOT_FOUND,
                 )
 
-            # --- Recovery comes before every lifecycle rejection ---------
+            # --- Immutable identity is checked BEFORE recovery -----------
+            # Recovery may bypass MUTABLE policy and lifecycle state, because
+            # it returns a historical fact rather than authorising anything.
+            # It must not bypass the executor binding, which is immutable and
+            # is the whole reason a grant belongs to one executor: otherwise
+            # anybody holding the token could read back somebody else's
+            # committed execution.
+            if grant["executor_binding_digest"] != executor_binding_digest:
+                return ConsumeResult(
+                    outcome=ConsumptionOutcome.REJECTED,
+                    grant_id=grant_id,
+                    rejection_reason=DecisionReason.GRANT_EXECUTOR_MISMATCH,
+                )
+
+            # --- Recovery comes before every LIFECYCLE rejection ----------
             # A committed consumption with this exact reference is returned
             # even after the grant expired: the authority was spent while it
             # was valid, and this only hands back the record of it.
@@ -733,6 +748,18 @@ class AuthorityStore:
                     outcome=ConsumptionOutcome.REJECTED,
                     grant_id=grant_id,
                     rejection_reason=DecisionReason.EXECUTION_REF_CONFLICT,
+                )
+
+            if recovery_only:
+                # The caller's token is authentic but expired. It may read
+                # back an already committed result -- handled above -- and
+                # nothing else. With no matching consumption there is no
+                # historical fact to return, and an expired token must never
+                # authorise a NEW execution.
+                return ConsumeResult(
+                    outcome=ConsumptionOutcome.REJECTED,
+                    grant_id=grant_id,
+                    rejection_reason=DecisionReason.GRANT_EXPIRED,
                 )
 
             # --- Deterministic rejection precedence ---------------------

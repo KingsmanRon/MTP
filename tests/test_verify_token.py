@@ -397,3 +397,110 @@ def test_dual_secret_rotation_accepts_old_secret():
     assert CryptoService.verify_approval_token(token, [new]) is None
     # Back-compat: a single bytes secret still works.
     assert CryptoService.verify_approval_token(token, old) is not None
+
+
+# ---------------------------------------------------------------------------
+# Phase 4 — one consumption path, and no downgrade onto it
+# ---------------------------------------------------------------------------
+
+
+def _authority_token(action_hash=None, expiry_minutes=5):
+    """A v0.5 executor-bound token, minted exactly as the service mints one."""
+    from api.services.authority_service import AUTHORITY_TOKEN_VERSION
+
+    resolved = action_hash or _action_hash()
+    return CryptoService.generate_approval_token(
+        agent_id=AGENT_ID,
+        action_hash=resolved,
+        verdict="approved",
+        server_secret=SERVER_SECRET,
+        expiry_minutes=expiry_minutes,
+        extra_claims={
+            "token_version": AUTHORITY_TOKEN_VERSION,
+            "grant_id": str(uuid4()),
+            "execution_action_hash": resolved,
+        },
+    )
+
+
+def test_legacy_consumption_goes_through_the_shared_primitive():
+    """One consumption path. The legacy route enters it, it does not fork.
+
+    Asserted by intercepting the shared entry point: if the route inserted
+    the consumption itself, nothing would be recorded here.
+    """
+    from api.services import authority_service
+
+    seen = {}
+    original = authority_service.consume_legacy_approval_token
+
+    async def _spy(database, audit_entry, **kwargs):
+        seen.update(kwargs)
+        return await original(database, audit_entry, **kwargs)
+
+    fake_db = _FakeDatabase()
+    authority_service.consume_legacy_approval_token = _spy
+    _with_overrides(db=fake_db)
+    try:
+        resp = client.post("/verify-token", json=_consume_body())
+    finally:
+        authority_service.consume_legacy_approval_token = original
+        app.dependency_overrides.clear()
+
+    assert resp.json()["valid"] is True
+    assert seen["approved_action_hash"] == _action_hash()
+    assert seen["execution_ref"] == "x402-settlement-1"
+    assert seen["token_claims"] is not None
+    # And the consumption landed in the one consumption table, once.
+    assert len(fake_db.consumptions) == 1
+
+
+def test_an_executor_bound_token_cannot_be_spent_on_the_legacy_route():
+    """A v0.5 grant is bound to an authenticated executor.
+
+    ``/verify-token`` authenticates the *agent*, so it cannot establish
+    that identity. Accepting the token here would let anyone holding it
+    spend authority issued to one specific executor.
+    """
+    fake_db = _FakeDatabase()
+    body = {**_consume_body(), "approval_token": _authority_token()}
+    _with_overrides(db=fake_db)
+    try:
+        resp = client.post("/verify-token", json=body)
+    finally:
+        app.dependency_overrides.clear()
+
+    assert resp.status_code == 200
+    assert resp.json()["valid"] is False
+    # Nothing was spent: the grant remains consumable by its real executor.
+    assert fake_db.consumptions == {}
+    assert fake_db.entries == []
+
+
+def test_a_bare_check_of_an_executor_bound_token_is_unchanged():
+    """The downgrade guard belongs to consumption, not to inspection."""
+    resp = client.post("/verify-token", json={"approval_token": _authority_token()})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["valid"] is True
+    assert body["agent_id"] == AGENT_ID
+
+
+def test_the_legacy_consume_response_shape_is_unchanged():
+    """Pinned wire compatibility for existing downstream executors."""
+    fake_db = _FakeDatabase()
+    _with_overrides(db=fake_db)
+    try:
+        body = client.post("/verify-token", json=_consume_body()).json()
+    finally:
+        app.dependency_overrides.clear()
+
+    assert body["valid"] is True
+    assert body["verdict"] == "approved"
+    assert body["agent_id"] == AGENT_ID
+    assert body["action_hash"] == _action_hash()
+    assert body["action_hash_matches"] is True
+    assert body["consumption_status"] == "consumed"
+    assert body["execution_ref"] == "x402-settlement-1"
+    assert body["consumption_audit_id"] is not None
+    assert body["sandbox"] in (False, None)

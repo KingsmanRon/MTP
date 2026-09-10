@@ -25,13 +25,19 @@ No key material, no API keys, no agent metadata beyond the wallet policy
 allowlists, nothing that would turn a published snapshot into a
 disclosure.
 
-Change detection for Phase 3
-----------------------------
-``revision`` is a cheap comparison key derived from the mutable inputs
-(the agent's ``updated_at`` and key version). ``digest`` is the
-authoritative one. Phase 3 compares both before first consumption:
-``revision`` catches the ordinary case, ``digest`` catches everything,
-including a change that leaves ``updated_at`` untouched.
+Change detection, and why the revision is semantic
+--------------------------------------------------
+``digest`` is the authoritative comparison key: a JCS hash over every
+policy input. ``revision`` is a readable label derived FROM that digest,
+plus the principal and key version.
+
+It once derived from the agent's ``updated_at``. That is a row mtime, not
+a policy input — an AFTER INSERT trigger on ``audit_logs`` bumps the
+agent's action counters, which bumps ``updated_at`` — and because
+``AuthorityStore.issuance_digest`` binds ``policy_revision`` into the
+issuance identity, an ordinary audit write made an identical retry look
+like a different request. Deriving the revision from the digest makes
+"same policy" and "same revision" one statement by construction.
 """
 
 from __future__ import annotations
@@ -125,14 +131,6 @@ def build_payment_authority_policy_snapshot(
             }
 
     captured = (captured_at or datetime.now(UTC)).astimezone(UTC)
-    revision = "|".join(
-        (
-            PAYMENT_AUTHORITY_POLICY_FORMAT,
-            str(getattr(agent, "id", "")),
-            _instant(getattr(agent, "updated_at", None)) or "",
-            str(getattr(agent, "key_version", "")),
-        )
-    )
 
     preimage: dict[str, Any] = {
         "format": PAYMENT_AUTHORITY_POLICY_FORMAT,
@@ -145,7 +143,18 @@ def build_payment_authority_policy_snapshot(
             ),
             "trust_score": int(agent.trust_score),
             "key_version": int(getattr(agent, "key_version", 1)),
-            "updated_at": _instant(getattr(agent, "updated_at", None)),
+            # ``updated_at`` is deliberately NOT here. It is a row mtime, not
+            # a policy input: an AFTER INSERT trigger on audit_logs bumps the
+            # agent's action counters, which bumps updated_at, which would
+            # change this digest and make every outstanding grant fail
+            # revalidation as a POLICY_HASH_MISMATCH -- for a statistic, not
+            # a policy change. Every actual policy input is committed to
+            # explicitly above and below, so nothing is lost by its absence
+            # and a false mismatch is gained by its presence. It is absent
+            # from ``revision`` below for the same reason, and a sharper one:
+            # that revision is bound into the issuance identity, so a row
+            # mtime there breaks retry idempotency rather than merely
+            # mislabelling a snapshot.
         },
         "action_permissions": {
             "allowed_actions": sorted(agent.allowed_actions or []),
@@ -166,8 +175,30 @@ def build_payment_authority_policy_snapshot(
         "enforceable_delegation_scope_keys": sorted(KNOWN_SCOPE_KEYS),
     }
 
+    digest = jcs.sha256_hex(preimage)
+    # --- The revision is SEMANTIC, and it is load-bearing -----------------
+    # ``AuthorityStore.issuance_digest`` binds policy_revision into the
+    # issuance identity, so this string decides whether a retry of one
+    # request is the same request. It must therefore change when the policy
+    # changes and at no other time.
+    #
+    # It used to carry ``agents.updated_at``. That is a row mtime: an AFTER
+    # INSERT trigger on audit_logs bumps the agent's action counters, which
+    # bumps updated_at -- so writing the first decision's own audit row
+    # changed the revision, and an identical retry that reloaded the agent
+    # computed a different issuance digest and was refused as a conflicting
+    # request. Deriving it from the policy digest instead makes "same policy"
+    # and "same revision" the same statement, by construction.
+    revision = "|".join(
+        (
+            PAYMENT_AUTHORITY_POLICY_FORMAT,
+            str(getattr(agent, "id", "")),
+            str(int(getattr(agent, "key_version", 1) or 1)),
+            digest,
+        )
+    )
     return PaymentAuthorityPolicySnapshot(
-        digest=jcs.sha256_hex(preimage),
+        digest=digest,
         revision=revision,
         captured_at=captured,
         preimage=preimage,

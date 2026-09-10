@@ -105,6 +105,9 @@ class DecisionReason(StrEnum):
     GRANT_ACTION_MISMATCH = "grant_action_mismatch"
     GRANT_EXECUTOR_MISMATCH = "grant_executor_mismatch"
     EXECUTION_REF_CONFLICT = "execution_ref_conflict"
+    #: The authority is sandbox-provenanced and can never authorise a
+    #: production execution, whatever the principal's status is now.
+    GRANT_SANDBOX_EXECUTION_DENIED = "grant_sandbox_execution_denied"
 
     # --- New: approval workflow ---
     APPROVAL_REQUIRED = "approval_required"

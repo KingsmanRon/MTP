@@ -68,7 +68,13 @@ from api.models import (
     VerifyTokenRequest,
     VerifyTokenResponse,
 )
-from api.policy import PolicyEngine, TrustScorer, canonical_policy_hash
+from api.policy import (
+    PolicyEngine,
+    PolicyResult,
+    PolicyViolation,
+    TrustScorer,
+    canonical_policy_hash,
+)
 from api.proxy_headers import MAX_TRUSTED_PROXY_HOPS, TrustedProxyClientMiddleware
 from api.schemas.admin import (
     AgentDetail,
@@ -78,6 +84,8 @@ from api.schemas.admin import (
     AuditSearchResponse,
     OrganizationResponse,
 )
+from api.services.authority_service import LegacyTokenDowngradeError
+from api.services.core_evaluation import CorePolicyInputs, evaluate_core_policy
 from api.webhooks import (
     WebhookDeliveryError,
     WebhookSecurityError,
@@ -496,6 +504,10 @@ async def verify_api_key(
             "org_name": "Development Organization",
             "billing_tier": "enterprise",
             "scopes": ["admin", "read", "write", "verify"],
+            # Reachable only when ENVIRONMENT == "development"; the executor
+            # context refuses this synthetic identity outside development.
+            "api_key_id": f"development-key:{x_api_key[:16]}",
+            "development_identity": True,
         }
 
     # Production: verify against database
@@ -536,6 +548,11 @@ async def verify_api_key(
             "org_name": row["org_name"],
             "billing_tier": row["billing_tier"],
             "scopes": row["scopes"] or ["read"],
+            # The authenticated key's own identity. Execution authority binds
+            # to THIS, not to the organisation, so two production keys in one
+            # organisation are two distinct executors and one cannot spend the
+            # other's grant.
+            "api_key_id": str(row["id"]),
         }
     except HTTPException:
         raise
@@ -2006,7 +2023,9 @@ async def verify_action(
         daily_spend = await database.get_daily_spend(agent.id)
         observe_stage("daily_spend_lookup", stage_started)
 
-        # Initialize PolicyEngine with current state
+        # Initialize PolicyEngine with current state. The engine instance is
+        # retained because the reservation step below reads the amount through
+        # it; the DECISION itself now comes from the shared evaluation.
         policy_engine = PolicyEngine(
             daily_spend=daily_spend,
             minute_request_count=minute_count,
@@ -2026,17 +2045,53 @@ async def verify_action(
         if isinstance(request_timestamp, str):
             request_timestamp = datetime.fromisoformat(request_timestamp.replace("Z", "+00:00"))
 
-        # Evaluate all policies
+        # Evaluate all policies through the SHARED Core evaluation. The rules
+        # are unchanged -- this is the same PolicyEngine call the route made
+        # inline before -- but it now runs through the one function that
+        # /authority/evaluate also calls, so neither surface can drift into
+        # being the weaker path to the same act.
         stage_started = time.perf_counter()
-        policy_result = policy_engine.evaluate(
-            agent=agent,
-            action_type=request_data.action_type,
-            payload=request_data.payload,
-            timestamp=request_timestamp,
-            registered_policy=registered_policy,
-            client_policy_hash=request_data.policy_hash,
+        policy_result = evaluate_core_policy(
+            CorePolicyInputs(
+                agent=agent,
+                action_type=request_data.action_type,
+                payload=request_data.payload,
+                timestamp=request_timestamp,
+                daily_spend=daily_spend,
+                minute_request_count=minute_count,
+                registered_policy=registered_policy,
+                client_policy_hash=request_data.policy_hash,
+            )
         )
         observe_stage("policy_evaluation", stage_started)
+
+        # STEP 4b: Server-controlled delegated-authority requirement.
+        #
+        # /verify has no field in which to present delegated authority, so an
+        # organisation that has deliberately enabled the requirement must not
+        # be able to obtain an approval token through this route. The gate
+        # consults the SAME trusted resolver the /authority/* surface uses, so
+        # there is one answer to "is authority required here", not two.
+        #
+        # No organisation is enrolled by default: for every existing
+        # organisation this is a no-op and the decision below is unchanged.
+        from api.services.authority_service import legacy_authority_gate
+
+        _authority_gap = legacy_authority_gate(
+            organisation_id=agent.org_id,
+            principal_id=agent.id,
+            action_type=request_data.action_type,
+        )
+        if _authority_gap is not None and policy_result.allowed:
+            policy_result = PolicyResult(
+                allowed=False,
+                verdict=ActionVerdict.BLOCKED,
+                violation=PolicyViolation.ACTION_NOT_ALLOWED,
+                reason=(
+                    "Delegated authority is required for this organisation and "
+                    "was not presented."
+                ),
+            )
 
         verdict = policy_result.verdict
         verdict_reason = policy_result.reason or "All verification checks passed"
@@ -2552,6 +2607,7 @@ async def _record_token_consumption(
     token_sandbox: bool,
     execution_ref: str | None,
     request: Request,
+    token_claims: dict[str, Any] | None = None,
 ) -> tuple[UUID, str]:
     """Insert the ``token_consumed`` audit event for a consumed token.
 
@@ -2626,12 +2682,20 @@ async def _record_token_consumption(
             },
         ),
     )
-    audit_id = await database.insert_token_consumption(
+    # Routed through the shared consumption primitive so both HTTP surfaces
+    # end at the same authoritative state, and so the downgrade guard cannot
+    # be present on one path and missing on the other. The insert, the
+    # execution_ref retry semantics and the return shape are unchanged.
+    from api.services.authority_service import consume_legacy_approval_token
+
+    audit_id = await consume_legacy_approval_token(
+        database,
         audit_entry,
         token_id=token_id,
         token_digest=token_digest,
         approved_action_hash=token_action_hash,
         execution_ref=execution_ref,
+        token_claims=token_claims,
     )
     if audit_id is None:
         raise ValueError("approval token already consumed")
@@ -2802,6 +2866,18 @@ async def verify_token(
                 token_sandbox=token_sandbox,
                 execution_ref=request_data.execution_ref,
                 request=request,
+                token_claims=claims,
+            )
+        except LegacyTokenDowngradeError:
+            # A v0.5 executor-bound token cannot be spent through a route that
+            # authenticates the agent rather than the executor it is bound to.
+            return VerifyTokenResponse(
+                valid=False,
+                reason="Token does not authorize this action (action hash mismatch).",
+                verdict=verdict,
+                agent_id=token_agent_id,
+                action_hash=token_action_hash,
+                expires_at=expires_at,
             )
         except SandboxExecutionDeniedError:
             return VerifyTokenResponse(
@@ -2901,18 +2977,19 @@ async def test_verify_action(
         minute_count, _ = await database.get_rate_limit_count(agent.id, "minute", minute_start)
         daily_spend = await database.get_daily_spend(agent.id)
 
-        # Initialize PolicyEngine with current state
-        policy_engine = PolicyEngine(
-            daily_spend=daily_spend,
-            minute_request_count=minute_count,
-        )
-
-        # Evaluate all policies
-        policy_result = policy_engine.evaluate(
-            agent=agent,
-            action_type=request_data.action_type,
-            payload=request_data.payload,
-            timestamp=now,
+        # The dry run must reach the SAME verdict the real route would, so
+        # it goes through the shared Core evaluation rather than its own
+        # copy of the call. A preview that could disagree with the decision
+        # it previews is worse than no preview.
+        policy_result = evaluate_core_policy(
+            CorePolicyInputs(
+                agent=agent,
+                action_type=request_data.action_type,
+                payload=request_data.payload,
+                timestamp=now,
+                daily_spend=daily_spend,
+                minute_request_count=minute_count,
+            )
         )
 
         verdict = policy_result.verdict
