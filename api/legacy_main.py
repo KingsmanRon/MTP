@@ -68,7 +68,13 @@ from api.models import (
     VerifyTokenRequest,
     VerifyTokenResponse,
 )
-from api.policy import PolicyEngine, TrustScorer, canonical_policy_hash
+from api.policy import (
+    PolicyEngine,
+    PolicyResult,
+    PolicyViolation,
+    TrustScorer,
+    canonical_policy_hash,
+)
 from api.proxy_headers import MAX_TRUSTED_PROXY_HOPS, TrustedProxyClientMiddleware
 from api.schemas.admin import (
     AgentDetail,
@@ -2037,6 +2043,34 @@ async def verify_action(
             client_policy_hash=request_data.policy_hash,
         )
         observe_stage("policy_evaluation", stage_started)
+
+        # STEP 4b: Server-controlled delegated-authority requirement.
+        #
+        # /verify has no field in which to present delegated authority, so an
+        # organisation that has deliberately enabled the requirement must not
+        # be able to obtain an approval token through this route. The gate
+        # consults the SAME trusted resolver the /authority/* surface uses, so
+        # there is one answer to "is authority required here", not two.
+        #
+        # No organisation is enrolled by default: for every existing
+        # organisation this is a no-op and the decision below is unchanged.
+        from api.services.authority_service import legacy_authority_gate
+
+        _authority_gap = legacy_authority_gate(
+            organisation_id=agent.org_id,
+            principal_id=agent.id,
+            action_type=request_data.action_type,
+        )
+        if _authority_gap is not None and policy_result.allowed:
+            policy_result = PolicyResult(
+                allowed=False,
+                verdict=ActionVerdict.BLOCKED,
+                violation=PolicyViolation.ACTION_NOT_ALLOWED,
+                reason=(
+                    "Delegated authority is required for this organisation and "
+                    "was not presented."
+                ),
+            )
 
         verdict = policy_result.verdict
         verdict_reason = policy_result.reason or "All verification checks passed"

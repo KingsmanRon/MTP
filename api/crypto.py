@@ -306,6 +306,7 @@ class CryptoService:
         sandbox: bool = False,
         token_id: str | None = None,
         expires_at: datetime | int | float | None = None,
+        extra_claims: dict[str, Any] | None = None,
     ) -> str:
         """
         Generate a signed approval token.
@@ -323,6 +324,13 @@ class CryptoService:
                 The signed claim is propagated to the consumption receipt so a
                 later agent promotion cannot turn test activity into a mainnet
                 eligible record.
+            extra_claims: Additional claims folded into the signed token body.
+                Used by the execution-authority path to bind a token to a
+                grant and a semantic act, so that lifecycle reuses this
+                primitive rather than growing a second bearer-token scheme.
+                Omitted (the default) leaves the token bytes byte-identical
+                to every token issued before this parameter existed, and a
+                supplied claim may never overwrite a base claim.
 
         Returns:
             Base64-encoded approval token.
@@ -342,6 +350,14 @@ class CryptoService:
             "exp": int(expiry),
             "sandbox": bool(sandbox),
         }
+
+        if extra_claims:
+            collisions = sorted(set(extra_claims) & set(token_data))
+            if collisions:
+                raise CryptoError(
+                    f"extra_claims may not overwrite base token claims: {collisions}"
+                )
+            token_data.update(extra_claims)
 
         token_json = json.dumps(token_data, sort_keys=True, separators=(",", ":"))
         token_bytes = token_json.encode("utf-8")

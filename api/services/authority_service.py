@@ -1,0 +1,529 @@
+"""The one evaluation path and the one consumption path.
+
+Both HTTP surfaces — the new ``/authority/*`` endpoints and the legacy
+``/verify`` / ``/verify-token`` routes — call into these. Neither
+reimplements a decision, so there is no second place where policy could
+drift or a second authoritative record of what was consumed.
+
+What the caller is never allowed to supply
+------------------------------------------
+Organisation, principal, consequence class and any verification status
+are derived from trusted server-side state. A request body may carry an
+*opaque reference* to external authority for a configured provider to
+resolve; it may not carry the conclusion.
+"""
+
+from __future__ import annotations
+
+import logging
+import os
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
+from decimal import Decimal
+from typing import Any, Final
+from uuid import UUID
+
+from api.adapters.verify_envelope import build_action_envelope
+from api.core.authority.authority import (
+    AuthorityRequirement,
+    DelegatedAuthorityClaim,
+    ResolvedAuthority,
+)
+from api.core.authority.decision import ConsequenceClass, Decision, DecisionReason
+from api.core.authority.lifecycle import ConsumptionOutcome
+from api.crypto import CryptoService
+from api.database import Database
+from api.domains.payment.policy import PAYMENT_ACTION_TYPES, PaymentDomainPolicy
+from api.domains.payment.snapshot import build_payment_authority_policy_snapshot
+from api.persistence.authority_store import (
+    AuthorityStore,
+    ConsumeResult,
+    IssueOutcome,
+    IssueResult,
+    ResolvedAuthorityEvidence,
+    authority_scope_digest,
+)
+from api.policy import PolicyEngine
+from api.services.executor_context import AuthenticatedExecutorContext, binding_matches
+
+logger = logging.getLogger(__name__)
+
+#: Version tag on the authority bearer token. The token is produced by the
+#: EXISTING approval-token primitive (HMAC over a claim set, verified with
+#: the server secret) rather than a second bearer scheme; this claim marks
+#: which claim set it carries.
+AUTHORITY_TOKEN_VERSION: Final[str] = "inntris-authority-token-v1"
+
+#: How long an issued grant may live unless something tighter applies.
+DEFAULT_GRANT_TTL: Final[timedelta] = timedelta(minutes=5)
+
+
+class AuthorityServiceError(RuntimeError):
+    """The service could not reach a decision. Never an implicit allow."""
+
+
+@dataclass(frozen=True, slots=True)
+class EvaluationResult:
+    """Typed internal result of one evaluation."""
+
+    decision: Decision
+    reasons: tuple[DecisionReason, ...] = ()
+    grant_id: UUID | None = None
+    authority_token: str | None = None
+    expires_at: datetime | None = None
+    execution_action_hash: str | None = None
+    policy_snapshot_digest: str | None = None
+    policy_snapshot_format: str | None = None
+    policy_revision: str | None = None
+    issue_outcome: IssueOutcome | None = None
+    detail: str | None = None
+
+    @property
+    def authorises_execution(self) -> bool:
+        """Only an ALLOW that actually produced usable authority."""
+        return self.decision is Decision.ALLOW and self.authority_token is not None
+
+
+class StaticAuthorityRequirementResolver:
+    """Trusted configuration answer, defaulting to today's behaviour.
+
+    An organisation not explicitly enrolled gets ``required=False``, which
+    is exactly how Core behaves now. Enrolment is a deliberate act, so
+    nothing changes for existing organisations until someone changes it.
+
+    A resolver that cannot answer must return ``required=True``; this one
+    always can, because absence from the enrolled set *is* the answer.
+    """
+
+    def __init__(self, required_organisations: frozenset[str] = frozenset()) -> None:
+        self._required = frozenset(str(o) for o in required_organisations)
+
+    def requirement(
+        self, organisation_id: str, principal_id: str, action_class: str
+    ) -> AuthorityRequirement:
+        from api.core.authority.authority import trusted_authority_construction
+
+        return AuthorityRequirement(
+            trusted_authority_construction(),
+            organisation_id=str(organisation_id),
+            principal_id=str(principal_id),
+            action_class=action_class,
+            required=str(organisation_id) in self._required,
+            source="static-organisation-enrolment",
+        )
+
+
+#: Environment variable naming the organisations that REQUIRE delegated
+#: authority, comma-separated. Absent means no organisation is enrolled,
+#: which is exactly today's behaviour.
+AUTHORITY_REQUIRED_ORGS_ENV: Final[str] = "INNTRIS_AUTHORITY_REQUIRED_ORGS"
+
+
+def default_requirement_resolver() -> StaticAuthorityRequirementResolver:
+    """The single resolver both HTTP surfaces consult.
+
+    Built fresh from the environment on each call so a deployment can
+    enrol an organisation without a code change, and so tests can enrol
+    one without leaking that state into other tests.
+    """
+    raw = os.getenv(AUTHORITY_REQUIRED_ORGS_ENV, "")
+    enrolled = frozenset(part.strip() for part in raw.split(",") if part.strip())
+    return StaticAuthorityRequirementResolver(enrolled)
+
+
+def legacy_authority_gate(
+    *,
+    organisation_id: Any,
+    principal_id: Any,
+    action_type: str,
+    has_verified_authority: bool = False,
+) -> DecisionReason | None:
+    """The requirement gate, for a caller that cannot carry authority.
+
+    ``/verify`` has no field in which to present delegated authority, so
+    for an enrolled organisation the answer is always "required and
+    absent". Returning a reason here is what stops the legacy route
+    quietly issuing a token that bypasses a rule the organisation
+    deliberately turned on.
+
+    ``None`` means the organisation is not enrolled and behaviour is
+    unchanged -- which is every organisation until someone enrols one.
+    """
+    requirement = default_requirement_resolver().requirement(
+        str(organisation_id), str(principal_id), action_type
+    )
+    if requirement.required and not has_verified_authority:
+        return DecisionReason.AUTHORITY_REQUIRED_BUT_MISSING
+    return None
+
+
+class AuthorityEvaluationService:
+    """Builds the envelope, evaluates policy, issues bounded authority."""
+
+    def __init__(
+        self,
+        database: Database,
+        *,
+        server_secret: bytes,
+        requirement_resolver: Any | None = None,
+        authority_provider: Any | None = None,
+        store: AuthorityStore | None = None,
+    ) -> None:
+        self._db = database
+        self._server_secret = server_secret
+        self._requirements = requirement_resolver or default_requirement_resolver()
+        self._authority_provider = authority_provider
+        self._store = store or AuthorityStore(database)
+
+    # -- the requirement gate, usable on its own by the legacy path -------
+
+    def requirement_for(
+        self, *, organisation_id: Any, principal_id: Any, action_type: str
+    ) -> AuthorityRequirement:
+        """Ask trusted configuration whether delegated authority is required."""
+        return self._requirements.requirement(
+            str(organisation_id), str(principal_id), action_type
+        )
+
+    def resolve_authority(
+        self,
+        claim: DelegatedAuthorityClaim | None,
+        *,
+        agent: Any,
+    ) -> ResolvedAuthority | None:
+        """Resolve an external claim through the configured provider, if any.
+
+        No provider configured and no claim presented means no delegated
+        authority — which is a fact, not an error. A claim presented with
+        no provider to resolve it is *not* waved through: it returns None,
+        and the requirement gate decides what that means.
+        """
+        if claim is None or self._authority_provider is None:
+            return None
+        from api.core.authority.authority import trusted_authority_construction
+
+        context = self._build_context(agent, trusted_authority_construction())
+        return self._authority_provider.resolve(claim, context)
+
+    @staticmethod
+    def _build_context(agent: Any, construction: Any) -> Any:
+        from api.core.authority.authority import ExecutionContext
+
+        return ExecutionContext(
+            construction,
+            organisation_id=str(agent.org_id),
+            principal_id=str(agent.id),
+        )
+
+    # -- the whole evaluation --------------------------------------------
+
+    async def evaluate(
+        self,
+        *,
+        agent: Any,
+        action_type: str,
+        payload: dict[str, Any],
+        executor: AuthenticatedExecutorContext,
+        issuance_ref: str,
+        signed_action_hash: str | None = None,
+        nonce: str | None = None,
+        timestamp: Any = None,
+        authority_claim: DelegatedAuthorityClaim | None = None,
+        consequence_class: ConsequenceClass | None = None,
+        daily_spend: Decimal = Decimal("0"),
+        registered_policy_hash: str | None = None,
+        at: datetime | None = None,
+    ) -> EvaluationResult:
+        """Decide, and on ALLOW issue bounded authority bound to this executor."""
+        now = (at or datetime.now(UTC)).astimezone(UTC)
+
+        if not executor.owns_organisation(agent.org_id):
+            # The authenticated caller is not in the principal's organisation.
+            return EvaluationResult(
+                decision=Decision.BLOCK,
+                reasons=(DecisionReason.AUTHORITY_PRINCIPAL_MISMATCH,),
+                detail="authenticated organisation does not own this principal",
+            )
+
+        envelope = build_action_envelope(
+            agent=agent,
+            action_type=action_type,
+            payload=payload,
+            signed_action_hash=signed_action_hash,
+            nonce=nonce,
+            timestamp=timestamp,
+            delegated_authority_reference=authority_claim,
+            consequence_class=consequence_class,
+        )
+
+        # --- Is delegated authority required here? Trusted config decides. ---
+        requirement = self.requirement_for(
+            organisation_id=agent.org_id, principal_id=agent.id, action_type=action_type
+        )
+        resolved = self.resolve_authority(authority_claim, agent=agent)
+
+        if requirement.required and (resolved is None or not resolved.is_verified):
+            # Fail closed. No grant, no token, and the legacy path calls this
+            # same gate so it cannot silently take the non-delegated route.
+            reason = (
+                DecisionReason.AUTHORITY_REQUIRED_BUT_MISSING
+                if resolved is None
+                else DecisionReason.AUTHORITY_VERIFICATION_FAILED
+            )
+            return EvaluationResult(decision=Decision.BLOCK, reasons=(reason,))
+
+        # --- Domain policy. Organisation policy decides; scope only narrows. ---
+        if action_type not in PAYMENT_ACTION_TYPES:
+            return EvaluationResult(
+                decision=Decision.BLOCK,
+                reasons=(DecisionReason.ACTION_TYPE_UNKNOWN,),
+                detail=f"no domain policy governs {action_type!r}",
+            )
+
+        domain_policy = PaymentDomainPolicy(
+            agent=agent,
+            daily_spend=daily_spend,
+            trust_threshold=PolicyEngine.TRUST_THRESHOLDS.get(action_type),
+            registered_policy_hash=registered_policy_hash,
+            authority_requirement_resolver=self._requirements,
+            consequence_class=consequence_class,
+        )
+        decision = domain_policy.evaluate(envelope, resolved, at=now)
+
+        snapshot = build_payment_authority_policy_snapshot(
+            agent,
+            action_type,
+            trust_threshold=PolicyEngine.TRUST_THRESHOLDS.get(action_type),
+            registered_policy_hash=registered_policy_hash,
+            captured_at=now,
+        )
+
+        if decision.decision is not Decision.ALLOW:
+            # REQUIRE_APPROVAL yields no grant either: the core contract is
+            # explicit that it produces no executable authority.
+            return EvaluationResult(
+                decision=decision.decision,
+                reasons=decision.reasons,
+                execution_action_hash=envelope.execution_action_hash,
+                policy_snapshot_digest=snapshot.digest,
+                policy_snapshot_format=snapshot.preimage["format"],
+                policy_revision=snapshot.revision,
+            )
+
+        scope_digest = None
+        if resolved is not None:
+            scope_digest = authority_scope_digest(
+                issuer=resolved.reference.issuer,
+                external_reference_id=resolved.reference.external_reference_id,
+                artefact_digest=resolved.reference.artefact_digest,
+                scope=dict(resolved.scope),
+            )
+
+        issued = await self._issue(
+            agent=agent,
+            envelope=envelope,
+            executor=executor,
+            issuance_ref=issuance_ref,
+            snapshot=snapshot,
+            signed_action_hash=signed_action_hash,
+            consequence_class=consequence_class,
+            authority_scope_digest=scope_digest,
+            authority_expires_at=(
+                resolved.not_after if resolved is not None else None
+            ),
+            now=now,
+        )
+        if not issued.authorises_execution:
+            return EvaluationResult(
+                decision=Decision.BLOCK,
+                reasons=(issued.reason,) if issued.reason else (),
+                execution_action_hash=envelope.execution_action_hash,
+                policy_snapshot_digest=snapshot.digest,
+                policy_snapshot_format=snapshot.preimage["format"],
+                policy_revision=snapshot.revision,
+                issue_outcome=issued.outcome,
+                detail=issued.detail,
+            )
+
+        grant = await self._store.get(issued.grant_id)
+        token = self.mint_authority_token(
+            grant_id=issued.grant_id,
+            execution_action_hash=envelope.execution_action_hash,
+            agent_id=agent.id,
+            approval_token_id=issued.approval_token_id,
+            expires_at=grant["expires_at"],
+        )
+        return EvaluationResult(
+            decision=Decision.ALLOW,
+            grant_id=issued.grant_id,
+            authority_token=token,
+            expires_at=grant["expires_at"],
+            execution_action_hash=envelope.execution_action_hash,
+            policy_snapshot_digest=snapshot.digest,
+            policy_snapshot_format=snapshot.preimage["format"],
+            policy_revision=snapshot.revision,
+            issue_outcome=issued.outcome,
+        )
+
+    async def _issue(
+        self,
+        *,
+        agent: Any,
+        envelope: Any,
+        executor: AuthenticatedExecutorContext,
+        issuance_ref: str,
+        snapshot: Any,
+        signed_action_hash: str | None,
+        consequence_class: ConsequenceClass | None,
+        authority_scope_digest: str | None,
+        authority_expires_at: datetime | None,
+        now: datetime,
+    ) -> IssueResult:
+        from api.domains.payment.amounts import extract_amount
+
+        amount = extract_amount(dict(envelope.action.payload)) or Decimal("0")
+        return await self._store.issue(
+            agent_id=agent.id,
+            organisation_id=agent.org_id,
+            issuance_ref=issuance_ref,
+            execution_action_hash=envelope.execution_action_hash,
+            signed_action_hash=signed_action_hash,
+            policy_hash=snapshot.digest,
+            policy_snapshot_format=snapshot.preimage["format"],
+            policy_revision=snapshot.revision,
+            # The binding comes from the authenticated credential, never
+            # from anything the request body said about itself.
+            executor_binding_digest=executor.binding_digest,
+            executor_reference=executor.executor_reference,
+            domain=envelope.domain,
+            action_type=envelope.action_type,
+            consequence_class=consequence_class.value if consequence_class else None,
+            authority_scope_digest=authority_scope_digest,
+            authority_expires_at=authority_expires_at,
+            issued_at=now,
+            minute_start=now.replace(second=0, microsecond=0),
+            day_start=now.replace(hour=0, minute=0, second=0, microsecond=0),
+            amount_usd=amount,
+        )
+
+    # -- the bearer token, over the existing primitive --------------------
+
+    def mint_authority_token(
+        self,
+        *,
+        grant_id: UUID,
+        execution_action_hash: str,
+        agent_id: UUID,
+        approval_token_id: str | None,
+        expires_at: datetime,
+    ) -> str:
+        """An unforgeable token bound to grant, act and expiry.
+
+        Produced by the existing approval-token primitive — the same HMAC
+        over a claim set, verified with the same server secret — rather
+        than a second bearer scheme with its own failure modes. The extra
+        claims name what this token authorises.
+        """
+        return CryptoService.generate_approval_token(
+            agent_id=str(agent_id),
+            action_hash=execution_action_hash,
+            verdict="approved",
+            server_secret=self._server_secret,
+            token_id=approval_token_id,
+            expires_at=expires_at,
+            extra_claims={
+                "token_version": AUTHORITY_TOKEN_VERSION,
+                "grant_id": str(grant_id),
+                "execution_action_hash": execution_action_hash,
+            },
+        )
+
+    def read_authority_token(self, token: str) -> dict[str, Any] | None:
+        """Decode and verify a token. ``None`` means do not proceed."""
+        claims = CryptoService.verify_approval_token(token, self._server_secret)
+        if not claims or claims.get("token_version") != AUTHORITY_TOKEN_VERSION:
+            return None
+        return claims
+
+
+class AuthorityConsumptionService:
+    """The one path that spends authority, for both HTTP surfaces."""
+
+    def __init__(
+        self,
+        database: Database,
+        *,
+        server_secret: bytes,
+        store: AuthorityStore | None = None,
+    ) -> None:
+        self._db = database
+        self._server_secret = server_secret
+        self._store = store or AuthorityStore(database)
+
+    async def consume(
+        self,
+        *,
+        authority_token: str,
+        executor: AuthenticatedExecutorContext,
+        agent: Any,
+        action_type: str,
+        payload: dict[str, Any],
+        execution_ref: str,
+        signed_action_hash: str | None = None,
+        authority_evidence: ResolvedAuthorityEvidence | None = None,
+        at: datetime | None = None,
+    ) -> ConsumeResult:
+        """Spend authority once, for the exact act, by the bound executor.
+
+        The act's hash is recomputed here from the presented action, never
+        taken from the request. Possession of a grant id is not authority:
+        the caller must present the unforgeable token AND authenticate as
+        the executor the grant was bound to.
+        """
+        executor.require_consume()
+
+        claims = CryptoService.verify_approval_token(authority_token, self._server_secret)
+        if not claims or claims.get("token_version") != AUTHORITY_TOKEN_VERSION:
+            return ConsumeResult(
+                outcome=ConsumptionOutcome.REJECTED,
+                rejection_reason=DecisionReason.GRANT_NOT_FOUND,
+            )
+
+        try:
+            grant_id = UUID(str(claims.get("grant_id")))
+        except (TypeError, ValueError):
+            return ConsumeResult(
+                outcome=ConsumptionOutcome.REJECTED,
+                rejection_reason=DecisionReason.GRANT_MALFORMED,
+            )
+
+        # Recompute the act server-side from what was actually presented.
+        envelope = build_action_envelope(
+            agent=agent,
+            action_type=action_type,
+            payload=payload,
+            signed_action_hash=signed_action_hash,
+        )
+        if claims.get("execution_action_hash") != envelope.execution_action_hash:
+            # The token authorises a different act than the one presented.
+            return ConsumeResult(
+                outcome=ConsumptionOutcome.REJECTED,
+                grant_id=grant_id,
+                rejection_reason=DecisionReason.GRANT_ACTION_MISMATCH,
+            )
+
+        return await self._store.consume(
+            grant_id=grant_id,
+            execution_action_hash=envelope.execution_action_hash,
+            executor_binding_digest=executor.binding_digest,
+            execution_ref=execution_ref,
+            authority_evidence=authority_evidence,
+            at=at,
+        )
+
+    async def grant_for(self, grant_id: UUID) -> Any:
+        return await self._store.get(grant_id)
+
+    @staticmethod
+    def executor_matches(executor: AuthenticatedExecutorContext, grant: Any) -> bool:
+        return binding_matches(executor, grant["executor_binding_digest"])
