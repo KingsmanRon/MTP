@@ -202,6 +202,8 @@ def build_evidence_payload(
     event_type: EvidenceEventType,
     recorded_at: datetime,
     body: dict[str, Any],
+    signing_key_id: str,
+    signing_key_fingerprint: str,
     parent_event_id: str | None = None,
     parent_payload_hash: str | None = None,
 ) -> dict[str, Any]:
@@ -211,6 +213,13 @@ def build_evidence_payload(
     steer one event's preimage into another version's hash space. The
     parent link is *inside* the signed payload: re-parenting an event
     changes the hash and invalidates its signature.
+
+    So is the **signer's identity**. If the key id and fingerprint sat only
+    in the outer envelope, an attacker could swap in their own key and
+    rewrite the metadata to name it, and the event would verify against
+    the key they chose. Committing the fingerprint inside the signature
+    closes that: the verifier recomputes the fingerprint of whatever key
+    it was handed and compares it to the one the signature covers.
     """
     return {
         "format": EVIDENCE_PAYLOAD_FORMAT,
@@ -220,6 +229,10 @@ def build_evidence_payload(
         "recorded_at": _instant(recorded_at),
         "parent_event_id": parent_event_id,
         "parent_payload_hash": parent_payload_hash,
+        "signing_key_id": _require_text(signing_key_id, "signing_key_id"),
+        "signing_key_fingerprint": _require_text(
+            signing_key_fingerprint, "signing_key_fingerprint"
+        ),
         "body": body,
     }
 
@@ -253,6 +266,8 @@ def sign_evidence_event(
         event_type=event_type,
         recorded_at=recorded,
         body=body,
+        signing_key_id=key.key_id,
+        signing_key_fingerprint=key.fingerprint,
         parent_event_id=parent.event_id if parent is not None else None,
         parent_payload_hash=parent.evidence_payload_hash if parent is not None else None,
     )
@@ -315,13 +330,30 @@ def verify_evidence_event(
         failures.append("evidence_payload_hash does not match the payload")
 
     try:
-        verify_key = VerifyKey(base64.b64decode(public_key_b64, validate=True), encoder=RawEncoder)
+        raw_public_key = base64.b64decode(public_key_b64, validate=True)
+        verify_key = VerifyKey(raw_public_key, encoder=RawEncoder)
         verify_key.verify(
             bytes.fromhex(recomputed),
             base64.b64decode(record.get("signature_b64") or "", validate=True),
         )
     except (BadSignatureError, ValueError, TypeError):
         failures.append("signature does not verify over the recomputed payload hash")
+        raw_public_key = b""
+
+    # The signer's identity is part of what was signed. Recompute the
+    # fingerprint of the key we were actually handed and require the
+    # signature to cover exactly that key, so substituting a key and
+    # rewriting the metadata to match it cannot pass.
+    if raw_public_key:
+        supplied_fingerprint = hashlib.sha256(raw_public_key).hexdigest()
+        if payload.get("signing_key_fingerprint") != supplied_fingerprint:
+            failures.append(
+                "signing_key_fingerprint does not identify the verifying key"
+            )
+    if record.get("signing_key_fingerprint") != payload.get("signing_key_fingerprint"):
+        failures.append("outer signing_key_fingerprint contradicts the signed payload")
+    if record.get("signing_key_id") != payload.get("signing_key_id"):
+        failures.append("outer signing_key_id contradicts the signed payload")
 
     if parent is not None:
         parent_record = (

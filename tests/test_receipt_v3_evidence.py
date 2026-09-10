@@ -25,6 +25,7 @@ from api.receipts.v3 import (
     EvidenceError,
     EvidenceEventType,
     OutcomeEvidenceV3,
+    build_evidence_payload,
     evidence_payload_hash,
     load_evidence_signing_key,
     sign_evidence_event,
@@ -362,3 +363,170 @@ class TestEvidenceValidation:
                 outcome="authorised",
                 executor_binding_digest="f" * 64,
             ).to_body()
+
+
+class TestSigningKeyIdentityIsBound:
+    """Which key signed is part of what was signed.
+
+    A fingerprint carried only alongside the signature is metadata an
+    attacker can rewrite. Here it lives inside the signed payload, and the
+    verifier recomputes it from the key it was actually handed — so
+    swapping in another key and relabelling the event fails.
+    """
+
+    def test_the_key_identity_is_inside_the_signed_payload(self, key) -> None:
+        event = signed_decision(key)
+        assert event.payload["signing_key_id"] == key.key_id
+        assert event.payload["signing_key_fingerprint"] == key.fingerprint
+
+    def test_tampering_with_the_signing_key_id_is_detected(self, key) -> None:
+        record = signed_decision(key).as_public_dict()
+        record["payload"]["signing_key_id"] = "evidence-key-attacker"
+        result = verify_evidence_event(record, public_key_b64=key.public_key_b64)
+        assert not result
+        assert "evidence_payload_hash does not match the payload" in result.failures
+
+    def test_tampering_with_the_key_id_and_rehashing_still_fails(self, key) -> None:
+        record = signed_decision(key).as_public_dict()
+        record["payload"]["signing_key_id"] = "evidence-key-attacker"
+        record["signing_key_id"] = "evidence-key-attacker"
+        record["evidence_payload_hash"] = evidence_payload_hash(record["payload"])
+        result = verify_evidence_event(record, public_key_b64=key.public_key_b64)
+        assert not result
+        assert (
+            "signature does not verify over the recomputed payload hash"
+            in result.failures
+        )
+
+    def test_tampering_with_the_fingerprint_is_detected(self, key) -> None:
+        record = signed_decision(key).as_public_dict()
+        record["payload"]["signing_key_fingerprint"] = "0" * 64
+        record["signing_key_fingerprint"] = "0" * 64
+        record["evidence_payload_hash"] = evidence_payload_hash(record["payload"])
+        result = verify_evidence_event(record, public_key_b64=key.public_key_b64)
+        assert not result
+
+    def test_outer_metadata_may_not_contradict_the_signed_payload(self, key) -> None:
+        """The label beside the signature cannot disagree with the signature."""
+        record = signed_decision(key).as_public_dict()
+        record["signing_key_id"] = "evidence-key-attacker"
+        result = verify_evidence_event(record, public_key_b64=key.public_key_b64)
+        assert not result
+        assert "outer signing_key_id contradicts the signed payload" in result.failures
+
+    def test_a_validly_signed_event_that_names_another_key_is_refused(
+        self, key
+    ) -> None:
+        """The substitution attack the fingerprint check exists to stop.
+
+        The attacker signs a payload that *claims* the trusted key signed
+        it, then hands the verifier their own public key. Hash and
+        signature are both internally consistent — the only thing wrong is
+        that the committed fingerprint does not identify the key actually
+        being verified against, which is precisely the check.
+        """
+        attacker = load_evidence_signing_key(environment="test")
+        assert attacker.fingerprint != key.fingerprint
+
+        payload = build_evidence_payload(
+            event_id="ev-decision-1",
+            event_type=EvidenceEventType.DECISION,
+            recorded_at=NOW,
+            body=decision_body(),
+            # The lie: the trusted key's identity, over the attacker's signature.
+            signing_key_id=key.key_id,
+            signing_key_fingerprint=key.fingerprint,
+        )
+        digest = evidence_payload_hash(payload)
+        forged = {
+            "event_id": "ev-decision-1",
+            "event_type": EvidenceEventType.DECISION.value,
+            "schema_version": RECEIPT_SCHEMA_V3,
+            "recorded_at": payload["recorded_at"],
+            "payload": payload,
+            "evidence_payload_hash": digest,
+            "signature_b64": attacker.sign(bytes.fromhex(digest)),
+            "signing_key_id": key.key_id,
+            "signing_key_fingerprint": key.fingerprint,
+            "parent_event_id": None,
+            "parent_payload_hash": None,
+        }
+
+        against_attacker = verify_evidence_event(
+            forged, public_key_b64=attacker.public_key_b64
+        )
+        assert not against_attacker
+        assert against_attacker.failures == (
+            "signing_key_fingerprint does not identify the verifying key",
+        )
+        # And against the key it names, the signature simply is not there.
+        assert not verify_evidence_event(forged, public_key_b64=key.public_key_b64)
+
+    def test_re_signing_with_another_key_and_relabelling_fails(self, key) -> None:
+        """Rewriting identity after the fact breaks the signature outright."""
+        attacker = load_evidence_signing_key(environment="test")
+        forged = sign_evidence_event(
+            event_id="ev-decision-1",
+            event_type=EvidenceEventType.DECISION,
+            body=decision_body(),
+            key=attacker,
+            recorded_at=NOW,
+        ).as_public_dict()
+        assert verify_evidence_event(forged, public_key_b64=attacker.public_key_b64)
+
+        relabelled = json.loads(json.dumps(forged))
+        relabelled["payload"]["signing_key_id"] = key.key_id
+        relabelled["payload"]["signing_key_fingerprint"] = key.fingerprint
+        relabelled["signing_key_id"] = key.key_id
+        relabelled["signing_key_fingerprint"] = key.fingerprint
+        relabelled["evidence_payload_hash"] = evidence_payload_hash(
+            relabelled["payload"]
+        )
+        assert not verify_evidence_event(
+            relabelled, public_key_b64=attacker.public_key_b64
+        )
+        assert not verify_evidence_event(relabelled, public_key_b64=key.public_key_b64)
+
+
+class TestEvidenceIsStableForTheSameHistory:
+    """The same durable facts always produce the same signed bytes.
+
+    Evidence that changed on every read could not be quoted, compared or
+    referenced. Ed25519 is deterministic, so identical inputs give an
+    identical signature — this pins that property rather than assuming it.
+    """
+
+    def test_signing_the_same_event_twice_is_byte_identical(self, key) -> None:
+        first, second = signed_decision(key), signed_decision(key)
+        assert first.signature_b64 == second.signature_b64
+        assert first.evidence_payload_hash == second.evidence_payload_hash
+        assert first.as_public_dict() == second.as_public_dict()
+
+    def test_a_different_recorded_at_gives_a_different_signature(self, key) -> None:
+        """Determinism is over the content, not a constant."""
+        later = sign_evidence_event(
+            event_id="ev-decision-1",
+            event_type=EvidenceEventType.DECISION,
+            body=decision_body(),
+            key=key,
+            recorded_at=NOW + timedelta(seconds=1),
+        )
+        assert later.signature_b64 != signed_decision(key).signature_b64
+
+    def test_a_now_default_would_not_be_stable(self, key) -> None:
+        """Why the builders pass durable columns instead of ``now``."""
+        first = sign_evidence_event(
+            event_id="ev-x",
+            event_type=EvidenceEventType.DECISION,
+            body=decision_body(),
+            key=key,
+        )
+        second = sign_evidence_event(
+            event_id="ev-x",
+            event_type=EvidenceEventType.DECISION,
+            body=decision_body(),
+            key=key,
+        )
+        assert first.recorded_at != second.recorded_at or (
+            first.signature_b64 == second.signature_b64
+        )

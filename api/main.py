@@ -62,7 +62,7 @@ _authority_routes.register(
     get_db=_legacy_main.get_db,
     require_api_scope=_legacy_main.require_api_scope,
     get_agent_or_404=_get_agent_or_404,
-    server_secret_provider=lambda: _legacy_main.SERVER_SECRET,
+    server_secret_provider=lambda: list(_legacy_main.SERVER_SECRETS),
 )
 
 # Preserve the historical api.main module surface for existing tests and

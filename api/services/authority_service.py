@@ -44,6 +44,11 @@ from api.persistence.authority_store import (
     authority_scope_digest,
 )
 from api.policy import PolicyEngine
+from api.services.core_evaluation import (
+    CorePolicyInputs,
+    core_violation_to_reason,
+    evaluate_core_policy,
+)
 from api.services.executor_context import AuthenticatedExecutorContext, binding_matches
 
 logger = logging.getLogger(__name__)
@@ -164,13 +169,17 @@ class AuthorityEvaluationService:
         self,
         database: Database,
         *,
-        server_secret: bytes,
+        server_secret: bytes | list[bytes] | tuple[bytes, ...],
         requirement_resolver: Any | None = None,
         authority_provider: Any | None = None,
         store: AuthorityStore | None = None,
     ) -> None:
         self._db = database
-        self._server_secret = server_secret
+        # First entry signs; every entry verifies. See the note on the
+        # consumption service for why this preserves secret rotation.
+        self._server_secret = (
+            [server_secret] if isinstance(server_secret, (bytes, bytearray)) else list(server_secret)
+        )
         self._requirements = requirement_resolver or default_requirement_resolver()
         self._authority_provider = authority_provider
         self._store = store or AuthorityStore(database)
@@ -225,16 +234,28 @@ class AuthorityEvaluationService:
         payload: dict[str, Any],
         executor: AuthenticatedExecutorContext,
         issuance_ref: str,
-        signed_action_hash: str | None = None,
+        verified_signed_action_hash: str | None = None,
         nonce: str | None = None,
         timestamp: Any = None,
+        minute_request_count: int = 0,
+        registered_policy: Any = None,
+        client_policy_hash: str | None = None,
         authority_claim: DelegatedAuthorityClaim | None = None,
         consequence_class: ConsequenceClass | None = None,
         daily_spend: Decimal = Decimal("0"),
         registered_policy_hash: str | None = None,
         at: datetime | None = None,
     ) -> EvaluationResult:
-        """Decide, and on ALLOW issue bounded authority bound to this executor."""
+        """Decide, and on ALLOW issue bounded authority bound to this executor.
+
+        ``verified_signed_action_hash`` may only be supplied by a caller
+        that has ALREADY verified the corresponding agent Ed25519
+        signature through the existing request-verification path. The
+        service-authenticated HTTP endpoint does not accept one from the
+        request body, because a hash a caller typed is not a hash an agent
+        signed, and publishing it as ``signed_action_hash`` would give the
+        field two meanings.
+        """
         now = (at or datetime.now(UTC)).astimezone(UTC)
 
         if not executor.owns_organisation(agent.org_id):
@@ -249,7 +270,7 @@ class AuthorityEvaluationService:
             agent=agent,
             action_type=action_type,
             payload=payload,
-            signed_action_hash=signed_action_hash,
+            signed_action_hash=verified_signed_action_hash,
             nonce=nonce,
             timestamp=timestamp,
             delegated_authority_reference=authority_claim,
@@ -271,6 +292,32 @@ class AuthorityEvaluationService:
                 else DecisionReason.AUTHORITY_VERIFICATION_FAILED
             )
             return EvaluationResult(decision=Decision.BLOCK, reasons=(reason,))
+
+        # --- Shared Core organisation policy. This is the SAME evaluation
+        # /verify runs: agent status, allowed/blocked actions, action-type
+        # registration, policy binding, trust thresholds, timestamp validity,
+        # rate limits and spend. The domain policy runs after it, never
+        # instead of it, so this endpoint cannot be the weaker path.
+        core = evaluate_core_policy(
+            CorePolicyInputs(
+                agent=agent,
+                action_type=action_type,
+                payload=payload,
+                timestamp=now,
+                daily_spend=daily_spend,
+                minute_request_count=minute_request_count,
+                registered_policy=registered_policy,
+                client_policy_hash=client_policy_hash,
+            )
+        )
+        if not core.allowed:
+            reason = core_violation_to_reason(core)
+            return EvaluationResult(
+                decision=Decision.BLOCK,
+                reasons=(reason,) if reason else (),
+                execution_action_hash=envelope.execution_action_hash,
+                detail=core.reason,
+            )
 
         # --- Domain policy. Organisation policy decides; scope only narrows. ---
         if action_type not in PAYMENT_ACTION_TYPES:
@@ -325,7 +372,7 @@ class AuthorityEvaluationService:
             executor=executor,
             issuance_ref=issuance_ref,
             snapshot=snapshot,
-            signed_action_hash=signed_action_hash,
+            signed_action_hash=verified_signed_action_hash,
             consequence_class=consequence_class,
             authority_scope_digest=scope_digest,
             authority_expires_at=(
@@ -428,7 +475,7 @@ class AuthorityEvaluationService:
             agent_id=str(agent_id),
             action_hash=execution_action_hash,
             verdict="approved",
-            server_secret=self._server_secret,
+            server_secret=self._server_secret[0],
             token_id=approval_token_id,
             expires_at=expires_at,
             extra_claims={
@@ -453,11 +500,17 @@ class AuthorityConsumptionService:
         self,
         database: Database,
         *,
-        server_secret: bytes,
+        server_secret: bytes | list[bytes] | tuple[bytes, ...],
         store: AuthorityStore | None = None,
     ) -> None:
         self._db = database
-        self._server_secret = server_secret
+        # A list preserves the existing zero-downtime rotation property:
+        # new tokens are signed with the current secret, and verification
+        # accepts the previous one while it is still configured. Removing
+        # the previous secret makes old tokens fail normally.
+        self._server_secret = (
+            [server_secret] if isinstance(server_secret, (bytes, bytearray)) else list(server_secret)
+        )
         self._store = store or AuthorityStore(database)
 
     async def consume(
@@ -469,7 +522,6 @@ class AuthorityConsumptionService:
         action_type: str,
         payload: dict[str, Any],
         execution_ref: str,
-        signed_action_hash: str | None = None,
         authority_evidence: ResolvedAuthorityEvidence | None = None,
         at: datetime | None = None,
     ) -> ConsumeResult:
@@ -482,7 +534,14 @@ class AuthorityConsumptionService:
         """
         executor.require_consume()
 
-        claims = CryptoService.verify_approval_token(authority_token, self._server_secret)
+        # Authenticity and expiry are separate questions. A forged token is
+        # refused outright. An AUTHENTIC but expired token may still recover
+        # an already committed consumption -- that is reading history, not
+        # authorising execution -- so expiry downgrades the request to
+        # recovery-only rather than rejecting it here.
+        claims, expired = CryptoService.authenticate_approval_token(
+            authority_token, self._server_secret
+        )
         if not claims or claims.get("token_version") != AUTHORITY_TOKEN_VERSION:
             return ConsumeResult(
                 outcome=ConsumptionOutcome.REJECTED,
@@ -502,7 +561,6 @@ class AuthorityConsumptionService:
             agent=agent,
             action_type=action_type,
             payload=payload,
-            signed_action_hash=signed_action_hash,
         )
         if claims.get("execution_action_hash") != envelope.execution_action_hash:
             # The token authorises a different act than the one presented.
@@ -518,6 +576,7 @@ class AuthorityConsumptionService:
             executor_binding_digest=executor.binding_digest,
             execution_ref=execution_ref,
             authority_evidence=authority_evidence,
+            recovery_only=expired,
             at=at,
         )
 
@@ -527,3 +586,53 @@ class AuthorityConsumptionService:
     @staticmethod
     def executor_matches(executor: AuthenticatedExecutorContext, grant: Any) -> bool:
         return binding_matches(executor, grant["executor_binding_digest"])
+
+
+class LegacyTokenDowngradeError(PermissionError):
+    """A v0.5 executor-bound authority token was presented to a legacy route.
+
+    The legacy route authenticates the *agent*, not the executor, so it
+    cannot establish the identity a v0.5 grant is bound to. Allowing the
+    downgrade would let anyone holding the token spend authority that was
+    issued to one specific authenticated executor.
+    """
+
+
+def is_executor_bound_authority_token(claims: dict[str, Any] | None) -> bool:
+    """Whether these claims belong to the v0.5 executor-bound surface."""
+    return bool(claims) and claims.get("token_version") == AUTHORITY_TOKEN_VERSION
+
+
+async def consume_legacy_approval_token(
+    database: Database,
+    audit_entry: Any,
+    *,
+    token_id: str,
+    token_digest: bytes,
+    approved_action_hash: str,
+    execution_ref: str | None,
+    token_claims: dict[str, Any] | None = None,
+) -> Any:
+    """The single consumption primitive, entered from the legacy route.
+
+    Both routes end at ``approval_token_consumptions`` -- there is no
+    second consumption state that could disagree about whether authority
+    was spent. This wrapper exists so that fact is enforced in one place
+    rather than by two call sites that happen to agree today, and so the
+    downgrade guard below cannot be forgotten by one of them.
+
+    Legacy wire behaviour is unchanged: the same insert, the same
+    ``execution_ref`` retry semantics, the same return shape.
+    """
+    if is_executor_bound_authority_token(token_claims):
+        raise LegacyTokenDowngradeError(
+            "this authority token is bound to an authenticated executor and "
+            "must be consumed through POST /authority/consume"
+        )
+    return await database.insert_token_consumption(
+        audit_entry,
+        token_id=token_id,
+        token_digest=token_digest,
+        approved_action_hash=approved_action_hash,
+        execution_ref=execution_ref,
+    )

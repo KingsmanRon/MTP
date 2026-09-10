@@ -18,6 +18,7 @@ to at issuance.
 from __future__ import annotations
 
 import logging
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
@@ -53,6 +54,15 @@ class AuthorityClaimBody(BaseModel):
 
 
 class EvaluateRequest(BaseModel):
+    """Service-authenticated evaluation request.
+
+    There is deliberately no ``signed_action_hash`` field. That name means
+    "the request hash an agent signed and Core verified"; this surface
+    verifies no agent signature, so accepting a caller's value would give
+    one field two meanings and let an unverified assertion reach a public
+    receipt. Agent-signed flows use ``POST /verify``.
+    """
+
     model_config = ConfigDict(strict=False)
 
     agent_id: UUID = Field(..., description="Principal this act belongs to")
@@ -68,7 +78,6 @@ class EvaluateRequest(BaseModel):
             "with changed material it is a conflict."
         ),
     )
-    signed_action_hash: str | None = Field(None, min_length=64, max_length=64)
     nonce: str | None = Field(None, max_length=64)
     timestamp: str | None = None
     delegated_authority: AuthorityClaimBody | None = None
@@ -95,7 +104,6 @@ class ConsumeRequest(BaseModel):
         max_length=512,
         description="Stable executor reference. Required: a consumption that cannot be recovered is unanswerable after a lost response.",
     )
-    signed_action_hash: str | None = Field(None, min_length=64, max_length=64)
     executor_reference: str | None = Field(None, max_length=512)
 
 
@@ -139,18 +147,35 @@ def register(app, *, get_db, require_api_scope, get_agent_or_404, server_secret_
         service = AuthorityEvaluationService(
             database, server_secret=server_secret_provider()
         )
+
+        # The SAME live state /verify reads, so Core sees the real counts
+        # rather than defaults. The authoritative rate-limit enforcement is
+        # the atomic reserve-and-increment inside issuance, which holds
+        # regardless; this makes the Core pre-check meaningful too, and
+        # keeps the two surfaces feeding the shared evaluation identically.
+        now = datetime.now(UTC)
+        minute_count, _ = await database.get_rate_limit_count(
+            agent.id, "minute", now.replace(second=0, microsecond=0)
+        )
         daily_spend = await database.get_daily_spend(agent.id)
+        registered_policy = await database.get_active_agent_policy(agent.id)
+
         result = await service.evaluate(
             agent=agent,
             action_type=body.action_type,
             payload=body.payload,
             executor=executor,
             issuance_ref=body.issuance_ref,
-            signed_action_hash=body.signed_action_hash,
+            # Deliberately not settable by the caller. This surface is
+            # service-authenticated, not agent-signed, so it has verified no
+            # agent signature and must not publish one.
+            verified_signed_action_hash=None,
             nonce=body.nonce,
             timestamp=body.timestamp,
             authority_claim=claim,
             daily_spend=daily_spend,
+            minute_request_count=minute_count,
+            registered_policy=registered_policy,
         )
 
         response: dict[str, Any] = {
@@ -200,7 +225,6 @@ def register(app, *, get_db, require_api_scope, get_agent_or_404, server_secret_
                 action_type=body.action_type,
                 payload=body.payload,
                 execution_ref=body.execution_ref,
-                signed_action_hash=body.signed_action_hash,
             )
         except ExecutorAuthError as exc:
             raise HTTPException(

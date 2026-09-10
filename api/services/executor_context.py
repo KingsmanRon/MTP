@@ -18,6 +18,7 @@ the binding is derived from the credential they do not have.
 
 from __future__ import annotations
 
+import os
 import secrets
 from dataclasses import dataclass
 from typing import Any, Final
@@ -36,6 +37,12 @@ EXECUTE_SCOPE: Final[str] = "execute"
 #: existing service keys that already drive /verify-token hold it, and
 #: this phase must not lock out callers that legitimately execute today.
 CONSUME_SCOPES: Final[frozenset[str]] = frozenset({EXECUTE_SCOPE, "write", "admin"})
+
+#: Environments in which a synthetic, organisation-wide executor identity is
+#: tolerated. Production is deliberately absent.
+_NON_PRODUCTION_ENVIRONMENTS: Final[frozenset[str]] = frozenset(
+    {"development", "test", "ci"}
+)
 
 
 class ExecutorAuthError(PermissionError):
@@ -101,19 +108,36 @@ def executor_context_from_auth(
     auth: dict[str, Any],
     *,
     executor_reference: str | None = None,
+    environment: str | None = None,
 ) -> AuthenticatedExecutorContext:
     """Derive the executor context from an authenticated API-key record.
 
     ``auth`` is the dict the existing ``verify_api_key`` dependency
-    returns. The API key's own identity is what binds; when the auth
-    record carries no key id (the development shortcut), the organisation
-    alone binds, which is still server-side state and still not something
-    a caller supplies.
+    returns. The API key's own identity is what binds. A context with no
+    key identity is refused outside development: binding to the
+    organisation alone would make every key in it one executor, and the
+    whole point of the binding is that it distinguishes them.
     """
     organisation_id = auth.get("org_id")
     if organisation_id is None:
         raise ExecutorAuthError("authenticated context carries no organisation")
-    api_key_id = auth.get("api_key_id") or auth.get("key_id") or f"org-default:{organisation_id}"
+
+    api_key_id = auth.get("api_key_id") or auth.get("key_id")
+    if not api_key_id:
+        # Refuse rather than collapsing every key in an organisation into one
+        # executor identity. That fallback would make two production keys
+        # indistinguishable, so one could spend the other's grant.
+        environment = (
+            environment
+            if environment is not None
+            else os.getenv("ENVIRONMENT", "development")
+        ).strip().lower()
+        if environment not in _NON_PRODUCTION_ENVIRONMENTS:
+            raise ExecutorAuthError(
+                "authenticated context carries no API key identity; execution "
+                "authority cannot be bound to an organisation alone"
+            )
+        api_key_id = f"org-default:{organisation_id}"
 
     digest = executor_binding_digest(
         organisation_id=organisation_id, api_key_id=api_key_id
