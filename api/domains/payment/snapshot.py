@@ -25,13 +25,19 @@ No key material, no API keys, no agent metadata beyond the wallet policy
 allowlists, nothing that would turn a published snapshot into a
 disclosure.
 
-Change detection for Phase 3
-----------------------------
-``revision`` is a cheap comparison key derived from the mutable inputs
-(the agent's ``updated_at`` and key version). ``digest`` is the
-authoritative one. Phase 3 compares both before first consumption:
-``revision`` catches the ordinary case, ``digest`` catches everything,
-including a change that leaves ``updated_at`` untouched.
+Change detection, and why the revision is semantic
+--------------------------------------------------
+``digest`` is the authoritative comparison key: a JCS hash over every
+policy input. ``revision`` is a readable label derived FROM that digest,
+plus the principal and key version.
+
+It once derived from the agent's ``updated_at``. That is a row mtime, not
+a policy input — an AFTER INSERT trigger on ``audit_logs`` bumps the
+agent's action counters, which bumps ``updated_at`` — and because
+``AuthorityStore.issuance_digest`` binds ``policy_revision`` into the
+issuance identity, an ordinary audit write made an identical retry look
+like a different request. Deriving the revision from the digest makes
+"same policy" and "same revision" one statement by construction.
 """
 
 from __future__ import annotations

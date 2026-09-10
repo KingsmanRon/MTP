@@ -21,8 +21,13 @@ Two reads of one event return the *same* signed bytes, because:
 * Ed25519 is deterministic (RFC 8032): the same key over the same message
   always yields the same signature.
 
-So nothing here widens the Phase-3 migration, and no signed material has
-to be stored to make evidence quotable.
+No signed material has to be stored to make evidence quotable: the
+signature is re-derivable from the stored facts.
+
+The stored facts themselves do need a home that authorised erasure will
+not overwrite, which is what ``authority_decision_evidence`` (migration
+0020, hardened by 0021) is for. Phase 4 therefore does add migrations of
+its own; they are Phase-7A release gates alongside the Phase-3 one.
 
 **What this depends on, stated plainly:** stability holds for as long as
 the signing key is stable. A key rotation produces different signatures

@@ -17,6 +17,7 @@ import pytest
 
 from api import jcs
 from api.receipts.v3 import (
+    ENVELOPE_BOUND_FIELDS,
     EVIDENCE_PAYLOAD_FORMAT,
     RECEIPT_SCHEMA_V3,
     AuthorityEvidenceChain,
@@ -536,4 +537,141 @@ class TestEvidenceIsStableForTheSameHistory:
         )
         assert first.recorded_at != second.recorded_at or (
             first.signature_b64 == second.signature_b64
+        )
+
+
+class TestTheWholeEnvelopeIsBoundToTheSignature:
+    """A duplicated field outside the signature is a field an attacker edits
+    for free.
+
+    The signature covers the payload. Every field the public envelope
+    repeats is therefore unsigned as it appears there — and a reader who
+    trusts the outer copy is reading something nobody signed. So each
+    duplicate must equal its signed original, or the event is refused.
+    """
+
+    def test_a_complete_valid_event_still_verifies(self, key) -> None:
+        assert verify_evidence_event(
+            signed_decision(key), public_key_b64=key.public_key_b64
+        )
+
+    def test_every_duplicated_field_is_checked(self) -> None:
+        """The list must stay exhaustive as the envelope grows."""
+        envelope = set(signed_decision(load_evidence_signing_key(environment="test")).as_public_dict())
+        payload = set(
+            signed_decision(load_evidence_signing_key(environment="test")).payload
+        )
+        # Everything present on both sides is bound; nothing is overlooked.
+        assert set(ENVELOPE_BOUND_FIELDS) == (envelope & payload) - {"payload"}
+
+    @pytest.mark.parametrize("field", ENVELOPE_BOUND_FIELDS)
+    def test_mutating_an_outer_field_fails(self, key, field) -> None:
+        """The signed payload, its hash and the signature are untouched."""
+        original = signed_decision(key)
+        record = json.loads(json.dumps(original.as_public_dict()))
+        record[field] = f"forged-{record.get(field)}"
+
+        # Nothing about the signed half changed — this is purely an
+        # envelope edit, which is exactly what used to slip through.
+        assert record["payload"] == original.payload
+        assert record["evidence_payload_hash"] == original.evidence_payload_hash
+        assert record["signature_b64"] == original.signature_b64
+
+        result = verify_evidence_event(record, public_key_b64=key.public_key_b64)
+        assert not result
+        assert f"outer {field} contradicts the signed payload" in result.failures
+
+    @pytest.mark.parametrize("field", ENVELOPE_BOUND_FIELDS)
+    def test_dropping_an_outer_field_also_fails(self, key, field) -> None:
+        """Absence must not read as agreement."""
+        record = json.loads(json.dumps(signed_decision(key).as_public_dict()))
+        record.pop(field, None)
+        result = verify_evidence_event(record, public_key_b64=key.public_key_b64)
+        # A field whose signed value is None is legitimately absent; every
+        # other one must be refused.
+        signed_value = signed_decision(key).payload.get(field)
+        if signed_value is None:
+            assert result
+        else:
+            assert not result
+
+    def test_a_forged_parent_link_in_the_envelope_fails(self, key) -> None:
+        """The classic re-parent, attempted through the envelope only."""
+        parent = signed_decision(key)
+        child = sign_evidence_event(
+            event_id="ev-child",
+            event_type=EvidenceEventType.CONSUMPTION,
+            body=ConsumptionEvidenceV3(
+                consumption_audit_id="c-1",
+                grant_id="grant-1",
+                execution_action_hash="a" * 64,
+                execution_ref="exec-1",
+                outcome="authorised",
+                executor_binding_digest="f" * 64,
+            ).to_body(),
+            key=key,
+            recorded_at=NOW,
+            parent=parent,
+        )
+        record = json.loads(json.dumps(child.as_public_dict()))
+        record["parent_event_id"] = "ev-somewhere-else"
+        assert not verify_evidence_event(
+            record, public_key_b64=key.public_key_b64, parent=parent
+        )
+
+    def test_a_complete_valid_chain_still_verifies(self, key) -> None:
+        decision = signed_decision(key)
+        consumption = sign_evidence_event(
+            event_id="ev-consumption",
+            event_type=EvidenceEventType.CONSUMPTION,
+            body=ConsumptionEvidenceV3(
+                consumption_audit_id="c-1",
+                grant_id="grant-1",
+                execution_action_hash="a" * 64,
+                execution_ref="exec-1",
+                outcome="authorised",
+                executor_binding_digest="f" * 64,
+                agent_id="11111111-2222-3333-4444-555555555555",
+                organisation_id="22222222-3333-4444-5555-666666666666",
+            ).to_body(),
+            key=key,
+            recorded_at=NOW,
+            parent=decision,
+        )
+        outcome = sign_evidence_event(
+            event_id="ev-outcome",
+            event_type=EvidenceEventType.OUTCOME,
+            body=OutcomeEvidenceV3(
+                grant_id="grant-1", outcome_state="succeeded"
+            ).to_body(),
+            key=key,
+            recorded_at=NOW,
+            parent=consumption,
+        )
+        chain = AuthorityEvidenceChain(decision, consumption, outcome)
+        assert chain.verify(public_key_b64=key.public_key_b64)
+
+    def test_one_forged_envelope_field_breaks_the_whole_chain(self, key) -> None:
+        decision = signed_decision(key)
+        consumption = sign_evidence_event(
+            event_id="ev-consumption",
+            event_type=EvidenceEventType.CONSUMPTION,
+            body=ConsumptionEvidenceV3(
+                consumption_audit_id="c-1",
+                grant_id="grant-1",
+                execution_action_hash="a" * 64,
+                execution_ref="exec-1",
+                outcome="authorised",
+                executor_binding_digest="f" * 64,
+                agent_id="11111111-2222-3333-4444-555555555555",
+                organisation_id="22222222-3333-4444-5555-666666666666",
+            ).to_body(),
+            key=key,
+            recorded_at=NOW,
+            parent=decision,
+        )
+        forged = json.loads(json.dumps(consumption.as_public_dict()))
+        forged["recorded_at"] = "2020-01-01T00:00:00Z"
+        assert not verify_evidence_event(
+            forged, public_key_b64=key.public_key_b64, parent=decision
         )

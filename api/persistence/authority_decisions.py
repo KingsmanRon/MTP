@@ -1,15 +1,26 @@
 """The durable record of an authority decision — ALLOW and BLOCK alike.
 
-Why the audit log, and not a new table
---------------------------------------
+Two rows, one decision, and why both are needed
+-----------------------------------------------
 A decision needs a stable identity, a durable instant and enough canonical
-material to reconstruct its receipt truthfully. ``audit_logs`` already
-provides all three, and it is the record the rest of the system treats as
-authoritative: append-only by trigger, hash-chained per agent, and swept
-into the Merkle anchoring pipeline. Adding a second decision table would
-create a second answer to "what did the server decide", which is exactly
-the failure this phase exists to remove — and it would widen the Phase-3
-migration, which must stay frozen until Phase 7A.
+material to reconstruct its receipt truthfully. Every decision is written
+to BOTH of these, in one transaction:
+
+``audit_logs``
+    The request record. Append-only by trigger, hash-chained per agent,
+    and swept into the Merkle anchoring pipeline — and deliberately
+    erasable: ``app.erase_personal_data`` is authorised to replace its
+    ``payload`` and ``metadata`` with a tombstone.
+
+``authority_decision_evidence`` (migration 0020, hardened by 0021)
+    The forensic authority commitment. Reconstruction reads THIS, not
+    ``audit_logs``, precisely because the audit payload can be tombstoned
+    by a legitimate erasure and a receipt that has already been quoted
+    must not stop verifying.
+
+This is not a second answer to "what did the server decide" — the audit
+row remains the decision of record and the two are written together or
+not at all. It is the same answer kept where erasure does not reach.
 
 Only an ALLOW produces an ``execution_authority_grants`` row, because only
 an ALLOW produces something spendable. A BLOCK produces this record and
@@ -42,12 +53,17 @@ AUTHORITY_DECISION_PAYLOAD_FORMAT: Final[str] = "inntris-authority-decision-v1"
 #: The action_type recorded for a decision row.
 AUTHORITY_DECISION_ACTION_TYPE: Final[str] = "authority_decision"
 
+#: No ON CONFLICT clause, deliberately. The decision row and its forensic
+#: evidence are one atomic write over a freshly generated audit id, so a
+#: conflict here is not a replay -- it means something is wrong about the
+#: identity we are writing under. Swallowing it would commit a decision
+#: whose evidence is somebody else's row.
 _INSERT_EVIDENCE: Final[str] = """
     INSERT INTO authority_decision_evidence (
-        audit_log_id, agent_id, org_id, recorded_at, decision_body, sandbox
+        audit_log_id, agent_id, org_id, recorded_at, decision_body, sandbox,
+        audit_action_type
     )
-    VALUES ($1, $2, $3, $4, $5, $6)
-    ON CONFLICT (audit_log_id) DO NOTHING
+    VALUES ($1, $2, $3, $4, $5, $6, $7)
 """
 
 _SELECT_EVIDENCE: Final[str] = """
@@ -95,6 +111,7 @@ def build_decision_payload(
     grant_id: Any | None,
     grant_expires_at: datetime | None,
     detail: str | None,
+    signed_action_hash: str | None = None,
 ) -> dict[str, Any]:
     """The canonical decision material, in one versioned shape.
 
@@ -114,6 +131,11 @@ def build_decision_payload(
         "decision": decision,
         "reasons": list(reasons),
         "execution_action_hash": execution_action_hash,
+        # Only ever populated by a path that ALREADY verified the agent's
+        # Ed25519 signature over this hash. The service-authenticated
+        # endpoint has verified none, so it stores NULL here and the
+        # receipt cannot claim an agent-signed hash it never saw.
+        "signed_action_hash": signed_action_hash,
         "policy_snapshot_format": policy_snapshot_format,
         "policy_snapshot_digest": policy_snapshot_digest,
         "policy_revision": policy_revision,
@@ -248,6 +270,7 @@ async def record_authority_decision(
                 separators=(",", ":"),
             ),
             sandbox,
+            AUTHORITY_DECISION_ACTION_TYPE,
         )
     return row["id"], row["timestamp"]
 

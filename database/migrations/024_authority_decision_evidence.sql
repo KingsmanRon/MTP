@@ -1,8 +1,8 @@
 -- =============================================================================
 -- 024 — Erasure-safe authority decision evidence
 -- =============================================================================
--- Phase 4 records every authority decision, ALLOW and BLOCK alike, in
--- audit_logs, and reconstructs the signed v3 decision event from it.
+-- Phase 4 records every authority decision, ALLOW and BLOCK alike, and
+-- reconstructs the signed v3 decision event from that record.
 --
 -- Why that is not sufficient on its own
 -- ------------------------------------
@@ -21,12 +21,18 @@
 -- What goes in here, and what deliberately does not
 -- -------------------------------------------------
 -- Only the canonical decision body: identifiers, digests, the decision, its
--- typed reasons, and the policy/authority commitments. NO raw request payload,
--- no amounts, no recipients, no IP address, no user agent — none of the content
--- erasure exists to remove. The act itself appears only as
--- execution_action_hash, a digest that reveals nothing about what was requested.
--- So erasing the request does not erase the fact that a decision was made under
--- a named policy, and keeping the decision does not retain the request.
+-- typed reasons, and the policy/authority commitments. NO raw action payload,
+-- no amounts, no recipients, no IP address, no user agent -- none of the content
+-- erasure exists to remove is retained here.
+--
+-- The act itself appears only as execution_action_hash. That is a
+-- cryptographic commitment to the act, not a description of it: it is what
+-- lets a later claim about the act be checked against what was decided.
+-- Stating it precisely, without overclaiming: a commitment binds, and the
+-- strength of any given commitment against a party who can guess candidate
+-- inputs is a property of the input space, not something this table asserts.
+-- What this table does assert is narrower and checkable: no raw action
+-- payload, recipient or amount is stored in it.
 --
 -- Append-only for real: UPDATE and DELETE are refused by trigger, so this table
 -- cannot become a second, quietly editable version of history.

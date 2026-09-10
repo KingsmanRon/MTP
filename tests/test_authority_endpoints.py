@@ -12,6 +12,7 @@ import base64
 import hashlib
 import json
 import os
+import pathlib
 import secrets
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
@@ -2974,3 +2975,336 @@ class TestAuthorityEvidenceSurvivesAuthorisedErasure:
             assert json.loads(row["payload"])["erased"] is True
             assert row["request_ip"] is None
             assert row["request_user_agent"] is None
+
+
+class TestForensicEvidenceIdentityCannotContradict:
+    """The database, not the writer, guarantees these facts agree.
+
+    Before 0021 the table had three independent foreign keys plus the same
+    three identities repeated inside ``decision_body``, and nothing tied
+    them together — a row could name one agent in a column and another in
+    the body, and every individual constraint was satisfied. Evidence whose
+    identities can disagree is not evidence.
+    """
+
+    async def _row(self, db, agent, org_id, ref="fx-1"):
+        issued = await AuthorityEvaluationService(
+            db, server_secret=SERVER_SECRET
+        ).evaluate(
+            agent=agent,
+            action_type="financial_transaction",
+            payload=payment_payload(recipient=f"acct-{ref}"),
+            executor=executor(org_id),
+            issuance_ref=ref,
+        )
+        return issued, await get_authority_decision(db, issued.decision_audit_id)
+
+    @staticmethod
+    async def _insert(db, **columns):
+        async with db.acquire() as conn:
+            await conn.execute(
+                """
+                INSERT INTO authority_decision_evidence (
+                    audit_log_id, agent_id, org_id, recorded_at,
+                    decision_body, sandbox, audit_action_type
+                ) VALUES ($1, $2, $3, $4, $5::JSONB, FALSE, $6)
+                """,
+                columns["audit_log_id"],
+                columns["agent_id"],
+                columns["org_id"],
+                columns["recorded_at"],
+                json.dumps(columns["decision_body"]),
+                columns.get("audit_action_type", "authority_decision"),
+            )
+
+    async def test_the_honest_row_is_accepted(self, db) -> None:
+        """The constraints must not reject correct evidence."""
+        org_id, agent = await _make_agent(db, sandbox=False)
+        _issued, record = await self._row(db, agent, org_id, "fx-ok")
+        assert record is not None
+        body = json.loads(record["decision_body"])
+        assert body["agent_id"] == str(agent.id)
+        assert body["organisation_id"] == str(org_id)
+        assert body["audit_id"] == str(record["audit_log_id"])
+
+    async def test_a_cross_agent_audit_row_is_refused(self, db) -> None:
+        """The audit row must belong to the agent the evidence names."""
+        org_id, agent = await _make_agent(db, sandbox=False)
+        _other_org, other = await _make_agent(db, sandbox=False, org_id=org_id)
+        _issued, record = await self._row(db, agent, org_id, "fx-agent")
+
+        body = json.loads(record["decision_body"])
+        body["agent_id"] = str(other.id)
+        with pytest.raises(asyncpg.PostgresError):
+            await self._insert(
+                db,
+                audit_log_id=record["audit_log_id"],
+                agent_id=other.id,
+                org_id=org_id,
+                recorded_at=record["recorded_at"],
+                decision_body=body,
+            )
+
+    async def test_a_cross_org_ownership_pair_is_refused(self, db) -> None:
+        """(agent, org) must be a pair the agents table actually asserts."""
+        org_id, agent = await _make_agent(db, sandbox=False)
+        foreign_org, _foreign = await _make_agent(db, sandbox=False)
+        _issued, record = await self._row(db, agent, org_id, "fx-org")
+
+        body = json.loads(record["decision_body"])
+        body["organisation_id"] = str(foreign_org)
+        with pytest.raises(asyncpg.PostgresError):
+            await self._insert(
+                db,
+                audit_log_id=record["audit_log_id"],
+                agent_id=agent.id,
+                org_id=foreign_org,
+                recorded_at=record["recorded_at"],
+                decision_body=body,
+            )
+
+    async def test_an_unknown_audit_id_is_refused(self, db) -> None:
+        org_id, agent = await _make_agent(db, sandbox=False)
+        _issued, record = await self._row(db, agent, org_id, "fx-audit")
+        stranger = uuid4()
+        body = json.loads(record["decision_body"])
+        body["audit_id"] = str(stranger)
+        with pytest.raises(asyncpg.PostgresError):
+            await self._insert(
+                db,
+                audit_log_id=stranger,
+                agent_id=agent.id,
+                org_id=org_id,
+                recorded_at=record["recorded_at"],
+                decision_body=body,
+            )
+
+    @pytest.mark.parametrize(
+        "field", ["audit_id", "agent_id", "organisation_id"]
+    )
+    async def test_a_body_identity_that_contradicts_its_columns_is_refused(
+        self, db, field
+    ) -> None:
+        """The receipt follows the body, so the body must match the row."""
+        org_id, agent = await _make_agent(db, sandbox=False)
+        _issued, record = await self._row(db, agent, org_id, f"fx-body-{field}")
+
+        body = json.loads(record["decision_body"])
+        body[field] = str(uuid4())
+        with pytest.raises(asyncpg.PostgresError):
+            await self._insert(
+                db,
+                audit_log_id=record["audit_log_id"],
+                agent_id=agent.id,
+                org_id=org_id,
+                recorded_at=record["recorded_at"],
+                decision_body=body,
+            )
+
+    async def test_a_non_authority_audit_row_is_refused(self, db) -> None:
+        """Evidence may only point at a row that IS an authority decision."""
+        org_id, agent = await _make_agent(db, sandbox=False)
+        async with db.acquire() as conn:
+            ordinary = await conn.fetchval(
+                """
+                INSERT INTO audit_logs (
+                    agent_id, action_type, action_hash, payload, verdict,
+                    verdict_reason, signature, signature_valid,
+                    trust_score_at_time, metadata
+                ) VALUES ($1, 'api_call', $2, '{}'::JSONB, 'approved', 'ordinary',
+                          'X', FALSE, 50, '{"non_cryptographic": true}'::JSONB)
+                RETURNING id
+                """,
+                agent.id,
+                "c" * 64,
+            )
+        body = {
+            "audit_id": str(ordinary),
+            "agent_id": str(agent.id),
+            "organisation_id": str(org_id),
+        }
+        with pytest.raises(asyncpg.PostgresError):
+            await self._insert(
+                db,
+                audit_log_id=ordinary,
+                agent_id=agent.id,
+                org_id=org_id,
+                recorded_at=datetime.now(UTC),
+                decision_body=body,
+            )
+
+    async def test_the_audit_kind_column_cannot_be_repointed(self, db) -> None:
+        """The constant the composite key matches on is pinned."""
+        org_id, agent = await _make_agent(db, sandbox=False)
+        _issued, record = await self._row(db, agent, org_id, "fx-kind")
+        with pytest.raises(asyncpg.PostgresError):
+            await self._insert(
+                db,
+                audit_log_id=record["audit_log_id"],
+                agent_id=agent.id,
+                org_id=org_id,
+                recorded_at=record["recorded_at"],
+                decision_body=json.loads(record["decision_body"]),
+                audit_action_type="api_call",
+            )
+
+    async def test_the_tenant_role_cannot_insert_forensic_evidence(
+        self, db
+    ) -> None:
+        """The writer is the trusted runtime role, not the tenant session."""
+        async with db.acquire() as conn:
+            granted = await conn.fetchval(
+                """
+                SELECT EXISTS (
+                    SELECT 1 FROM information_schema.role_table_grants
+                    WHERE table_name = 'authority_decision_evidence'
+                      AND grantee = 'inntris_api'
+                      AND privilege_type = 'INSERT'
+                )
+                """
+            )
+        assert granted is False
+
+
+class TestForensicEvidenceWriteIsAtomic:
+    """The decision row and its evidence commit together or not at all."""
+
+    async def test_a_conflicting_evidence_row_rolls_the_decision_back(
+        self, db
+    ) -> None:
+        """No ON CONFLICT DO NOTHING: a conflict must not commit half a write.
+
+        Forced by making the evidence insert fail on a real constraint —
+        here, an audit id already carrying evidence. The decision audit row
+        written moments earlier in the same transaction must be gone too.
+        """
+        import api.persistence.authority_decisions as decisions
+
+        org_id, agent = await _make_agent(db, sandbox=False)
+        service = AuthorityEvaluationService(db, server_secret=SERVER_SECRET)
+
+        original_body = decisions.evidence_body
+        seen: dict[str, object] = {}
+
+        def _steal_then_collide(payload, *, audit_id, agent_id):
+            # Record the audit id the transaction is using, then hand back a
+            # body that violates the body/column identity constraint.
+            seen["audit_id"] = audit_id
+            body = dict(original_body(payload, audit_id=audit_id, agent_id=agent_id))
+            body["audit_id"] = str(uuid4())
+            return body
+
+        decisions.evidence_body = _steal_then_collide
+        try:
+            with pytest.raises(asyncpg.PostgresError):
+                await service.evaluate(
+                    agent=agent,
+                    action_type="financial_transaction",
+                    payload=payment_payload(recipient="acct-atomic"),
+                    executor=executor(org_id),
+                    issuance_ref="atomic-1",
+                )
+        finally:
+            decisions.evidence_body = original_body
+
+        assert "audit_id" in seen
+        async with db.acquire() as conn:
+            audit_rows = await conn.fetchval(
+                "SELECT count(*) FROM audit_logs WHERE id = $1", seen["audit_id"]
+            )
+            evidence_rows = await conn.fetchval(
+                "SELECT count(*) FROM authority_decision_evidence "
+                "WHERE audit_log_id = $1",
+                seen["audit_id"],
+            )
+        # Neither half survived: the decision was never recorded at all.
+        assert audit_rows == 0
+        assert evidence_rows == 0
+
+    async def test_the_insert_has_no_conflict_swallow(self) -> None:
+        """Pinned: a silent DO NOTHING would hide exactly the above."""
+        import api.persistence.authority_decisions as decisions
+
+        assert "ON CONFLICT" not in decisions._INSERT_EVIDENCE.upper()
+
+
+class TestSignedActionHashDurability:
+    """The field means "a hash an agent signed and Core verified".
+
+    Only a trusted internal caller that has already done that verification
+    may supply one. It then has to survive to the receipt, or the claim is
+    made and immediately lost.
+    """
+
+    _VERIFIED = "d" * 64
+
+    async def test_a_verified_hash_reaches_the_receipt(self, db) -> None:
+        org_id, agent = await _make_agent(db, sandbox=False)
+        key = load_evidence_signing_key(environment="test")
+        issued = await AuthorityEvaluationService(
+            db, server_secret=SERVER_SECRET
+        ).evaluate(
+            agent=agent,
+            action_type="financial_transaction",
+            payload=payment_payload(recipient="acct-sah"),
+            executor=executor(org_id),
+            issuance_ref="sah-1",
+            verified_signed_action_hash=self._VERIFIED,
+        )
+        record = await get_authority_decision(db, issued.decision_audit_id)
+        assert json.loads(record["decision_body"])["signed_action_hash"] == (
+            self._VERIFIED
+        )
+
+        event = build_decision_evidence(record, key=key)
+        assert event.payload["body"]["signed_action_hash"] == self._VERIFIED
+        assert verify_evidence_event(event, public_key_b64=key.public_key_b64)
+
+    async def test_the_service_authenticated_endpoint_emits_null(
+        self, db
+    ) -> None:
+        """This surface verified no agent signature, so it claims none."""
+        from api.routes.authority import EvaluateRequest
+
+        org_id, agent = await _make_agent(db, sandbox=False)
+        endpoint = TestTheEndpointItselfEnforcesCorePolicy._route(
+            "/authority/evaluate"
+        )
+        response = await endpoint(
+            body=EvaluateRequest(
+                agent_id=agent.id,
+                action_type="financial_transaction",
+                payload=payment_payload(recipient="acct-sah-2"),
+                issuance_ref="sah-2",
+            ),
+            database=db,
+            auth={"org_id": org_id, "api_key_id": "k", "scopes": ["write"]},
+        )
+        assert response["decision"] == "allow"
+
+        async with db.acquire() as conn:
+            body = await conn.fetchval(
+                """
+                SELECT decision_body
+                FROM authority_decision_evidence
+                WHERE agent_id = $1
+                  AND decision_body ->> 'grant_id' = $2
+                """,
+                agent.id,
+                response["grant_id"],
+            )
+        assert body is not None
+        assert json.loads(body)["signed_action_hash"] is None
+
+    def test_no_request_model_accepts_the_field(self) -> None:
+        """A caller cannot forge it: there is no field to put it in."""
+        from api.routes.authority import ConsumeRequest, EvaluateRequest
+
+        assert "signed_action_hash" not in EvaluateRequest.model_fields
+        assert "verified_signed_action_hash" not in EvaluateRequest.model_fields
+        assert "signed_action_hash" not in ConsumeRequest.model_fields
+
+    def test_the_route_hardcodes_none(self) -> None:
+        """And the one call site pins it, so a future edit is visible."""
+        source = pathlib.Path("api/routes/authority.py").read_text()
+        assert "verified_signed_action_hash=None," in source

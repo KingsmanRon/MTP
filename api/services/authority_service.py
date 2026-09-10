@@ -410,10 +410,23 @@ class AuthorityEvaluationService:
             registered_policy_hash=registered_policy_hash,
             at=at,
         )
-        return await self._record_decision(result, agent=agent, action_type=action_type)
+        return await self._record_decision(
+            result,
+            agent=agent,
+            action_type=action_type,
+            # Passed straight from the trusted call, never from a request
+            # body: only an internal caller that already verified the
+            # agent's signature may supply one.
+            verified_signed_action_hash=verified_signed_action_hash,
+        )
 
     async def _record_decision(
-        self, result: EvaluationResult, *, agent: Any, action_type: str
+        self,
+        result: EvaluationResult,
+        *,
+        agent: Any,
+        action_type: str,
+        verified_signed_action_hash: str | None = None,
     ) -> EvaluationResult:
         """Append the durable decision row and stamp its identity on the result.
 
@@ -460,6 +473,7 @@ class AuthorityEvaluationService:
                 grant_id=result.grant_id,
                 grant_expires_at=result.expires_at,
                 detail=result.detail,
+                signed_action_hash=verified_signed_action_hash,
             ),
         )
         return replace(

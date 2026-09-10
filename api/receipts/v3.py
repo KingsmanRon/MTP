@@ -316,6 +316,26 @@ class EvidenceVerification:
         return self.valid
 
 
+#: Fields that appear BOTH in the public envelope and inside the signed
+#: payload. The outer copy is convenience for readers; the signed copy is
+#: the truth. They must agree or the event is refused, because an envelope
+#: that can disagree with its own signature is worse than no envelope: it
+#: reads as authenticated while carrying an unsigned value.
+#:
+#: Keep this exhaustive. Anything added to ``as_public_dict`` that also
+#: lives in ``build_evidence_payload`` belongs here.
+ENVELOPE_BOUND_FIELDS: Final[tuple[str, ...]] = (
+    "event_id",
+    "event_type",
+    "schema_version",
+    "recorded_at",
+    "parent_event_id",
+    "parent_payload_hash",
+    "signing_key_id",
+    "signing_key_fingerprint",
+)
+
+
 def verify_evidence_event(
     event: dict[str, Any] | SignedEvidenceEvent,
     *,
@@ -366,10 +386,16 @@ def verify_evidence_event(
             failures.append(
                 "signing_key_fingerprint does not identify the verifying key"
             )
-    if record.get("signing_key_fingerprint") != payload.get("signing_key_fingerprint"):
-        failures.append("outer signing_key_fingerprint contradicts the signed payload")
-    if record.get("signing_key_id") != payload.get("signing_key_id"):
-        failures.append("outer signing_key_id contradicts the signed payload")
+    # --- The whole envelope is bound, not just the payload ---------------
+    # Every field duplicated outside the signature is a field an attacker
+    # can edit for free: the signature still verifies over the untouched
+    # payload, and a reader who trusts the outer copy is reading something
+    # nobody signed. So each duplicate must equal its signed original.
+    for field_name in ENVELOPE_BOUND_FIELDS:
+        if record.get(field_name) != payload.get(field_name):
+            failures.append(
+                f"outer {field_name} contradicts the signed payload"
+            )
 
     if parent is not None:
         parent_record = (
