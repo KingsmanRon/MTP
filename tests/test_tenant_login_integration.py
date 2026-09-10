@@ -43,6 +43,7 @@ TENANT_POLICY_TABLES = {
     "agents",
     "api_keys",
     "audit_logs",
+    "execution_authority_grants",
     "organizations",
     "policy_rules",
     "rate_limit_windows",

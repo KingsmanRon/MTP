@@ -1025,82 +1025,115 @@ class Database:
         """
         try:
             async with self.acquire() as conn, conn.transaction():
-                await conn.execute(
-                    "SELECT pg_advisory_xact_lock(hashtext($1)::bigint)",
-                    f"approval-token:{token_id}",
+                return await self.insert_token_consumption_on(
+                    conn,
+                    entry,
+                    token_id=token_id,
+                    token_digest=token_digest,
+                    approved_action_hash=approved_action_hash,
+                    execution_ref=execution_ref,
+                    audit_query=audit_query,
                 )
-                already_used = await conn.fetchrow(
-                    """
-                    SELECT token_id, token_digest, action_hash, audit_log_id,
-                           execution_ref
-                    FROM approval_token_consumptions
-                    WHERE token_id = $1 OR token_digest = $2
-                    LIMIT 1
-                    """,
-                    token_id,
-                    token_digest,
-                )
-                if already_used:
-                    if (
-                        execution_ref is not None
-                        and already_used["token_id"] == token_id
-                        and already_used["action_hash"] == approved_action_hash
-                        and already_used["execution_ref"] == execution_ref
-                    ):
-                        return already_used["audit_log_id"], "idempotent"
-                    return None
-
-                audit_id = await conn.fetchval(
-                    audit_query,
-                    entry.agent_id,
-                    entry.action_type,
-                    entry.action_hash,
-                    json.dumps(entry.payload),
-                    entry.verdict.value,
-                    entry.verdict_reason,
-                    entry.signature,
-                    entry.signature_valid,
-                    entry.request_ip,
-                    entry.request_user_agent,
-                    entry.response_time_ms,
-                    entry.trust_score_at_time,
-                    entry.policy_hash,
-                    json.dumps(entry.metadata),
-                )
-                await conn.execute(
-                    """
-                    INSERT INTO approval_token_consumptions (
-                        token_id, token_digest, agent_id, action_hash,
-                        audit_log_id, execution_ref
-                    ) VALUES ($1, $2, $3, $4, $5, $6)
-                    """,
-                    token_id,
-                    token_digest,
-                    entry.agent_id,
-                    approved_action_hash,
-                    audit_id,
-                    execution_ref,
-                )
-                reservation = await conn.fetchrow(
-                    "SELECT status FROM spend_reservations WHERE approval_token_id = $1",
-                    token_id,
-                )
-                if reservation is not None:
-                    if reservation["status"] != "reserved":
-                        raise ValueError(
-                            f"spend reservation is {reservation['status']}, not reserved"
-                        )
-                    await conn.execute(
-                        """
-                        UPDATE spend_reservations
-                        SET status = 'consumed', consumed_at = NOW()
-                        WHERE approval_token_id = $1 AND status = 'reserved'
-                        """,
-                        token_id,
-                    )
-                return audit_id, "consumed"
         except asyncpg.UniqueViolationError:
             return None
+
+    async def insert_token_consumption_on(
+        self,
+        conn: "asyncpg.Connection",
+        entry: AuditLogEntry,
+        *,
+        token_id: str,
+        token_digest: bytes,
+        approved_action_hash: str,
+        execution_ref: str | None = None,
+        audit_query: str,
+    ) -> tuple[UUID, str] | None:
+        """The token claim itself, on a caller-supplied transactional connection.
+
+        Extracted for the same reason as ``reserve_rate_and_spend_on``: a
+        caller that claims a token and updates its own row in one transaction
+        reuses this exact claim instead of reimplementing single use beside it.
+        The database uniqueness constraints remain the only authority.
+
+        A ``UniqueViolationError`` is deliberately NOT swallowed here -- doing
+        so would leave the caller's transaction poisoned but apparently fine.
+        Callers wrap this in a savepoint (a nested ``conn.transaction()``) and
+        handle the violation themselves.
+        """
+        await conn.execute(
+            "SELECT pg_advisory_xact_lock(hashtext($1)::bigint)",
+            f"approval-token:{token_id}",
+        )
+        already_used = await conn.fetchrow(
+            """
+            SELECT token_id, token_digest, action_hash, audit_log_id,
+                   execution_ref
+            FROM approval_token_consumptions
+            WHERE token_id = $1 OR token_digest = $2
+            LIMIT 1
+            """,
+            token_id,
+            token_digest,
+        )
+        if already_used:
+            if (
+                execution_ref is not None
+                and already_used["token_id"] == token_id
+                and already_used["action_hash"] == approved_action_hash
+                and already_used["execution_ref"] == execution_ref
+            ):
+                return already_used["audit_log_id"], "idempotent"
+            return None
+
+        audit_id = await conn.fetchval(
+            audit_query,
+            entry.agent_id,
+            entry.action_type,
+            entry.action_hash,
+            json.dumps(entry.payload),
+            entry.verdict.value,
+            entry.verdict_reason,
+            entry.signature,
+            entry.signature_valid,
+            entry.request_ip,
+            entry.request_user_agent,
+            entry.response_time_ms,
+            entry.trust_score_at_time,
+            entry.policy_hash,
+            json.dumps(entry.metadata),
+        )
+        await conn.execute(
+            """
+            INSERT INTO approval_token_consumptions (
+                token_id, token_digest, agent_id, action_hash,
+                audit_log_id, execution_ref
+            ) VALUES ($1, $2, $3, $4, $5, $6)
+            """,
+            token_id,
+            token_digest,
+            entry.agent_id,
+            approved_action_hash,
+            audit_id,
+            execution_ref,
+        )
+        reservation = await conn.fetchrow(
+            "SELECT status FROM spend_reservations WHERE approval_token_id = $1",
+            token_id,
+        )
+        if reservation is not None:
+            if reservation["status"] != "reserved":
+                raise ValueError(
+                    f"spend reservation is {reservation['status']}, not reserved"
+                )
+            await conn.execute(
+                """
+                UPDATE spend_reservations
+                SET status = 'consumed', consumed_at = NOW()
+                WHERE approval_token_id = $1 AND status = 'reserved'
+                """,
+                token_id,
+            )
+        return audit_id, "consumed"
 
     async def claim_verify_request(
         self,
@@ -1389,77 +1422,116 @@ class Database:
         counting automatically at approval-token expiry.
         """
         async with self.acquire() as conn, conn.transaction():
-            await conn.execute(
-                "SELECT pg_advisory_xact_lock(hashtext($1)::bigint)",
-                f"spend-reservation:{agent_id}",
+            return await self.reserve_rate_and_spend_on(
+                conn,
+                agent_id=agent_id,
+                minute_start=minute_start,
+                day_start=day_start,
+                amount=amount,
+                rate_limit_per_minute=rate_limit_per_minute,
+                daily_limit_usd=daily_limit_usd,
+                action_hash=action_hash,
+                approval_token_id=approval_token_id,
+                expires_at=expires_at,
             )
-            await conn.execute(
-                """
-                UPDATE spend_reservations
-                SET status = 'expired', released_at = NOW(),
-                    release_reason = 'approval_token_expired'
-                WHERE agent_id = $1 AND status = 'reserved' AND expires_at <= NOW()
-                """,
-                agent_id,
-            )
-            minute_count = await conn.fetchval(
-                """
-                    INSERT INTO rate_limit_windows (
-                        agent_id, window_type, window_start, request_count, amount_usd
-                    )
-                    VALUES ($1, 'minute', $2, 1, 0)
-                    ON CONFLICT (agent_id, window_type, window_start)
-                    DO UPDATE SET request_count = rate_limit_windows.request_count + 1
-                    RETURNING request_count
-                    """,
-                agent_id,
-                minute_start,
-            )
-            if minute_count > rate_limit_per_minute:
-                raise LimitReservationError("rate", minute_count)
 
-            legacy_spend = await conn.fetchval(
-                """
-                    SELECT COALESCE(SUM(amount_usd), 0)
-                    FROM rate_limit_windows
-                    WHERE agent_id = $1
-                      AND window_type = 'day'
-                      AND window_start >= $2
-                    """,
-                agent_id,
-                day_start,
-            )
-            reserved_spend = await conn.fetchval(
-                """
+    async def reserve_rate_and_spend_on(
+        self,
+        conn: "asyncpg.Connection",
+        *,
+        agent_id: UUID,
+        minute_start: datetime,
+        day_start: datetime,
+        amount: Decimal,
+        rate_limit_per_minute: int,
+        daily_limit_usd: Decimal,
+        action_hash: str,
+        approval_token_id: str,
+        expires_at: datetime,
+    ) -> tuple[int, Decimal, UUID]:
+        """The reservation itself, on a caller-supplied transactional connection.
+
+        Extracted so a caller that must reserve capacity and write something
+        else in the SAME transaction -- issuing execution authority, for
+        instance -- reuses this exact increment-and-test rather than growing a
+        second, subtly different one beside it. ``reserve_rate_and_spend``
+        remains the standalone entry point and its behaviour is unchanged.
+
+        The caller MUST already be inside a transaction: the advisory lock
+        below is transaction-scoped, so without one it would be released
+        immediately and serialise nothing.
+        """
+        await conn.execute(
+            "SELECT pg_advisory_xact_lock(hashtext($1)::bigint)",
+            f"spend-reservation:{agent_id}",
+        )
+        await conn.execute(
+            """
+            UPDATE spend_reservations
+            SET status = 'expired', released_at = NOW(),
+                release_reason = 'approval_token_expired'
+            WHERE agent_id = $1 AND status = 'reserved' AND expires_at <= NOW()
+            """,
+            agent_id,
+        )
+        minute_count = await conn.fetchval(
+            """
+                INSERT INTO rate_limit_windows (
+                    agent_id, window_type, window_start, request_count, amount_usd
+                )
+                VALUES ($1, 'minute', $2, 1, 0)
+                ON CONFLICT (agent_id, window_type, window_start)
+                DO UPDATE SET request_count = rate_limit_windows.request_count + 1
+                RETURNING request_count
+                """,
+            agent_id,
+            minute_start,
+        )
+        if minute_count > rate_limit_per_minute:
+            raise LimitReservationError("rate", minute_count)
+
+        legacy_spend = await conn.fetchval(
+            """
                 SELECT COALESCE(SUM(amount_usd), 0)
-                FROM spend_reservations
+                FROM rate_limit_windows
                 WHERE agent_id = $1
-                  AND created_at >= $2
-                  AND status IN ('reserved', 'consumed')
+                  AND window_type = 'day'
+                  AND window_start >= $2
                 """,
-                agent_id,
-                day_start,
-            )
-            daily_spend = Decimal(legacy_spend or 0) + Decimal(reserved_spend or 0) + amount
-            if daily_spend > daily_limit_usd:
-                raise LimitReservationError("daily", daily_spend)
+            agent_id,
+            day_start,
+        )
+        reserved_spend = await conn.fetchval(
+            """
+            SELECT COALESCE(SUM(amount_usd), 0)
+            FROM spend_reservations
+            WHERE agent_id = $1
+              AND created_at >= $2
+              AND status IN ('reserved', 'consumed')
+            """,
+            agent_id,
+            day_start,
+        )
+        daily_spend = Decimal(legacy_spend or 0) + Decimal(reserved_spend or 0) + amount
+        if daily_spend > daily_limit_usd:
+            raise LimitReservationError("daily", daily_spend)
 
-            reservation_id = await conn.fetchval(
-                """
-                INSERT INTO spend_reservations (
-                    agent_id, action_hash, approval_token_id,
-                    amount_usd, expires_at
-                ) VALUES ($1, $2, $3, $4, $5)
-                RETURNING id
-                """,
-                agent_id,
-                action_hash,
-                approval_token_id,
-                amount,
-                expires_at,
-            )
+        reservation_id = await conn.fetchval(
+            """
+            INSERT INTO spend_reservations (
+                agent_id, action_hash, approval_token_id,
+                amount_usd, expires_at
+            ) VALUES ($1, $2, $3, $4, $5)
+            RETURNING id
+            """,
+            agent_id,
+            action_hash,
+            approval_token_id,
+            amount,
+            expires_at,
+        )
 
-            return minute_count, daily_spend, reservation_id
+        return minute_count, daily_spend, reservation_id
 
     async def release_spend_reservation(
         self,

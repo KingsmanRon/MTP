@@ -33,10 +33,19 @@ def test_revision_follows_rls_hardening() -> None:
 
 
 def test_alembic_has_exactly_one_head() -> None:
+    """One head, and this revision is still on the single chain to it.
+
+    The head itself is not pinned here; see the note on the same test in
+    tests/test_merkle_proof_tenant_visibility_migration.py. The current head
+    is pinned by the newest migration's own test.
+    """
     config = Config(str(_REPO / "alembic.ini"))
     config.set_main_option("script_location", str(_REPO / "alembic"))
-    heads = ScriptDirectory.from_config(config).get_heads()
-    assert heads == ["0018_merkle_anchor_visibility"]
+    script = ScriptDirectory.from_config(config)
+    heads = script.get_heads()
+    assert len(heads) == 1, f"alembic tree has branched: {heads}"
+    chain = {revision.revision for revision in script.walk_revisions()}
+    assert "0017_tenant_login_isolation" in chain
 
 
 def test_role_is_unprivileged_and_passwordless_in_source() -> None:

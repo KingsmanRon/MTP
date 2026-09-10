@@ -33,11 +33,21 @@ def test_revision_follows_tenant_login_isolation() -> None:
 
 
 def test_alembic_has_exactly_one_head() -> None:
+    """One head, and this revision is still on the single chain to it.
+
+    The head itself is not pinned here. Every migration added after this one
+    moves it, so a by-value assertion would fail on any later change while
+    saying nothing about the property that matters: that the tree has not
+    branched and this revision is still an ancestor of the head. The current
+    head is pinned by the newest migration's own test.
+    """
     config = Config(str(_REPO / "alembic.ini"))
     config.set_main_option("script_location", str(_REPO / "alembic"))
-    assert ScriptDirectory.from_config(config).get_heads() == [
-        "0018_merkle_anchor_visibility"
-    ]
+    script = ScriptDirectory.from_config(config)
+    heads = script.get_heads()
+    assert len(heads) == 1, f"alembic tree has branched: {heads}"
+    chain = {revision.revision for revision in script.walk_revisions()}
+    assert "0018_merkle_anchor_visibility" in chain
 
 
 def test_policy_is_tenant_scoped_and_read_only() -> None:
