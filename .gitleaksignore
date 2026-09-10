@@ -22,3 +22,13 @@ cf2032f52ebe700745e23cc0e279e9e4309a6b89:docs/verify-page-spec.md:generic-api-ke
 47dbe6120834477c296a697633d4bdfea468752c:docs/DEPLOYMENT.md:curl-auth-header:537
 7027dc9fe9023906f4e6e708d06b8c5a81e248f8:DEPLOYMENT_GUIDE.md:curl-auth-header:372
 7027dc9fe9023906f4e6e708d06b8c5a81e248f8:DEPLOYMENT_GUIDE.md:curl-auth-header:405
+
+# Phase 4 — reviewed false positives, no secret involved.
+# `self._chain(key, outcome_grant="grant-1")` in the evidence-chain tests
+# matches the generic-api-key pattern `key, <ident>="` purely by shape; the
+# captured "secret" is the literal text `outcome_grant=`. HEAD no longer has
+# that shape (the two grant ids are named constants now), but the gate scans
+# the full history, so the commit that introduced them still reports. Scoped
+# to these two fingerprints, so any new occurrence still fails the gate.
+75ae7d39de6cb5fbdc6eaaf65c9b5dcd7a1152ed:tests/test_authority_endpoints.py:generic-api-key:2788
+75ae7d39de6cb5fbdc6eaaf65c9b5dcd7a1152ed:tests/test_authority_endpoints.py:generic-api-key:2794
