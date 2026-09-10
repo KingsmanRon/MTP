@@ -22,6 +22,29 @@ answers none of them with machinery of its own:
   returns the original grant; a reused reference carrying different
   material is a conflict, not a retry.
 
+Lock order
+----------
+Every path takes locks in the SAME order, so two of them can never form a
+cycle:
+
+1. the entry advisory lock — ``authority-issuance:<agent>:<ref>`` for
+   issuance, ``authority-grant:<grant>`` for consumption;
+2. the ``agents`` row, ``FOR SHARE`` — this is the mutable principal and
+   policy state that authorisation is derived from. Taking it here, and
+   holding it until commit, is what closes the window in which a
+   concurrent ``UPDATE agents`` could change policy after it was read but
+   before the claim committed. ``FOR SHARE`` rather than ``FOR UPDATE``:
+   concurrent consumptions of *different* grants for one agent may all
+   read it at once, while any writer to that row waits;
+3. the ``execution_authority_grants`` row, ``FOR UPDATE``;
+4. the spend advisory lock ``spend-reservation:<agent>`` (issuance only,
+   inside the reused reservation primitive);
+5. inserts into ``audit_logs`` / ``approval_token_consumptions``, then the
+   grant and reservation updates.
+
+Nothing acquires a lock earlier in this list while holding one later in
+it.
+
 The evaluation-time snapshot is not permission
 ----------------------------------------------
 A grant records the policy digest it was issued under. That is evidence,
@@ -60,6 +83,11 @@ logger = logging.getLogger(__name__)
 
 #: Versioned preimage identifier for the issuance-identity digest.
 ISSUANCE_DIGEST_FORMAT: Final[str] = "inntris-authority-issuance-v1"
+
+#: Version of the TTL policy applied at issuance. Bound into the issuance
+#: identity so a build that changes how long authority lives produces a
+#: different logical issuance rather than silently reusing an old grant.
+TTL_PROFILE_VERSION: Final[str] = "execution-authority-ttl-v1"
 
 #: Versioned preimage identifier for the delegated-authority scope digest.
 AUTHORITY_SCOPE_DIGEST_FORMAT: Final[str] = "inntris-authority-scope-v1"
@@ -125,11 +153,26 @@ class IssueResult:
     approval_token_id: str | None = None
     reason: DecisionReason | None = None
     detail: str | None = None
+    #: Lifecycle state of the grant this result refers to, as of the attempt.
+    #: An idempotent retry recovers the historical grant identity whatever
+    #: state it is in, so this is how the caller learns it is spent.
+    grant_status: GrantStatus | None = None
 
     @property
     def authorises_execution(self) -> bool:
-        """Whether a usable grant exists as a result of this attempt."""
-        return self.outcome in (IssueOutcome.ISSUED, IssueOutcome.IDEMPOTENT)
+        """Whether USABLE authority exists as a result of this attempt.
+
+        An idempotent retry is not automatically usable. Recovering the
+        identity of a grant that has since been consumed, revoked or
+        expired tells the caller which grant it was; it does not hand back
+        authority that is gone. Treating every IDEMPOTENT as usable is how
+        a spent single-use grant gets executed a second time.
+        """
+        if self.outcome is IssueOutcome.ISSUED:
+            return True
+        if self.outcome is IssueOutcome.IDEMPOTENT:
+            return self.grant_status is GrantStatus.ACTIVE
+        return False
 
 
 @dataclass(frozen=True, slots=True)
@@ -169,20 +212,30 @@ def issuance_digest(
     signed_action_hash: str | None,
     policy_hash: str,
     policy_revision: str,
+    policy_snapshot_format: str,
     executor_binding_digest: str,
     amount_usd: Decimal,
     domain: str,
     action_type: str,
     consequence_class: str | None,
     authority_scope_digest: str | None,
+    ttl_profile: str = TTL_PROFILE_VERSION,
+    requested_expires_at: datetime | None = None,
+    authority_expires_at: datetime | None = None,
 ) -> str:
     """Digest of the material an issuance is *about*.
 
-    Deliberately excludes timestamps and the minted token id: a retry of
-    the same request must digest identically however long after the first
-    attempt it arrives. Everything that changes what was authorised is in
-    here, so a reused reference carrying different material cannot pass
-    as a retry.
+    Deliberately excludes anything derived from the *time of the attempt*
+    — the minted token id, ``issued_at``, and the TTL-derived effective
+    expiry — so a retry of the same request digests identically however
+    long after the first attempt it arrives. A legitimate late retry must
+    still be a retry.
+
+    The validity *inputs* are bound, because they define which logical
+    issuance this is: the TTL profile version, an explicitly requested
+    expiry when the caller supplied one, and the delegated authority's own
+    bound. Changing any of them is a different issuance, not a retry of
+    the same one.
     """
     return jcs.sha256_hex(
         {
@@ -194,12 +247,24 @@ def issuance_digest(
             "signed_action_hash": signed_action_hash,
             "policy_hash": policy_hash,
             "policy_revision": policy_revision,
+            "policy_snapshot_format": policy_snapshot_format,
             "executor_binding_digest": executor_binding_digest,
             "amount_usd": str(amount_usd),
             "domain": domain,
             "action_type": action_type,
             "consequence_class": consequence_class,
             "authority_scope_digest": authority_scope_digest,
+            "ttl_profile": ttl_profile,
+            "requested_expires_at": (
+                requested_expires_at.astimezone(UTC).isoformat()
+                if requested_expires_at is not None
+                else None
+            ),
+            "authority_expires_at": (
+                authority_expires_at.astimezone(UTC).isoformat()
+                if authority_expires_at is not None
+                else None
+            ),
         }
     )
 
@@ -264,14 +329,27 @@ def default_current_policy_resolver(
 
 
 @dataclass(frozen=True, slots=True)
-class AuthorityState:
-    """The delegated authority as it stands RIGHT NOW, re-resolved by the caller.
+class ResolvedAuthorityEvidence:
+    """Trusted current evidence about the delegated authority, supplied to the store.
 
-    Passed to ``consume`` so revocation and expiry can be reported
-    distinctly. Core cannot poll an external issuer itself; the caller that
-    can is the one that must supply this.
+    One input binding all four things consumption has to know, so they
+    cannot be presented separately or partially:
+
+    * ``scope_digest`` — WHICH authority this is evidence about. Compared
+      against the digest the grant was issued under, so evidence for a
+      different or re-issued authority cannot be passed off as evidence
+      for this one.
+    * ``verified`` — whether it still verifies;
+    * ``revoked`` — whether the issuer has withdrawn it;
+    * ``expires_at`` — its own validity bound.
+
+    Phase 3 is provider-neutral and performs no network call. The caller
+    that can reach the provider resolves it *before* entering the atomic
+    consume section and hands the result here; the store validates that
+    evidence, it does not re-resolve the issuer itself.
     """
 
+    scope_digest: str | None = None
     verified: bool = True
     revoked: bool = False
     expires_at: datetime | None = None
@@ -327,8 +405,8 @@ class AuthorityStore:
         issued_at: datetime | None = None,
         minute_start: datetime,
         day_start: datetime,
-        rate_limit_per_minute: int,
-        daily_limit_usd: Decimal,
+        rate_limit_per_minute: int | None = None,
+        daily_limit_usd: Decimal | None = None,
         amount_usd: Decimal = Decimal("0"),
         signed_action_hash: str | None = None,
         executor_reference: str | None = None,
@@ -337,10 +415,17 @@ class AuthorityStore:
     ) -> IssueResult:
         """Issue bounded, single-use authority, reserving capacity for it.
 
-        Everything happens in one transaction. The issuance identity is
-        locked first, so a concurrent retry of the same reference waits
-        and then finds the committed grant instead of reserving capacity
-        a second time.
+        Everything happens in one transaction, in the module's documented
+        lock order. The issuance identity is locked first, so a concurrent
+        retry of the same reference waits and then finds the committed
+        grant instead of reserving capacity a second time.
+
+        **Capacity comes from trusted state, never from the caller.**
+        ``rate_limit_per_minute`` and ``daily_limit_usd`` are read from the
+        locked ``agents`` row. If a caller supplies them anyway they are
+        treated as an assertion about current state and must match it
+        exactly; a mismatch refuses the issuance rather than letting a
+        caller name its own ceiling.
         """
         issued = (issued_at or datetime.now(UTC)).astimezone(UTC)
         effective_expiry = clamp_grant_expiry(
@@ -362,12 +447,15 @@ class AuthorityStore:
             signed_action_hash=signed_action_hash,
             policy_hash=policy_hash,
             policy_revision=policy_revision,
+            policy_snapshot_format=policy_snapshot_format,
             executor_binding_digest=executor_binding_digest,
             amount_usd=amount_usd,
             domain=domain,
             action_type=action_type,
             consequence_class=consequence_class,
             authority_scope_digest=authority_scope_digest,
+            requested_expires_at=expires_at,
+            authority_expires_at=authority_expires_at,
         )
         approval_token_id = secrets.token_urlsafe(24)
 
@@ -381,11 +469,54 @@ class AuthorityStore:
                     f"authority-issuance:{agent_id}:{issuance_ref}",
                 )
 
+                # Lock order step 2: the principal's own policy row. This is
+                # where capacity comes from, and holding it means a concurrent
+                # limit change cannot land between reading the ceiling and
+                # reserving against it.
+                agent_row = await conn.fetchrow(
+                    "SELECT * FROM agents WHERE id = $1 FOR SHARE",
+                    agent_id,
+                )
+                if agent_row is None or agent_row["org_id"] != organisation_id:
+                    return IssueResult(
+                        outcome=IssueOutcome.REFUSED,
+                        reason=DecisionReason.AGENT_NOT_ACTIVE,
+                        detail="no such agent for this organisation",
+                    )
+                if agent_row["status"] != "active":
+                    return IssueResult(
+                        outcome=IssueOutcome.REFUSED,
+                        reason=DecisionReason.AGENT_NOT_ACTIVE,
+                        detail=f"agent status is {agent_row['status']}",
+                    )
+
+                trusted_rate_limit = int(agent_row["rate_limit_per_minute"])
+                trusted_daily_limit = Decimal(agent_row["daily_limit_usd"])
+                if (
+                    rate_limit_per_minute is not None
+                    and int(rate_limit_per_minute) != trusted_rate_limit
+                ) or (
+                    daily_limit_usd is not None
+                    and Decimal(daily_limit_usd) != trusted_daily_limit
+                ):
+                    # A caller asserting limits that do not match trusted state
+                    # is either stale or trying to name its own ceiling. Either
+                    # way the request is not the one the organisation permits.
+                    return IssueResult(
+                        outcome=IssueOutcome.REFUSED,
+                        reason=DecisionReason.POLICY_HASH_MISMATCH,
+                        detail=(
+                            "supplied limits do not match current trusted state "
+                            f"(rate {trusted_rate_limit}, daily {trusted_daily_limit})"
+                        ),
+                    )
+
                 existing = await conn.fetchrow(
                     """
-                    SELECT id, issuance_digest, approval_token_id, status
+                    SELECT id, issuance_digest, approval_token_id, status, expires_at
                     FROM execution_authority_grants
                     WHERE agent_id = $1 AND issuance_ref = $2
+                    FOR UPDATE
                     """,
                     agent_id,
                     issuance_ref,
@@ -396,15 +527,24 @@ class AuthorityStore:
                             outcome=IssueOutcome.CONFLICT,
                             grant_id=existing["id"],
                             reason=DecisionReason.GRANT_ACTION_MISMATCH,
+                            grant_status=GrantStatus(existing["status"]),
                             detail=(
                                 "issuance_ref is already in use for different "
                                 "material; a changed request is not a retry"
                             ),
                         )
+                    # Report the grant's state so the caller can tell a
+                    # recovered-and-usable retry from a recovered-but-spent one.
+                    # Expiry is time-derived: a stored 'active' row whose window
+                    # has closed is expired, whatever the column says.
+                    status = GrantStatus(existing["status"])
+                    if status is GrantStatus.ACTIVE and issued >= existing["expires_at"]:
+                        status = GrantStatus.EXPIRED
                     return IssueResult(
                         outcome=IssueOutcome.IDEMPOTENT,
                         grant_id=existing["id"],
                         approval_token_id=existing["approval_token_id"],
+                        grant_status=status,
                     )
 
                 _minute, _daily, reservation_id = (
@@ -414,8 +554,8 @@ class AuthorityStore:
                         minute_start=minute_start,
                         day_start=day_start,
                         amount=amount_usd,
-                        rate_limit_per_minute=rate_limit_per_minute,
-                        daily_limit_usd=daily_limit_usd,
+                        rate_limit_per_minute=trusted_rate_limit,
+                        daily_limit_usd=trusted_daily_limit,
                         action_hash=execution_action_hash,
                         approval_token_id=approval_token_id,
                         expires_at=effective_expiry,
@@ -465,6 +605,7 @@ class AuthorityStore:
                     outcome=IssueOutcome.ISSUED,
                     grant_id=grant_id,
                     approval_token_id=approval_token_id,
+                    grant_status=GrantStatus.ACTIVE,
                 )
         except LimitReservationError as exc:
             # The transaction rolled back, so nothing was reserved and no
@@ -488,31 +629,61 @@ class AuthorityStore:
         execution_action_hash: str,
         executor_binding_digest: str,
         execution_ref: str | None = None,
-        authority_scope_digest: str | None = None,
-        authority_state: AuthorityState | None = None,
+        authority_evidence: ResolvedAuthorityEvidence | None = None,
         audit_entry_factory: Callable[[Any], AuditLogEntry] | None = None,
         at: datetime | None = None,
     ) -> ConsumeResult:
-        """Spend the grant once, or recover the record of an earlier spend."""
+        """Spend the grant once, or recover the record of an earlier spend.
+
+        ``execution_ref`` is required on this path. Single-use authority
+        whose consumption cannot be recovered turns any lost response into
+        an unanswerable question: did it execute? The legacy
+        ``/verify-token`` contract still permits omitting it, and that
+        contract is unchanged; this generic path does not.
+        """
         now = (at or datetime.now(UTC)).astimezone(UTC)
 
+        if not isinstance(execution_ref, str) or not execution_ref.strip():
+            return ConsumeResult(
+                outcome=ConsumptionOutcome.REJECTED,
+                grant_id=grant_id,
+                rejection_reason=DecisionReason.EXECUTION_REF_CONFLICT,
+            )
+
         async with self._db.acquire() as conn, conn.transaction():
+            # Lock order step 1: serialise consumers of this grant.
             await conn.execute(
                 "SELECT pg_advisory_xact_lock(hashtext($1)::bigint)",
                 f"authority-grant:{grant_id}",
             )
 
+            # Lock order step 2: pin the mutable principal/policy state BEFORE
+            # anything is derived from it, and hold it until this transaction
+            # commits. Without this row lock a concurrent UPDATE agents could
+            # commit between the read and the claim, and the claim would land
+            # under policy that no longer exists.
+            agent_row = await conn.fetchrow(
+                """
+                SELECT a.*
+                FROM agents a
+                JOIN execution_authority_grants g ON g.agent_id = a.id
+                WHERE g.id = $1
+                FOR SHARE OF a
+                """,
+                grant_id,
+            )
+
+            # Lock order step 3: the grant itself.
             grant = await conn.fetchrow(
                 """
-                SELECT g.*, a.status AS agent_status, a.org_id AS org_id
+                SELECT g.*
                 FROM execution_authority_grants g
-                JOIN agents a ON a.id = g.agent_id
                 WHERE g.id = $1
                 FOR UPDATE OF g
                 """,
                 grant_id,
             )
-            if grant is None:
+            if grant is None or agent_row is None:
                 return ConsumeResult(
                     outcome=ConsumptionOutcome.REJECTED,
                     rejection_reason=DecisionReason.GRANT_NOT_FOUND,
@@ -541,6 +712,27 @@ class AuthorityStore:
                     grant_id=grant_id,
                     consumption_audit_id=claimed["audit_log_id"],
                     execution_ref=execution_ref,
+                )
+
+            # A reference already bound to a DIFFERENT token belongs to another
+            # execution attempt entirely. That is a reference conflict, not
+            # "this grant is spent" -- reporting it as the latter would send an
+            # operator looking at the wrong grant.
+            foreign_ref = await conn.fetchval(
+                """
+                SELECT 1 FROM approval_token_consumptions
+                WHERE agent_id = $1 AND execution_ref = $2 AND token_id <> $3
+                LIMIT 1
+                """,
+                grant["agent_id"],
+                execution_ref,
+                grant["approval_token_id"],
+            )
+            if foreign_ref is not None:
+                return ConsumeResult(
+                    outcome=ConsumptionOutcome.REJECTED,
+                    grant_id=grant_id,
+                    rejection_reason=DecisionReason.EXECUTION_REF_CONFLICT,
                 )
 
             # --- Deterministic rejection precedence ---------------------
@@ -573,9 +765,7 @@ class AuthorityStore:
                 )
 
             # --- Current mutable state decides, not the snapshot ---------
-            revalidation = await self._revalidate(
-                conn, grant, authority_scope_digest, authority_state, now
-            )
+            revalidation = self._revalidate(grant, agent_row, authority_evidence, now)
             if revalidation is not None:
                 return ConsumeResult(
                     outcome=ConsumptionOutcome.REJECTED,
@@ -602,14 +792,26 @@ class AuthorityStore:
                         execution_ref=execution_ref,
                         audit_query=_AUTHORITY_CONSUMPTION_AUDIT_QUERY,
                     )
-            except asyncpg.UniqueViolationError:
+            except asyncpg.UniqueViolationError as exc:
                 claim = None
+                # Classify rather than assume. A violation on the
+                # (agent_id, execution_ref) index is a reference conflict; a
+                # violation on the token key is a second claim of this grant.
+                constraint = getattr(exc, "constraint_name", "") or ""
+                unique_reason = (
+                    DecisionReason.EXECUTION_REF_CONFLICT
+                    if "execution_ref" in constraint
+                    else DecisionReason.GRANT_ALREADY_CONSUMED
+                )
+            else:
+                unique_reason = DecisionReason.GRANT_ALREADY_CONSUMED
             if claim is None:
-                # Another consumer won the claim inside this window.
+                # Another consumer won the claim inside this window, or the
+                # reference is spoken for.
                 return ConsumeResult(
                     outcome=ConsumptionOutcome.REJECTED,
                     grant_id=grant_id,
-                    rejection_reason=DecisionReason.GRANT_ALREADY_CONSUMED,
+                    rejection_reason=unique_reason,
                 )
             audit_id, _mode = claim
 
@@ -631,12 +833,11 @@ class AuthorityStore:
                 execution_ref=execution_ref,
             )
 
-    async def _revalidate(
+    def _revalidate(
         self,
-        conn: Any,
         grant: Any,
-        presented_scope_digest: str | None,
-        authority_state: AuthorityState | None,
+        agent_row: Any,
+        authority_evidence: ResolvedAuthorityEvidence | None,
         now: datetime,
     ) -> DecisionReason | None:
         """Re-check current policy, principal and delegation. ``None`` = fine.
@@ -644,16 +845,7 @@ class AuthorityStore:
         Ordered most specific first, so an operator reading a refusal learns
         the actual cause rather than whichever check happened to run first.
         """
-        agent_row = await conn.fetchrow(
-            """
-            SELECT a.*, o.id AS organisation_id
-            FROM agents a
-            JOIN organizations o ON o.id = a.org_id
-            WHERE a.id = $1
-            """,
-            grant["agent_id"],
-        )
-        if agent_row is None or agent_row["status"] != "active":
+        if agent_row["status"] != "active":
             return DecisionReason.AGENT_NOT_ACTIVE
         if agent_row["org_id"] != grant["org_id"]:
             # The composite foreign key makes this unreachable through normal
@@ -664,16 +856,27 @@ class AuthorityStore:
         # Delegated authority, when the caller re-resolved it. Revocation and
         # expiry are reported distinctly from "the scope changed" so the
         # refusal names what actually happened.
-        if authority_state is not None:
-            if authority_state.revoked:
+        if grant["authority_scope_digest"] is not None and authority_evidence is None:
+            # The decision rested on delegated authority. Consuming it without
+            # any current evidence about that authority would spend a grant
+            # whose basis may have been revoked minutes ago. Absent evidence is
+            # not evidence of validity.
+            return DecisionReason.AUTHORITY_UNVERIFIED
+
+        if authority_evidence is not None:
+            if authority_evidence.revoked:
                 return DecisionReason.AUTHORITY_REVOKED
             if (
-                authority_state.expires_at is not None
-                and now >= authority_state.expires_at.astimezone(UTC)
+                authority_evidence.expires_at is not None
+                and now >= authority_evidence.expires_at.astimezone(UTC)
             ):
                 return DecisionReason.AUTHORITY_EXPIRED
-            if not authority_state.verified:
+            if not authority_evidence.verified:
                 return DecisionReason.AUTHORITY_VERIFICATION_FAILED
+            if authority_evidence.scope_digest != grant["authority_scope_digest"]:
+                # Evidence about a different authority than the one this grant
+                # was issued under.
+                return DecisionReason.AUTHORITY_SCOPE_EXCEEDED
 
         if (
             grant["authority_expires_at"] is not None
@@ -681,10 +884,6 @@ class AuthorityStore:
         ):
             return DecisionReason.AUTHORITY_EXPIRED
 
-        if grant["authority_scope_digest"] != presented_scope_digest:
-            # The delegated authority is not the one the decision was made
-            # under. It may have been narrowed or re-issued.
-            return DecisionReason.AUTHORITY_SCOPE_EXCEEDED
 
         try:
             current_hash, _revision = self._resolve_current_policy(
@@ -809,13 +1008,14 @@ def _default_audit_entry(grant: Any, execution_ref: str | None) -> AuditLogEntry
         },
         verdict=ActionVerdict.APPROVED,
         verdict_reason="Execution authority consumed",
-        # audit_logs requires a non-empty signature. A consumption carries no
-        # agent signature of its own -- the grant's claim key is the authority
-        # -- so record a labelled marker, the same shape the verify path uses
-        # when no usable signature exists, rather than a blank that would read
-        # as "signed with nothing".
+        # audit_logs requires non-empty signature bytes, and a consumption
+        # carries no agent signature of its own -- the grant's claim key is
+        # the authority. So record an explicitly labelled marker, and mark it
+        # NOT valid: this is not an Ed25519 signature, and claiming otherwise
+        # would corrupt what signature_valid means in v1/v2 receipts, where it
+        # asserts that a real agent signature verified.
         signature=f"AUTHORITY_GRANT:{grant['id']}".encode("ascii"),
-        signature_valid=True,
+        signature_valid=False,
         request_ip=None,
         request_user_agent=None,
         response_time_ms=None,
@@ -826,5 +1026,9 @@ def _default_audit_entry(grant: Any, execution_ref: str | None) -> AuditLogEntry
             "grant_id": str(grant["id"]),
             "policy_revision": grant["policy_revision"],
             "policy_snapshot_format": grant["policy_snapshot_format"],
+            # What actually authorised this row, since no agent signature did.
+            "signature_kind": "authority_grant",
+            "evidence_kind": "authority_grant",
+            "approval_token_id": grant["approval_token_id"],
         },
     )

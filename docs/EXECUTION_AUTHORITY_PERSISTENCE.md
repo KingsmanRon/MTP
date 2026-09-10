@@ -23,6 +23,33 @@ execution_authority_grants ──approval_token_id──► approval_token_consu
                                         (flipped to 'consumed' by the claim)
 ```
 
+## Deployment gate: `agents_id_org_unique`
+
+> **This migration must not reach the deployment branch without a
+> deliberate release decision.** `railway.json`, `railway.worker.json` and
+> the Dockerfile all run `alembic upgrade head`, so a merge migrates
+> production automatically.
+
+Migration 023 adds `ALTER TABLE agents ADD CONSTRAINT agents_id_org_unique
+UNIQUE (id, org_id)`. `agents` is a hot table on the `/verify` path, and
+building a unique index takes an `ACCESS EXCLUSIVE` lock for the duration
+— every read and write on `agents` blocks while it runs.
+
+**No claim is made here about how long that takes in production, and no
+measurement has been done.** Before release this needs, at minimum:
+
+1. row count and index build time measured on a production-sized copy;
+2. a decision between accepting the lock in a maintenance window and
+   building it concurrently (`CREATE UNIQUE INDEX CONCURRENTLY` outside a
+   transaction, then `ADD CONSTRAINT ... USING INDEX`), which Alembic's
+   transactional DDL does not do by default;
+3. confirmation that no long-running transaction is holding `agents`,
+   since the `ACCESS EXCLUSIVE` request queues behind it and blocks every
+   later reader in the meantime.
+
+The composite ownership design is kept because it is the right integrity
+model. The *deployment* of it is a separate, unmade decision.
+
 ## Reservation accounting
 
 Spend is held in `spend_reservations`, reserved by the same
@@ -60,6 +87,51 @@ This mirrors the failure model used by the x402 policy adapter
 settlement as unknown by default for the same reason. **Core owns
 authority persistence, not rail settlement**; there is deliberately no
 settlement engine here.
+
+Releasing consumed capacity is therefore never automatic, in any outcome
+including a proven final failure. It requires a separate reconciliation
+path holding authoritative downstream evidence, which is not part of this
+phase.
+
+## Lock order
+
+Every path takes locks in the same order, so two of them cannot form a
+cycle:
+
+1. the entry advisory lock — `authority-issuance:<agent>:<ref>` for
+   issuance, `authority-grant:<grant>` for consumption;
+2. the `agents` row, `FOR SHARE`. This is the mutable principal and policy
+   state that authorisation derives from. Taking it *before* deriving
+   current policy, and holding it until commit, is what closes the window
+   in which a concurrent `UPDATE agents` could commit between the read and
+   the claim. `FOR SHARE` rather than `FOR UPDATE` so concurrent
+   consumptions of different grants for one agent still proceed, while any
+   writer to that row waits;
+3. the `execution_authority_grants` row, `FOR UPDATE`;
+4. the spend advisory lock `spend-reservation:<agent>` (issuance only,
+   inside the reused reservation primitive);
+5. inserts into `audit_logs` / `approval_token_consumptions`, then the
+   grant and reservation updates.
+
+Nothing acquires a lock earlier in this list while holding one later in it.
+
+## Delegated authority evidence
+
+When a grant was issued under delegated authority it records that
+authority's digest. Consumption then **requires** current trusted evidence
+about it — absent evidence is not evidence of validity, and a grant whose
+basis may have been revoked minutes ago must not be spendable just because
+nobody looked.
+
+That evidence is one input binding four things together so they cannot be
+supplied separately or partially: which authority it concerns
+(`scope_digest`), whether it still verifies, whether it has been revoked,
+and its own expiry.
+
+**The store validates evidence supplied to it; it does not re-resolve an
+external issuer.** Phase 3 is provider-neutral and performs no network
+call. A later phase resolves the provider *before* entering the atomic
+consume section and hands the result in.
 
 ## Grant lifetime
 

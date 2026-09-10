@@ -251,3 +251,53 @@ class TestSecurityConventions:
     def test_the_trigger_function_pins_its_search_path(self) -> None:
         sql = _SQL.read_text(encoding="utf-8")
         assert "SET search_path = pg_catalog, public;" in sql
+
+
+class TestForcedRowLevelSecurity:
+    def test_rls_is_forced_not_merely_enabled(self) -> None:
+        """Every other public table is forced; this one must not be the gap."""
+        sql = _SQL.read_text(encoding="utf-8")
+        assert "ALTER TABLE execution_authority_grants FORCE ROW LEVEL SECURITY;" in sql
+
+
+class TestHotTableDdlIsMarkedAsAReleaseGate:
+    def test_the_unique_constraint_is_documented_as_a_deployment_gate(self) -> None:
+        """agents is a hot table; the index build takes ACCESS EXCLUSIVE."""
+        doc = (
+            _REPO / "docs" / "EXECUTION_AUTHORITY_PERSISTENCE.md"
+        ).read_text(encoding="utf-8")
+        assert "agents_id_org_unique" in doc
+        assert "ACCESS EXCLUSIVE" in doc
+        assert "deliberate release decision" in doc
+
+
+class TestCompleteImmutability:
+    @pytest.mark.parametrize(
+        "column",
+        [
+            "policy_snapshot_format",
+            "policy_revision",
+            "executor_reference",
+            "consequence_class",
+            "spend_reservation_id",
+        ],
+    )
+    def test_every_issuance_field_is_immutable(self, column: str) -> None:
+        sql = _SQL.read_text(encoding="utf-8")
+        assert f"NEW.{column} <> OLD.{column}" in sql or (
+            f"NEW.{column} IS DISTINCT FROM OLD.{column}" in sql
+        )
+
+    @pytest.mark.parametrize(
+        "column",
+        [
+            "consumed_at",
+            "revoked_at",
+            "revocation_reason",
+            "execution_ref",
+            "consumption_audit_id",
+        ],
+    )
+    def test_lifecycle_evidence_is_write_once(self, column: str) -> None:
+        sql = _SQL.read_text(encoding="utf-8")
+        assert f"{column} is write-once on grant" in sql

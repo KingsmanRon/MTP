@@ -238,6 +238,10 @@ BEGIN
         END IF;
     END IF;
 
+    -- Everything decided at issuance is immutable for the life of the grant.
+    -- A grant whose act, policy binding, executor binding, claim key, reserved
+    -- amount or validity window could be edited afterwards would authorise
+    -- something nobody decided on.
     IF NEW.id <> OLD.id
        OR NEW.agent_id <> OLD.agent_id
        OR NEW.org_id <> OLD.org_id
@@ -247,7 +251,12 @@ BEGIN
        OR NEW.issuance_digest <> OLD.issuance_digest
        OR NEW.execution_action_hash <> OLD.execution_action_hash
        OR NEW.policy_hash <> OLD.policy_hash
+       OR NEW.policy_snapshot_format <> OLD.policy_snapshot_format
+       OR NEW.policy_revision <> OLD.policy_revision
        OR NEW.executor_binding_digest <> OLD.executor_binding_digest
+       OR NEW.executor_reference IS DISTINCT FROM OLD.executor_reference
+       OR NEW.consequence_class IS DISTINCT FROM OLD.consequence_class
+       OR NEW.spend_reservation_id IS DISTINCT FROM OLD.spend_reservation_id
        OR NEW.approval_token_id <> OLD.approval_token_id
        OR NEW.amount_usd <> OLD.amount_usd
        OR NEW.issued_at <> OLD.issued_at
@@ -260,6 +269,27 @@ BEGIN
         RAISE EXCEPTION
             'execution authority grant % is immutable except for its lifecycle state',
             OLD.id;
+    END IF;
+
+    -- Lifecycle evidence is write-once. Once a consumption or revocation has
+    -- been recorded, the record of WHAT happened cannot be rewritten -- only
+    -- set, once, at the moment of the transition.
+    IF OLD.consumed_at IS NOT NULL AND NEW.consumed_at IS DISTINCT FROM OLD.consumed_at THEN
+        RAISE EXCEPTION 'consumed_at is write-once on grant %', OLD.id;
+    END IF;
+    IF OLD.revoked_at IS NOT NULL AND NEW.revoked_at IS DISTINCT FROM OLD.revoked_at THEN
+        RAISE EXCEPTION 'revoked_at is write-once on grant %', OLD.id;
+    END IF;
+    IF OLD.revocation_reason IS NOT NULL
+       AND NEW.revocation_reason IS DISTINCT FROM OLD.revocation_reason THEN
+        RAISE EXCEPTION 'revocation_reason is write-once on grant %', OLD.id;
+    END IF;
+    IF OLD.execution_ref IS NOT NULL AND NEW.execution_ref IS DISTINCT FROM OLD.execution_ref THEN
+        RAISE EXCEPTION 'execution_ref is write-once on grant %', OLD.id;
+    END IF;
+    IF OLD.consumption_audit_id IS NOT NULL
+       AND NEW.consumption_audit_id IS DISTINCT FROM OLD.consumption_audit_id THEN
+        RAISE EXCEPTION 'consumption_audit_id is write-once on grant %', OLD.id;
     END IF;
 
     RETURN NEW;
@@ -284,6 +314,10 @@ CREATE TRIGGER protect_execution_authority_delete
 -- ---------------------------------------------------------------------------
 
 ALTER TABLE execution_authority_grants ENABLE ROW LEVEL SECURITY;
+-- Migration 021 forced RLS on every public table that existed then; this table
+-- did not. Match that posture rather than becoming the one table where the
+-- owner exemption still applies.
+ALTER TABLE execution_authority_grants FORCE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS execution_authority_grants_tenant_scope
     ON execution_authority_grants;
