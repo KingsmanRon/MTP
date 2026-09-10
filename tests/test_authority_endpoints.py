@@ -25,6 +25,9 @@ from api.core.authority.decision import Decision, DecisionReason  # noqa: E402
 from api.core.authority.lifecycle import ConsumptionOutcome  # noqa: E402
 from api.crypto import CryptoService  # noqa: E402
 from api.database import Database  # noqa: E402
+from api.persistence.authority_decisions import (  # noqa: E402
+    get_authority_decision,
+)
 from api.persistence.authority_store import AuthorityStore, OutcomeState  # noqa: E402
 from api.receipts.evidence_builder import (  # noqa: E402
     build_decision_evidence,
@@ -1151,27 +1154,34 @@ class TestSignedActionHashSemantics:
 
 
 class TestDurableEvidenceLifecycle:
-    """Receipt v3 built from the real lifecycle rows, not from a fixture.
+    """Receipt v3 built from the durable decision record and grant rows.
 
-    Every input is a durable column, so evidence for one history is the
-    same bytes on every read, and a decision receipt is never rewritten
-    when consumption or outcome arrive later.
+    Every input is a column. The builders take a record and a key and
+    nothing else, so two reads of one history cannot disagree.
     """
 
     @staticmethod
     def _key():
         return load_evidence_signing_key(environment="test")
 
-    async def _grant(self, db, agent, ctx, ref, *, consume_it=False):
-        issued = await AuthorityEvaluationService(
+    async def _evaluate(self, db, agent, ctx, ref, **overrides):
+        return await AuthorityEvaluationService(
             db, server_secret=SERVER_SECRET
         ).evaluate(
             agent=agent,
-            action_type="financial_transaction",
-            payload=payment_payload(),
+            action_type=overrides.pop("action_type", "financial_transaction"),
+            payload=overrides.pop("payload", payment_payload()),
             executor=ctx,
             issuance_ref=ref,
+            **overrides,
         )
+
+    async def _decision(self, db, result):
+        return await get_authority_decision(db, result.decision_audit_id)
+
+    async def _allow(self, db, agent, ctx, ref, *, consume_it=False):
+        issued = await self._evaluate(db, agent, ctx, ref)
+        assert issued.decision is Decision.ALLOW
         if consume_it:
             await AuthorityConsumptionService(db, server_secret=SERVER_SECRET).consume(
                 authority_token=issued.authority_token,
@@ -1181,58 +1191,158 @@ class TestDurableEvidenceLifecycle:
                 payload=payment_payload(),
                 execution_ref=f"exec-{ref}",
             )
-        return issued, await AuthorityStore(db).get(issued.grant_id)
+        return issued
 
-    async def test_a_decision_event_is_built_from_durable_columns(
+    async def test_an_allow_decision_is_persisted_and_verifies(
         self, db, org_and_agent
     ) -> None:
         org_id, agent = org_and_agent
         key = self._key()
-        _issued, grant = await self._grant(db, agent, executor(org_id), "ev-1")
+        issued = await self._allow(db, agent, executor(org_id), "ev-1")
+        record = await self._decision(db, issued)
 
-        event = build_decision_evidence(grant, key=key)
+        event = build_decision_evidence(record, key=key)
         assert verify_evidence_event(event, public_key_b64=key.public_key_b64)
-        # recorded_at is the durable issuance time, never "now".
-        assert event.recorded_at == grant["issued_at"].astimezone(UTC)
-        assert event.event_id == decision_event_id(grant["id"])
-        assert event.payload["body"]["execution_action_hash"] == (
-            grant["execution_action_hash"]
-        )
-        assert event.payload["body"]["executor_binding_digest"] == (
-            grant["executor_binding_digest"]
-        )
+        assert event.event_id == decision_event_id(issued.decision_audit_id)
+        assert event.recorded_at == record["timestamp"].astimezone(UTC)
+        body = event.payload["body"]
+        assert body["decision"] == "allow"
+        assert body["grant_id"] == str(issued.grant_id)
+        assert body["execution_action_hash"] == issued.execution_action_hash
 
-    async def test_rebuilding_the_same_history_is_byte_identical(
+    async def test_a_block_decision_is_persisted_and_verifies(
         self, db, org_and_agent
     ) -> None:
-        """Two reads of one event return the same signed bytes."""
+        """A refusal is a decision, and gets a receipt of its own."""
         org_id, agent = org_and_agent
         key = self._key()
-        _issued, grant = await self._grant(
-            db, agent, executor(org_id), "ev-2", consume_it=True
+        blocked = await self._evaluate(
+            db,
+            agent,
+            executor(org_id),
+            "ev-block",
+            payload=payment_payload(amount="999999.00"),
         )
-        reread = await AuthorityStore(db).get(grant["id"])
+        assert blocked.decision is Decision.BLOCK
+        assert blocked.authority_token is None
+        assert blocked.grant_id is None
+        assert blocked.decision_audit_id is not None
 
-        first = build_evidence_chain(grant, key=key)
-        second = build_evidence_chain(reread, key=key)
-        assert [e.as_public_dict() for e in first.events()] == [
-            e.as_public_dict() for e in second.events()
-        ]
-        assert first.decision.signature_b64 == second.decision.signature_b64
-        assert first.consumption.signature_b64 == second.consumption.signature_b64
+        record = await self._decision(db, blocked)
+        assert record["verdict"] == "blocked"
+        # No executable authority was created for the refusal.
+        async with db.acquire() as conn:
+            assert (
+                await conn.fetchval(
+                    "SELECT count(*) FROM execution_authority_grants "
+                    "WHERE issuance_ref = $1 AND agent_id = $2",
+                    "ev-block",
+                    agent.id,
+                )
+                == 0
+            )
+
+        event = build_decision_evidence(record, key=key)
+        assert verify_evidence_event(event, public_key_b64=key.public_key_b64)
+        assert event.payload["body"]["decision"] == "block"
+        assert event.payload["body"]["grant_id"] is None
+        assert event.payload["body"]["reasons"]
+
+    async def test_rebuilding_the_same_decision_is_byte_identical(
+        self, db, org_and_agent
+    ) -> None:
+        org_id, agent = org_and_agent
+        key = self._key()
+        issued = await self._allow(db, agent, executor(org_id), "ev-2")
+        first = build_decision_evidence(await self._decision(db, issued), key=key)
+        second = build_decision_evidence(await self._decision(db, issued), key=key)
+        assert first.as_public_dict() == second.as_public_dict()
+        assert first.signature_b64 == second.signature_b64
+
+    async def test_no_build_argument_can_rewrite_historical_evidence(
+        self, db, org_and_agent
+    ) -> None:
+        """The builder's whole signature is (record, key). That is the proof.
+
+        There is no parameter a caller could pass differently on a second
+        read, because the only inputs are the immutable row and the key.
+        """
+        import inspect
+
+        signature = inspect.signature(build_decision_evidence)
+        assert list(signature.parameters) == ["decision_record", "key"]
+
+        org_id, agent = org_and_agent
+        key = self._key()
+        issued = await self._allow(db, agent, executor(org_id), "ev-args")
+        record = await self._decision(db, issued)
+        baseline = build_decision_evidence(record, key=key).as_public_dict()
+
+        # A caller who mutates their own copy of the row changes their own
+        # view and nothing else: the stored row is what the next read sees.
+        mutated = dict(record)
+        mutated["payload"] = json.dumps(
+            {
+                **json.loads(record["payload"]),
+                "authority_scope_digest": "0" * 64,
+            }
+        )
+        assert (
+            build_decision_evidence(mutated, key=key).as_public_dict() != baseline
+        )
+        reread = await self._decision(db, issued)
+        assert build_decision_evidence(reread, key=key).as_public_dict() == baseline
+
+    async def test_the_decision_row_is_immutable(self, db, org_and_agent) -> None:
+        """Append-only by trigger, so history cannot be edited after the fact."""
+        org_id, agent = org_and_agent
+        issued = await self._allow(db, agent, executor(org_id), "ev-immutable")
+        with pytest.raises(asyncpg.PostgresError):
+            async with db.acquire() as conn:
+                await conn.execute(
+                    "UPDATE audit_logs SET verdict_reason = 'tampered' WHERE id = $1",
+                    issued.decision_audit_id,
+                )
+
+    async def test_v3_publishes_the_scope_digest_and_no_invented_facts(
+        self, db, org_and_agent
+    ) -> None:
+        """Only what Phase 3 actually persists reaches the receipt."""
+        org_id, agent = org_and_agent
+        key = self._key()
+        issued = await self._allow(db, agent, executor(org_id), "ev-fields")
+        body = build_decision_evidence(
+            await self._decision(db, issued), key=key
+        ).payload["body"]
+
+        assert "authority_scope_digest" in body
+        for invented in (
+            "authority_artefact_digest",
+            "authority_issuer",
+            "authority_reference_id",
+            "legacy_policy_hash",
+        ):
+            assert invented not in body
+        # No delegation was presented, so there is nothing to commit to.
+        assert body["authority_scope_digest"] is None
+        # And this surface verified no agent signature.
+        assert body["signed_action_hash"] is None
 
     async def test_no_consumption_evidence_before_the_authority_is_spent(
         self, db, org_and_agent
     ) -> None:
         org_id, agent = org_and_agent
         key = self._key()
-        _issued, grant = await self._grant(db, agent, executor(org_id), "ev-3")
+        issued = await self._allow(db, agent, executor(org_id), "ev-3")
+        grant = await AuthorityStore(db).get(issued.grant_id)
 
-        chain = build_evidence_chain(grant, key=key)
+        chain = build_evidence_chain(
+            await self._decision(db, issued), key=key, grant=grant
+        )
         assert grant["status"] == "active"
         assert chain.consumption is None
         assert chain.outcome is None
-        assert verify_evidence_event(chain.decision, public_key_b64=key.public_key_b64)
+        assert chain.verify(public_key_b64=key.public_key_b64)
 
     async def test_a_refused_attempt_produces_no_consumption_evidence(
         self, db, org_and_agent
@@ -1240,7 +1350,7 @@ class TestDurableEvidenceLifecycle:
         """Evidence describes what happened, not what was attempted."""
         org_id, agent = org_and_agent
         key = self._key()
-        issued, _grant = await self._grant(db, agent, executor(org_id), "ev-4")
+        issued = await self._allow(db, agent, executor(org_id), "ev-4")
 
         refused = await AuthorityConsumptionService(
             db, server_secret=SERVER_SECRET
@@ -1255,7 +1365,10 @@ class TestDurableEvidenceLifecycle:
         assert refused.outcome is ConsumptionOutcome.REJECTED
 
         grant = await AuthorityStore(db).get(issued.grant_id)
-        assert build_evidence_chain(grant, key=key).consumption is None
+        chain = build_evidence_chain(
+            await self._decision(db, issued), key=key, grant=grant
+        )
+        assert chain.consumption is None
 
     async def test_the_decision_event_is_unchanged_by_later_events(
         self, db, org_and_agent
@@ -1264,8 +1377,10 @@ class TestDurableEvidenceLifecycle:
         org_id, agent = org_and_agent
         key = self._key()
         ctx = executor(org_id)
-        issued, before = await self._grant(db, agent, ctx, "ev-5")
-        decision_before = build_decision_evidence(before, key=key)
+        issued = await self._allow(db, agent, ctx, "ev-5")
+        before = build_decision_evidence(
+            await self._decision(db, issued), key=key
+        ).as_public_dict()
 
         await AuthorityConsumptionService(db, server_secret=SERVER_SECRET).consume(
             authority_token=issued.authority_token,
@@ -1281,10 +1396,13 @@ class TestDurableEvidenceLifecycle:
             outcome_state=OutcomeState.SUCCEEDED,
             outcome_reference="rail-tx-1",
         )
-        after = await store.get(issued.grant_id)
 
-        chain = build_evidence_chain(after, key=key)
-        assert chain.decision.as_public_dict() == decision_before.as_public_dict()
+        chain = build_evidence_chain(
+            await self._decision(db, issued),
+            key=key,
+            grant=await store.get(issued.grant_id),
+        )
+        assert chain.decision.as_public_dict() == before
         assert chain.consumption is not None
         assert chain.outcome is not None
         assert chain.verify(public_key_b64=key.public_key_b64)
@@ -1295,7 +1413,7 @@ class TestDurableEvidenceLifecycle:
         org_id, agent = org_and_agent
         key = self._key()
         ctx = executor(org_id)
-        issued, _ = await self._grant(db, agent, ctx, "ev-6", consume_it=True)
+        issued = await self._allow(db, agent, ctx, "ev-6", consume_it=True)
         store = AuthorityStore(db)
         await store.record_outcome(
             grant_id=issued.grant_id,
@@ -1304,19 +1422,19 @@ class TestDurableEvidenceLifecycle:
         )
         grant = await store.get(issued.grant_id)
 
-        chain = build_evidence_chain(grant, key=key)
+        chain = build_evidence_chain(
+            await self._decision(db, issued), key=key, grant=grant
+        )
         assert chain.consumption.parent_event_id == chain.decision.event_id
         assert chain.consumption.parent_payload_hash == (
             chain.decision.evidence_payload_hash
         )
         assert chain.outcome.parent_event_id == chain.consumption.event_id
-        assert chain.outcome.parent_payload_hash == (
-            chain.consumption.evidence_payload_hash
-        )
         assert chain.consumption.event_id == consumption_event_id(
             grant["consumption_audit_id"]
         )
         assert chain.outcome.event_id == outcome_event_id(grant["id"])
+        assert chain.verify(public_key_b64=key.public_key_b64)
 
     async def test_an_unknown_outcome_is_not_published_as_evidence(
         self, db, org_and_agent
@@ -1324,16 +1442,16 @@ class TestDurableEvidenceLifecycle:
         """Signing "we do not know" would be worse than publishing nothing."""
         org_id, agent = org_and_agent
         key = self._key()
-        issued, _ = await self._grant(
-            db, agent, executor(org_id), "ev-7", consume_it=True
-        )
+        issued = await self._allow(db, agent, executor(org_id), "ev-7", consume_it=True)
         store = AuthorityStore(db)
         await store.record_outcome(
             grant_id=issued.grant_id, outcome_state=OutcomeState.OUTCOME_UNKNOWN
         )
         grant = await store.get(issued.grant_id)
 
-        chain = build_evidence_chain(grant, key=key)
+        chain = build_evidence_chain(
+            await self._decision(db, issued), key=key, grant=grant
+        )
         assert grant["outcome_state"] == "outcome_unknown"
         assert chain.outcome is None
         assert chain.consumption is not None
@@ -1343,32 +1461,38 @@ class TestDurableEvidenceLifecycle:
         """Proven failure is knowledge, and is published as such."""
         org_id, agent = org_and_agent
         key = self._key()
-        issued, _ = await self._grant(
-            db, agent, executor(org_id), "ev-8", consume_it=True
-        )
+        issued = await self._allow(db, agent, executor(org_id), "ev-8", consume_it=True)
         store = AuthorityStore(db)
         await store.record_outcome(
             grant_id=issued.grant_id,
             outcome_state=OutcomeState.FAILED_FINAL,
             outcome_reference="rail-decline-1",
         )
-        grant = await store.get(issued.grant_id)
 
-        chain = build_evidence_chain(grant, key=key)
+        chain = build_evidence_chain(
+            await self._decision(db, issued),
+            key=key,
+            grant=await store.get(issued.grant_id),
+        )
         assert chain.outcome is not None
         assert chain.outcome.payload["body"]["outcome_state"] == "failed_final"
         assert chain.verify(public_key_b64=key.public_key_b64)
 
-    async def test_service_path_evidence_claims_no_agent_signature(
-        self, db, org_and_agent
-    ) -> None:
-        """A surface that verified no signature must not publish one."""
+    async def test_a_block_chain_is_decision_only(self, db, org_and_agent) -> None:
         org_id, agent = org_and_agent
         key = self._key()
-        _issued, grant = await self._grant(db, agent, executor(org_id), "ev-9")
-        event = build_decision_evidence(grant, key=key)
-        assert grant["signed_action_hash"] is None
-        assert event.payload["body"]["signed_action_hash"] is None
+        blocked = await self._evaluate(
+            db,
+            agent,
+            executor(org_id),
+            "ev-block-chain",
+            payload=payment_payload(amount="999999.00"),
+        )
+        chain = build_evidence_chain(await self._decision(db, blocked), key=key)
+        assert chain.consumption is None
+        assert chain.outcome is None
+        assert chain.verify(public_key_b64=key.public_key_b64)
+
 
 
 class TestNoFailureProducesExecutableAuthority:
@@ -1393,24 +1517,30 @@ class TestNoFailureProducesExecutableAuthority:
         service = AuthorityEvaluationService(
             db, server_secret=SERVER_SECRET, authority_provider=_ExplodingProvider()
         )
-        with pytest.raises(RuntimeError):
-            await service.evaluate(
-                agent=agent,
-                action_type="financial_transaction",
-                payload=payment_payload(),
-                executor=executor(org_id),
-                issuance_ref="nf-1",
-                authority_claim=DelegatedAuthorityClaim(
-                    issuer="external", external_reference_id="ref-nf-1"
-                ),
-            )
-        # Nothing was written: no grant exists for that reference.
+        result = await service.evaluate(
+            agent=agent,
+            action_type="financial_transaction",
+            payload=payment_payload(),
+            executor=executor(org_id),
+            issuance_ref="nf-1",
+            authority_claim=DelegatedAuthorityClaim(
+                issuer="external", external_reference_id="ref-nf-1"
+            ),
+        )
+        assert result.decision is Decision.BLOCK
+        assert DecisionReason.AUTHORITY_PROVIDER_UNAVAILABLE in result.reasons
+        assert result.authority_token is None
+        # Nothing executable was written for that reference.
         async with db.acquire() as conn:
             count = await conn.fetchval(
-                "SELECT count(*) FROM execution_authority_grants WHERE issuance_ref = $1",
+                "SELECT count(*) FROM execution_authority_grants "
+                "WHERE issuance_ref = $1 AND agent_id = $2",
                 "nf-1",
+                agent.id,
             )
         assert count == 0
+        # The refusal itself IS recorded: a block is a decision.
+        assert result.decision_audit_id is not None
 
     async def test_an_unverified_claim_where_authority_is_required_yields_none(
         self, db, org_and_agent, monkeypatch
@@ -1468,8 +1598,10 @@ class TestNoFailureProducesExecutableAuthority:
             )
         async with db.acquire() as conn:
             count = await conn.fetchval(
-                "SELECT count(*) FROM execution_authority_grants WHERE issuance_ref = $1",
+                "SELECT count(*) FROM execution_authority_grants "
+                "WHERE issuance_ref = $1 AND agent_id = $2",
                 "nf-3",
+                agent.id,
             )
         assert count == 0
 
@@ -1739,3 +1871,374 @@ class TestTheEndpointItselfEnforcesCorePolicy:
         response = await self._evaluate(db, org_id, suspended, "route-5")
         assert response["decision"] == "block"
         assert response["authority_token"] is None
+
+
+class TestUnrelatedAuditActivityDoesNotVoidAGrant:
+    """A statistic is not a policy change.
+
+    ``audit_logs`` has an AFTER INSERT trigger that bumps the agent's
+    action counters, and ``agents`` has a BEFORE UPDATE trigger that bumps
+    ``updated_at``. If ``updated_at`` were part of the policy digest, any
+    audit row written between issuance and consumption -- one ``/verify``
+    call, or the authority decision record itself -- would re-derive a
+    different digest and refuse the grant as POLICY_HASH_MISMATCH.
+    """
+
+    async def test_a_later_audit_row_leaves_the_grant_consumable(
+        self, db, org_and_agent
+    ) -> None:
+        org_id, agent = org_and_agent
+        ctx = executor(org_id)
+        issued = await AuthorityEvaluationService(
+            db, server_secret=SERVER_SECRET
+        ).evaluate(
+            agent=agent,
+            action_type="financial_transaction",
+            payload=payment_payload(),
+            executor=ctx,
+            issuance_ref="stats-1",
+        )
+        assert issued.authority_token
+
+        before = await db.get_agent_by_id(agent.id)
+        async with db.acquire() as conn:
+            await conn.execute(
+                """
+                INSERT INTO audit_logs (
+                    agent_id, action_type, action_hash, payload, verdict,
+                    verdict_reason, signature, signature_valid,
+                    trust_score_at_time, metadata
+                ) VALUES ($1, 'api_call', $2, '{}'::JSONB, 'approved', 'unrelated',
+                          'X', FALSE, 50, '{"non_cryptographic": true}'::JSONB)
+                """,
+                agent.id,
+                "b" * 64,
+            )
+        after = await db.get_agent_by_id(agent.id)
+        # The trigger really did move the row, so this is not a no-op test.
+        assert after.updated_at > before.updated_at
+
+        result = await AuthorityConsumptionService(
+            db, server_secret=SERVER_SECRET
+        ).consume(
+            authority_token=issued.authority_token,
+            executor=ctx,
+            agent=agent,
+            action_type="financial_transaction",
+            payload=payment_payload(),
+            execution_ref="exec-stats-1",
+        )
+        assert result.outcome is ConsumptionOutcome.AUTHORISED
+
+    async def test_a_real_policy_change_still_voids_the_grant(
+        self, db, org_and_agent
+    ) -> None:
+        """The digest must still fire on things that ARE policy."""
+        org_id, agent = org_and_agent
+        ctx = executor(org_id)
+        issued = await AuthorityEvaluationService(
+            db, server_secret=SERVER_SECRET
+        ).evaluate(
+            agent=agent,
+            action_type="financial_transaction",
+            payload=payment_payload(),
+            executor=ctx,
+            issuance_ref="stats-2",
+        )
+        async with db.acquire() as conn:
+            await conn.execute(
+                "UPDATE agents SET per_action_limit_usd = 1 WHERE id = $1", agent.id
+            )
+
+        result = await AuthorityConsumptionService(
+            db, server_secret=SERVER_SECRET
+        ).consume(
+            authority_token=issued.authority_token,
+            executor=ctx,
+            agent=agent,
+            action_type="financial_transaction",
+            payload=payment_payload(),
+            execution_ref="exec-stats-2",
+        )
+        assert result.outcome is ConsumptionOutcome.REJECTED
+        assert result.rejection_reason is DecisionReason.POLICY_HASH_MISMATCH
+
+
+class _StubProvider:
+    """A provider whose answer the test chooses."""
+
+    def __init__(self, answer=None, raises=None):
+        self._answer, self._raises = answer, raises
+        self.calls = 0
+
+    def resolve(self, claim, context):  # noqa: ARG002
+        self.calls += 1
+        if self._raises is not None:
+            raise self._raises
+        return self._answer
+
+
+class _Unverified:
+    """A resolution that says, plainly, that it did not verify."""
+
+    is_verified = False
+    issues = ("not_verified",)
+
+
+def _claim(reference="vi-ref-1"):
+    return DelegatedAuthorityClaim(
+        issuer="mastercard-vi", external_reference_id=reference
+    )
+
+
+class TestPresentedDelegationIsNeverSilentlyIgnored:
+    """Two shapes, and only two.
+
+        no delegation presented -> the organisation's existing path
+        delegation presented    -> organisation policy AND delegated scope
+
+    There is no third shape where the server keeps the caller's request
+    and discards the constraint they attached to it. Falling back to the
+    non-delegated path grants MORE than was asked for, which is the one
+    direction a fallback must never go.
+    """
+
+    async def _evaluate(self, db, org_id, agent, ref, *, provider=None, claim=None):
+        service = AuthorityEvaluationService(
+            db, server_secret=SERVER_SECRET, authority_provider=provider
+        )
+        return await service.evaluate(
+            agent=agent,
+            action_type="financial_transaction",
+            payload=payment_payload(),
+            executor=executor(org_id),
+            issuance_ref=ref,
+            authority_claim=claim,
+        )
+
+    async def test_no_delegation_takes_the_existing_path(
+        self, db, org_and_agent
+    ) -> None:
+        org_id, agent = org_and_agent
+        result = await self._evaluate(db, org_id, agent, "del-1")
+        assert result.decision is Decision.ALLOW
+        assert result.authority_token
+
+    async def test_a_payment_the_organisation_allows_is_blocked_when_its_delegation_cannot_be_resolved(
+        self, db, org_and_agent
+    ) -> None:
+        """The exact fail-open this closes.
+
+        The organisation permits this payment outright — the identical act
+        with no delegation is allowed above. Presenting a delegation that
+        cannot be resolved must BLOCK, not fall back to that allow.
+        """
+        org_id, agent = org_and_agent
+        result = await self._evaluate(
+            db, org_id, agent, "del-2", provider=None, claim=_claim()
+        )
+        assert result.decision is Decision.BLOCK
+        assert DecisionReason.AUTHORITY_PROVIDER_UNAVAILABLE in result.reasons
+        assert result.authority_token is None
+        assert result.grant_id is None
+        async with db.acquire() as conn:
+            assert (
+                await conn.fetchval(
+                    "SELECT count(*) FROM execution_authority_grants "
+                    "WHERE issuance_ref = $1 AND agent_id = $2",
+                    "del-2",
+                    agent.id,
+                )
+                == 0
+            )
+
+    async def test_a_provider_that_throws_blocks(self, db, org_and_agent) -> None:
+        org_id, agent = org_and_agent
+        provider = _StubProvider(raises=TimeoutError("issuer unreachable"))
+        result = await self._evaluate(
+            db, org_id, agent, "del-3", provider=provider, claim=_claim()
+        )
+        assert provider.calls == 1
+        assert result.decision is Decision.BLOCK
+        assert DecisionReason.AUTHORITY_PROVIDER_UNAVAILABLE in result.reasons
+        assert result.authority_token is None
+
+    async def test_a_provider_that_returns_nothing_blocks(
+        self, db, org_and_agent
+    ) -> None:
+        org_id, agent = org_and_agent
+        result = await self._evaluate(
+            db,
+            org_id,
+            agent,
+            "del-4",
+            provider=_StubProvider(answer=None),
+            claim=_claim(),
+        )
+        assert result.decision is Decision.BLOCK
+        assert DecisionReason.AUTHORITY_VERIFICATION_FAILED in result.reasons
+        assert result.authority_token is None
+
+    async def test_an_unverified_resolution_blocks_even_when_not_required(
+        self, db, org_and_agent
+    ) -> None:
+        """Not required does not mean not enforced once it is presented."""
+        org_id, agent = org_and_agent
+        result = await self._evaluate(
+            db,
+            org_id,
+            agent,
+            "del-5",
+            provider=_StubProvider(answer=_Unverified()),
+            claim=_claim(),
+        )
+        assert result.decision is Decision.BLOCK
+        assert DecisionReason.AUTHORITY_VERIFICATION_FAILED in result.reasons
+        assert result.authority_token is None
+
+    async def test_the_block_is_recorded_durably(self, db, org_and_agent) -> None:
+        org_id, agent = org_and_agent
+        result = await self._evaluate(
+            db, org_id, agent, "del-6", provider=None, claim=_claim()
+        )
+        record = await get_authority_decision(db, result.decision_audit_id)
+        assert record is not None
+        assert record["verdict"] == "blocked"
+        payload = json.loads(record["payload"])
+        assert payload["decision"] == "block"
+        assert "authority_provider_unavailable" in payload["reasons"]
+
+    async def test_the_endpoint_refuses_an_unresolvable_delegation(
+        self, db, org_and_agent
+    ) -> None:
+        """Through the route, where a caller would actually present one."""
+        from api.routes.authority import AuthorityClaimBody, EvaluateRequest
+
+        org_id, agent = org_and_agent
+        endpoint = TestTheEndpointItselfEnforcesCorePolicy._route("/authority/evaluate")
+        body = EvaluateRequest(
+            agent_id=agent.id,
+            action_type="financial_transaction",
+            payload=payment_payload(),
+            issuance_ref="del-7",
+            delegated_authority=AuthorityClaimBody(
+                issuer="mastercard-vi", external_reference_id="vi-ref-7"
+            ),
+        )
+        response = await endpoint(
+            body=body,
+            database=db,
+            auth={"org_id": org_id, "api_key_id": "k", "scopes": ["write"]},
+        )
+        assert response["decision"] == "block"
+        assert response["authority_token"] is None
+        assert response["grant_id"] is None
+        assert "authority_provider_unavailable" in response["reasons"]
+
+
+class TestCallerTimestampIsASecurityInput:
+    """A field accepted on the wire but excluded from the freshness check
+    would be worse than no field: it reads as a control and is not one."""
+
+    @staticmethod
+    def _endpoint():
+        return TestTheEndpointItselfEnforcesCorePolicy._route("/authority/evaluate")
+
+    async def _post(self, db, org_id, agent, ref, timestamp, recipient="acct_ts"):
+        from api.routes.authority import EvaluateRequest
+
+        body = EvaluateRequest(
+            agent_id=agent.id,
+            action_type="financial_transaction",
+            payload=payment_payload(recipient=recipient),
+            issuance_ref=ref,
+            timestamp=timestamp,
+        )
+        return await self._endpoint()(
+            body=body,
+            database=db,
+            auth={"org_id": org_id, "api_key_id": "k", "scopes": ["write"]},
+        )
+
+    async def test_a_fresh_timestamp_is_allowed(self, db, org_and_agent) -> None:
+        org_id, agent = org_and_agent
+        now = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+        response = await self._post(db, org_id, agent, "ts-1", now, "acct_ts_1")
+        assert response["decision"] == "allow"
+        assert response["authority_token"]
+
+    async def test_a_stale_timestamp_is_refused_through_the_endpoint(
+        self, db, org_and_agent
+    ) -> None:
+        org_id, agent = org_and_agent
+        stale = (datetime.now(UTC) - timedelta(hours=6)).isoformat().replace(
+            "+00:00", "Z"
+        )
+        response = await self._post(db, org_id, agent, "ts-2", stale, "acct_ts_2")
+        assert response["decision"] == "block"
+        assert response["reasons"] == ["timestamp_invalid"]
+        assert response["authority_token"] is None
+        assert response["grant_id"] is None
+
+    async def test_a_future_timestamp_is_refused(self, db, org_and_agent) -> None:
+        org_id, agent = org_and_agent
+        ahead = (datetime.now(UTC) + timedelta(hours=6)).isoformat().replace(
+            "+00:00", "Z"
+        )
+        response = await self._post(db, org_id, agent, "ts-3", ahead, "acct_ts_3")
+        assert response["decision"] == "block"
+        assert response["reasons"] == ["timestamp_invalid"]
+
+    async def test_a_naive_timestamp_is_refused_not_reinterpreted(
+        self, db, org_and_agent
+    ) -> None:
+        """Omitting the offset must not shift the window by a timezone."""
+        org_id, agent = org_and_agent
+        naive = datetime.now(UTC).replace(tzinfo=None).isoformat()
+        response = await self._post(db, org_id, agent, "ts-4", naive, "acct_ts_4")
+        assert response["decision"] == "block"
+        assert response["reasons"] == ["timestamp_invalid"]
+        assert "offset" in (response.get("detail") or "")
+
+    async def test_a_malformed_timestamp_is_refused_cleanly(
+        self, db, org_and_agent
+    ) -> None:
+        """A refusal, not an unhandled adapter error."""
+        org_id, agent = org_and_agent
+        response = await self._post(db, org_id, agent, "ts-5", "yesterday", "acct_ts_5")
+        assert response["decision"] == "block"
+        assert response["reasons"] == ["timestamp_invalid"]
+
+    async def test_no_timestamp_means_server_time_is_authoritative(
+        self, db, org_and_agent
+    ) -> None:
+        org_id, agent = org_and_agent
+        response = await self._post(db, org_id, agent, "ts-6", None, "acct_ts_6")
+        assert response["decision"] == "allow"
+
+    async def test_the_same_stale_timestamp_is_refused_by_verify_too(
+        self, db, org_and_agent
+    ) -> None:
+        """Both surfaces apply the one Core freshness rule."""
+        org_id, agent = org_and_agent
+        stale = datetime.now(UTC) - timedelta(hours=6)
+        legacy = evaluate_core_policy(
+            CorePolicyInputs(
+                agent=agent,
+                action_type="financial_transaction",
+                payload=payment_payload(),
+                timestamp=stale,
+            )
+        )
+        assert not legacy.allowed
+        assert legacy.violation.value == "timestamp_invalid"
+
+        response = await self._post(
+            db,
+            org_id,
+            agent,
+            "ts-7",
+            stale.isoformat().replace("+00:00", "Z"),
+            "acct_ts_7",
+        )
+        assert response["reasons"] == [legacy.violation.value]

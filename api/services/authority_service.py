@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import logging
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any, Final
@@ -35,6 +35,10 @@ from api.crypto import CryptoService
 from api.database import Database
 from api.domains.payment.policy import PAYMENT_ACTION_TYPES, PaymentDomainPolicy
 from api.domains.payment.snapshot import build_payment_authority_policy_snapshot
+from api.persistence.authority_decisions import (
+    build_decision_payload,
+    record_authority_decision,
+)
 from api.persistence.authority_store import (
     AuthorityStore,
     ConsumeResult,
@@ -59,6 +63,83 @@ logger = logging.getLogger(__name__)
 #: which claim set it carries.
 AUTHORITY_TOKEN_VERSION: Final[str] = "inntris-authority-token-v1"
 
+
+def _scope_digest_for(resolved: ResolvedAuthority | None) -> str | None:
+    """Digest of the delegated scope this decision was bound by.
+
+    Deliberately a SCOPE digest and nothing else. It commits to what the
+    delegation permits — issuer, reference and the scope mapping — and it
+    is not a digest of the issuer's artefact, which this phase never sees.
+    """
+    if resolved is None:
+        return None
+    return authority_scope_digest(
+        issuer=resolved.reference.issuer,
+        external_reference_id=resolved.reference.external_reference_id,
+        artefact_digest=resolved.reference.artefact_digest,
+        scope=dict(resolved.scope),
+    )
+
+
+class AuthorityTimestampError(Exception):
+    """The caller-supplied act timestamp cannot be used as a decision instant."""
+
+
+def authority_decision_instant(timestamp: Any) -> datetime | None:
+    """Strictly parse the instant the caller says this act occurred.
+
+    Returns ``None`` when no timestamp was supplied, in which case server
+    time is authoritative. Anything supplied is parsed strictly:
+
+    * ISO-8601 only — a value that is not a timestamp is refused, not
+      quietly replaced by "now";
+    * an explicit UTC offset is REQUIRED. A naive value silently
+      reinterpreted as UTC would let a caller shift the freshness window
+      by a whole timezone just by omitting the offset.
+
+    The legacy ``/verify`` adapter deliberately tolerates naive values for
+    wire compatibility with clients that predate the rule. This surface is
+    new, so it does not inherit that tolerance.
+    """
+    if timestamp is None:
+        return None
+    if isinstance(timestamp, datetime):
+        parsed = timestamp
+    elif isinstance(timestamp, str):
+        try:
+            parsed = datetime.fromisoformat(timestamp.strip().replace("Z", "+00:00"))
+        except ValueError as exc:
+            raise AuthorityTimestampError(
+                f"timestamp {timestamp!r} is not an ISO-8601 instant"
+            ) from exc
+    else:
+        raise AuthorityTimestampError(
+            "timestamp must be an ISO-8601 string, got "
+            f"{type(timestamp).__name__}"
+        )
+    if parsed.tzinfo is None:
+        raise AuthorityTimestampError(
+            "timestamp must carry an explicit UTC offset; a naive instant is "
+            "ambiguous and cannot be checked for freshness"
+        )
+    return parsed.astimezone(UTC)
+
+
+class AuthorityUnresolvable(Exception):
+    """A presented delegated-authority claim could not be resolved.
+
+    Carries the typed decision reason so the caller BLOCKs with a truthful
+    explanation rather than converting an unresolvable claim into the
+    absence of one. Raised, not returned, because every call site must
+    make a decision about it — a value could be dropped on the floor.
+    """
+
+    def __init__(self, reason: DecisionReason, detail: str) -> None:
+        super().__init__(detail)
+        self.reason = reason
+        self.detail = detail
+
+
 #: How long an issued grant may live unless something tighter applies.
 DEFAULT_GRANT_TTL: Final[timedelta] = timedelta(minutes=5)
 
@@ -82,6 +163,17 @@ class EvaluationResult:
     policy_revision: str | None = None
     issue_outcome: IssueOutcome | None = None
     detail: str | None = None
+    #: Material the durable decision record needs, set by whichever branch
+    #: knows it. Absent on paths that refused before the fact was reached.
+    domain: str | None = None
+    executor_binding_digest: str | None = None
+    executor_reference: str | None = None
+    consequence_class: str | None = None
+    authority_scope_digest: str | None = None
+    #: Durable identity of this decision in ``audit_logs``. Present for
+    #: BLOCK as well as ALLOW -- a refusal is as provable as a permission.
+    decision_audit_id: UUID | None = None
+    decision_recorded_at: datetime | None = None
 
     @property
     def authorises_execution(self) -> bool:
@@ -200,19 +292,53 @@ class AuthorityEvaluationService:
         *,
         agent: Any,
     ) -> ResolvedAuthority | None:
-        """Resolve an external claim through the configured provider, if any.
+        """Resolve an external claim through the configured provider.
 
-        No provider configured and no claim presented means no delegated
-        authority — which is a fact, not an error. A claim presented with
-        no provider to resolve it is *not* waved through: it returns None,
-        and the requirement gate decides what that means.
+        ``None`` means only "no claim was presented", which is a fact
+        rather than an error. A claim that cannot be resolved is NOT
+        reported as absence — see :meth:`_resolve_presented_authority`,
+        which is what the decision path calls.
         """
-        if claim is None or self._authority_provider is None:
+        if claim is None:
             return None
+        if self._authority_provider is None:
+            raise AuthorityUnresolvable(
+                DecisionReason.AUTHORITY_PROVIDER_UNAVAILABLE,
+                "delegated authority was presented but no provider is "
+                "configured to resolve it",
+            )
         from api.core.authority.authority import trusted_authority_construction
 
         context = self._build_context(agent, trusted_authority_construction())
-        return self._authority_provider.resolve(claim, context)
+        try:
+            resolved = self._authority_provider.resolve(claim, context)
+        except AuthorityUnresolvable:
+            raise
+        except Exception as exc:
+            # A provider that throws has told us nothing. Treating that as
+            # "no delegation" would hand the caller the non-delegated path
+            # they did not ask for.
+            logger.warning(
+                "delegated authority provider failed for issuer %r: %s",
+                claim.issuer,
+                exc,
+            )
+            raise AuthorityUnresolvable(
+                DecisionReason.AUTHORITY_PROVIDER_UNAVAILABLE,
+                "the delegated authority provider could not resolve this claim",
+            ) from exc
+
+        if resolved is None:
+            raise AuthorityUnresolvable(
+                DecisionReason.AUTHORITY_VERIFICATION_FAILED,
+                "the delegated authority provider returned no resolution",
+            )
+        if not resolved.is_verified:
+            raise AuthorityUnresolvable(
+                DecisionReason.AUTHORITY_VERIFICATION_FAILED,
+                "the presented delegated authority did not verify",
+            )
+        return resolved
 
     @staticmethod
     def _build_context(agent: Any, construction: Any) -> Any:
@@ -227,6 +353,104 @@ class AuthorityEvaluationService:
     # -- the whole evaluation --------------------------------------------
 
     async def evaluate(
+        self,
+        *,
+        agent: Any,
+        action_type: str,
+        payload: dict[str, Any],
+        executor: AuthenticatedExecutorContext,
+        issuance_ref: str,
+        verified_signed_action_hash: str | None = None,
+        nonce: str | None = None,
+        timestamp: Any = None,
+        minute_request_count: int = 0,
+        registered_policy: Any = None,
+        client_policy_hash: str | None = None,
+        authority_claim: DelegatedAuthorityClaim | None = None,
+        consequence_class: ConsequenceClass | None = None,
+        daily_spend: Decimal = Decimal("0"),
+        registered_policy_hash: str | None = None,
+        at: datetime | None = None,
+    ) -> EvaluationResult:
+        """Decide, then record the decision durably — ALLOW or BLOCK.
+
+        The decision itself is :meth:`_decide`. This wrapper exists so the
+        durable record cannot be attached on some return paths and
+        forgotten on others: every outcome leaves through here.
+        """
+        result = await self._decide(
+            agent=agent,
+            action_type=action_type,
+            payload=payload,
+            executor=executor,
+            issuance_ref=issuance_ref,
+            verified_signed_action_hash=verified_signed_action_hash,
+            nonce=nonce,
+            timestamp=timestamp,
+            minute_request_count=minute_request_count,
+            registered_policy=registered_policy,
+            client_policy_hash=client_policy_hash,
+            authority_claim=authority_claim,
+            consequence_class=consequence_class,
+            daily_spend=daily_spend,
+            registered_policy_hash=registered_policy_hash,
+            at=at,
+        )
+        return await self._record_decision(result, agent=agent, action_type=action_type)
+
+    async def _record_decision(
+        self, result: EvaluationResult, *, agent: Any, action_type: str
+    ) -> EvaluationResult:
+        """Append the durable decision row and stamp its identity on the result.
+
+        Skipped only when there is no act to record: a caller whose
+        organisation does not own the principal, or whose timestamp could
+        not be parsed, was refused BEFORE any act existed, so there is no
+        ``execution_action_hash`` and inventing one would be a lie. Those
+        refusals are input validation, not a decision about an act.
+        """
+        if result.execution_action_hash is None:
+            return result
+
+        audit_id, recorded_at = await record_authority_decision(
+            self._db,
+            agent_id=agent.id,
+            trust_score=int(getattr(agent, "trust_score", 0) or 0),
+            execution_action_hash=result.execution_action_hash,
+            policy_snapshot_digest=result.policy_snapshot_digest,
+            allowed=result.decision is Decision.ALLOW,
+            verdict_reason=(
+                result.detail
+                or (
+                    "Execution authority granted"
+                    if result.decision is Decision.ALLOW
+                    else "Execution authority refused"
+                )
+            ),
+            payload=build_decision_payload(
+                organisation_id=agent.org_id,
+                action_type=action_type,
+                domain=result.domain,
+                decision=result.decision.value,
+                reasons=tuple(reason.value for reason in result.reasons),
+                execution_action_hash=result.execution_action_hash,
+                policy_snapshot_format=result.policy_snapshot_format,
+                policy_snapshot_digest=result.policy_snapshot_digest,
+                policy_revision=result.policy_revision,
+                executor_binding_digest=result.executor_binding_digest or "",
+                executor_reference=result.executor_reference,
+                consequence_class=result.consequence_class,
+                authority_scope_digest=result.authority_scope_digest,
+                grant_id=result.grant_id,
+                grant_expires_at=result.expires_at,
+                detail=result.detail,
+            ),
+        )
+        return replace(
+            result, decision_audit_id=audit_id, decision_recorded_at=recorded_at
+        )
+
+    async def _decide(
         self,
         *,
         agent: Any,
@@ -266,13 +490,28 @@ class AuthorityEvaluationService:
                 detail="authenticated organisation does not own this principal",
             )
 
+        # --- The caller's timestamp is a security input, not a label -------
+        # It reaches Core's freshness check as the decision instant. A
+        # timestamp accepted on the wire but excluded from that check would
+        # be a field with no meaning, which is worse than no field.
+        try:
+            occurred_at = authority_decision_instant(timestamp)
+        except AuthorityTimestampError as exc:
+            return EvaluationResult(
+                decision=Decision.BLOCK,
+                reasons=(DecisionReason.TIMESTAMP_INVALID,),
+                detail=str(exc),
+            )
+        #: Server time governs only when the caller asserted no instant.
+        decision_instant = occurred_at or now
+
         envelope = build_action_envelope(
             agent=agent,
             action_type=action_type,
             payload=payload,
             signed_action_hash=verified_signed_action_hash,
             nonce=nonce,
-            timestamp=timestamp,
+            timestamp=occurred_at,
             delegated_authority_reference=authority_claim,
             consequence_class=consequence_class,
         )
@@ -281,17 +520,41 @@ class AuthorityEvaluationService:
         requirement = self.requirement_for(
             organisation_id=agent.org_id, principal_id=agent.id, action_type=action_type
         )
-        resolved = self.resolve_authority(authority_claim, agent=agent)
 
-        if requirement.required and (resolved is None or not resolved.is_verified):
+        # --- A presented delegation is never silently discarded -------------
+        # The contract has two shapes, and only two:
+        #
+        #   no delegation presented -> the organisation's existing path
+        #   delegation presented    -> organisation policy AND delegated scope
+        #
+        # There is no third shape where a caller presents authority and the
+        # server decides to ignore it. Falling back to the non-delegated path
+        # would grant MORE than the caller asked to be bound by, which is the
+        # one direction a fallback must never go.
+        try:
+            resolved = self.resolve_authority(authority_claim, agent=agent)
+        except AuthorityUnresolvable as unresolvable:
+            return EvaluationResult(
+                decision=Decision.BLOCK,
+                reasons=(unresolvable.reason,),
+                execution_action_hash=envelope.execution_action_hash,
+                detail=unresolvable.detail,
+                domain=envelope.domain,
+                executor_binding_digest=executor.binding_digest,
+                executor_reference=executor.executor_reference,
+            )
+
+        if requirement.required and resolved is None:
             # Fail closed. No grant, no token, and the legacy path calls this
             # same gate so it cannot silently take the non-delegated route.
-            reason = (
-                DecisionReason.AUTHORITY_REQUIRED_BUT_MISSING
-                if resolved is None
-                else DecisionReason.AUTHORITY_VERIFICATION_FAILED
+            return EvaluationResult(
+                decision=Decision.BLOCK,
+                reasons=(DecisionReason.AUTHORITY_REQUIRED_BUT_MISSING,),
+                execution_action_hash=envelope.execution_action_hash,
+                domain=envelope.domain,
+                executor_binding_digest=executor.binding_digest,
+                executor_reference=executor.executor_reference,
             )
-            return EvaluationResult(decision=Decision.BLOCK, reasons=(reason,))
 
         # --- Shared Core organisation policy. This is the SAME evaluation
         # /verify runs: agent status, allowed/blocked actions, action-type
@@ -303,7 +566,7 @@ class AuthorityEvaluationService:
                 agent=agent,
                 action_type=action_type,
                 payload=payload,
-                timestamp=now,
+                timestamp=decision_instant,
                 daily_spend=daily_spend,
                 minute_request_count=minute_request_count,
                 registered_policy=registered_policy,
@@ -317,6 +580,9 @@ class AuthorityEvaluationService:
                 reasons=(reason,) if reason else (),
                 execution_action_hash=envelope.execution_action_hash,
                 detail=core.reason,
+                domain=envelope.domain,
+                executor_binding_digest=executor.binding_digest,
+                executor_reference=executor.executor_reference,
             )
 
         # --- Domain policy. Organisation policy decides; scope only narrows. ---
@@ -325,6 +591,10 @@ class AuthorityEvaluationService:
                 decision=Decision.BLOCK,
                 reasons=(DecisionReason.ACTION_TYPE_UNKNOWN,),
                 detail=f"no domain policy governs {action_type!r}",
+                execution_action_hash=envelope.execution_action_hash,
+                domain=envelope.domain,
+                executor_binding_digest=executor.binding_digest,
+                executor_reference=executor.executor_reference,
             )
 
         domain_policy = PaymentDomainPolicy(
@@ -335,6 +605,10 @@ class AuthorityEvaluationService:
             authority_requirement_resolver=self._requirements,
             consequence_class=consequence_class,
         )
+        # Deliberately SERVER time, not the caller's instant: the question
+        # here is whether the delegation is valid at the moment authority is
+        # issued. Core has already refused any caller instant outside the
+        # clock-skew window, so the two can differ only within it.
         decision = domain_policy.evaluate(envelope, resolved, at=now)
 
         snapshot = build_payment_authority_policy_snapshot(
@@ -355,16 +629,16 @@ class AuthorityEvaluationService:
                 policy_snapshot_digest=snapshot.digest,
                 policy_snapshot_format=snapshot.preimage["format"],
                 policy_revision=snapshot.revision,
+                domain=envelope.domain,
+                executor_binding_digest=executor.binding_digest,
+                executor_reference=executor.executor_reference,
+                consequence_class=(
+                    consequence_class.value if consequence_class else None
+                ),
+                authority_scope_digest=_scope_digest_for(resolved),
             )
 
-        scope_digest = None
-        if resolved is not None:
-            scope_digest = authority_scope_digest(
-                issuer=resolved.reference.issuer,
-                external_reference_id=resolved.reference.external_reference_id,
-                artefact_digest=resolved.reference.artefact_digest,
-                scope=dict(resolved.scope),
-            )
+        scope_digest = _scope_digest_for(resolved)
 
         issued = await self._issue(
             agent=agent,
@@ -390,6 +664,13 @@ class AuthorityEvaluationService:
                 policy_revision=snapshot.revision,
                 issue_outcome=issued.outcome,
                 detail=issued.detail,
+                domain=envelope.domain,
+                executor_binding_digest=executor.binding_digest,
+                executor_reference=executor.executor_reference,
+                consequence_class=(
+                    consequence_class.value if consequence_class else None
+                ),
+                authority_scope_digest=scope_digest,
             )
 
         grant = await self._store.get(issued.grant_id)
@@ -410,6 +691,13 @@ class AuthorityEvaluationService:
             policy_snapshot_format=snapshot.preimage["format"],
             policy_revision=snapshot.revision,
             issue_outcome=issued.outcome,
+            domain=envelope.domain,
+            executor_binding_digest=executor.binding_digest,
+            executor_reference=executor.executor_reference,
+            consequence_class=(
+                consequence_class.value if consequence_class else None
+            ),
+            authority_scope_digest=scope_digest,
         )
 
     async def _issue(

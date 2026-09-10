@@ -59,11 +59,8 @@ def decision_body(**overrides) -> dict:
         "policy_snapshot_format": "inntris-payment-authority-policy-v1",
         "policy_snapshot_digest": "b" * 64,
         "signed_action_hash": "c" * 64,
-        "legacy_policy_hash": "d" * 64,
         "grant_id": "grant-1",
-        "authority_issuer": "external-issuer",
-        "authority_reference_id": "ref-1",
-        "authority_artefact_digest": "e" * 64,
+        "authority_scope_digest": "e" * 64,
         "executor_binding_digest": "f" * 64,
     }
     fields.update(overrides)
@@ -149,11 +146,8 @@ class TestEvidenceIsSignedNotJustHashed:
             "policy_snapshot_digest",
             "policy_snapshot_format",
             "signed_action_hash",
-            "legacy_policy_hash",
             "grant_id",
-            "authority_issuer",
-            "authority_reference_id",
-            "authority_artefact_digest",
+            "authority_scope_digest",
             "executor_binding_digest",
             "decision",
             "organisation_id",
@@ -319,13 +313,26 @@ class TestSigningKeySeparation:
         assert key.key_id.startswith("authority-evidence-")
 
     def test_evidence_never_carries_raw_credential_contents(self, key) -> None:
-        """Only a reference and a digest of the external artefact."""
+        """A digest of the permitted scope, and nothing from the credential."""
         body = signed_decision(key).payload["body"]
-        assert "authority_artefact_digest" in body
+        assert "authority_scope_digest" in body
         assert not any(
             suspicious in body
             for suspicious in ("credential", "secret", "token", "raw_artefact")
         )
+
+    def test_a_scope_digest_is_never_labelled_an_artefact_digest(self, key) -> None:
+        """The two mean different things, and only one of them is known.
+
+        An artefact digest would assert that this phase saw the issuer's
+        credential and hashed it. It did not. Publishing the scope digest
+        under that name would be a verification claim nobody made.
+        """
+        body = signed_decision(key).payload["body"]
+        assert "authority_artefact_digest" not in body
+        assert "authority_issuer" not in body
+        assert "authority_reference_id" not in body
+        assert body["authority_scope_digest"] == "e" * 64
 
 
 class TestEvidenceValidation:

@@ -145,7 +145,16 @@ def build_payment_authority_policy_snapshot(
             ),
             "trust_score": int(agent.trust_score),
             "key_version": int(getattr(agent, "key_version", 1)),
-            "updated_at": _instant(getattr(agent, "updated_at", None)),
+            # ``updated_at`` is deliberately NOT here. It is a row mtime, not
+            # a policy input: an AFTER INSERT trigger on audit_logs bumps the
+            # agent's action counters, which bumps updated_at, which would
+            # change this digest and make every outstanding grant fail
+            # revalidation as a POLICY_HASH_MISMATCH -- for a statistic, not
+            # a policy change. Every actual policy input is committed to
+            # explicitly above and below, so nothing is lost by its absence
+            # and a false mismatch is gained by its presence. It remains in
+            # ``revision`` below, which is a human-readable label and is
+            # never compared.
         },
         "action_permissions": {
             "allowed_actions": sorted(agent.allowed_actions or []),

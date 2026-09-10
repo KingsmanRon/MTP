@@ -406,6 +406,16 @@ class DecisionEvidenceV3:
     request hash, exactly as v1/v2 publish it under the name
     ``action_hash``. ``execution_action_hash`` is the separate semantic act
     digest and is never substituted for it.
+
+    **On delegated authority.** The only delegation fact this phase stores
+    durably is ``authority_scope_digest`` — a commitment to what the
+    delegation permitted. It is published under that name and no other. It
+    is emphatically NOT an artefact digest: nothing in this phase has seen
+    the issuer's artefact, so a receipt that called it one would be
+    asserting a verification that never happened. Issuer, external
+    reference and artefact digest are absent until a provider phase
+    persists them; absent is the truthful answer, and a null nobody can
+    misread beats a plausible-looking value nobody checked.
     """
 
     audit_id: str
@@ -418,15 +428,12 @@ class DecisionEvidenceV3:
     policy_snapshot_format: str
     policy_snapshot_digest: str
     signed_action_hash: str | None = None
-    legacy_policy_hash: str | None = None
     consequence_class: str | None = None
     grant_id: str | None = None
     grant_expires_at: datetime | None = None
-    #: Reference and artefact digest only. Raw credential contents never
-    #: enter a public receipt.
-    authority_issuer: str | None = None
-    authority_reference_id: str | None = None
-    authority_artefact_digest: str | None = None
+    #: Digest of the delegated SCOPE this decision was bound by. A digest
+    #: of what was permitted, never of the issuer's credential.
+    authority_scope_digest: str | None = None
     executor_binding_digest: str | None = None
     reasons: tuple[str, ...] = ()
 
@@ -442,7 +449,6 @@ class DecisionEvidenceV3:
                 self.execution_action_hash, "execution_action_hash"
             ),
             "signed_action_hash": self.signed_action_hash,
-            "legacy_policy_hash": self.legacy_policy_hash,
             "policy_snapshot_format": self.policy_snapshot_format,
             "policy_snapshot_digest": self.policy_snapshot_digest,
             "consequence_class": self.consequence_class,
@@ -450,9 +456,7 @@ class DecisionEvidenceV3:
             "grant_expires_at": (
                 _instant(self.grant_expires_at) if self.grant_expires_at else None
             ),
-            "authority_issuer": self.authority_issuer,
-            "authority_reference_id": self.authority_reference_id,
-            "authority_artefact_digest": self.authority_artefact_digest,
+            "authority_scope_digest": self.authority_scope_digest,
             "executor_binding_digest": self.executor_binding_digest,
             "reasons": list(self.reasons),
         }

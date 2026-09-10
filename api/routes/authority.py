@@ -78,8 +78,25 @@ class EvaluateRequest(BaseModel):
             "with changed material it is a conflict."
         ),
     )
-    nonce: str | None = Field(None, max_length=64)
-    timestamp: str | None = None
+    nonce: str | None = Field(
+        None,
+        max_length=64,
+        description=(
+            "Caller-chosen uniqueness token. It participates in "
+            "execution_action_hash, so two acts differing only by nonce are "
+            "different acts."
+        ),
+    )
+    timestamp: str | None = Field(
+        None,
+        description=(
+            "ISO-8601 instant with an explicit UTC offset, saying when the act "
+            "occurred. It is a security input: it is fed to the Core freshness "
+            "check as the decision instant, exactly as POST /verify does. A "
+            "malformed or naive value is refused rather than replaced by server "
+            "time. Omit it and server time is authoritative."
+        ),
+    )
     delegated_authority: AuthorityClaimBody | None = None
     executor_reference: str | None = Field(
         None,
