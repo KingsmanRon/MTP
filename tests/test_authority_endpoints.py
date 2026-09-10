@@ -3166,6 +3166,122 @@ class TestForensicEvidenceIdentityCannotContradict:
         assert granted is False
 
 
+class TestForensicIdentityFailsClosedOnNull:
+    """A CHECK accepts UNKNOWN, so plain equality does not fail closed.
+
+    ``decision_body ->> 'agent_id' = agent_id::TEXT`` yields SQL NULL when
+    the key is absent OR its value is JSON null, and ``NULL = <value>`` is
+    UNKNOWN, which a CHECK accepts. The constraint therefore enforced "if
+    the body states an identity it must match" and said nothing about a
+    body that states none.
+
+    That is the wrong default for a forensic record: the receipt is built
+    from ``decision_body``, so a body that cannot say who it is about is
+    not a permissive edge case. ``IS NOT DISTINCT FROM`` compares NULL as
+    a value, returning FALSE rather than UNKNOWN.
+    """
+
+    async def _audit_row(self, db, agent):
+        async with db.acquire() as conn:
+            return await conn.fetchval(
+                """
+                INSERT INTO audit_logs (
+                    agent_id, action_type, action_hash, payload, verdict,
+                    verdict_reason, signature, signature_valid,
+                    trust_score_at_time, metadata
+                ) VALUES ($1, 'authority_decision', $2, '{}'::JSONB, 'approved',
+                          'null-identity test', 'X', FALSE, 0,
+                          '{"test_request": true}'::JSONB)
+                RETURNING id
+                """,
+                agent.id,
+                "b" * 64,
+            )
+
+    @staticmethod
+    async def _insert(db, audit_id, agent, org_id, body):
+        async with db.acquire() as conn:
+            await conn.execute(
+                """
+                INSERT INTO authority_decision_evidence (
+                    audit_log_id, agent_id, org_id, recorded_at,
+                    decision_body, sandbox, audit_action_type
+                ) VALUES ($1, $2, $3, $4, $5::JSONB, TRUE, 'authority_decision')
+                """,
+                audit_id,
+                agent.id,
+                org_id,
+                datetime.now(UTC),
+                json.dumps(body),
+            )
+
+    def _body(self, audit_id, agent, org_id, *, omit=None, nullify=None):
+        body = {
+            "audit_id": str(audit_id),
+            "agent_id": str(agent.id),
+            "organisation_id": str(org_id),
+        }
+        if omit:
+            body.pop(omit)
+        if nullify:
+            body[nullify] = None
+        return body
+
+    async def test_the_exact_matching_body_is_accepted(self, db) -> None:
+        """The constraints must still admit correct evidence."""
+        org_id, agent = await _make_agent(db, sandbox=False)
+        audit_id = await self._audit_row(db, agent)
+        await self._insert(
+            db, audit_id, agent, org_id, self._body(audit_id, agent, org_id)
+        )
+        async with db.acquire() as conn:
+            assert (
+                await conn.fetchval(
+                    "SELECT count(*) FROM authority_decision_evidence "
+                    "WHERE audit_log_id = $1",
+                    audit_id,
+                )
+                == 1
+            )
+
+    @pytest.mark.parametrize(
+        "field", ["audit_id", "agent_id", "organisation_id"]
+    )
+    async def test_a_missing_identity_is_rejected(self, db, field) -> None:
+        org_id, agent = await _make_agent(db, sandbox=False)
+        audit_id = await self._audit_row(db, agent)
+        with pytest.raises(asyncpg.PostgresError):
+            await self._insert(
+                db,
+                audit_id,
+                agent,
+                org_id,
+                self._body(audit_id, agent, org_id, omit=field),
+            )
+
+    @pytest.mark.parametrize(
+        "field", ["audit_id", "agent_id", "organisation_id"]
+    )
+    async def test_a_json_null_identity_is_rejected(self, db, field) -> None:
+        org_id, agent = await _make_agent(db, sandbox=False)
+        audit_id = await self._audit_row(db, agent)
+        with pytest.raises(asyncpg.PostgresError):
+            await self._insert(
+                db,
+                audit_id,
+                agent,
+                org_id,
+                self._body(audit_id, agent, org_id, nullify=field),
+            )
+
+    async def test_an_entirely_identityless_body_is_rejected(self, db) -> None:
+        """The degenerate case: evidence that says nothing about itself."""
+        org_id, agent = await _make_agent(db, sandbox=False)
+        audit_id = await self._audit_row(db, agent)
+        with pytest.raises(asyncpg.PostgresError):
+            await self._insert(db, audit_id, agent, org_id, {})
+
+
 class TestForensicEvidenceWriteIsAtomic:
     """The decision row and its evidence commit together or not at all."""
 

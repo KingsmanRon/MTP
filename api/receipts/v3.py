@@ -392,7 +392,15 @@ def verify_evidence_event(
     # payload, and a reader who trusts the outer copy is reading something
     # nobody signed. So each duplicate must equal its signed original.
     for field_name in ENVELOPE_BOUND_FIELDS:
-        if record.get(field_name) != payload.get(field_name):
+        if field_name not in record:
+            # Presence is required, not merely agreement. Comparing with
+            # .get() would read an ABSENT outer field as equal to a signed
+            # null -- so a root decision could arrive with its parent
+            # fields simply deleted and still verify. Every bound field is
+            # part of the public envelope; a missing one is a malformed
+            # envelope, whatever its signed value happens to be.
+            failures.append(f"outer {field_name} is missing from the envelope")
+        elif record[field_name] != payload.get(field_name):
             failures.append(
                 f"outer {field_name} contradicts the signed payload"
             )

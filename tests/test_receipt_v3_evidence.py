@@ -582,18 +582,42 @@ class TestTheWholeEnvelopeIsBoundToTheSignature:
         assert f"outer {field} contradicts the signed payload" in result.failures
 
     @pytest.mark.parametrize("field", ENVELOPE_BOUND_FIELDS)
-    def test_dropping_an_outer_field_also_fails(self, key, field) -> None:
-        """Absence must not read as agreement."""
-        record = json.loads(json.dumps(signed_decision(key).as_public_dict()))
+    def test_dropping_an_outer_field_fails(self, key, field) -> None:
+        """Absence must not read as agreement — for EVERY bound field.
+
+        Including ``parent_event_id`` and ``parent_payload_hash`` on a root
+        decision, whose signed value is null. Comparing with ``.get()``
+        made an absent field indistinguishable from an explicit null, so
+        those two could simply be deleted from the envelope and the event
+        still verified. Presence is part of the envelope's shape.
+        """
+        original = signed_decision(key)
+        record = json.loads(json.dumps(original.as_public_dict()))
         record.pop(field, None)
+
+        # Purely an envelope deletion: the signed half is untouched.
+        assert record["payload"] == original.payload
+        assert record["signature_b64"] == original.signature_b64
+
         result = verify_evidence_event(record, public_key_b64=key.public_key_b64)
-        # A field whose signed value is None is legitimately absent; every
-        # other one must be refused.
-        signed_value = signed_decision(key).payload.get(field)
-        if signed_value is None:
-            assert result
-        else:
-            assert not result
+        assert not result
+        assert f"outer {field} is missing from the envelope" in result.failures
+
+    def test_the_root_parent_fields_are_signed_null_and_still_required(
+        self, key
+    ) -> None:
+        """Names the case the old test exempted, so it cannot regress."""
+        event = signed_decision(key)
+        assert event.payload["parent_event_id"] is None
+        assert event.payload["parent_payload_hash"] is None
+        for field in ("parent_event_id", "parent_payload_hash"):
+            record = json.loads(json.dumps(event.as_public_dict()))
+            del record[field]
+            assert not verify_evidence_event(
+                record, public_key_b64=key.public_key_b64
+            )
+        # And present-with-null, which is the honest form, still verifies.
+        assert verify_evidence_event(event, public_key_b64=key.public_key_b64)
 
     def test_a_forged_parent_link_in_the_envelope_fails(self, key) -> None:
         """The classic re-parent, attempted through the envelope only."""
