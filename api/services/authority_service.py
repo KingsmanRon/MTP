@@ -95,6 +95,26 @@ def _scope_digest_for(resolved: ResolvedAuthority | None) -> str | None:
     )
 
 
+#: Server-side agent metadata key carrying the external principal-binding
+#: data an ``AuthorityProvider`` needs — an expected audience, a registered
+#: delegate key thumbprint, whatever a given issuer's binding requires.
+#: Provisioned out of band and read only from the agent record, never from
+#: a request: a principal binding a caller could assert about itself would
+#: bind nothing.
+PRINCIPAL_BINDING_METADATA_KEY: Final[str] = "authority_principal_binding"
+
+
+def _principal_binding_for(agent: Any) -> dict[str, Any]:
+    """The trusted principal-binding data for this agent, or nothing."""
+    metadata = getattr(agent, "metadata", None)
+    if not isinstance(metadata, dict):
+        return {}
+    binding = metadata.get(PRINCIPAL_BINDING_METADATA_KEY)
+    if not isinstance(binding, dict):
+        return {}
+    return dict(binding)
+
+
 class AuthorityTimestampError(Exception):
     """The caller-supplied act timestamp cannot be used as a decision instant."""
 
@@ -362,6 +382,7 @@ class AuthorityEvaluationService:
             construction,
             organisation_id=str(agent.org_id),
             principal_id=str(agent.id),
+            principal_binding=_principal_binding_for(agent),
         )
 
     # -- the whole evaluation --------------------------------------------

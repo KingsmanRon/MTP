@@ -54,7 +54,18 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# Phase 5: the Verifiable Intent authority connector calls the project's own
+# reference implementation rather than re-implementing SD-JWT chain
+# verification. It is pinned to an exact commit, never a branch: the
+# specification is a draft, so a floating ref would silently change what
+# Inntris verifies between two CI runs. The connector imports it lazily and
+# fails closed when it is absent, so it stays out of the runtime
+# dependencies and out of any deployment that does not use the connector.
+mastercard-vi = [
+    "verifiable-intent @ git+https://github.com/agent-intent/verifiable-intent.git@356c29635f1c44df7de02edb58699ca9f29bece6",
+]
 dev = [
+    "verifiable-intent @ git+https://github.com/agent-intent/verifiable-intent.git@356c29635f1c44df7de02edb58699ca9f29bece6",
     "pytest>=9.0.3,<10.0.0",
     "pytest-asyncio>=1.0.0,<2.0.0",
     "pytest-cov>=4.1.0,<5.0.0",

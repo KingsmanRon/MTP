@@ -1,0 +1,18 @@
+{
+  "_comment": "The exact Verifiable Intent revision this connector was implemented and tested against. api/connectors/mastercard_vi/profile.py must agree with every field here; tests/test_mastercard_vi_provider.py asserts it, so an upstream bump that is not deliberate fails CI instead of silently changing what Inntris verifies.",
+  "site": "https://verifiableintent.dev/",
+  "repository": "https://github.com/agent-intent/verifiable-intent",
+  "commit": "356c29635f1c44df7de02edb58699ca9f29bece6",
+  "commit_date": "2026-04-20T15:06:41-04:00",
+  "commit_subject": "Merge pull request #23 from agent-intent/fix/field-alignment-v2",
+  "package_version": "0.1.0",
+  "spec_revision": "0.1-draft",
+  "spec_date": "2026-02-18",
+  "spec_documents": [
+    "spec/README.md",
+    "spec/credential-format.md",
+    "spec/constraints.md",
+    "spec/security-model.md"
+  ],
+  "install": "pip install 'verifiable-intent @ git+https://github.com/agent-intent/verifiable-intent.git@356c29635f1c44df7de02edb58699ca9f29bece6'"
+}

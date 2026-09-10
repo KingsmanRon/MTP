@@ -1,0 +1,141 @@
+{
+  "_comment": "The adversarial catalogue for the Verifiable Intent connector. Every case here must be exercised by tests/test_mastercard_vi_provider.py and must fail for the reason recorded, not merely fail. The test asserts that the catalogue and the implemented cases are the same set, so adding a case here without implementing it — or implementing one without recording it — breaks the build.",
+  "cases": [
+    {
+      "id": "valid_autonomous_delegation",
+      "description": "A complete autonomous L1+L2 delegation for two approved suppliers, USD up to 20,000.00, with the correctly paired open checkout and payment mandates.",
+      "expected_failure_code": null
+    },
+    {
+      "id": "expired_layer1",
+      "description": "Layer 1 has already expired, so the root of the chain is no longer current.",
+      "expected_failure_code": "authority_expired"
+    },
+    {
+      "id": "expired_layer2",
+      "description": "The user's mandate has expired; the delegation it expressed is over.",
+      "expected_failure_code": "authority_expired"
+    },
+    {
+      "id": "layer2_issued_in_the_future",
+      "description": "The mandate is dated beyond the recommended clock skew, so its validity window has not begun.",
+      "expected_failure_code": "authority_not_yet_valid"
+    },
+    {
+      "id": "untrusted_issuer_key",
+      "description": "Layer 1 is signed by a key that is not the one provisioned for that issuer and kid.",
+      "expected_failure_code": "authority_signature_invalid"
+    },
+    {
+      "id": "unknown_issuer",
+      "description": "No trusted key is provisioned for the issuer at all, so the signature cannot be accepted.",
+      "expected_failure_code": "authority_signature_invalid"
+    },
+    {
+      "id": "claim_names_a_different_issuer",
+      "description": "The claim names one issuer while carrying a credential issued by another.",
+      "expected_failure_code": "authority_artefact_invalid"
+    },
+    {
+      "id": "wrong_layer2_audience",
+      "description": "The mandate was addressed to a different agent platform than this principal is provisioned under.",
+      "expected_failure_code": "authority_delegate_not_bound"
+    },
+    {
+      "id": "agent_key_not_bound_to_principal",
+      "description": "The chain verifies, but the delegated agent key belongs to some other agent — a valid credential is not evidence that it is this principal's.",
+      "expected_failure_code": "authority_delegate_not_bound"
+    },
+    {
+      "id": "agent_key_revoked_for_principal",
+      "description": "The delegated agent key was bound to this principal and has since been revoked.",
+      "expected_failure_code": "authority_revoked"
+    },
+    {
+      "id": "no_binding_provisioned",
+      "description": "Nothing ties this Inntris principal to any Verifiable Intent delegate.",
+      "expected_failure_code": "authority_principal_mismatch"
+    },
+    {
+      "id": "broken_sd_hash_binding",
+      "description": "The mandate's sd_hash binds to a different Layer 1 than the one presented.",
+      "expected_failure_code": "authority_digest_mismatch"
+    },
+    {
+      "id": "broken_reference_binding",
+      "description": "The payment mandate's conditional_transaction_id does not hash to the checkout mandate's disclosure, so the pair is not bound.",
+      "expected_failure_code": "authority_digest_mismatch"
+    },
+    {
+      "id": "claim_reference_is_not_the_mandate_pair",
+      "description": "The claim names a mandate-pair reference that is not this credential's.",
+      "expected_failure_code": "authority_digest_mismatch"
+    },
+    {
+      "id": "malformed_credential",
+      "description": "The presented material is not an SD-JWT serialization.",
+      "expected_failure_code": "authority_artefact_invalid"
+    },
+    {
+      "id": "layer3_presented",
+      "description": "Layer 3 material is presented; this release does not verify it and refuses rather than ignoring it.",
+      "expected_failure_code": "authority_artefact_invalid"
+    },
+    {
+      "id": "immediate_mode_credential",
+      "description": "An immediate-mode Layer 2 confirms final values and delegates to no agent, so it is not a source of delegated authority.",
+      "expected_failure_code": "authority_artefact_invalid"
+    },
+    {
+      "id": "layer2_without_expiry",
+      "description": "Layer 2 omits the exp claim the draft marks REQUIRED; the reference implementation tolerates it and Inntris does not.",
+      "expected_failure_code": "authority_artefact_invalid"
+    },
+    {
+      "id": "insufficient_disclosure_for_payee_check",
+      "description": "Every approved payee is withheld, so no proposed payee can be shown to satisfy the allowlist.",
+      "expected_failure_code": "authority_scope_unreadable"
+    },
+    {
+      "id": "unsupported_budget_constraint",
+      "description": "The mandate carries a cumulative budget cap, which needs a per-mandate spend ledger this release does not keep.",
+      "expected_failure_code": "authority_scope_unreadable"
+    },
+    {
+      "id": "unsupported_agent_recurrence_constraint",
+      "description": "The mandate authorises repeated agent-managed purchases, which needs occurrence accounting this release does not keep.",
+      "expected_failure_code": "authority_scope_unreadable"
+    },
+    {
+      "id": "unknown_constraint_type",
+      "description": "The payment mandate carries a constraint type outside the pinned draft's registry, which cannot be evaluated at all.",
+      "expected_failure_code": "authority_scope_unreadable"
+    },
+    {
+      "id": "unsupported_currency",
+      "description": "The delegation is denominated in a currency this release cannot enforce.",
+      "expected_failure_code": "authority_scope_unreadable"
+    },
+    {
+      "id": "positive_amount_minimum",
+      "description": "The amount range carries a lower bound Inntris has nowhere to enforce; half a constraint is not the constraint.",
+      "expected_failure_code": "authority_scope_unreadable"
+    },
+    {
+      "id": "reference_implementation_unavailable",
+      "description": "The pinned reference implementation cannot be loaded, so verification cannot run and success is never reported.",
+      "expected_failure_code": "authority_provider_unavailable"
+    },
+    {
+      "id": "no_authority_presented",
+      "description": "No claim at all. The provider reports an unverified resolution instead of inventing one.",
+      "expected_failure_code": "authority_not_found"
+    },
+    {
+      "id": "scope_wider_than_organisation_policy",
+      "description": "The delegation verifies and the organisation's own policy still blocks the act. A valid chain is never by itself an Inntris ALLOW.",
+      "expected_failure_code": null,
+      "expected_policy_decision": "block"
+    }
+  ]
+}
