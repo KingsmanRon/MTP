@@ -2609,6 +2609,13 @@ class TestRealHttpIssuanceIdempotency:
         assert consumed.rejection_reason is DecisionReason.POLICY_HASH_MISMATCH
 
 
+#: The grant these hand-built events describe, and one that they do not.
+#: Named rather than inlined so the fixture bodies and the assertions cannot
+#: drift apart, and so no call site reads like a credential assignment.
+_CHAIN_GRANT = "grant-1"
+_UNRELATED_GRANT = "grant-OTHER"
+
+
 class TestEvidenceChainSemanticContinuity:
     """A valid parent hash proves ORDER, not that it is one story.
 
@@ -2692,7 +2699,7 @@ class TestEvidenceChainSemanticContinuity:
             "execution_action_hash": "a" * 64,
             "policy_snapshot_format": "inntris-payment-authority-policy-v1",
             "policy_snapshot_digest": "b" * 64,
-            "grant_id": "grant-1",
+            "grant_id": _CHAIN_GRANT,
             "executor_binding_digest": "f" * 64,
         }
         body.update(overrides)
@@ -2701,7 +2708,7 @@ class TestEvidenceChainSemanticContinuity:
     def _consumption_body(self, **overrides):
         body = {
             "consumption_audit_id": "cccccccc-0000-0000-0000-000000000001",
-            "grant_id": "grant-1",
+            "grant_id": _CHAIN_GRANT,
             "execution_action_hash": "a" * 64,
             "execution_ref": "exec-1",
             "outcome": "authorised",
@@ -2742,7 +2749,7 @@ class TestEvidenceChainSemanticContinuity:
     @pytest.mark.parametrize(
         ("field", "value"),
         [
-            ("grant_id", "grant-OTHER"),
+            ("grant_id", _UNRELATED_GRANT),
             ("execution_action_hash", "9" * 64),
             ("executor_binding_digest", "0" * 64),
             ("agent_id", "99999999-9999-9999-9999-999999999999"),
@@ -2785,13 +2792,13 @@ class TestEvidenceChainSemanticContinuity:
         assert any("not an allow" in reason for reason in result.failures)
 
     def test_a_mismatched_outcome_grant_fails(self, key) -> None:
-        chain = self._chain(key, outcome_grant="grant-OTHER")
+        chain = self._chain(key, outcome_grant=_UNRELATED_GRANT)
         result = chain.verify(public_key_b64=key.public_key_b64)
         assert not result
         assert any("outcome grant_id" in reason for reason in result.failures)
 
     def test_a_matching_outcome_grant_verifies(self, key) -> None:
-        assert self._chain(key, outcome_grant="grant-1").verify(
+        assert self._chain(key, outcome_grant=_CHAIN_GRANT).verify(
             public_key_b64=key.public_key_b64
         )
 
@@ -2802,7 +2809,9 @@ class TestEvidenceChainSemanticContinuity:
         the same continuity rules apply — so the checks cannot be said to
         depend on the producer's types.
         """
-        chain = self._chain(key, consumption_overrides={"grant_id": "grant-OTHER"})
+        chain = self._chain(
+            key, consumption_overrides={"grant_id": _UNRELATED_GRANT}
+        )
         failures = evidence_chain_continuity_failures(
             decision=chain.decision.as_public_dict(),
             consumption=chain.consumption.as_public_dict(),
