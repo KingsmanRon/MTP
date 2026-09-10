@@ -125,14 +125,6 @@ def build_payment_authority_policy_snapshot(
             }
 
     captured = (captured_at or datetime.now(UTC)).astimezone(UTC)
-    revision = "|".join(
-        (
-            PAYMENT_AUTHORITY_POLICY_FORMAT,
-            str(getattr(agent, "id", "")),
-            _instant(getattr(agent, "updated_at", None)) or "",
-            str(getattr(agent, "key_version", "")),
-        )
-    )
 
     preimage: dict[str, Any] = {
         "format": PAYMENT_AUTHORITY_POLICY_FORMAT,
@@ -152,9 +144,11 @@ def build_payment_authority_policy_snapshot(
             # revalidation as a POLICY_HASH_MISMATCH -- for a statistic, not
             # a policy change. Every actual policy input is committed to
             # explicitly above and below, so nothing is lost by its absence
-            # and a false mismatch is gained by its presence. It remains in
-            # ``revision`` below, which is a human-readable label and is
-            # never compared.
+            # and a false mismatch is gained by its presence. It is absent
+            # from ``revision`` below for the same reason, and a sharper one:
+            # that revision is bound into the issuance identity, so a row
+            # mtime there breaks retry idempotency rather than merely
+            # mislabelling a snapshot.
         },
         "action_permissions": {
             "allowed_actions": sorted(agent.allowed_actions or []),
@@ -175,8 +169,30 @@ def build_payment_authority_policy_snapshot(
         "enforceable_delegation_scope_keys": sorted(KNOWN_SCOPE_KEYS),
     }
 
+    digest = jcs.sha256_hex(preimage)
+    # --- The revision is SEMANTIC, and it is load-bearing -----------------
+    # ``AuthorityStore.issuance_digest`` binds policy_revision into the
+    # issuance identity, so this string decides whether a retry of one
+    # request is the same request. It must therefore change when the policy
+    # changes and at no other time.
+    #
+    # It used to carry ``agents.updated_at``. That is a row mtime: an AFTER
+    # INSERT trigger on audit_logs bumps the agent's action counters, which
+    # bumps updated_at -- so writing the first decision's own audit row
+    # changed the revision, and an identical retry that reloaded the agent
+    # computed a different issuance digest and was refused as a conflicting
+    # request. Deriving it from the policy digest instead makes "same policy"
+    # and "same revision" the same statement, by construction.
+    revision = "|".join(
+        (
+            PAYMENT_AUTHORITY_POLICY_FORMAT,
+            str(getattr(agent, "id", "")),
+            str(int(getattr(agent, "key_version", 1) or 1)),
+            digest,
+        )
+    )
     return PaymentAuthorityPolicySnapshot(
-        digest=jcs.sha256_hex(preimage),
+        digest=digest,
         revision=revision,
         captured_at=captured,
         preimage=preimage,

@@ -19,6 +19,22 @@ canonicalisation and fingerprint algorithm are frozen; nothing in this
 module is reachable from their path. ``schema_version`` selects the
 branch, and a stored v1/v2 receipt verifies exactly as it always did.
 
+What anchors, and what does not
+-------------------------------
+Stated precisely, because the two assurances are easy to conflate:
+
+* the underlying **audit decision row** participates in the existing
+  per-agent hash chain and the Merkle anchoring pipeline, exactly as any
+  other audit row does;
+* the **v3 ``evidence_payload_hash`` is NOT itself anchored on Base.**
+  No anchor path commits to that value. v3 events are independently
+  authenticated by their Ed25519 signature and by their parent links, and
+  that is the whole of their assurance today.
+
+Saying otherwise would be the same self-certifying claim v3 exists to
+avoid. Anchoring the event commitment itself, if it is ever wanted, is a
+separate release decision alongside key publication.
+
 Linked evidence, never mutation
 -------------------------------
 A decision receipt is never rewritten once consumption happens. The
@@ -369,6 +385,104 @@ def verify_evidence_event(
     return EvidenceVerification(not failures, tuple(failures))
 
 
+def _body(event: dict[str, Any] | SignedEvidenceEvent | None) -> dict[str, Any]:
+    """The signed body of an event, however it was handed to us."""
+    if event is None:
+        return {}
+    record = event.as_public_dict() if isinstance(event, SignedEvidenceEvent) else dict(event)
+    payload = record.get("payload")
+    if not isinstance(payload, dict):
+        return {}
+    body = payload.get("body")
+    return body if isinstance(body, dict) else {}
+
+
+def _event_type_of(event: dict[str, Any] | SignedEvidenceEvent | None) -> str | None:
+    if event is None:
+        return None
+    if isinstance(event, SignedEvidenceEvent):
+        return event.event_type.value
+    return (dict(event).get("payload") or {}).get("event_type")
+
+
+#: Fields a consumption must agree with its decision on. Each is a fact
+#: about WHICH act was authorised, so a disagreement means the two events
+#: are not describing one history.
+CONSUMPTION_CONTINUITY_FIELDS: Final[tuple[str, ...]] = (
+    "grant_id",
+    "execution_action_hash",
+    "executor_binding_digest",
+)
+
+#: Checked only when both sides carry them, so evidence produced before
+#: consumption bodies carried the principal still verifies for what it says.
+OPTIONAL_CONTINUITY_FIELDS: Final[tuple[str, ...]] = ("agent_id", "organisation_id")
+
+
+def evidence_chain_continuity_failures(
+    *,
+    decision: dict[str, Any] | SignedEvidenceEvent,
+    consumption: dict[str, Any] | SignedEvidenceEvent | None = None,
+    outcome: dict[str, Any] | SignedEvidenceEvent | None = None,
+) -> tuple[str, ...]:
+    """Why these events are not one history. Empty means they are.
+
+    Reads only signed payload bodies, so it is usable by a third party who
+    has the events and the public key and nothing else.
+    """
+    failures: list[str] = []
+    decision_body = _body(decision)
+
+    if _event_type_of(decision) != EvidenceEventType.DECISION.value:
+        failures.append("continuity: the first event is not a decision")
+
+    if consumption is not None:
+        consumption_body = _body(consumption)
+        if _event_type_of(consumption) != EvidenceEventType.CONSUMPTION.value:
+            failures.append("continuity: the second event is not a consumption")
+
+        # Only an ALLOW can be followed by a consumption. Authority that was
+        # refused cannot have been spent.
+        if decision_body.get("decision") != "allow":
+            failures.append(
+                "continuity: a consumption follows a decision that was not an allow"
+            )
+
+        for field_name in CONSUMPTION_CONTINUITY_FIELDS:
+            decided, spent = decision_body.get(field_name), consumption_body.get(field_name)
+            if decided is None or spent is None:
+                failures.append(f"continuity: consumption {field_name} is missing")
+            elif decided != spent:
+                failures.append(
+                    f"continuity: consumption {field_name} does not match the decision"
+                )
+
+        for field_name in OPTIONAL_CONTINUITY_FIELDS:
+            decided, spent = decision_body.get(field_name), consumption_body.get(field_name)
+            if decided is not None and spent is not None and decided != spent:
+                failures.append(
+                    f"continuity: consumption {field_name} does not match the decision"
+                )
+
+    if outcome is not None:
+        outcome_body = _body(outcome)
+        if _event_type_of(outcome) != EvidenceEventType.OUTCOME.value:
+            failures.append("continuity: the third event is not an outcome")
+        if consumption is None:
+            failures.append("continuity: an outcome without a consumption")
+        else:
+            spent_grant = _body(consumption).get("grant_id")
+            reported = outcome_body.get("grant_id")
+            if reported is None or spent_grant is None:
+                failures.append("continuity: outcome grant_id is missing")
+            elif reported != spent_grant:
+                failures.append(
+                    "continuity: outcome grant_id does not match the consumption"
+                )
+
+    return tuple(failures)
+
+
 @dataclass(frozen=True, slots=True)
 class AuthorityEvidenceChain:
     """A decision and everything that followed from it."""
@@ -381,7 +495,20 @@ class AuthorityEvidenceChain:
         return tuple(e for e in (self.decision, self.consumption, self.outcome) if e is not None)
 
     def verify(self, *, public_key_b64: str) -> EvidenceVerification:
-        """Verify every link, in order, including each parent relationship."""
+        """Verify every link, in order, and that they are one history.
+
+        Two separate questions, both required:
+
+        **Cryptographic order.** Each event's signature covers its parent's
+        id and payload hash, so nothing can be re-parented or edited.
+
+        **Semantic continuity.** A valid parent hash proves only that the
+        producer chose that parent. It does not prove the events describe
+        the same thing: a consumption of grant B can be signed as a child
+        of the decision for grant A, and every hash checks out while the
+        history is a fabrication. So the fields are compared here, from the
+        SIGNED payloads, independently of whatever built the chain.
+        """
         failures: list[str] = []
         previous: SignedEvidenceEvent | None = None
         for event in self.events():
@@ -390,6 +517,13 @@ class AuthorityEvidenceChain:
             )
             failures.extend(f"{event.event_type.value}: {reason}" for reason in result.failures)
             previous = event
+        failures.extend(
+            evidence_chain_continuity_failures(
+                decision=self.decision,
+                consumption=self.consumption,
+                outcome=self.outcome,
+            )
+        )
         return EvidenceVerification(not failures, tuple(failures))
 
 
@@ -472,6 +606,11 @@ class ConsumptionEvidenceV3:
     execution_ref: str
     outcome: str
     executor_binding_digest: str
+    #: Carried so a verifier can check that this consumption belongs to the
+    #: same principal as the decision above it, from the signed payloads
+    #: alone. A parent hash proves ORDER; these prove it is the same story.
+    agent_id: str | None = None
+    organisation_id: str | None = None
     executor_reference: str | None = None
     consumed_at: datetime | None = None
 
@@ -490,6 +629,8 @@ class ConsumptionEvidenceV3:
             "executor_binding_digest": _require_text(
                 self.executor_binding_digest, "executor_binding_digest"
             ),
+            "agent_id": self.agent_id,
+            "organisation_id": self.organisation_id,
             "executor_reference": self.executor_reference,
             "consumed_at": _instant(self.consumed_at) if self.consumed_at else None,
         }

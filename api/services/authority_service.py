@@ -64,6 +64,20 @@ logger = logging.getLogger(__name__)
 AUTHORITY_TOKEN_VERSION: Final[str] = "inntris-authority-token-v1"
 
 
+def principal_is_sandbox(agent: Any) -> bool:
+    """Whether this principal's activity is test activity.
+
+    Read from server-side agent metadata, exactly as the legacy path reads
+    it, so both surfaces answer this question the same way. ``test_request``
+    is honoured alongside ``sandbox`` because that is the key the anchor
+    worker already excludes on.
+    """
+    metadata = getattr(agent, "metadata", None)
+    if not isinstance(metadata, dict):
+        return False
+    return bool(metadata.get("sandbox") or metadata.get("test_request"))
+
+
 def _scope_digest_for(resolved: ResolvedAuthority | None) -> str | None:
     """Digest of the delegated scope this decision was bound by.
 
@@ -415,10 +429,12 @@ class AuthorityEvaluationService:
         audit_id, recorded_at = await record_authority_decision(
             self._db,
             agent_id=agent.id,
+            organisation_id=agent.org_id,
             trust_score=int(getattr(agent, "trust_score", 0) or 0),
             execution_action_hash=result.execution_action_hash,
             policy_snapshot_digest=result.policy_snapshot_digest,
             allowed=result.decision is Decision.ALLOW,
+            sandbox=principal_is_sandbox(agent),
             verdict_reason=(
                 result.detail
                 or (
@@ -680,6 +696,7 @@ class AuthorityEvaluationService:
             agent_id=agent.id,
             approval_token_id=issued.approval_token_id,
             expires_at=grant["expires_at"],
+            sandbox=principal_is_sandbox(agent),
         )
         return EvaluationResult(
             decision=Decision.ALLOW,
@@ -751,6 +768,7 @@ class AuthorityEvaluationService:
         agent_id: UUID,
         approval_token_id: str | None,
         expires_at: datetime,
+        sandbox: bool = False,
     ) -> str:
         """An unforgeable token bound to grant, act and expiry.
 
@@ -766,6 +784,11 @@ class AuthorityEvaluationService:
             server_secret=self._server_secret[0],
             token_id=approval_token_id,
             expires_at=expires_at,
+            # Signed into the token, so it travels with the authority and
+            # cannot be edited off it later. Promoting the agent afterwards
+            # does not launder test authority into production authority:
+            # the claim was signed when the authority was minted.
+            sandbox=sandbox,
             extra_claims={
                 "token_version": AUTHORITY_TOKEN_VERSION,
                 "grant_id": str(grant_id),
@@ -834,6 +857,23 @@ class AuthorityConsumptionService:
             return ConsumeResult(
                 outcome=ConsumptionOutcome.REJECTED,
                 rejection_reason=DecisionReason.GRANT_NOT_FOUND,
+            )
+
+        # --- Sandbox authority never authorises a production execution -----
+        # Checked in BOTH directions and before any state is touched:
+        #
+        #   the signed claim  -- authority minted for a sandbox principal
+        #                        stays sandbox even after promotion, because
+        #                        the claim was signed at issuance;
+        #   the current agent -- a principal sandboxed since issuance cannot
+        #                        spend authority minted while it was live.
+        #
+        # This mirrors the legacy route's refusal rather than inventing a
+        # second, weaker rule for the same question.
+        if claims.get("sandbox") or principal_is_sandbox(agent):
+            return ConsumeResult(
+                outcome=ConsumptionOutcome.REJECTED,
+                rejection_reason=DecisionReason.GRANT_SANDBOX_EXECUTION_DENIED,
             )
 
         try:

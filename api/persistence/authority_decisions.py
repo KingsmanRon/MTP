@@ -42,6 +42,20 @@ AUTHORITY_DECISION_PAYLOAD_FORMAT: Final[str] = "inntris-authority-decision-v1"
 #: The action_type recorded for a decision row.
 AUTHORITY_DECISION_ACTION_TYPE: Final[str] = "authority_decision"
 
+_INSERT_EVIDENCE: Final[str] = """
+    INSERT INTO authority_decision_evidence (
+        audit_log_id, agent_id, org_id, recorded_at, decision_body, sandbox
+    )
+    VALUES ($1, $2, $3, $4, $5, $6)
+    ON CONFLICT (audit_log_id) DO NOTHING
+"""
+
+_SELECT_EVIDENCE: Final[str] = """
+    SELECT audit_log_id, agent_id, org_id, recorded_at, decision_body, sandbox
+    FROM authority_decision_evidence
+    WHERE audit_log_id = $1
+"""
+
 _INSERT: Final[str] = """
     INSERT INTO audit_logs (
         agent_id, action_type, action_hash, payload, verdict,
@@ -117,22 +131,82 @@ def build_decision_payload(
     }
 
 
+def _decision_metadata(*, sandbox: bool) -> dict[str, Any]:
+    """Audit metadata for a decision row, sandbox classification included."""
+    metadata: dict[str, Any] = {
+        "evidence_kind": AUTHORITY_DECISION_EVIDENCE_KIND,
+        # What actually authorised this row, since no agent signature did.
+        # Named so a reader never mistakes the marker in the signature
+        # column for a real signature.
+        "signature_kind": "authority_decision",
+        "source": "authority_evaluate",
+        "non_cryptographic": True,
+    }
+    if sandbox:
+        # The same two keys the legacy path writes: test_request is the
+        # anchor worker's exclusion key, sandbox is the human-facing flag
+        # on the public receipt.
+        metadata["test_request"] = True
+        metadata["sandbox"] = True
+    return metadata
+
+
+def evidence_body(
+    payload: dict[str, Any], *, audit_id: Any, agent_id: Any
+) -> dict[str, Any]:
+    """The canonical v3 decision body, in the shape the receipt publishes.
+
+    Built here, at decision time, and stored verbatim — so the historical
+    event stays byte-identical even if the builder is refactored later,
+    and so it does not depend on ``audit_logs.payload``, which authorised
+    erasure is allowed to replace.
+
+    Deliberately carries no request content: identifiers, digests, the
+    decision and its reasons. The act appears only as a hash.
+    """
+    return {
+        "audit_id": str(audit_id),
+        "agent_id": str(agent_id),
+        "organisation_id": payload["organisation_id"],
+        "action_type": payload["action_type"],
+        "domain": payload["domain"] or "unknown",
+        "decision": payload["decision"],
+        "execution_action_hash": payload["execution_action_hash"],
+        "policy_snapshot_format": payload["policy_snapshot_format"] or "none",
+        "policy_snapshot_digest": payload["policy_snapshot_digest"] or "none",
+        "signed_action_hash": payload.get("signed_action_hash"),
+        "consequence_class": payload["consequence_class"],
+        "grant_id": payload["grant_id"],
+        "grant_expires_at": payload["grant_expires_at"],
+        "authority_scope_digest": payload["authority_scope_digest"],
+        "executor_binding_digest": payload["executor_binding_digest"] or None,
+        "reasons": list(payload["reasons"]),
+    }
+
+
 async def record_authority_decision(
     database: Any,
     *,
     agent_id: UUID,
+    organisation_id: UUID,
     trust_score: int,
     execution_action_hash: str,
     policy_snapshot_digest: str | None,
     payload: dict[str, Any],
     allowed: bool,
     verdict_reason: str,
+    sandbox: bool = False,
 ) -> tuple[UUID, datetime]:
     """Append the decision and return its durable identity and instant.
 
     The returned ``(id, timestamp)`` is what makes the v3 decision event
-    stable: both are database-assigned, immutable once written, and read
-    back rather than regenerated.
+    stable: both are database-assigned and read back rather than
+    regenerated.
+
+    ``sandbox`` classifies the row for the anchoring pipeline. It is not
+    cosmetic: ``test_request`` is the key ``get_unanchored_logs`` already
+    excludes on, so a sandbox decision that omitted it would be swept onto
+    the mainnet anchor path with production activity.
     """
     verdict = ActionVerdict.APPROVED if allowed else ActionVerdict.BLOCKED
     async with database.acquire() as conn, conn.transaction():
@@ -153,24 +227,46 @@ async def record_authority_decision(
             trust_score,
             policy_snapshot_digest,
             json.dumps(
-                {
-                    "evidence_kind": AUTHORITY_DECISION_EVIDENCE_KIND,
-                    # What actually authorised this row, since no agent
-                    # signature did. Named so a reader never mistakes the
-                    # marker in the signature column for a real signature.
-                    "signature_kind": "authority_decision",
-                    "source": "authority_evaluate",
-                    "non_cryptographic": True,
-                },
+                _decision_metadata(sandbox=sandbox),
                 sort_keys=True,
                 separators=(",", ":"),
             ),
+        )
+        # The forensic half, in the SAME transaction. If the evidence row
+        # could not be written, the decision row must not exist either:
+        # a decision whose receipt can never be reconstructed is worse
+        # than a decision that was refused outright.
+        await conn.execute(
+            _INSERT_EVIDENCE,
+            row["id"],
+            agent_id,
+            organisation_id,
+            row["timestamp"],
+            json.dumps(
+                evidence_body(payload, audit_id=row["id"], agent_id=agent_id),
+                sort_keys=True,
+                separators=(",", ":"),
+            ),
+            sandbox,
         )
     return row["id"], row["timestamp"]
 
 
 async def get_authority_decision(database: Any, audit_id: UUID) -> Any:
-    """Read one decision record back, for reconstruction."""
+    """Read the forensic decision evidence back, for reconstruction.
+
+    Deliberately reads ``authority_decision_evidence`` and not
+    ``audit_logs``: an authorised erasure replaces ``audit_logs.payload``
+    with a tombstone, which is correct for the request record and fatal
+    for a receipt that has already been quoted. This row survives it and
+    holds no request content to erase.
+    """
+    async with database.acquire() as conn:
+        return await conn.fetchrow(_SELECT_EVIDENCE, audit_id)
+
+
+async def get_authority_decision_audit_row(database: Any, audit_id: UUID) -> Any:
+    """The audit row itself — erasable, and used for audit-trail questions."""
     async with database.acquire() as conn:
         return await conn.fetchrow(
             "SELECT * FROM audit_logs WHERE id = $1 AND action_type = $2",
@@ -184,6 +280,8 @@ __all__ = [
     "AUTHORITY_DECISION_EVIDENCE_KIND",
     "AUTHORITY_DECISION_PAYLOAD_FORMAT",
     "build_decision_payload",
+    "evidence_body",
     "get_authority_decision",
+    "get_authority_decision_audit_row",
     "record_authority_decision",
 ]

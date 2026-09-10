@@ -49,9 +49,6 @@ import json
 from datetime import UTC, datetime
 from typing import Any
 
-from api.persistence.authority_decisions import (
-    AUTHORITY_DECISION_PAYLOAD_FORMAT,
-)
 from api.receipts.v3 import (
     AuthorityEvidenceChain,
     ConsumptionEvidenceV3,
@@ -61,6 +58,7 @@ from api.receipts.v3 import (
     EvidenceSigningKey,
     OutcomeEvidenceV3,
     SignedEvidenceEvent,
+    evidence_chain_continuity_failures,
     sign_evidence_event,
 )
 
@@ -104,39 +102,40 @@ def build_decision_evidence(
     The service-authenticated surface writes ``null``, so evidence from
     that surface cannot claim an agent-signed hash.
     """
-    payload = _decision_payload(decision_record)
-    if payload.get("format") != AUTHORITY_DECISION_PAYLOAD_FORMAT:
+    payload = _decision_body(decision_record)
+    missing = _REQUIRED_BODY_FIELDS.difference(payload)
+    if missing:
         raise EvidenceError(
-            "decision record is not an "
-            f"{AUTHORITY_DECISION_PAYLOAD_FORMAT} record"
+            "decision evidence is incomplete; cannot sign a partial history "
+            f"(missing: {', '.join(sorted(missing))})"
         )
 
     body = DecisionEvidenceV3(
-        audit_id=str(decision_record["id"]),
-        agent_id=str(decision_record["agent_id"]),
+        audit_id=payload["audit_id"],
+        agent_id=payload["agent_id"],
         organisation_id=payload["organisation_id"],
         action_type=payload["action_type"],
-        domain=payload["domain"] or "unknown",
+        domain=payload["domain"],
         decision=payload["decision"],
         execution_action_hash=payload["execution_action_hash"],
-        policy_snapshot_format=payload["policy_snapshot_format"] or "none",
-        policy_snapshot_digest=payload["policy_snapshot_digest"] or "none",
+        policy_snapshot_format=payload["policy_snapshot_format"],
+        policy_snapshot_digest=payload["policy_snapshot_digest"],
         signed_action_hash=payload.get("signed_action_hash"),
         consequence_class=payload["consequence_class"],
         grant_id=payload["grant_id"],
         grant_expires_at=_instant_or_none(payload["grant_expires_at"]),
         # The scope digest, under its own name. See DecisionEvidenceV3.
         authority_scope_digest=payload["authority_scope_digest"],
-        executor_binding_digest=payload["executor_binding_digest"] or None,
+        executor_binding_digest=payload["executor_binding_digest"],
         reasons=tuple(payload["reasons"]),
     ).to_body()
     return sign_evidence_event(
-        event_id=decision_event_id(decision_record["id"]),
+        event_id=decision_event_id(decision_record["audit_log_id"]),
         event_type=EvidenceEventType.DECISION,
         body=body,
         key=key,
         # Durable decision time, never "now".
-        recorded_at=decision_record["timestamp"],
+        recorded_at=decision_record["recorded_at"],
     )
 
 
@@ -168,6 +167,8 @@ def build_consumption_evidence(
         execution_ref=grant["execution_ref"],
         outcome="authorised",
         executor_binding_digest=grant["executor_binding_digest"],
+        agent_id=str(grant["agent_id"]),
+        organisation_id=str(grant["org_id"]),
         executor_reference=grant["executor_reference"],
         consumed_at=grant["consumed_at"],
     ).to_body()
@@ -229,18 +230,32 @@ def build_evidence_chain(
     decision = build_decision_evidence(decision_record, key=key)
     if grant is None:
         return AuthorityEvidenceChain(decision)
+
     consumption = build_consumption_evidence(grant, key=key, parent=decision)
     outcome = (
         build_outcome_evidence(grant, key=key, parent=consumption)
         if consumption is not None
         else None
     )
+    # Refuse to SIGN a false history, rather than leaving it to the verifier
+    # to catch. A signature is an assertion; producing one over events that
+    # do not belong together asserts something untrue, even if a checker
+    # would later notice. The verifier repeats these checks independently,
+    # because a third party cannot take this builder's word for it.
+    mismatches = evidence_chain_continuity_failures(
+        decision=decision, consumption=consumption, outcome=outcome
+    )
+    if mismatches:
+        raise EvidenceError(
+            "refusing to sign an evidence chain whose events describe "
+            "different histories: " + "; ".join(mismatches)
+        )
     return AuthorityEvidenceChain(decision, consumption, outcome)
 
 
-def _decision_payload(decision_record: Any) -> dict[str, Any]:
-    """The canonical decision material, however the driver returned it."""
-    raw = decision_record["payload"]
+def _decision_body(decision_record: Any) -> dict[str, Any]:
+    """The stored canonical decision body, however the driver returned it."""
+    raw = decision_record["decision_body"]
     if isinstance(raw, str):
         return json.loads(raw)
     return dict(raw)
@@ -252,3 +267,27 @@ def _instant_or_none(value: Any) -> datetime | None:
     if isinstance(value, datetime):
         return value if value.tzinfo else value.replace(tzinfo=UTC)
     return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+
+
+#: Every field the signed decision body commits to. Checked before signing
+#: so a truncated or tombstoned row is refused loudly rather than producing
+#: an event that verifies but says less than the original did.
+_REQUIRED_BODY_FIELDS: frozenset[str] = frozenset(
+    {
+        "audit_id",
+        "agent_id",
+        "organisation_id",
+        "action_type",
+        "domain",
+        "decision",
+        "execution_action_hash",
+        "policy_snapshot_format",
+        "policy_snapshot_digest",
+        "consequence_class",
+        "grant_id",
+        "grant_expires_at",
+        "authority_scope_digest",
+        "executor_binding_digest",
+        "reasons",
+    }
+)

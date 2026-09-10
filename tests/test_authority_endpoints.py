@@ -8,6 +8,7 @@ copied executor reference buys nothing.
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 import os
@@ -27,6 +28,7 @@ from api.crypto import CryptoService  # noqa: E402
 from api.database import Database  # noqa: E402
 from api.persistence.authority_decisions import (  # noqa: E402
     get_authority_decision,
+    get_authority_decision_audit_row,
 )
 from api.persistence.authority_store import AuthorityStore, OutcomeState  # noqa: E402
 from api.receipts.evidence_builder import (  # noqa: E402
@@ -38,10 +40,22 @@ from api.receipts.evidence_builder import (  # noqa: E402
 )
 from api.receipts.v3 import (  # noqa: E402
     EVIDENCE_SIGNING_KEY_ENV,
+    AuthorityEvidenceChain,
+    ConsumptionEvidenceV3,
+    DecisionEvidenceV3,
     EvidenceError,
+    EvidenceEventType,
+    OutcomeEvidenceV3,
+    evidence_chain_continuity_failures,
     load_evidence_signing_key,
+    sign_evidence_event,
     verify_evidence_event,
 )
+
+
+@pytest.fixture
+def key():
+    return load_evidence_signing_key(environment="test")
 from api.services.authority_service import (  # noqa: E402
     AUTHORITY_REQUIRED_ORGS_ENV,
     AUTHORITY_TOKEN_VERSION,
@@ -1204,7 +1218,7 @@ class TestDurableEvidenceLifecycle:
         event = build_decision_evidence(record, key=key)
         assert verify_evidence_event(event, public_key_b64=key.public_key_b64)
         assert event.event_id == decision_event_id(issued.decision_audit_id)
-        assert event.recorded_at == record["timestamp"].astimezone(UTC)
+        assert event.recorded_at == record["recorded_at"].astimezone(UTC)
         body = event.payload["body"]
         assert body["decision"] == "allow"
         assert body["grant_id"] == str(issued.grant_id)
@@ -1229,7 +1243,10 @@ class TestDurableEvidenceLifecycle:
         assert blocked.decision_audit_id is not None
 
         record = await self._decision(db, blocked)
-        assert record["verdict"] == "blocked"
+        audit_row = await get_authority_decision_audit_row(
+            db, blocked.decision_audit_id
+        )
+        assert audit_row["verdict"] == "blocked"
         # No executable authority was created for the refusal.
         async with db.acquire() as conn:
             assert (
@@ -1281,9 +1298,9 @@ class TestDurableEvidenceLifecycle:
         # A caller who mutates their own copy of the row changes their own
         # view and nothing else: the stored row is what the next read sees.
         mutated = dict(record)
-        mutated["payload"] = json.dumps(
+        mutated["decision_body"] = json.dumps(
             {
-                **json.loads(record["payload"]),
+                **json.loads(record["decision_body"]),
                 "authority_scope_digest": "0" * 64,
             }
         )
@@ -2101,12 +2118,15 @@ class TestPresentedDelegationIsNeverSilentlyIgnored:
         result = await self._evaluate(
             db, org_id, agent, "del-6", provider=None, claim=_claim()
         )
+        audit_row = await get_authority_decision_audit_row(
+            db, result.decision_audit_id
+        )
+        assert audit_row is not None
+        assert audit_row["verdict"] == "blocked"
         record = await get_authority_decision(db, result.decision_audit_id)
-        assert record is not None
-        assert record["verdict"] == "blocked"
-        payload = json.loads(record["payload"])
-        assert payload["decision"] == "block"
-        assert "authority_provider_unavailable" in payload["reasons"]
+        body = json.loads(record["decision_body"])
+        assert body["decision"] == "block"
+        assert "authority_provider_unavailable" in body["reasons"]
 
     async def test_the_endpoint_refuses_an_unresolvable_delegation(
         self, db, org_and_agent
@@ -2242,3 +2262,706 @@ class TestCallerTimestampIsASecurityInput:
             "acct_ts_7",
         )
         assert response["reasons"] == [legacy.violation.value]
+
+
+async def _make_agent(db, *, sandbox: bool, org_id=None):
+    """A principal whose sandbox state the test chooses."""
+    org_id = org_id or uuid4()
+    agent_id = uuid4()
+    metadata = {"sandbox": sandbox}
+    if not sandbox:
+        metadata.update(
+            {
+                "production_approval_reference": "phase-4-test",
+                "production_approved_at": "2026-01-01T00:00:00Z",
+                "production_approved_by": "phase-4-fixture",
+            }
+        )
+    async with db.acquire() as conn:
+        exists = await conn.fetchval(
+            "SELECT 1 FROM organizations WHERE id = $1", org_id
+        )
+        if not exists:
+            await conn.execute(
+                """
+                INSERT INTO organizations (
+                    id, name, billing_tier, contact_email, api_key_hash
+                ) VALUES ($1, $2, 'enterprise', $3, $4)
+                """,
+                org_id,
+                f"sb-{org_id}",
+                f"sb-{org_id}@example.test",
+                hashlib.sha256(str(org_id).encode()).digest(),
+            )
+        await conn.execute(
+            """
+            INSERT INTO agents (
+                id, org_id, name, public_key, public_key_fingerprint,
+                trust_score, status, daily_limit_usd, per_action_limit_usd,
+                allowed_actions, blocked_actions, rate_limit_per_minute, metadata
+            ) VALUES (
+                $1, $2, $3, $4, $5, 80, 'active', 10000, 10000,
+                ARRAY['financial_transaction']::TEXT[], ARRAY[]::TEXT[], 1000, $6::JSONB
+            )
+            """,
+            agent_id,
+            org_id,
+            f"sb-agent-{agent_id}",
+            secrets.token_bytes(32),
+            hashlib.sha256(str(agent_id).encode()).hexdigest(),
+            json.dumps(metadata),
+        )
+    return org_id, await db.get_agent_by_id(agent_id)
+
+
+def _token_claims(token: str) -> dict:
+    """Read a token's claims without verifying — for inspection only."""
+    raw = base64.urlsafe_b64decode(token + "=" * (-len(token) % 4))
+    return json.loads(raw.rsplit(b".", 1)[0])
+
+
+class TestSandboxProvenanceSurvivesTheAuthorityLifecycle:
+    """Sandbox activity must never become production authority.
+
+    The legacy path derives sandbox from agent metadata, signs it into the
+    approval token, marks the audit row as test activity so it stays off
+    the mainnet anchor path, and refuses consumption. The v0.5 path has to
+    do all four, or promoting an agent would launder old test authority
+    into production authority.
+    """
+
+    async def _issue(self, db, org_id, agent, ref, amount="10.00"):
+        return await AuthorityEvaluationService(
+            db, server_secret=SERVER_SECRET
+        ).evaluate(
+            agent=agent,
+            action_type="financial_transaction",
+            payload=payment_payload(amount=amount, recipient=f"acct-{ref}"),
+            executor=executor(org_id),
+            issuance_ref=ref,
+        )
+
+    async def test_a_sandbox_principal_is_still_evaluated(self, db) -> None:
+        """Sandbox is not a refusal to evaluate; it bounds what results."""
+        org_id, agent = await _make_agent(db, sandbox=True)
+        result = await self._issue(db, org_id, agent, "sbx-1")
+        assert result.decision is Decision.ALLOW
+        assert result.authority_token
+
+    async def test_the_token_carries_sandbox_provenance(self, db) -> None:
+        org_id, agent = await _make_agent(db, sandbox=True)
+        result = await self._issue(db, org_id, agent, "sbx-2")
+        assert _token_claims(result.authority_token)["sandbox"] is True
+
+    async def test_sandbox_authority_cannot_execute_even_once(self, db) -> None:
+        """Not "single use then refused" — refused on the FIRST attempt."""
+        org_id, agent = await _make_agent(db, sandbox=True)
+        result = await self._issue(db, org_id, agent, "sbx-3")
+
+        consumed = await AuthorityConsumptionService(
+            db, server_secret=SERVER_SECRET
+        ).consume(
+            authority_token=result.authority_token,
+            executor=executor(org_id),
+            agent=agent,
+            action_type="financial_transaction",
+            payload=payment_payload(recipient="acct-sbx-3"),
+            execution_ref="exec-sbx-3",
+        )
+        assert consumed.outcome is ConsumptionOutcome.REJECTED
+        assert consumed.rejection_reason is (
+            DecisionReason.GRANT_SANDBOX_EXECUTION_DENIED
+        )
+        assert not consumed.may_execute
+        assert consumed.consumption_audit_id is None
+
+    async def test_promotion_cannot_launder_old_sandbox_authority(self, db) -> None:
+        """The provenance was SIGNED, so promoting the agent cannot edit it."""
+        org_id, agent = await _make_agent(db, sandbox=True)
+        result = await self._issue(db, org_id, agent, "sbx-4")
+
+        # Promote the principal to production, exactly as an operator would.
+        async with db.acquire() as conn:
+            await conn.execute(
+                "UPDATE agents SET metadata = $2::JSONB WHERE id = $1",
+                agent.id,
+                json.dumps(
+                    {
+                        "sandbox": False,
+                        "production_approval_reference": "promoted",
+                        "production_approved_at": "2026-02-01T00:00:00Z",
+                        "production_approved_by": "operator",
+                    }
+                ),
+            )
+        promoted = await db.get_agent_by_id(agent.id)
+        assert not promoted.metadata.get("sandbox")
+
+        consumed = await AuthorityConsumptionService(
+            db, server_secret=SERVER_SECRET
+        ).consume(
+            authority_token=result.authority_token,
+            executor=executor(org_id),
+            agent=promoted,
+            action_type="financial_transaction",
+            payload=payment_payload(recipient="acct-sbx-4"),
+            execution_ref="exec-sbx-4",
+        )
+        assert consumed.outcome is ConsumptionOutcome.REJECTED
+        assert consumed.rejection_reason is (
+            DecisionReason.GRANT_SANDBOX_EXECUTION_DENIED
+        )
+
+    async def test_demotion_also_stops_consumption(self, db) -> None:
+        """The check runs in both directions: current state counts too."""
+        org_id, agent = await _make_agent(db, sandbox=False)
+        result = await self._issue(db, org_id, agent, "sbx-5")
+        assert _token_claims(result.authority_token)["sandbox"] is False
+
+        async with db.acquire() as conn:
+            await conn.execute(
+                "UPDATE agents SET metadata = '{\"sandbox\": true}'::JSONB WHERE id = $1",
+                agent.id,
+            )
+        sandboxed = await db.get_agent_by_id(agent.id)
+
+        consumed = await AuthorityConsumptionService(
+            db, server_secret=SERVER_SECRET
+        ).consume(
+            authority_token=result.authority_token,
+            executor=executor(org_id),
+            agent=sandboxed,
+            action_type="financial_transaction",
+            payload=payment_payload(recipient="acct-sbx-5"),
+            execution_ref="exec-sbx-5",
+        )
+        assert consumed.outcome is ConsumptionOutcome.REJECTED
+        assert consumed.rejection_reason is (
+            DecisionReason.GRANT_SANDBOX_EXECUTION_DENIED
+        )
+
+    async def test_the_sandbox_decision_audit_is_excluded_from_anchoring(
+        self, db
+    ) -> None:
+        """test_request is the anchor worker's existing exclusion key."""
+        org_id, agent = await _make_agent(db, sandbox=True)
+        result = await self._issue(db, org_id, agent, "sbx-6")
+
+        audit_row = await get_authority_decision_audit_row(
+            db, result.decision_audit_id
+        )
+        metadata = json.loads(audit_row["metadata"])
+        assert metadata["test_request"] is True
+        assert metadata["sandbox"] is True
+
+    async def test_a_production_principal_is_unaffected(self, db) -> None:
+        """The whole point is that ordinary agents keep working."""
+        org_id, agent = await _make_agent(db, sandbox=False)
+        result = await self._issue(db, org_id, agent, "sbx-7")
+        assert _token_claims(result.authority_token)["sandbox"] is False
+
+        consumed = await AuthorityConsumptionService(
+            db, server_secret=SERVER_SECRET
+        ).consume(
+            authority_token=result.authority_token,
+            executor=executor(org_id),
+            agent=agent,
+            action_type="financial_transaction",
+            payload=payment_payload(recipient="acct-sbx-7"),
+            execution_ref="exec-sbx-7",
+        )
+        assert consumed.outcome is ConsumptionOutcome.AUTHORISED
+        assert consumed.may_execute
+
+        audit_row = await get_authority_decision_audit_row(
+            db, result.decision_audit_id
+        )
+        metadata = json.loads(audit_row["metadata"])
+        assert "test_request" not in metadata
+        assert "sandbox" not in metadata
+
+
+class TestRealHttpIssuanceIdempotency:
+    """Two real requests, each reloading the agent from the database.
+
+    The stale-in-memory shortcut hides the defect this covers: the FIRST
+    request writes an authority decision audit row, an AFTER INSERT trigger
+    bumps the agent's counters, and a retry that reloads the agent would
+    compute a different policy revision — which ``issuance_digest`` binds —
+    and be refused as a *different* request.
+    """
+
+    @staticmethod
+    def _endpoint():
+        return TestTheEndpointItselfEnforcesCorePolicy._route("/authority/evaluate")
+
+    async def _post(self, db, org_id, agent_id, ref, payload):
+        from api.routes.authority import EvaluateRequest
+
+        return await self._endpoint()(
+            body=EvaluateRequest(
+                agent_id=agent_id,
+                action_type="financial_transaction",
+                payload=payload,
+                issuance_ref=ref,
+            ),
+            database=db,
+            auth={"org_id": org_id, "api_key_id": "k", "scopes": ["write"]},
+        )
+
+    async def test_an_identical_retry_recovers_the_same_grant(self, db) -> None:
+        org_id, agent = await _make_agent(db, sandbox=False)
+        body = payment_payload(recipient="acct-idem")
+
+        first = await self._post(db, org_id, agent.id, "IDEM-1", body)
+        assert first["decision"] == "allow"
+        assert first["grant_id"]
+
+        # The agent is reloaded inside the endpoint, so the retry sees the
+        # row as the first request left it — counters bumped and all.
+        reloaded = await db.get_agent_by_id(agent.id)
+        assert reloaded.total_actions_count > 0
+
+        second = await self._post(db, org_id, agent.id, "IDEM-1", body)
+        assert second["decision"] == "allow"
+        assert second["grant_id"] == first["grant_id"]
+        assert second["reasons"] == []
+
+        async with db.acquire() as conn:
+            reservations = await conn.fetchval(
+                "SELECT count(*) FROM spend_reservations WHERE agent_id = $1", agent.id
+            )
+            grants = await conn.fetchval(
+                "SELECT count(*) FROM execution_authority_grants WHERE agent_id = $1",
+                agent.id,
+            )
+        assert reservations == 1
+        assert grants == 1
+
+    async def test_a_third_identical_retry_is_still_the_same_grant(self, db) -> None:
+        """Not a one-off: the property has to hold on every retry."""
+        org_id, agent = await _make_agent(db, sandbox=False)
+        body = payment_payload(recipient="acct-idem-3")
+        seen = [
+            (await self._post(db, org_id, agent.id, "IDEM-2", body))["grant_id"]
+            for _ in range(3)
+        ]
+        assert len(set(seen)) == 1
+        async with db.acquire() as conn:
+            assert (
+                await conn.fetchval(
+                    "SELECT count(*) FROM spend_reservations WHERE agent_id = $1",
+                    agent.id,
+                )
+                == 1
+            )
+
+    async def test_changed_material_on_the_same_reference_still_conflicts(
+        self, db
+    ) -> None:
+        """Idempotency must not become "reuse a reference for anything"."""
+        org_id, agent = await _make_agent(db, sandbox=False)
+        first = await self._post(
+            db, org_id, agent.id, "IDEM-3", payment_payload(recipient="acct-a")
+        )
+        assert first["decision"] == "allow"
+
+        second = await self._post(
+            db, org_id, agent.id, "IDEM-3", payment_payload(recipient="acct-b")
+        )
+        assert second["decision"] == "block"
+        assert second["authority_token"] is None
+        assert second["grant_id"] is None
+
+    async def test_a_real_policy_change_prevents_unsafe_reuse(self, db) -> None:
+        """A genuine policy change must NOT be absorbed by idempotency."""
+        org_id, agent = await _make_agent(db, sandbox=False)
+        body = payment_payload(amount="500.00", recipient="acct-policy")
+        first = await self._post(db, org_id, agent.id, "IDEM-4", body)
+        assert first["decision"] == "allow"
+
+        async with db.acquire() as conn:
+            await conn.execute(
+                "UPDATE agents SET per_action_limit_usd = 1 WHERE id = $1", agent.id
+            )
+
+        second = await self._post(db, org_id, agent.id, "IDEM-4", body)
+        assert second["decision"] == "block"
+        assert second["authority_token"] is None
+
+        # And the grant issued under the old policy is no longer spendable.
+        # The route minted that token with the application's own secret, so
+        # consumption has to present the same one.
+        import api.legacy_main as legacy
+
+        consumed = await AuthorityConsumptionService(
+            db, server_secret=list(legacy.SERVER_SECRETS)
+        ).consume(
+            authority_token=first["authority_token"],
+            # The same credential identity the route bound the grant to.
+            executor=executor(org_id, key_id="k"),
+            agent=await db.get_agent_by_id(agent.id),
+            action_type="financial_transaction",
+            payload=body,
+            execution_ref="exec-idem-4",
+        )
+        assert consumed.outcome is ConsumptionOutcome.REJECTED
+        assert consumed.rejection_reason is DecisionReason.POLICY_HASH_MISMATCH
+
+
+class TestEvidenceChainSemanticContinuity:
+    """A valid parent hash proves ORDER, not that it is one story.
+
+    A consumption of grant B can be signed as a child of the decision for
+    grant A: every hash checks out and the history is a fabrication. So
+    both the producer and an independent verifier compare the facts.
+    """
+
+    @staticmethod
+    def _key():
+        return load_evidence_signing_key(environment="test")
+
+    async def _grant(self, db, org_id, agent, ref, *, consume_it=True):
+        issued = await AuthorityEvaluationService(
+            db, server_secret=SERVER_SECRET
+        ).evaluate(
+            agent=agent,
+            action_type="financial_transaction",
+            payload=payment_payload(recipient=f"acct-{ref}"),
+            executor=executor(org_id),
+            issuance_ref=ref,
+        )
+        assert issued.decision is Decision.ALLOW
+        if consume_it:
+            await AuthorityConsumptionService(db, server_secret=SERVER_SECRET).consume(
+                authority_token=issued.authority_token,
+                executor=executor(org_id),
+                agent=agent,
+                action_type="financial_transaction",
+                payload=payment_payload(recipient=f"acct-{ref}"),
+                execution_ref=f"exec-{ref}",
+            )
+        return (
+            issued,
+            await get_authority_decision(db, issued.decision_audit_id),
+            await AuthorityStore(db).get(issued.grant_id),
+        )
+
+    async def test_the_producer_refuses_to_graft_one_grant_onto_another(
+        self, db, org_and_agent
+    ) -> None:
+        """The adversarial case, with two genuinely independent grants."""
+        org_id, agent = org_and_agent
+        key = self._key()
+        _a, decision_a, _grant_a = await self._grant(
+            db, org_id, agent, "sem-A", consume_it=False
+        )
+        _b, _decision_b, grant_b = await self._grant(db, org_id, agent, "sem-B")
+
+        with pytest.raises(EvidenceError, match="different histories"):
+            build_evidence_chain(decision_a, key=key, grant=grant_b)
+
+    async def test_the_correct_chain_still_verifies(self, db, org_and_agent) -> None:
+        org_id, agent = org_and_agent
+        key = self._key()
+        _b, decision_b, grant_b = await self._grant(db, org_id, agent, "sem-C")
+        chain = build_evidence_chain(decision_b, key=key, grant=grant_b)
+        assert chain.verify(public_key_b64=key.public_key_b64)
+
+    # -- the verifier, tested WITHOUT trusting the builder ----------------
+
+    @staticmethod
+    def _sign(key, event_type, body, parent=None, event_id="ev"):
+        return sign_evidence_event(
+            event_id=event_id,
+            event_type=event_type,
+            body=body,
+            key=key,
+            recorded_at=datetime(2026, 4, 17, 12, 0, tzinfo=UTC),
+            parent=parent,
+        )
+
+    def _decision_body(self, **overrides):
+        body = {
+            "audit_id": "aaaaaaaa-0000-0000-0000-000000000001",
+            "agent_id": "11111111-2222-3333-4444-555555555555",
+            "organisation_id": "22222222-3333-4444-5555-666666666666",
+            "action_type": "financial_transaction",
+            "domain": "payment",
+            "decision": "allow",
+            "execution_action_hash": "a" * 64,
+            "policy_snapshot_format": "inntris-payment-authority-policy-v1",
+            "policy_snapshot_digest": "b" * 64,
+            "grant_id": "grant-1",
+            "executor_binding_digest": "f" * 64,
+        }
+        body.update(overrides)
+        return DecisionEvidenceV3(**body).to_body()
+
+    def _consumption_body(self, **overrides):
+        body = {
+            "consumption_audit_id": "cccccccc-0000-0000-0000-000000000001",
+            "grant_id": "grant-1",
+            "execution_action_hash": "a" * 64,
+            "execution_ref": "exec-1",
+            "outcome": "authorised",
+            "executor_binding_digest": "f" * 64,
+            "agent_id": "11111111-2222-3333-4444-555555555555",
+            "organisation_id": "22222222-3333-4444-5555-666666666666",
+        }
+        body.update(overrides)
+        return ConsumptionEvidenceV3(**body).to_body()
+
+    def _chain(self, key, *, consumption_overrides=None, outcome_grant=None):
+        decision = self._sign(
+            key, EvidenceEventType.DECISION, self._decision_body(), event_id="d-1"
+        )
+        consumption = self._sign(
+            key,
+            EvidenceEventType.CONSUMPTION,
+            self._consumption_body(**(consumption_overrides or {})),
+            parent=decision,
+            event_id="c-1",
+        )
+        outcome = None
+        if outcome_grant is not None:
+            outcome = self._sign(
+                key,
+                EvidenceEventType.OUTCOME,
+                OutcomeEvidenceV3(
+                    grant_id=outcome_grant, outcome_state="succeeded"
+                ).to_body(),
+                parent=consumption,
+                event_id="o-1",
+            )
+        return AuthorityEvidenceChain(decision, consumption, outcome)
+
+    def test_a_correctly_signed_chain_with_valid_parents_verifies(self, key) -> None:
+        assert self._chain(key).verify(public_key_b64=key.public_key_b64)
+
+    @pytest.mark.parametrize(
+        ("field", "value"),
+        [
+            ("grant_id", "grant-OTHER"),
+            ("execution_action_hash", "9" * 64),
+            ("executor_binding_digest", "0" * 64),
+            ("agent_id", "99999999-9999-9999-9999-999999999999"),
+            ("organisation_id", "88888888-8888-8888-8888-888888888888"),
+        ],
+    )
+    def test_a_mismatched_consumption_fails_despite_valid_parent_hashes(
+        self, key, field, value
+    ) -> None:
+        """Every hash is correct. The story is not."""
+        chain = self._chain(key, consumption_overrides={field: value})
+        # The parent link itself is genuinely valid ...
+        assert chain.consumption.parent_payload_hash == (
+            chain.decision.evidence_payload_hash
+        )
+        # ... and verification still refuses it.
+        result = chain.verify(public_key_b64=key.public_key_b64)
+        assert not result
+        assert any(f"consumption {field}" in reason for reason in result.failures)
+
+    def test_a_consumption_cannot_follow_a_block(self, key) -> None:
+        """Authority that was refused cannot have been spent."""
+        decision = self._sign(
+            key,
+            EvidenceEventType.DECISION,
+            self._decision_body(decision="block", grant_id=None),
+            event_id="d-block",
+        )
+        consumption = self._sign(
+            key,
+            EvidenceEventType.CONSUMPTION,
+            self._consumption_body(),
+            parent=decision,
+            event_id="c-block",
+        )
+        result = AuthorityEvidenceChain(decision, consumption).verify(
+            public_key_b64=key.public_key_b64
+        )
+        assert not result
+        assert any("not an allow" in reason for reason in result.failures)
+
+    def test_a_mismatched_outcome_grant_fails(self, key) -> None:
+        chain = self._chain(key, outcome_grant="grant-OTHER")
+        result = chain.verify(public_key_b64=key.public_key_b64)
+        assert not result
+        assert any("outcome grant_id" in reason for reason in result.failures)
+
+    def test_a_matching_outcome_grant_verifies(self, key) -> None:
+        assert self._chain(key, outcome_grant="grant-1").verify(
+            public_key_b64=key.public_key_b64
+        )
+
+    def test_the_verifier_reads_only_signed_payloads(self, key) -> None:
+        """Usable by a third party holding events and a public key.
+
+        Handed plain dictionaries rather than the library's own objects,
+        the same continuity rules apply — so the checks cannot be said to
+        depend on the producer's types.
+        """
+        chain = self._chain(key, consumption_overrides={"grant_id": "grant-OTHER"})
+        failures = evidence_chain_continuity_failures(
+            decision=chain.decision.as_public_dict(),
+            consumption=chain.consumption.as_public_dict(),
+        )
+        assert any("grant_id" in reason for reason in failures)
+
+
+class TestAuthorityEvidenceSurvivesAuthorisedErasure:
+    """Privacy erasure must not destroy forensic authority evidence.
+
+    ``app.erase_personal_data`` is deliberately authorised to replace
+    ``audit_logs.payload`` and ``metadata`` with a tombstone. That is
+    correct and is not weakened here. It does mean ``audit_logs.payload``
+    is not an immutable source, so the authority commitment lives in
+    ``authority_decision_evidence`` — which carries identifiers, digests
+    and the decision, and no request content for erasure to remove.
+    """
+
+    @staticmethod
+    def _key():
+        return load_evidence_signing_key(environment="test")
+
+    @staticmethod
+    async def _erase(org_id, agent_id):
+        """The real mechanism, through an authorised operator connection."""
+        from api.erasure import erase_personal_data
+
+        operator_dsn = os.getenv("ALEMBIC_DATABASE_URL")
+        if not operator_dsn:
+            pytest.skip("authorised erasure needs ALEMBIC_DATABASE_URL")
+        conn = await asyncpg.connect(operator_dsn)
+        try:
+            return await erase_personal_data(
+                conn,
+                organization_id=org_id,
+                agent_id=agent_id,
+                requested_by="phase-4-hardening-test",
+                legal_basis="gdpr_art17",
+                reason="authority evidence survival test",
+            )
+        finally:
+            await conn.close()
+
+    async def test_a_decision_receipt_survives_erasure_byte_for_byte(
+        self, db
+    ) -> None:
+        org_id, agent = await _make_agent(db, sandbox=False)
+        key = self._key()
+        issued = await AuthorityEvaluationService(
+            db, server_secret=SERVER_SECRET
+        ).evaluate(
+            agent=agent,
+            action_type="financial_transaction",
+            payload=payment_payload(recipient="acct-erase"),
+            executor=executor(org_id),
+            issuance_ref="erase-1",
+        )
+        before = build_decision_evidence(
+            await get_authority_decision(db, issued.decision_audit_id), key=key
+        )
+        assert verify_evidence_event(before, public_key_b64=key.public_key_b64)
+
+        result = await self._erase(org_id, agent.id)
+        assert result.rows_affected >= 1
+
+        # The request record really was tombstoned — this is not a no-op test.
+        audit_row = await get_authority_decision_audit_row(
+            db, issued.decision_audit_id
+        )
+        assert json.loads(audit_row["payload"])["erased"] is True
+
+        after = build_decision_evidence(
+            await get_authority_decision(db, issued.decision_audit_id), key=key
+        )
+        assert after.as_public_dict() == before.as_public_dict()
+        assert verify_evidence_event(after, public_key_b64=key.public_key_b64)
+
+    async def test_a_block_receipt_also_survives_erasure(self, db) -> None:
+        org_id, agent = await _make_agent(db, sandbox=False)
+        key = self._key()
+        blocked = await AuthorityEvaluationService(
+            db, server_secret=SERVER_SECRET
+        ).evaluate(
+            agent=agent,
+            action_type="financial_transaction",
+            payload=payment_payload(amount="999999.00", recipient="acct-erase-b"),
+            executor=executor(org_id),
+            issuance_ref="erase-2",
+        )
+        assert blocked.decision is Decision.BLOCK
+        before = build_decision_evidence(
+            await get_authority_decision(db, blocked.decision_audit_id), key=key
+        )
+
+        await self._erase(org_id, agent.id)
+
+        after = build_decision_evidence(
+            await get_authority_decision(db, blocked.decision_audit_id), key=key
+        )
+        assert after.as_public_dict() == before.as_public_dict()
+
+    async def test_the_evidence_row_retains_no_request_content(self, db) -> None:
+        """Digests and identifiers only — nothing erasure exists to remove."""
+        org_id, agent = await _make_agent(db, sandbox=False)
+        issued = await AuthorityEvaluationService(
+            db, server_secret=SERVER_SECRET
+        ).evaluate(
+            agent=agent,
+            action_type="financial_transaction",
+            payload=payment_payload(amount="77.00", recipient="secret-payee-xyz"),
+            executor=executor(org_id),
+            issuance_ref="erase-3",
+        )
+        record = await get_authority_decision(db, issued.decision_audit_id)
+        serialised = json.dumps(json.loads(record["decision_body"]))
+        assert "secret-payee-xyz" not in serialised
+        assert "77.00" not in serialised
+        for leaked in ("recipient", "amount", "currency", "request_ip", "user_agent"):
+            assert leaked not in serialised
+
+    async def test_the_evidence_row_is_append_only(self, db) -> None:
+        org_id, agent = await _make_agent(db, sandbox=False)
+        issued = await AuthorityEvaluationService(
+            db, server_secret=SERVER_SECRET
+        ).evaluate(
+            agent=agent,
+            action_type="financial_transaction",
+            payload=payment_payload(recipient="acct-append"),
+            executor=executor(org_id),
+            issuance_ref="erase-4",
+        )
+        for statement in (
+            "UPDATE authority_decision_evidence SET decision_body = '{}'::JSONB "
+            "WHERE audit_log_id = $1",
+            "DELETE FROM authority_decision_evidence WHERE audit_log_id = $1",
+        ):
+            with pytest.raises(asyncpg.PostgresError):
+                async with db.acquire() as conn:
+                    await conn.execute(statement, issued.decision_audit_id)
+
+    async def test_erasure_still_does_its_job(self, db) -> None:
+        """The guard is not weakened: personal request content still goes."""
+        org_id, agent = await _make_agent(db, sandbox=False)
+        await AuthorityEvaluationService(db, server_secret=SERVER_SECRET).evaluate(
+            agent=agent,
+            action_type="financial_transaction",
+            payload=payment_payload(recipient="acct-erase-5"),
+            executor=executor(org_id),
+            issuance_ref="erase-5",
+        )
+        await self._erase(org_id, agent.id)
+        async with db.acquire() as conn:
+            rows = await conn.fetch(
+                "SELECT payload, request_ip, request_user_agent FROM audit_logs "
+                "WHERE agent_id = $1",
+                agent.id,
+            )
+        assert rows
+        for row in rows:
+            assert json.loads(row["payload"])["erased"] is True
+            assert row["request_ip"] is None
+            assert row["request_user_agent"] is None
