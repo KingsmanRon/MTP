@@ -110,7 +110,7 @@ the CI PostgreSQL, writing evidence to a scratch directory. A skipped
 proof would report green while proving nothing, so the upstream pin is
 asserted by a test rather than tolerated.
 
-Local run on PostgreSQL 16: 1,495 passed, 14 skipped. Proof: 7 cases
+Local run on PostgreSQL 16: 1,497 passed, 14 skipped. Proof: 7 cases
 passed, 44 assertions held.
 
 ## Deviations from the brief

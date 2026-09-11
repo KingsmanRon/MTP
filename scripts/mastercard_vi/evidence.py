@@ -24,8 +24,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Final
 
-from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
-
 from scripts.mastercard_vi import fixture as fx
 
 #: The official Verifiable Intent reference implementation this proof is
@@ -244,12 +242,6 @@ def attempt_view(attempt: Any) -> dict[str, Any] | None:
         "side_effect_invocations_for_reference": attempt.side_effect_invocations,
         "detail": attempt.detail,
     }
-
-
-def issuer_public_key_pem(key: Any) -> str:
-    return key.public_bytes(Encoding.PEM, PublicFormat.SubjectPublicKeyInfo).decode(
-        "ascii"
-    )
 
 
 def write_evidence(directory: Path, case_id: str, document: dict[str, Any]) -> Path:

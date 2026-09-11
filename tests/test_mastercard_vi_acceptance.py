@@ -31,6 +31,9 @@ pytest.importorskip(
     ),
 )
 
+from api.core.authority.authority import (  # noqa: E402
+    AuthorityVerificationFailure,
+)
 from api.core.authority.decision import Decision, DecisionReason  # noqa: E402
 from api.core.authority.lifecycle import ConsumptionOutcome  # noqa: E402
 from api.database import Database  # noqa: E402
@@ -1168,3 +1171,68 @@ class TestLegacyAndNewCannotBothIssue:
                 execution_ref="case22b",
                 token_claims=claims,
             )
+
+
+# ---------------------------------------------------------------------------
+# Delegate binding — the provider check the README rests on
+# ---------------------------------------------------------------------------
+
+
+class TestDelegateBinding:
+    async def test_a_delegation_bound_to_another_agent_key_is_refused(
+        self, harness: ProofHarness
+    ) -> None:
+        """A perfectly valid mandate, delegated to somebody else's key.
+
+        Every signature on the chain verifies and the issuer is trusted.
+        What fails is that the agent key the user delegated to is not the
+        key this organisation registered for this principal — so the
+        artefact is somebody else's authority, and presenting it here
+        proves nothing about what this agent may do.
+        """
+        delegation = fx.build_delegation(delegate=fx.other_agent_keys())
+        principal = await harness.create_principal(label="delegate-binding")
+        executor = harness.executor(principal.org_id, key_id="executor-a")
+        claim = harness.claim_for(
+            delegation,
+            payee=fx.SUPPLIER_A,
+            amount=AMOUNT,
+            reference_id="ref-delegate",
+            # Signed by the key the mandate actually delegates to, so the
+            # chain itself is sound.
+            signer=fx.other_agent_keys(),
+        )
+
+        resolved = harness.resolve(claim, principal)
+        assert not resolved.is_verified
+        assert AuthorityVerificationFailure.AUTHORITY_DELEGATE_NOT_BOUND in (
+            resolved.failure_codes
+        )
+
+        result = await harness.evaluate(
+            principal,
+            claim=claim,
+            amount=AMOUNT,
+            account=SUPPLIER_A_ACCOUNT,
+            executor=executor,
+            issuance_ref="iss-delegate",
+        )
+        assert result.decision is Decision.BLOCK
+        assert DecisionReason.AUTHORITY_VERIFICATION_FAILED in result.reasons
+        assert result.grant_id is None
+
+    async def test_a_principal_with_no_registered_vi_identity_is_refused(
+        self, harness: ProofHarness, delegation: fx.Delegation
+    ) -> None:
+        """Nothing server-side says this delegation is theirs."""
+        principal = await harness.create_principal(
+            label="no-binding", vi_subject="somebody-elses-subject"
+        )
+        claim = harness.claim_for(
+            delegation, payee=fx.SUPPLIER_A, amount=AMOUNT, reference_id="ref-nobinding"
+        )
+        resolved = harness.resolve(claim, principal)
+        assert not resolved.is_verified
+        assert AuthorityVerificationFailure.AUTHORITY_PRINCIPAL_MISMATCH in (
+            resolved.failure_codes
+        )

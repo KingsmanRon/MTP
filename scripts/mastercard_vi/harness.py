@@ -72,9 +72,6 @@ PROOF_ASSET: Final[str] = "USD"
 SUPPLIER_A_ACCOUNT: Final[str] = "0xA11CE00000000000000000000000000000000A11"
 #: Supplier B's execution recipient — permitted by VI, NOT allowlisted here.
 SUPPLIER_B_ACCOUNT: Final[str] = "0xB0B0000000000000000000000000000000000B0B"
-#: A recipient no payee is bound to, for the substitution case.
-UNBOUND_ACCOUNT: Final[str] = "0xDEAD000000000000000000000000000000000DEAD"[:42]
-
 #: Inntris organisation policy, deliberately below the VI ceiling.
 PER_ACTION_LIMIT: Final[Decimal] = Decimal("10000")
 DAILY_LIMIT: Final[Decimal] = Decimal("100000")
