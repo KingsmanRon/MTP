@@ -417,6 +417,7 @@ class ProofHarness:
         chain: str = PROOF_CHAIN,
         currency: str = PROOF_ASSET,
         at: datetime | None = None,
+        crash_before_consume: bool = False,
         crash_before_claim: bool = False,
         crash_after_claim: bool = False,
     ) -> Any:
@@ -433,6 +434,7 @@ class ProofHarness:
             execution_action_hash=execution_action_hash,
             authority_evidence=authority_evidence,
             at=at,
+            crash_before_consume=crash_before_consume,
             crash_before_claim=crash_before_claim,
             crash_after_claim=crash_after_claim,
         )

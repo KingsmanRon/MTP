@@ -57,6 +57,10 @@ class ExecutionVerdict(StrEnum):
     OUTCOME_UNKNOWN = "outcome_unknown"
     #: An idempotent retry. The original result is returned; nothing ran.
     RECONCILED = "reconciled"
+    #: The side effect ran, but its outcome could not be written down. The
+    #: operation stays unresolved: retry is blocked, and only the
+    #: authoritative resolver may finalise it.
+    OUTCOME_UNRECORDED = "outcome_unrecorded"
     #: Inntris refused the consumption. Nothing ran.
     REFUSED = "refused"
     #: Authority was spent but the journal would not hand over the claim,
@@ -122,6 +126,7 @@ class ExecutionAttempt:
             ExecutionVerdict.EXECUTED,
             ExecutionVerdict.FAILED_FINAL,
             ExecutionVerdict.OUTCOME_UNKNOWN,
+            ExecutionVerdict.OUTCOME_UNRECORDED,
         }
 
 
@@ -151,16 +156,16 @@ class MockExecutor:
         execution_action_hash: str,
         authority_evidence: ResolvedAuthorityEvidence | None = None,
         at: Any = None,
+        crash_before_consume: bool = False,
         crash_before_claim: bool = False,
         crash_after_claim: bool = False,
     ) -> ExecutionAttempt:
         """Prepare, consume, claim, act once, record. In that order.
 
-        ``crash_before_claim`` / ``crash_after_claim`` simulate a process
-        death at the two points that matter, by returning instead of
-        continuing. Nothing is rolled back — that is the point: the next
-        attempt has to cope with whatever the journal and the authority
-        store actually contain.
+        The three ``crash_*`` switches simulate a process death at the
+        points that matter, by returning instead of continuing. Nothing is
+        rolled back — that is the point: the next attempt has to cope with
+        whatever the journal and the authority store actually contain.
         """
         # --- 1. persist the intent BEFORE authority is spent -------------
         # A crash between here and the consume leaves a prepared row and no
@@ -173,6 +178,18 @@ class MockExecutor:
             execution_action_hash=execution_action_hash,
             executor_binding_digest=executor.binding_digest,
         )
+
+        if crash_before_consume:
+            # Died between persisting the intent and spending the
+            # authority. The grant is untouched and the journal says
+            # `prepared`, which is exactly the recoverable shape.
+            return ExecutionAttempt(
+                verdict=ExecutionVerdict.BLOCKED,
+                execution_ref=execution_ref,
+                journal_state=ExecutionState.PREPARED,
+                side_effect_invocations=self._journal.side_effect_count(execution_ref),
+                detail="simulated crash after prepare, before the consumption commit",
+            )
 
         # --- 2. consume Inntris authority --------------------------------
         result = await self._consume.consume(
@@ -200,9 +217,18 @@ class MockExecutor:
             )
 
         if result.outcome is ConsumptionOutcome.RECOVERED:
-            # The decisive rule. An idempotent consumption response is not
-            # an instruction to act again.
-            return self._reconcile(execution_ref, result)
+            # The decisive rule, with one narrow exception.
+            #
+            # An idempotent consumption response is NOT an instruction to
+            # act again — unless the journal says the operation is still
+            # `prepared`, which means it was never claimed and the side
+            # effect provably never ran. That is the crash-between-commit-
+            # and-call shape, and finishing the single prepared operation
+            # once is recovery, not a second execution. Any other state
+            # (in_progress, unknown, terminal) reconciles and stops.
+            operation = self._journal.get(execution_ref)
+            if operation is None or operation.state is not ExecutionState.PREPARED:
+                return self._reconcile(execution_ref, result)
 
         if crash_before_claim:
             operation = self._journal.get(execution_ref)
@@ -289,12 +315,37 @@ class MockExecutor:
             )
 
         # --- 5. record success -------------------------------------------
-        self._journal.record_outcome(
-            execution_ref=execution_ref,
-            state=ExecutionState.SUCCEEDED,
-            outcome_reference=reference,
-            side_effect_invoked=True,
-        )
+        # The side effect has already happened. If writing that down fails,
+        # the operation must NOT be reported as executed and must not be
+        # retried: it stays `in_progress`, where the claim left it, so the
+        # next attempt is blocked and only the authoritative resolver can
+        # finalise it. Reporting success we could not record, or rolling
+        # back to `prepared`, would both invite a second payment.
+        try:
+            self._journal.record_outcome(
+                execution_ref=execution_ref,
+                state=ExecutionState.SUCCEEDED,
+                outcome_reference=reference,
+                side_effect_invoked=True,
+            )
+        except Exception as exc:
+            logger.warning(
+                "side effect for %s succeeded but its outcome could not be "
+                "recorded: %s",
+                execution_ref,
+                exc,
+            )
+            await self._record_store_outcome(
+                result.grant_id, "outcome_unknown", f"outcome write failed: {exc}"
+            )
+            return self._attempt(
+                ExecutionVerdict.OUTCOME_UNRECORDED,
+                execution_ref,
+                result,
+                claim,
+                f"the side effect ran; its outcome could not be recorded: {exc}",
+                reference,
+            )
         await self._record_store_outcome(result.grant_id, "succeeded", None, reference)
         return self._attempt(
             ExecutionVerdict.EXECUTED, execution_ref, result, claim, None, reference

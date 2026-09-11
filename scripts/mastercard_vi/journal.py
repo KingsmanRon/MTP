@@ -367,35 +367,50 @@ class ExecutionJournal:
             raise JournalError("record_outcome did not persist")
         return operation
 
-    def resolve_unknown(
+    def resolve_authoritatively(
         self,
         *,
         execution_ref: str,
         state: ExecutionState,
         outcome_reference: str | None = None,
         detail: str | None = None,
+        side_effect_invoked: bool = False,
     ) -> ExecutionOperation:
-        """The authoritative resolver's verdict on an unknown outcome.
+        """The authoritative resolver's verdict on an unresolved operation.
 
         Separate from :meth:`record_outcome` only so the proof can show
-        that nothing on the ordinary retry path can reach it. An automatic
-        retry never resolves an unknown outcome; a reconciliation path
-        holding the downstream system's own evidence does.
+        that nothing on the ordinary retry path reaches it. An automatic
+        retry never resolves an operation; a reconciliation path holding
+        the downstream system's own evidence does.
+
+        Two states are resolvable, and they are unresolved for different
+        reasons: ``outcome_unknown`` is a side effect that threw or timed
+        out, and ``in_progress`` is one that ran but whose outcome could
+        not be written down. Both block automatic retry, and both are
+        finalised here and nowhere else. A terminal operation is refused:
+        re-deciding a settled outcome is not reconciliation.
         """
-        if state not in {ExecutionState.SUCCEEDED, ExecutionState.FAILED_FINAL}:
-            raise JournalError("an unknown outcome resolves to succeeded or failed_final")
+        if state not in TERMINAL_STATES:
+            raise JournalError(
+                "an authoritative resolution is succeeded or failed_final"
+            )
         current = self.get(execution_ref)
         if current is None:
             raise JournalError(f"no operation for execution_ref {execution_ref!r}")
-        if current.state is not ExecutionState.OUTCOME_UNKNOWN:
+        if current.state not in {
+            ExecutionState.OUTCOME_UNKNOWN,
+            ExecutionState.IN_PROGRESS,
+        }:
             raise JournalError(
-                f"only an unknown outcome is resolvable; this one is {current.state.value}"
+                f"only an unresolved operation is resolvable; this one is "
+                f"{current.state.value}"
             )
         return self.record_outcome(
             execution_ref=execution_ref,
             state=state,
             outcome_reference=outcome_reference,
             detail=detail,
+            side_effect_invoked=side_effect_invoked,
         )
 
     # -- reading -----------------------------------------------------------
