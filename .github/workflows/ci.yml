@@ -96,6 +96,14 @@ jobs:
         # sandbox exclusion from the real Postgres anchoring selection query.
         run: python -m pytest -q
 
+      - name: verifiable intent proof
+        # Phase 6: the documented one-command proof, end to end, so the
+        # evidence pack committed under docs/proofs/mastercard-vi cannot
+        # drift from the behaviour it describes. Evidence goes to a scratch
+        # directory — CI proves the cases hold, it does not regenerate the
+        # pack.
+        run: python -m scripts.mastercard_vi_proof --evidence-dir "$RUNNER_TEMP/vi-evidence"
+
   frontend:
     name: frontend (jest + typecheck + build)
     runs-on: ubuntu-latest
