@@ -131,6 +131,14 @@ proof runs against the real authority persistence, not a simulation. It
 makes no network call, prints the case table, writes one JSON evidence
 file per case to `evidence/`, and exits non-zero if any assertion fails.
 
+**The evidence pack is generated output and is not committed.** Its
+contents change on every run — ES256 carries a random nonce, so digests
+and signatures differ — and committing it wrote hundreds of high-entropy
+public values next to key-shaped JSON field names, which the
+repository's secret-scanning gate correctly flags. Run the command above
+to produce it, or download the `mastercard-vi-evidence` artifact from
+any CI run on this branch.
+
 The same cases run in CI as `tests/test_mastercard_vi_proof.py`, with
 cases 8–22 in `tests/test_mastercard_vi_acceptance.py` and the reproduced
 Core defects in `tests/test_authority_core_regressions.py`.
