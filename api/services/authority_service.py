@@ -78,6 +78,29 @@ def principal_is_sandbox(agent: Any) -> bool:
     return bool(metadata.get("sandbox") or metadata.get("test_request"))
 
 
+#: Agent-metadata key carrying the trusted binding between this principal
+#: and whatever external authority format the deployment resolves. Its
+#: contents are opaque here and are read only by the configured provider.
+AUTHORITY_BINDING_METADATA_KEY: Final[str] = "authority_binding"
+
+
+def authority_binding_for(agent: Any) -> dict[str, Any]:
+    """The trusted principal binding an ``AuthorityProvider`` may rely on.
+
+    Read from server-side agent metadata and nowhere else. This is what
+    lets a provider answer "does this artefact actually belong to this
+    principal" — a question no caller may answer about itself. An agent
+    with no binding configured yields an empty mapping, and a provider
+    that needs one then fails closed rather than accepting the artefact's
+    own account of whose it is.
+    """
+    metadata = getattr(agent, "metadata", None)
+    if not isinstance(metadata, dict):
+        return {}
+    binding = metadata.get(AUTHORITY_BINDING_METADATA_KEY)
+    return dict(binding) if isinstance(binding, dict) else {}
+
+
 def _scope_digest_for(resolved: ResolvedAuthority | None) -> str | None:
     """Digest of the delegated scope this decision was bound by.
 
@@ -278,6 +301,7 @@ class AuthorityEvaluationService:
         server_secret: bytes | list[bytes] | tuple[bytes, ...],
         requirement_resolver: Any | None = None,
         authority_provider: Any | None = None,
+        payee_binding_resolver: Any | None = None,
         store: AuthorityStore | None = None,
     ) -> None:
         self._db = database
@@ -288,6 +312,10 @@ class AuthorityEvaluationService:
         )
         self._requirements = requirement_resolver or default_requirement_resolver()
         self._authority_provider = authority_provider
+        # Binds an approved payee identity to the destination an executor
+        # will actually pay. Absent, a scope that restricts payees cannot
+        # be enforced and the payment path fails closed on it.
+        self._payee_binding_resolver = payee_binding_resolver
         self._store = store or AuthorityStore(database)
 
     # -- the requirement gate, usable on its own by the legacy path -------
@@ -362,6 +390,7 @@ class AuthorityEvaluationService:
             construction,
             organisation_id=str(agent.org_id),
             principal_id=str(agent.id),
+            principal_binding=authority_binding_for(agent),
         )
 
     # -- the whole evaluation --------------------------------------------
@@ -633,6 +662,7 @@ class AuthorityEvaluationService:
             trust_threshold=PolicyEngine.TRUST_THRESHOLDS.get(action_type),
             registered_policy_hash=registered_policy_hash,
             authority_requirement_resolver=self._requirements,
+            payee_binding_resolver=self._payee_binding_resolver,
             consequence_class=consequence_class,
         )
         # Deliberately SERVER time, not the caller's instant: the question
