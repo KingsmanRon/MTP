@@ -68,6 +68,18 @@ dev = [
     "psycopg2-binary>=2.9.0,<3.0.0",
 ]
 
+# The official Verifiable Intent reference implementation, pinned to an
+# exact commit. Needed only by the VI proof in scripts/mastercard_vi and
+# its tests, never at API runtime — which is why it is its own extra
+# rather than part of ``dev``. The pin is the point: the proof's evidence
+# names the implementation that verified the chain, and a floating
+# dependency would make that claim unverifiable. scripts/mastercard_vi
+# checks the installed commit against this pin and refuses to run on a
+# mismatch.
+vi-proof = [
+    "verifiable-intent @ git+https://github.com/agent-intent/verifiable-intent@356c29635f1c44df7de02edb58699ca9f29bece6",
+]
+
 [project.urls]
 Homepage = "https://github.com/inntris/inntris-core"
 Documentation = "https://docs.inntris.com"

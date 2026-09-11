@@ -2,14 +2,14 @@
   "action_envelope": {
     "action_type": "wallet_transaction",
     "domain": "payment",
-    "execution_action_hash": "4e376c9e85c1dad5038020c2226afd4e4c2951b8b38fec29d36a2bfce53ae2d9",
-    "organisation_id": "a6ffc9e7-2b15-4b6c-a362-b1bcc4d91425",
+    "execution_action_hash": "aed6f8fd844f8f78a874dc0d9b772a1bffed37941b8445d34a544cabf91b58ce",
+    "organisation_id": "b5530cf1-7318-4da4-9334-f3a7167fc81d",
     "payload": {
       "amount": "8500.00",
       "chain": "eip155:8453",
       "currency": "USD"
     },
-    "principal_id": "53d286f2-59ac-40ce-a77f-b3e20b2b371e",
+    "principal_id": "1d434d50-986d-4ada-ae94-fb7845a2bbea",
     "signed_action_hash": null,
     "target": {
       "resource_id": "0xB0B0000000000000000000000000000000000B0B",
@@ -57,15 +57,15 @@
   "inntris_decision": {
     "authority_scope_digest": null,
     "decision": "block",
-    "decision_audit_id": "e2f5e153-315a-4afd-a911-6b958432c5c8",
+    "decision_audit_id": "e6c76359-18a8-46ba-a5c4-805510e60cbd",
     "detail": "Recipient '0xB0B0000000000000000000000000000000000B0B' is not in the allowlist configured for chain 'eip155:8453'.",
-    "executor_binding_digest": "809862c534c3cd4cfde5aa20aa0d7d8e53ff8a005d36a0c6390fc724b5e446a3",
+    "executor_binding_digest": "89f04bedbca9eeee552a57f7e7c2441df1559d00e4f6bff0eee146d1192b566c",
     "executor_reference": "op-2",
     "grant_expires_at": null,
     "grant_id": null,
     "issue_outcome": null,
-    "policy_hash": "d699b093af0322868edc8b0b488f29dc98217f6e192e647ca50ec22a26185126",
-    "policy_revision": "inntris-payment-authority-policy-v1|53d286f2-59ac-40ce-a77f-b3e20b2b371e|1|d699b093af0322868edc8b0b488f29dc98217f6e192e647ca50ec22a26185126",
+    "policy_hash": "ddbb89ab1b41c762aa835a2ba62f7418274bb489fe72004eff40effe3bc9962c",
+    "policy_revision": "inntris-payment-authority-policy-v1|1d434d50-986d-4ada-ae94-fb7845a2bbea|1|ddbb89ab1b41c762aa835a2ba62f7418274bb489fe72004eff40effe3bc9962c",
     "policy_snapshot_format": "inntris-payment-authority-policy-v1",
     "reason_codes": [
       "wallet_recipient_not_allowed"
@@ -79,55 +79,55 @@
     "chain_verified": true,
     "consumption": null,
     "decision": {
-      "event_id": "decision:e2f5e153-315a-4afd-a911-6b958432c5c8",
+      "event_id": "decision:e6c76359-18a8-46ba-a5c4-805510e60cbd",
       "event_type": "decision",
-      "evidence_payload_hash": "e3e2d534434a086f511707f8a1413e0f1dcb9d4b71cc5cda0e8a3e6b4d65193f",
+      "evidence_payload_hash": "dfb9b3fdd33f11932d433b86828814b2b1f983bf8e1a2a6aac0973f7e09f2c8e",
       "parent_event_id": null,
       "parent_payload_hash": null,
       "payload": {
         "body": {
           "action_type": "wallet_transaction",
-          "agent_id": "53d286f2-59ac-40ce-a77f-b3e20b2b371e",
-          "audit_id": "e2f5e153-315a-4afd-a911-6b958432c5c8",
+          "agent_id": "1d434d50-986d-4ada-ae94-fb7845a2bbea",
+          "audit_id": "e6c76359-18a8-46ba-a5c4-805510e60cbd",
           "authority_scope_digest": null,
           "consequence_class": null,
           "decision": "block",
           "domain": "payment",
-          "execution_action_hash": "4e376c9e85c1dad5038020c2226afd4e4c2951b8b38fec29d36a2bfce53ae2d9",
-          "executor_binding_digest": "809862c534c3cd4cfde5aa20aa0d7d8e53ff8a005d36a0c6390fc724b5e446a3",
+          "execution_action_hash": "aed6f8fd844f8f78a874dc0d9b772a1bffed37941b8445d34a544cabf91b58ce",
+          "executor_binding_digest": "89f04bedbca9eeee552a57f7e7c2441df1559d00e4f6bff0eee146d1192b566c",
           "grant_expires_at": null,
           "grant_id": null,
-          "organisation_id": "a6ffc9e7-2b15-4b6c-a362-b1bcc4d91425",
-          "policy_snapshot_digest": "d699b093af0322868edc8b0b488f29dc98217f6e192e647ca50ec22a26185126",
+          "organisation_id": "b5530cf1-7318-4da4-9334-f3a7167fc81d",
+          "policy_snapshot_digest": "ddbb89ab1b41c762aa835a2ba62f7418274bb489fe72004eff40effe3bc9962c",
           "policy_snapshot_format": "inntris-payment-authority-policy-v1",
           "reasons": [
             "wallet_recipient_not_allowed"
           ],
           "signed_action_hash": null
         },
-        "event_id": "decision:e2f5e153-315a-4afd-a911-6b958432c5c8",
+        "event_id": "decision:e6c76359-18a8-46ba-a5c4-805510e60cbd",
         "event_type": "decision",
         "format": "inntris-authority-evidence-v3",
         "parent_event_id": null,
         "parent_payload_hash": null,
-        "recorded_at": "2026-09-11T14:12:54.406344Z",
+        "recorded_at": "2026-09-11T14:18:27.379964Z",
         "schema_version": "v3",
-        "signing_key_fingerprint": "f2b9d2d273138320f789ab91e160cdce084cb4f37c74c5c06eedf0f72b2fc124",
-        "signing_key_id": "authority-evidence-f2b9d2d273138320"
+        "signing_key_fingerprint": "ff6a2a9b91602d4ecfb936d432a7753219213f2ceec9d7cdae068b21b364ea81",
+        "signing_key_id": "authority-evidence-ff6a2a9b91602d4e"
       },
-      "recorded_at": "2026-09-11T14:12:54.406344Z",
+      "recorded_at": "2026-09-11T14:18:27.379964Z",
       "schema_version": "v3",
-      "signature_b64": "vRzhT/BcMbG22+UUEnSXjaKqqN5t4EN8Zje6WKuwfRj6b8fxc2fqa41azGD0s4/ay68ZGdBvNgebT3KlwFvVDQ==",
-      "signing_key_fingerprint": "f2b9d2d273138320f789ab91e160cdce084cb4f37c74c5c06eedf0f72b2fc124",
-      "signing_key_id": "authority-evidence-f2b9d2d273138320"
+      "signature_b64": "DP1cceZv5bBjd7neVNUb9OYVuaXUg3aPdaUn7Z1cDTWqNlnpRgzrBpYmKIWwth2YsfOUDy6b/V0xGjMb1SojBw==",
+      "signing_key_fingerprint": "ff6a2a9b91602d4ecfb936d432a7753219213f2ceec9d7cdae068b21b364ea81",
+      "signing_key_id": "authority-evidence-ff6a2a9b91602d4e"
     },
-    "decision_fingerprint": "e3e2d534434a086f511707f8a1413e0f1dcb9d4b71cc5cda0e8a3e6b4d65193f",
+    "decision_fingerprint": "dfb9b3fdd33f11932d433b86828814b2b1f983bf8e1a2a6aac0973f7e09f2c8e",
     "failures": [],
     "outcome": null,
-    "verifying_public_key_b64": "B4wtAXGnwA1RUOfSWA1B8dLDFsl0B0Mo1vcYk3PHIUc="
+    "verifying_public_key_b64": "RdqTjDYqVGWwKgDtRkXku0dGGjy9JYXZ1jFs0N/z5QQ="
   },
   "resolved_authority": {
-    "artefact_digest": "fc15ef8dc9026d1b39835db047f35b219080eddf3f16f60bca38a9e6baea1fc1",
+    "artefact_digest": "aeaa0ae305a128db01125a588a53acd7bbc87ff2c40d393e91f85281da082ebb",
     "delegate_binding_reference": "vi-delegate:O8G8Iy9-5eJIkZcWX_pivCXrDO__uV5O8IE1KIaNews",
     "delegate_binding_status": "bound",
     "external_reference_id": "case-2",
@@ -141,11 +141,11 @@
       ],
       "currency": "USD",
       "max_amount": "20000.00",
-      "not_after": "2026-09-12T14:12:54+00:00",
-      "not_before": "2026-09-11T14:12:54+00:00"
+      "not_after": "2026-09-12T14:18:27+00:00",
+      "not_before": "2026-09-11T14:18:27+00:00"
     },
-    "not_after": "2026-09-12T14:12:54+00:00",
-    "not_before": "2026-09-11T14:12:54+00:00",
+    "not_after": "2026-09-12T14:18:27+00:00",
+    "not_before": "2026-09-11T14:18:27+00:00",
     "verification_status": "verified"
   },
   "vi_credential_material": {
@@ -158,12 +158,12 @@
     },
     "issuer_id": "https://www.mastercard.com",
     "issuer_public_key_pem": "-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEp/QdCPhvJWMo2e47d25qTkJYQi4V\nZ1Iw7Dn5E/aiM/qWtstA36bYwazwEwsHVseqHYyUK3LpR79hVHMi1LDFkg==\n-----END PUBLIC KEY-----\n",
-    "l1_sha256": "27f4abda2d28a3355694f56e97a1653806cb4b3ffe3683530be7b054c8444578",
+    "l1_sha256": "c888b67a7a82f8624a4df9c8796e41f5be8ea92a62addd058debf83fee690c33",
     "l2_audience": "https://agent.verifiable-intent.example",
-    "l2_sha256": "24cd256408846c91fd72d7dc112b78bff9b4907d69df5dc81ae2f24534ae37c2",
+    "l2_sha256": "bcc80eb5f3d702f018b6467909f3509ce4af46ba283fc86b03960ff1e612ac90",
     "l3_payment_audience": "https://www.mastercard.com",
-    "mandate_not_after": "2026-09-12T14:12:54+00:00",
-    "mandate_not_before": "2026-09-11T14:12:54+00:00",
+    "mandate_not_after": "2026-09-12T14:18:27+00:00",
+    "mandate_not_before": "2026-09-11T14:18:27+00:00",
     "permitted_amount": {
       "currency": "USD",
       "max": "20000.00",

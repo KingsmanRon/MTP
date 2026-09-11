@@ -70,7 +70,11 @@ jobs:
       - name: install dev deps
         run: |
           python -m pip install --upgrade pip
-          pip install -e '.[dev]'
+          # vi-proof pins the official Verifiable Intent reference
+          # implementation to an exact commit. Without it the proof suite
+          # would skip, and a proof that skips reports green while proving
+          # nothing.
+          pip install -e '.[dev,vi-proof]'
 
       - name: replay migrations on clean Postgres
         run: alembic upgrade head
@@ -85,6 +89,13 @@ jobs:
         # The service backed tests cover GDPR, RLS, Redis abuse limits, and
         # sandbox exclusion from the real Postgres anchoring selection query.
         run: python -m pytest -q
+
+      - name: verifiable intent proof
+        # The documented one-command proof, end to end, so the evidence pack
+        # committed under docs/proofs/mastercard-vi cannot drift from the
+        # behaviour it describes. Evidence goes to a scratch directory: CI
+        # proves the cases hold, it does not regenerate the pack.
+        run: python -m scripts.mastercard_vi_proof --evidence-dir "$RUNNER_TEMP/vi-evidence"
 
   frontend:
     name: frontend (jest + typecheck + build)
