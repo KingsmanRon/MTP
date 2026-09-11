@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import logging
 import os
+from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -54,6 +55,10 @@ from api.services.core_evaluation import (
     evaluate_core_policy,
 )
 from api.services.executor_context import AuthenticatedExecutorContext, binding_matches
+from api.trust.issuer_registry import (
+    TrustedIssuerRegistry,
+    load_registry_from_environment,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -347,6 +352,7 @@ class AuthorityEvaluationService:
         server_secret: bytes | list[bytes] | tuple[bytes, ...],
         requirement_resolver: Any | None = None,
         authority_provider: Any | None = None,
+        trust_registry: TrustedIssuerRegistry | None = None,
         store: AuthorityStore | None = None,
     ) -> None:
         self._db = database
@@ -364,6 +370,14 @@ class AuthorityEvaluationService:
         self._injected_requirements = requirement_resolver
         self._requirements: Any = requirement_resolver or default_requirement_resolver()
         self._authority_provider = authority_provider
+        #: Which issuers this deployment trusts. Read from configuration once
+        #: per service instance; see api/trust/issuer_registry.py for why
+        #: there is no network key discovery behind this.
+        self._trust_registry = (
+            trust_registry
+            if trust_registry is not None
+            else load_registry_from_environment()
+        )
         self._store = store or AuthorityStore(database)
 
     # -- the requirement gate, usable on its own by the legacy path -------
@@ -403,11 +417,91 @@ class AuthorityEvaluationService:
             str(organisation_id), str(principal_id), action_type
         )
 
+    async def provider_for(
+        self, claim: DelegatedAuthorityClaim | None
+    ) -> Any | None:
+        """Build the trust-resolving provider for this claim.
+
+        Async because live revocation state has to be read before the
+        synchronous decision path starts. An injected provider wins, which
+        is how tests and any caller that has already resolved trust supply
+        their own.
+
+        Returns ``None`` when there is no claim: nothing to resolve, and no
+        reason to touch the database.
+        """
+        if self._authority_provider is not None:
+            return self._authority_provider
+        if claim is None:
+            return None
+
+        if not self._trust_registry:
+            # No issuer is configured at all. That is a fact about this
+            # DEPLOYMENT, not about the caller's artefact, and the two must
+            # not be conflated: telling an operator "this delegation did not
+            # verify" when the truth is "we trust nobody" sends them looking
+            # at the wrong thing. An issuer that is configured-but-not-this-one
+            # is a different case, and is reported as a verification failure
+            # because it genuinely is one.
+            raise AuthorityUnresolvable(
+                DecisionReason.AUTHORITY_PROVIDER_UNAVAILABLE,
+                "delegated authority was presented but this deployment has no "
+                "configured trusted issuers to resolve it against",
+            )
+
+        from api.services.authority_provider import (
+            AuthorityProviderFault,
+            build_authority_provider,
+        )
+
+        try:
+            return await build_authority_provider(
+                self._db, claim=claim, registry=self._trust_registry
+            )
+        except AuthorityProviderFault as exc:
+            # Revocation state is unknown. That is not a verdict about the
+            # artefact -- reporting it as "did not verify" would put a false
+            # statement in the audit record -- so it surfaces as provider
+            # unavailability, which fails closed just the same.
+            raise AuthorityUnresolvable(
+                DecisionReason.AUTHORITY_PROVIDER_UNAVAILABLE,
+                f"delegated authority cannot be resolved right now: {exc}",
+            ) from exc
+
+    async def principal_binding_for(
+        self, claim: DelegatedAuthorityClaim | None, *, agent: Any
+    ) -> dict[str, str]:
+        """This principal's identity at the claim's issuer, from the database.
+
+        Deliberately NOT from ``agent.metadata``: registration routes copy
+        caller-supplied metadata onto an agent, so a binding held there
+        would be chosen by the very party it is meant to constrain. See
+        migration 029.
+        """
+        if claim is None:
+            return {}
+        from api.trust.principal_bindings import (
+            PrincipalBindingUnavailable,
+            load_principal_binding,
+        )
+
+        try:
+            return await load_principal_binding(
+                self._db, agent_id=agent.id, issuer=claim.issuer
+            )
+        except PrincipalBindingUnavailable as exc:
+            raise AuthorityUnresolvable(
+                DecisionReason.AUTHORITY_PROVIDER_UNAVAILABLE,
+                f"this principal's issuer identity cannot be established: {exc}",
+            ) from exc
+
     def resolve_authority(
         self,
         claim: DelegatedAuthorityClaim | None,
         *,
         agent: Any,
+        provider: Any | None = None,
+        principal_binding: Mapping[str, str] | None = None,
     ) -> ResolvedAuthority | None:
         """Resolve an external claim through the configured provider.
 
@@ -418,16 +512,21 @@ class AuthorityEvaluationService:
         """
         if claim is None:
             return None
-        if self._authority_provider is None:
+        provider = provider or self._authority_provider
+        if provider is None:
             raise AuthorityUnresolvable(
                 DecisionReason.AUTHORITY_PROVIDER_UNAVAILABLE,
                 "delegated authority was presented but no provider is " "configured to resolve it",
             )
         from api.core.authority.authority import trusted_authority_construction
 
-        context = self._build_context(agent, trusted_authority_construction())
+        context = self._build_context(
+            agent,
+            trusted_authority_construction(),
+            principal_binding=principal_binding,
+        )
         try:
-            resolved = self._authority_provider.resolve(claim, context)
+            resolved = provider.resolve(claim, context)
         except AuthorityUnresolvable:
             raise
         except Exception as exc:
@@ -457,13 +556,23 @@ class AuthorityEvaluationService:
         return resolved
 
     @staticmethod
-    def _build_context(agent: Any, construction: Any) -> Any:
+    def _build_context(
+        agent: Any,
+        construction: Any,
+        *,
+        principal_binding: Mapping[str, str] | None = None,
+    ) -> Any:
         from api.core.authority.authority import ExecutionContext
 
         return ExecutionContext(
             construction,
             organisation_id=str(agent.org_id),
             principal_id=str(agent.id),
+            # Assembled server-side from authority_principal_bindings. It is
+            # trusted because the caller never supplied it, and it is the
+            # only thing that ties a genuine delegation to the principal it
+            # actually belongs to.
+            principal_binding=dict(principal_binding or {}),
         )
 
     # -- the whole evaluation --------------------------------------------
@@ -686,7 +795,20 @@ class AuthorityEvaluationService:
         # would grant MORE than the caller asked to be bound by, which is the
         # one direction a fallback must never go.
         try:
-            resolved = self.resolve_authority(authority_claim, agent=agent)
+            # Both of these touch the database, so they happen HERE — before
+            # the synchronous decision path — rather than inside it. Either
+            # can fail closed on its own, and neither can be reached from a
+            # request body.
+            provider = await self.provider_for(authority_claim)
+            principal_binding = await self.principal_binding_for(
+                authority_claim, agent=agent
+            )
+            resolved = self.resolve_authority(
+                authority_claim,
+                agent=agent,
+                provider=provider,
+                principal_binding=principal_binding,
+            )
         except AuthorityUnresolvable as unresolvable:
             return EvaluationResult(
                 decision=Decision.BLOCK,

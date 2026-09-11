@@ -24,6 +24,22 @@ API, and refuses to do anything without an actor and an approval reference.
         --by alice@example.com --approval INC-2026-0008 \
         --reason "suspected issuer compromise"
 
+    # Which issuers are trusted, and what has been revoked?
+    python -m scripts.authority_control trust
+
+    # Distrust a compromised issuer signing key, in seconds
+    python -m scripts.authority_control revoke \
+        --subject issuer_key --issuer acme-issuer --id <fingerprint> \
+        --by alice@example.com --approval INC-2026-0009 \
+        --reason "issuer disclosed key compromise"
+
+    # Record which account a principal is, at an issuer
+    python -m scripts.authority_control bind \
+        --org <uuid> --agent <uuid> --issuer acme-issuer \
+        --key issuer_account_reference --value acct_1234 \
+        --by alice@example.com --approval CHG-2026-0043 \
+        --reason "canary principal provisioning"
+
 Every mutating command writes an immutable ``administrative_audit_events``
 row in the same transaction as the change.
 
@@ -50,6 +66,17 @@ from api.persistence.authority_requirements import (
     list_requirements,
     set_control,
     set_requirement,
+)
+from api.trust.issuer_registry import load_registry_from_environment
+from api.trust.principal_bindings import (
+    clear_principal_binding,
+    list_principal_bindings,
+    set_principal_binding,
+)
+from api.trust.revocations import (
+    RevocationSubject,
+    list_revocations,
+    set_revocation,
 )
 
 
@@ -187,6 +214,106 @@ def _add_evidence_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--reason", required=True, help="Why, in one line")
 
 
+async def _trust(_args: argparse.Namespace) -> int:
+    """Show configured issuer trust and every live revocation."""
+    registry = load_registry_from_environment()
+    database = await Database.create(_dsn(), min_size=1, max_size=2)
+    try:
+        revocations = await list_revocations(database)
+    finally:
+        await database.close()
+    _emit(
+        {
+            "configured_issuers": registry.fingerprints(),
+            "revocations": revocations,
+            "key_discovery": (
+                "none; issuer keys come from configuration only, so no network "
+                "outage can change the answer"
+            ),
+        }
+    )
+    return 0
+
+
+async def _revoke(args: argparse.Namespace, *, revoked: bool) -> int:
+    database = await Database.create(_dsn(), min_size=1, max_size=2)
+    try:
+        row = await set_revocation(
+            database,
+            subject_type=RevocationSubject(args.subject),
+            subject_id=args.id,
+            issuer=args.issuer,
+            revoked=revoked,
+            changed_by=args.by,
+            approval_reference=args.approval,
+            reason=args.reason,
+        )
+    finally:
+        await database.close()
+    _emit(
+        {
+            "result": "revoked" if revoked else "reinstated",
+            "row": row,
+            "effect": (
+                "no NEW delegated authority resting on this subject will resolve; "
+                "grants already issued keep their own lifecycle"
+                if revoked
+                else "this subject is trusted again where configuration allows it"
+            ),
+        }
+    )
+    return 0
+
+
+async def _bind(args: argparse.Namespace) -> int:
+    database = await Database.create(_dsn(), min_size=1, max_size=2)
+    try:
+        row = await set_principal_binding(
+            database,
+            organisation_id=UUID(args.org),
+            agent_id=UUID(args.agent),
+            issuer=args.issuer,
+            binding_key=args.key,
+            binding_value=args.value,
+            changed_by=args.by,
+            approval_reference=args.approval,
+            reason=args.reason,
+        )
+    finally:
+        await database.close()
+    _emit({"result": "bound", "row": row})
+    return 0
+
+
+async def _unbind(args: argparse.Namespace) -> int:
+    database = await Database.create(_dsn(), min_size=1, max_size=2)
+    try:
+        existed = await clear_principal_binding(
+            database,
+            organisation_id=UUID(args.org),
+            agent_id=UUID(args.agent),
+            issuer=args.issuer,
+            binding_key=args.key,
+            changed_by=args.by,
+            approval_reference=args.approval,
+            reason=args.reason,
+        )
+    finally:
+        await database.close()
+    _emit({"result": "unbound", "row_existed": existed})
+    return 0
+
+
+async def _bindings(args: argparse.Namespace) -> int:
+    database = await Database.create(_dsn(), min_size=1, max_size=2)
+    try:
+        rows = await list_principal_bindings(database, agent_id=UUID(args.agent))
+    finally:
+        await database.close()
+    _emit({"agent_id": args.agent, "bindings": rows})
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="authority_control", description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -229,6 +356,52 @@ def build_parser() -> argparse.ArgumentParser:
         )
         _add_evidence_arguments(cmd)
         cmd.set_defaults(handler=lambda args, _engaged=engaged: _switch(args, engaged=_engaged))
+
+    trust = sub.add_parser("trust", help="Show issuer trust and live revocations")
+    trust.set_defaults(handler=_trust)
+
+    for name, revoked in (("revoke", True), ("reinstate", False)):
+        cmd = sub.add_parser(
+            name,
+            help=("Revoke" if revoked else "Reinstate") + " an issuer, key or delegation",
+        )
+        cmd.add_argument(
+            "--subject",
+            required=True,
+            choices=[subject.value for subject in RevocationSubject],
+        )
+        cmd.add_argument(
+            "--id",
+            required=True,
+            help="Issuer id, key fingerprint, or the issuer's delegation reference",
+        )
+        cmd.add_argument(
+            "--issuer",
+            help="Required for everything except --subject issuer",
+        )
+        _add_evidence_arguments(cmd)
+        cmd.set_defaults(handler=lambda args, _r=revoked: _revoke(args, revoked=_r))
+
+    bind = sub.add_parser("bind", help="Record a principal's identity at an external issuer")
+    bind.add_argument("--org", required=True)
+    bind.add_argument("--agent", required=True)
+    bind.add_argument("--issuer", required=True)
+    bind.add_argument("--key", required=True, help="Binding key, e.g. issuer_account_reference")
+    bind.add_argument("--value", required=True, help="The issuer's identifier for this principal")
+    _add_evidence_arguments(bind)
+    bind.set_defaults(handler=_bind)
+
+    unbind = sub.add_parser("unbind", help="Remove one principal binding")
+    unbind.add_argument("--org", required=True)
+    unbind.add_argument("--agent", required=True)
+    unbind.add_argument("--issuer", required=True)
+    unbind.add_argument("--key", required=True)
+    _add_evidence_arguments(unbind)
+    unbind.set_defaults(handler=_unbind)
+
+    bindings = sub.add_parser("bindings", help="List a principal's issuer identities")
+    bindings.add_argument("--agent", required=True)
+    bindings.set_defaults(handler=_bindings)
 
     return parser
 
