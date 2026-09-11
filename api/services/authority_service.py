@@ -575,6 +575,31 @@ class AuthorityEvaluationService:
             consequence_class=consequence_class,
         )
 
+        # The policy this decision is made under, captured as soon as there
+        # is an act to attach it to. Every refusal below carries it, not just
+        # the ones that reach the domain policy: a BLOCK whose record cannot
+        # say which policy refused it is a decision nobody can audit later.
+        snapshot = (
+            build_payment_authority_policy_snapshot(
+                agent,
+                action_type,
+                trust_threshold=PolicyEngine.TRUST_THRESHOLDS.get(action_type),
+                registered_policy_hash=registered_policy_hash,
+                captured_at=now,
+            )
+            if action_type in PAYMENT_ACTION_TYPES
+            else None
+        )
+        snapshot_fields: dict[str, Any] = (
+            {
+                "policy_snapshot_digest": snapshot.digest,
+                "policy_snapshot_format": snapshot.preimage["format"],
+                "policy_revision": snapshot.revision,
+            }
+            if snapshot is not None
+            else {}
+        )
+
         # --- Is delegated authority required here? Trusted config decides. ---
         requirement = self.requirement_for(
             organisation_id=agent.org_id, principal_id=agent.id, action_type=action_type
@@ -601,6 +626,7 @@ class AuthorityEvaluationService:
                 domain=envelope.domain,
                 executor_binding_digest=executor.binding_digest,
                 executor_reference=executor.executor_reference,
+                **snapshot_fields,
             )
 
         if requirement.required and resolved is None:
@@ -613,6 +639,7 @@ class AuthorityEvaluationService:
                 domain=envelope.domain,
                 executor_binding_digest=executor.binding_digest,
                 executor_reference=executor.executor_reference,
+                **snapshot_fields,
             )
 
         # --- Shared Core organisation policy. This is the SAME evaluation
@@ -642,6 +669,7 @@ class AuthorityEvaluationService:
                 domain=envelope.domain,
                 executor_binding_digest=executor.binding_digest,
                 executor_reference=executor.executor_reference,
+                **snapshot_fields,
             )
 
         # --- Domain policy. Organisation policy decides; scope only narrows. ---
@@ -654,6 +682,7 @@ class AuthorityEvaluationService:
                 domain=envelope.domain,
                 executor_binding_digest=executor.binding_digest,
                 executor_reference=executor.executor_reference,
+                **snapshot_fields,
             )
 
         domain_policy = PaymentDomainPolicy(
@@ -671,13 +700,16 @@ class AuthorityEvaluationService:
         # clock-skew window, so the two can differ only within it.
         decision = domain_policy.evaluate(envelope, resolved, at=now)
 
-        snapshot = build_payment_authority_policy_snapshot(
-            agent,
-            action_type,
-            trust_threshold=PolicyEngine.TRUST_THRESHOLDS.get(action_type),
-            registered_policy_hash=registered_policy_hash,
-            captured_at=now,
-        )
+        # Captured above, before the first refusal could return, so the
+        # digest a BLOCK records and the digest a grant is issued under
+        # cannot drift apart. The action type was checked to be a payment
+        # one before this point, which is what guarantees it exists; the
+        # guard refuses rather than trusting that to stay true.
+        if snapshot is None:  # pragma: no cover - unreachable via the checks above
+            raise AuthorityServiceError(
+                "no payment policy snapshot was captured for an action the "
+                "payment domain governs"
+            )
 
         if decision.decision is not Decision.ALLOW:
             # REQUIRE_APPROVAL yields no grant either: the core contract is
