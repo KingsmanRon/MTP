@@ -131,7 +131,8 @@ Performed in order, fail-closed at every step.
 | 14 | agent `cnf.jwk` identical across the pair, `cnf.jwk.kid` consistent | reference impl |
 | 15 | agent key thumbprint bound to this Inntris principal, not revoked | Inntris |
 | 16 | claim reference equals the derived mandate-pair reference | Inntris |
-| 17 | every machine-enforceable payment constraint maps, or refuse | Inntris |
+| 17 | the two validity windows overlap; the effective window is their intersection | Inntris |
+| 18 | every machine-enforceable payment constraint maps, or refuse | Inntris |
 
 `skip_issuer_verification=True` is never used and is not reachable from
 this connector.
@@ -149,7 +150,7 @@ maps onto `DecisionReason`:
 | no trusted issuer key, or the L1 signature does not verify | `authority_signature_invalid` |
 | `sd_hash`, pairing or reference-binding mismatch; wrong claim reference | `authority_digest_mismatch` |
 | L2 dated beyond the skew tolerance | `authority_not_yet_valid` |
-| L1 or L2 expired | `authority_expired` |
+| L1 or L2 expired, or their windows do not overlap | `authority_expired` |
 | no binding provisioned for the principal | `authority_principal_mismatch` |
 | wrong audience, or an agent key not bound to this principal | `authority_delegate_not_bound` |
 | the bound agent key has been revoked | `authority_revoked` |
@@ -219,6 +220,50 @@ retired. A thumbprint in `revoked_agent_key_thumbprints` is refused even if
 it is also still listed as active — a revocation that could be cancelled by
 forgetting to remove the old entry is not a revocation. An empty active set
 cannot be provisioned at all.
+
+---
+
+## 5a. Effective chain validity
+
+Delegated authority exists only while **every** credential it rests on is
+current, so the effective window is the *intersection* of the layers' own
+windows — never Layer 2's alone:
+
+```
+not_before = max(L1.iat, L2.iat)
+not_after  = min(L1.exp, L2.exp)
+```
+
+Worked example. A mandate valid until 11:00 resting on an issuer
+credential that expires at 10:05 delegates nothing after 10:05.
+Verification at 10:00 succeeds; the authority, and every grant clamped
+against it, still ends at **10:05**.
+
+These exact values are used consistently for:
+
+* `DelegatedAuthorityReference.not_before` / `.not_after`
+* `ResolvedAuthority.not_before` / `.not_after`
+* the `not_before` / `not_after` keys in the mapped scope, and therefore
+  `PaymentDelegationConstraints.not_before` / `.not_after`
+* `clamp_grant_expiry(authority_expires_at=…)` on the issuance path, which
+  takes a minimum — so a grant can never outlive the tighter of the two
+  credentials, whatever the TTL ceiling allows
+
+**No clock skew is added.** Skew (300s, per the draft's recommendation) is
+a tolerance for *reading* a timestamp during verification. Letting it
+reach the authority window would turn a tolerance for clock drift into
+extra real authority, so the two deliberately disagree: the reference
+verifier may accept a credential that expired 60 seconds ago, and the
+authority it yields is already outside its own validity, which the payment
+domain blocks with `AUTHORITY_EXPIRED`.
+
+**An empty or inverted intersection fails closed** with
+`authority_expired`. This is reachable even when both layers pass
+verification — Layer 1 expiring in 60 seconds while Layer 2 is dated 120
+seconds ahead sits inside the skew tolerance at both ends, yet yields a
+window that never opens. It is implemented in
+`effective_chain_validity()` and covered by
+`tests/test_mastercard_vi_provider.py::TestEffectiveChainValidity`.
 
 ---
 
@@ -432,7 +477,51 @@ invented.
 
 ---
 
-## 13. Handoff
+## 13. Phase 6 handoff — what must be proved next
+
+Phase 5 stops at **issuance**. It establishes that a delegation verified at
+the moment a grant was issued. That is explicitly *not* enough to spend
+one, and Phase 6 must prove the rest:
+
+1. **Current delegated authority is revalidated before the first
+   consumption.** Verification at issuance time says what was true then.
+   A mandate can be revoked, or reach the effective `not_after` of §5a,
+   between issuance and execution.
+2. **No delegated grant may consume merely because issuance-time
+   verification succeeded.** Re-presenting the issuance-time conclusion is
+   not revalidation.
+3. **The existing `AUTHORITY_UNVERIFIED` protection stays fail-closed.**
+   `AuthorityStore` already refuses to consume a grant that carries an
+   `authority_scope_digest` when no current authority evidence accompanies
+   the attempt — absent evidence is not evidence of validity. Phase 6 must
+   satisfy that gate with real re-resolution, never bypass, relax or stub
+   it. The adjacent checks it must also keep honouring: revoked evidence →
+   `AUTHORITY_REVOKED`; evidence past its expiry, or a grant past
+   `authority_expires_at` → `AUTHORITY_EXPIRED`; unverified evidence →
+   `AUTHORITY_VERIFICATION_FAILED`; evidence whose scope digest is not the
+   one the grant was issued under → `AUTHORITY_SCOPE_EXCEEDED`.
+
+The end-to-end path Phase 6 owns is
+`provider -> policy -> grant -> current delegated-authority revalidation ->
+consume`.
+
+### Deferred to Phase 7A (release gate)
+
+Production provider *composition* is deliberately absent from Phase 5 and
+remains a Phase 7A gate:
+
+* production packaging and deployment of the connector;
+* live JWKS discovery, caching and rotation polling (§4 ships an offline
+  resolver and an interface only);
+* the provider factory and its runtime configuration/wiring;
+* issuer and delegate key lifecycle management.
+
+Nothing in Phase 5 is wired into a deployed path, and no public endpoint
+was added.
+
+---
+
+## 14. Handoff
 
 | | |
 | --- | --- |
@@ -445,5 +534,6 @@ invented.
 | Unsupported-constraint behaviour | fail closed with `authority_scope_unreadable`; nothing is silently ignored |
 | Selective-disclosure behaviour | partial payee disclosure narrows; zero disclosed payees, a withheld mandate, or a multi-pair L2 fail closed |
 | Fixture paths | `tests/fixtures/mastercard_vi/{upstream_pin,cases,golden_scope}.json`; credentials are minted deterministically by the builder in `tests/test_mastercard_vi_provider.py` |
+| Effective validity rule | `not_before = max(L1.iat, L2.iat)`, `not_after = min(L1.exp, L2.exp)`, no clock skew added; empty intersection fails closed — see §5a |
 | Typed authority failure codes | see §3 |
 | Not implemented | L3 verification, budget/recurrence accounting, Agent Pay APIs, AP4M, settlement, production key discovery — see §10 |

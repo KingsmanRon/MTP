@@ -41,12 +41,23 @@ Run in this order, all of it fail-closed:
 11. the agent key in the mandates' ``cnf.jwk`` — identical across the
     pair — has an RFC 7638 thumbprint bound to this Inntris principal by
     trusted server-side state, and is not revoked;
-12. every machine-enforceable payment constraint maps into enforceable
+12. the two windows actually overlap, and the delegation's effective
+    validity is that intersection — ``max(iat)`` to ``min(exp)``, with no
+    clock skew added;
+13. every machine-enforceable payment constraint maps into enforceable
     scope, or the delegation is refused.
 
 Steps 3–6, 8 and 9 are performed by the pinned upstream reference
 implementation rather than re-implemented here; the rest are Inntris's own
 and produce Inntris's own typed failure codes.
+
+Validity is the chain's, not one layer's
+----------------------------------------
+Step 12 is the one place where verification and authority deliberately
+disagree. Verification may accept a credential inside a clock-skew
+tolerance; the authority it yields never inherits that tolerance, and it
+never outlives the shortest-lived credential in the chain. See
+:func:`effective_chain_validity`.
 
 Reuse
 -----
@@ -214,6 +225,50 @@ MAX_CLAIM_SECONDS: Final[int] = 253_402_300_799
 #: ceiling that still keeps a hostile value from reaching identifier
 #: validation as a construction error.
 MAX_MANDATE_REFERENCE_CHARS: Final[int] = 512
+
+
+def effective_chain_validity(
+    layer1_payload: Mapping[str, Any], layer2_payload: Mapping[str, Any]
+) -> tuple[datetime, datetime] | None:
+    """The window in which the whole delegation chain is live.
+
+    A delegation exists only while **every** credential it rests on is
+    current, so the effective window is the *intersection* of the layers'
+    own windows, not Layer 2's window alone::
+
+        not_before = max(L1.iat, L2.iat)
+        not_after  = min(L1.exp, L2.exp)
+
+    Taking Layer 2 alone is the failure this function exists to prevent: a
+    mandate valid until 11:00 that rests on an issuer credential expiring
+    at 10:05 delegates nothing after 10:05, and authority issued against
+    it must die at 10:05 too.
+
+    No clock skew is applied. Skew is a tolerance for *reading* a
+    timestamp during verification; adding it here would let a tolerance
+    meant to absorb clock drift extend real authority past the moment the
+    issuer said it ends.
+
+    ``None`` when a required claim is absent or unusable, or when the two
+    windows do not overlap at all — in which case there is no instant at
+    which this chain ever delegated anything, and the caller fails closed.
+    """
+    windows: list[tuple[int, int]] = []
+    for payload in (layer1_payload, layer2_payload):
+        issued = _claim_seconds(payload, "iat")
+        expires = _claim_seconds(payload, "exp")
+        if issued is None or expires is None:
+            return None
+        windows.append((issued, expires))
+
+    not_before = max(start for start, _ in windows)
+    not_after = min(end for _, end in windows)
+    if not_after <= not_before:
+        return None
+    return (
+        datetime.fromtimestamp(not_before, tz=UTC),
+        datetime.fromtimestamp(not_after, tz=UTC),
+    )
 
 
 def _claim_seconds(payload: Mapping[str, Any], name: str) -> int | None:
@@ -521,16 +576,18 @@ class VerifiableIntentAuthorityProvider:
                 digest=digest,
             )
 
-        # 12. Validity window, from the mandate's own claims. Both are
-        #     present and in range: step 4 established that.
-        not_before = datetime.fromtimestamp(_claim_seconds(layer2.payload, "iat"), tz=UTC)
-        not_after = datetime.fromtimestamp(_claim_seconds(layer2.payload, "exp"), tz=UTC)
-        if not_after <= not_before:
+        # 12. The effective validity window: the intersection of both
+        #     credentials' own windows, never Layer 2's alone. A mandate
+        #     cannot outlive the issuer credential it is bound to.
+        window = effective_chain_validity(layer1.payload, layer2.payload)
+        if window is None:
             return fail(
-                Failure.AUTHORITY_ARTEFACT_INVALID,
-                "the Layer 2 mandate expires no later than it was issued",
+                Failure.AUTHORITY_EXPIRED,
+                "the Layer 1 and Layer 2 validity windows do not overlap, so there "
+                "is no instant at which this chain delegates anything",
                 digest=digest,
             )
+        not_before, not_after = window
 
         # 13. Scope, or a refusal.
         disclosure_values = self._disclosure_values(ref, layer2)

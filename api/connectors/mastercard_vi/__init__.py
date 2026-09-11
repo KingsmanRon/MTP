@@ -66,6 +66,7 @@ from api.connectors.mastercard_vi.provider import (
     DEFAULT_CLOCK_SKEW_SECONDS,
     VerifiableIntentAuthorityProvider,
     VerifiableIntentResolution,
+    effective_chain_validity,
 )
 from api.connectors.mastercard_vi.reference import (
     ReferenceImplementationUnavailable,
@@ -110,6 +111,7 @@ __all__ = [
     "VerifiableIntentPrincipalBinding",
     "VerifiableIntentResolution",
     "binding_from_principal_binding",
+    "effective_chain_validity",
     "jwk_thumbprint",
     "load_reference",
     "map_payment_mandate",

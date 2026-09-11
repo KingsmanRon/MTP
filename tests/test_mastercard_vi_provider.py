@@ -46,6 +46,7 @@ from api.connectors.mastercard_vi import (
 )
 from api.connectors.mastercard_vi import profile as vi_profile
 from api.connectors.mastercard_vi import provider as vi_provider
+from api.connectors.mastercard_vi.provider import effective_chain_validity
 from api.connectors.mastercard_vi.reference import ReferenceImplementationUnavailable
 from api.core.authority.authority import (
     AuthorityVerificationFailure,
@@ -60,6 +61,10 @@ from api.domains.payment.binding import ExecutionDestination, PayeeBinding
 from api.domains.payment.delegation import KNOWN_SCOPE_KEYS, parse_delegation_constraints
 from api.domains.payment.policy import PaymentDomainPolicy
 from api.models import AgentRecord, AgentStatus
+from api.persistence.authority_store import (
+    MAX_EXECUTION_AUTHORITY_TTL,
+    clamp_grant_expiry,
+)
 
 # In CI the reference implementation is installed by an explicit step, so a
 # skip there does not mean "optional dependency absent" — it means that step
@@ -1281,3 +1286,182 @@ class TestDecodedFixtureShape:
             assert payload(left_jwt) == payload(right_jwt)
 
         assert first.mandate_pair_reference == second.mandate_pair_reference
+
+
+# ---------------------------------------------------------------------------
+# Effective chain validity
+# ---------------------------------------------------------------------------
+
+
+class TestEffectiveChainValidity:
+    """Authority lives for the intersection of the chain, not one layer.
+
+    A Layer 2 mandate valid until 11:00 that rests on a Layer 1 credential
+    expiring at 10:05 delegates nothing after 10:05. Deriving the window
+    from Layer 2 alone would issue authority the issuer never granted, and
+    any grant clamped against it would inherit the overstatement.
+    """
+
+    @staticmethod
+    def _resolve(*, now: int, l1_iat: int, l1_exp: int, l2_iat: int, l2_exp: int):
+        chain = build_chain(
+            now=now,
+            layer1=build_layer1(now=now, iat_offset=l1_iat, exp_offset=l1_exp),
+            l2_iat_offset=l2_iat,
+            l2_exp_offset=l2_exp,
+        )
+        return provider().resolve(chain.claim(), context())
+
+    def test_layer1_expiring_first_caps_the_authority(self) -> None:
+        now = int(time.time())
+        resolved = self._resolve(
+            now=now, l1_iat=-DAY, l1_exp=10 * DAY, l2_iat=-60, l2_exp=30 * DAY
+        )
+        assert resolved.is_verified, resolved.issues
+        assert resolved.not_after == datetime.fromtimestamp(now + 10 * DAY, tz=UTC)
+        assert resolved.reference.not_after == resolved.not_after
+
+    def test_layer2_expiring_first_caps_the_authority(self) -> None:
+        now = int(time.time())
+        resolved = self._resolve(
+            now=now, l1_iat=-DAY, l1_exp=300 * DAY, l2_iat=-60, l2_exp=30 * DAY
+        )
+        assert resolved.is_verified, resolved.issues
+        assert resolved.not_after == datetime.fromtimestamp(now + 30 * DAY, tz=UTC)
+        assert resolved.reference.not_after == resolved.not_after
+
+    def test_the_later_layer1_issuance_sets_not_before(self) -> None:
+        now = int(time.time())
+        resolved = self._resolve(
+            now=now, l1_iat=-60, l1_exp=300 * DAY, l2_iat=-3600, l2_exp=30 * DAY
+        )
+        assert resolved.is_verified, resolved.issues
+        assert resolved.not_before == datetime.fromtimestamp(now - 60, tz=UTC)
+        assert resolved.reference.not_before == resolved.not_before
+
+    def test_the_later_layer2_issuance_sets_not_before(self) -> None:
+        now = int(time.time())
+        resolved = self._resolve(
+            now=now, l1_iat=-DAY, l1_exp=300 * DAY, l2_iat=-60, l2_exp=30 * DAY
+        )
+        assert resolved.is_verified, resolved.issues
+        assert resolved.not_before == datetime.fromtimestamp(now - 60, tz=UTC)
+        assert resolved.reference.not_before == resolved.not_before
+
+    def test_the_payment_domain_receives_the_effective_bounds(self) -> None:
+        now = int(time.time())
+        resolved = self._resolve(
+            now=now, l1_iat=-60, l1_exp=10 * DAY, l2_iat=-3600, l2_exp=30 * DAY
+        )
+        constraints = parse_delegation_constraints(resolved.scope)
+
+        assert constraints.not_before == datetime.fromtimestamp(now - 60, tz=UTC)
+        assert constraints.not_after == datetime.fromtimestamp(now + 10 * DAY, tz=UTC)
+        assert constraints.not_before == resolved.not_before
+        assert constraints.not_after == resolved.not_after
+
+    def test_a_grant_cannot_outlive_the_tighter_effective_expiry(self) -> None:
+        """The issuance clamp takes a minimum, and the authority is the floor."""
+        now = int(time.time())
+        # Layer 1 dies in two minutes — inside the five-minute grant ceiling.
+        resolved = self._resolve(
+            now=now, l1_iat=-DAY, l1_exp=120, l2_iat=-60, l2_exp=30 * DAY
+        )
+        assert resolved.is_verified, resolved.issues
+
+        issued_at = datetime.fromtimestamp(now, tz=UTC)
+        expiry = clamp_grant_expiry(
+            issued_at=issued_at, authority_expires_at=resolved.not_after
+        )
+        assert expiry == resolved.not_after
+        assert expiry == datetime.fromtimestamp(now + 120, tz=UTC)
+        assert expiry < issued_at + MAX_EXECUTION_AUTHORITY_TTL
+
+    def test_the_grant_ceiling_still_applies_when_authority_outlives_it(self) -> None:
+        """Negative control: the clamp is a minimum in both directions."""
+        now = int(time.time())
+        resolved = self._resolve(
+            now=now, l1_iat=-DAY, l1_exp=300 * DAY, l2_iat=-60, l2_exp=30 * DAY
+        )
+        issued_at = datetime.fromtimestamp(now, tz=UTC)
+        expiry = clamp_grant_expiry(
+            issued_at=issued_at, authority_expires_at=resolved.not_after
+        )
+        assert expiry == issued_at + MAX_EXECUTION_AUTHORITY_TTL
+        assert expiry < resolved.not_after
+
+    def test_non_overlapping_windows_fail_closed(self) -> None:
+        """Layer 1 dies before Layer 2 was even issued: nothing is delegated.
+
+        Both layers still pass the reference verifier — Layer 1 has not
+        expired and Layer 2's issuance sits inside the 300s skew tolerance —
+        so this is exactly the case a Layer-2-only reading would wave
+        through.
+        """
+        now = int(time.time())
+        resolved = self._resolve(
+            now=now, l1_iat=-DAY, l1_exp=60, l2_iat=120, l2_exp=30 * DAY
+        )
+        assert not resolved.is_verified
+        assert only_code(resolved) == "authority_expired"
+        assert "do not overlap" in (resolved.issues[0].detail or "")
+
+    def test_negative_control_the_same_fixture_verifies_when_windows_overlap(
+        self,
+    ) -> None:
+        """Only the Layer 1 expiry moves; the refusal above was the overlap."""
+        now = int(time.time())
+        resolved = self._resolve(
+            now=now, l1_iat=-DAY, l1_exp=DAY, l2_iat=120, l2_exp=30 * DAY
+        )
+        assert resolved.is_verified, resolved.issues
+        assert resolved.not_before == datetime.fromtimestamp(now + 120, tz=UTC)
+        assert resolved.not_after == datetime.fromtimestamp(now + DAY, tz=UTC)
+
+    def test_clock_skew_never_extends_the_authority(self) -> None:
+        """Verification tolerates skew; the authority it yields does not.
+
+        Layer 1 expired 60 seconds ago. The reference verifier accepts it
+        inside the 300s tolerance, so the chain still resolves — but the
+        authority's own window ended at the stated expiry, so it is already
+        outside its validity and the payment domain blocks.
+        """
+        now = int(time.time())
+        resolved = self._resolve(
+            now=now, l1_iat=-DAY, l1_exp=-60, l2_iat=-3600, l2_exp=30 * DAY
+        )
+        assert resolved.is_verified, resolved.issues
+        assert resolved.not_after == datetime.fromtimestamp(now - 60, tz=UTC)
+        assert not resolved.is_within_validity(datetime.now(UTC))
+
+        subject = agent_record(per_action_limit_usd=Decimal("1000"))
+        decision = TestOrganisationPolicyStillDecides._decide(
+            subject, "100.00", resolved, datetime.now(UTC)
+        )
+        assert decision.decision is Decision.BLOCK
+        assert DecisionReason.AUTHORITY_EXPIRED in decision.reasons
+
+    def test_the_rule_is_max_iat_and_min_exp(self) -> None:
+        base = 1_800_000_000
+        window = effective_chain_validity(
+            {"iat": base, "exp": base + 900},
+            {"iat": base + 300, "exp": base + 1800},
+        )
+        assert window == (
+            datetime.fromtimestamp(base + 300, tz=UTC),
+            datetime.fromtimestamp(base + 900, tz=UTC),
+        )
+
+    @pytest.mark.parametrize(
+        ("layer1", "layer2"),
+        [
+            # exp == the later iat: a zero-length window is not a window.
+            ({"iat": 100, "exp": 200}, {"iat": 200, "exp": 900}),
+            ({"iat": 100, "exp": 150}, {"iat": 200, "exp": 900}),
+            ({"iat": 100}, {"iat": 200, "exp": 900}),
+            ({"iat": 100, "exp": 200}, {"exp": 900}),
+            ({"iat": 100, "exp": "soon"}, {"iat": 200, "exp": 900}),
+        ],
+    )
+    def test_an_unusable_window_is_none(self, layer1: dict, layer2: dict) -> None:
+        assert effective_chain_validity(layer1, layer2) is None

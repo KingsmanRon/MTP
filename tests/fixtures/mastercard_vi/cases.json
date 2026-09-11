@@ -1,5 +1,5 @@
 {
-  "_comment": "The adversarial catalogue for the Verifiable Intent connector. Every case here must be exercised by tests/test_mastercard_vi_provider.py and must fail for the reason recorded, not merely fail. The test asserts that the catalogue and the implemented cases are the same set, so adding a case here without implementing it — or implementing one without recording it — breaks the build.",
+  "_comment": "The adversarial catalogue for the Verifiable Intent connector. Every case here must be exercised by tests/test_mastercard_vi_provider.py and must fail for the reason recorded, not merely fail. The test asserts that the catalogue and the implemented cases are the same set, so adding a case here without implementing it \u2014 or implementing one without recording it \u2014 breaks the build.",
   "cases": [
     {
       "id": "valid_autonomous_delegation",
@@ -20,6 +20,11 @@
       "id": "layer2_issued_in_the_future",
       "description": "The mandate is dated beyond the recommended clock skew, so its validity window has not begun.",
       "expected_failure_code": "authority_not_yet_valid"
+    },
+    {
+      "id": "non_overlapping_windows_fail_closed",
+      "description": "Layer 1 expires before Layer 2 was issued. Both layers still pass the reference verifier, so a Layer-2-only reading of validity would wave this through; the effective intersection is empty and there is no instant at which the chain delegates anything.",
+      "expected_failure_code": "authority_expired"
     },
     {
       "id": "untrusted_issuer_key",
@@ -43,7 +48,7 @@
     },
     {
       "id": "agent_key_not_bound_to_principal",
-      "description": "The chain verifies, but the delegated agent key belongs to some other agent — a valid credential is not evidence that it is this principal's.",
+      "description": "The chain verifies, but the delegated agent key belongs to some other agent \u2014 a valid credential is not evidence that it is this principal's.",
       "expected_failure_code": "authority_delegate_not_bound"
     },
     {
