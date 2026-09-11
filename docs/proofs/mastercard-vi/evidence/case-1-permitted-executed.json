@@ -1,0 +1,345 @@
+{
+  "action_envelope": {
+    "action_type": "wallet_transaction",
+    "domain": "payment",
+    "execution_action_hash": "77c29cb940896c7c16ea93ce4435e123881cd724310a47f80cbb3c4b87d41f16",
+    "organisation_id": "66566398-8dcb-4c73-8851-03b7ca11f6f3",
+    "payload": {
+      "amount": "8500.00",
+      "chain": "eip155:8453",
+      "currency": "USD"
+    },
+    "principal_id": "d30f8a4e-6f6d-4176-a099-742efed52a69",
+    "signed_action_hash": null,
+    "target": {
+      "resource_id": "0xA11CE00000000000000000000000000000000A11",
+      "resource_type": "eip155:8453"
+    }
+  },
+  "assertions": [
+    {
+      "expectation": "the VI delegation verifies",
+      "held": true
+    },
+    {
+      "expectation": "the delegate is bound to this principal",
+      "held": true
+    },
+    {
+      "expectation": "the authority window is the whole chain's intersection",
+      "held": true
+    },
+    {
+      "expectation": "Inntris ALLOWs",
+      "held": true
+    },
+    {
+      "expectation": "a grant is issued",
+      "held": true
+    },
+    {
+      "expectation": "the decision records its policy digest",
+      "held": true
+    },
+    {
+      "expectation": "the delegation was re-resolved before consumption",
+      "held": true
+    },
+    {
+      "expectation": "the bound executor consumes successfully",
+      "held": true
+    },
+    {
+      "expectation": "authority was spent exactly once",
+      "held": true
+    },
+    {
+      "expectation": "the side effect ran once",
+      "held": true
+    },
+    {
+      "expectation": "the grant is now consumed",
+      "held": true
+    }
+  ],
+  "case": {
+    "description": "8,500.00 USD to Supplier A, whose execution recipient this organisation allowlists. The Layer 1 + Layer 2 chain verifies, current Inntris policy permits the act, and the exact executor spends the grant once \u2014 after the delegation is re-resolved and found still valid.",
+    "id": "case-1-permitted-executed",
+    "title": "permitted + executed"
+  },
+  "delegated_authority_reresolution": {
+    "expires_at": "2026-10-11T17:35:55+00:00",
+    "performed": true,
+    "resolution_status": "verified",
+    "revoked": false,
+    "scope_digest": "59f6b643a827c458930b43ffb09978b623760da074c80beef351f34e3a288b53",
+    "verified": true
+  },
+  "execution_attempts": [
+    {
+      "claim_outcome": "claimed",
+      "consumption_outcome": "authorised",
+      "detail": null,
+      "execution_ref": "case-1-exec",
+      "journal_state": "succeeded",
+      "outcome_reference": "mock-settlement:case-1-exec",
+      "rejection_reason": null,
+      "side_effect_invocations_for_reference": 1,
+      "verdict": "executed"
+    }
+  ],
+  "format": "inntris-mastercard-vi-proof-evidence-v1",
+  "grant": {
+    "action_type": "wallet_transaction",
+    "authority_expires_at": "2026-10-11T17:35:55+00:00",
+    "authority_scope_digest": "59f6b643a827c458930b43ffb09978b623760da074c80beef351f34e3a288b53",
+    "consumed_at": "2026-09-11T17:35:55.789602+00:00",
+    "domain": "payment",
+    "execution_action_hash": "77c29cb940896c7c16ea93ce4435e123881cd724310a47f80cbb3c4b87d41f16",
+    "execution_ref": "case-1-exec",
+    "executor_binding_digest": "6f9ca0a915900c3917f3e1cfa9124f09bdf701138c361fe003980a5c75c3a1cc",
+    "executor_reference": "op-1",
+    "expires_at": "2026-09-11T17:40:55.762503+00:00",
+    "grant_id": "8be0b748-0687-49ca-81d9-b5e31cbd2e0e",
+    "issued_at": "2026-09-11T17:35:55.762503+00:00",
+    "outcome_reference": "mock-settlement:case-1-exec",
+    "outcome_state": "succeeded",
+    "policy_hash": "1210a6c8180077edd4388ea75e4ea96e1244fdcd16e3647ec5cffad0321554d8",
+    "policy_revision": "inntris-payment-authority-policy-v1|d30f8a4e-6f6d-4176-a099-742efed52a69|1|1210a6c8180077edd4388ea75e4ea96e1244fdcd16e3647ec5cffad0321554d8",
+    "policy_snapshot_format": "inntris-payment-authority-policy-v1",
+    "signed_action_hash": null,
+    "status": "consumed"
+  },
+  "inntris_decision": {
+    "authority_scope_digest": "59f6b643a827c458930b43ffb09978b623760da074c80beef351f34e3a288b53",
+    "decision": "allow",
+    "decision_audit_id": "184d8c47-879a-4a09-8704-5a7dba479338",
+    "detail": null,
+    "executor_binding_digest": "6f9ca0a915900c3917f3e1cfa9124f09bdf701138c361fe003980a5c75c3a1cc",
+    "executor_reference": "op-1",
+    "grant_expires_at": "2026-09-11T17:40:55.762503+00:00",
+    "grant_id": "8be0b748-0687-49ca-81d9-b5e31cbd2e0e",
+    "issue_outcome": "issued",
+    "policy_hash": "1210a6c8180077edd4388ea75e4ea96e1244fdcd16e3647ec5cffad0321554d8",
+    "policy_revision": "inntris-payment-authority-policy-v1|d30f8a4e-6f6d-4176-a099-742efed52a69|1|1210a6c8180077edd4388ea75e4ea96e1244fdcd16e3647ec5cffad0321554d8",
+    "policy_snapshot_format": "inntris-payment-authority-policy-v1",
+    "reason_codes": []
+  },
+  "receipt_v3": {
+    "chain_verified": true,
+    "consumption": {
+      "event_id": "consumption:7dae897b-1e93-409f-a32b-ea55dbf0cd55",
+      "event_type": "consumption",
+      "evidence_payload_hash": "acce4d61ceaa15cd00e5aa7e553ed0d030260aa07d87fe077d0bfa60f1a4e4ee",
+      "parent_event_id": "decision:184d8c47-879a-4a09-8704-5a7dba479338",
+      "parent_payload_hash": "fe91425de004a71093584c950ddbb54021c16e038b25ad18f6ca3a3a641c2db2",
+      "payload": {
+        "body": {
+          "agent_id": "d30f8a4e-6f6d-4176-a099-742efed52a69",
+          "consumed_at": "2026-09-11T17:35:55.789602Z",
+          "consumption_audit_id": "7dae897b-1e93-409f-a32b-ea55dbf0cd55",
+          "execution_action_hash": "77c29cb940896c7c16ea93ce4435e123881cd724310a47f80cbb3c4b87d41f16",
+          "execution_ref": "case-1-exec",
+          "executor_binding_digest": "6f9ca0a915900c3917f3e1cfa9124f09bdf701138c361fe003980a5c75c3a1cc",
+          "executor_reference": "op-1",
+          "grant_id": "8be0b748-0687-49ca-81d9-b5e31cbd2e0e",
+          "organisation_id": "66566398-8dcb-4c73-8851-03b7ca11f6f3",
+          "outcome": "authorised"
+        },
+        "event_id": "consumption:7dae897b-1e93-409f-a32b-ea55dbf0cd55",
+        "event_type": "consumption",
+        "format": "inntris-authority-evidence-v3",
+        "parent_event_id": "decision:184d8c47-879a-4a09-8704-5a7dba479338",
+        "parent_payload_hash": "fe91425de004a71093584c950ddbb54021c16e038b25ad18f6ca3a3a641c2db2",
+        "recorded_at": "2026-09-11T17:35:55.789602Z",
+        "schema_version": "v3",
+        "signing_key_fingerprint": "d6650814a31ffe56356d14095f53c187e87e970d26e8104032d2c7f84be2f1e8",
+        "signing_key_id": "authority-evidence-d6650814a31ffe56"
+      },
+      "recorded_at": "2026-09-11T17:35:55.789602Z",
+      "schema_version": "v3",
+      "signature_b64": "0UPWZC+wUdKrjw2FrV9nlAKhGGMcmDztCUEQMIPhXmaEvQKRjZZUc1jETFIs9GSNKyTwgYsmwegK9utO597LAA==",
+      "signing_key_fingerprint": "d6650814a31ffe56356d14095f53c187e87e970d26e8104032d2c7f84be2f1e8",
+      "signing_key_id": "authority-evidence-d6650814a31ffe56"
+    },
+    "decision": {
+      "event_id": "decision:184d8c47-879a-4a09-8704-5a7dba479338",
+      "event_type": "decision",
+      "evidence_payload_hash": "fe91425de004a71093584c950ddbb54021c16e038b25ad18f6ca3a3a641c2db2",
+      "parent_event_id": null,
+      "parent_payload_hash": null,
+      "payload": {
+        "body": {
+          "action_type": "wallet_transaction",
+          "agent_id": "d30f8a4e-6f6d-4176-a099-742efed52a69",
+          "audit_id": "184d8c47-879a-4a09-8704-5a7dba479338",
+          "authority_scope_digest": "59f6b643a827c458930b43ffb09978b623760da074c80beef351f34e3a288b53",
+          "consequence_class": null,
+          "decision": "allow",
+          "domain": "payment",
+          "execution_action_hash": "77c29cb940896c7c16ea93ce4435e123881cd724310a47f80cbb3c4b87d41f16",
+          "executor_binding_digest": "6f9ca0a915900c3917f3e1cfa9124f09bdf701138c361fe003980a5c75c3a1cc",
+          "grant_expires_at": "2026-09-11T17:40:55.762503Z",
+          "grant_id": "8be0b748-0687-49ca-81d9-b5e31cbd2e0e",
+          "organisation_id": "66566398-8dcb-4c73-8851-03b7ca11f6f3",
+          "policy_snapshot_digest": "1210a6c8180077edd4388ea75e4ea96e1244fdcd16e3647ec5cffad0321554d8",
+          "policy_snapshot_format": "inntris-payment-authority-policy-v1",
+          "reasons": [],
+          "signed_action_hash": null
+        },
+        "event_id": "decision:184d8c47-879a-4a09-8704-5a7dba479338",
+        "event_type": "decision",
+        "format": "inntris-authority-evidence-v3",
+        "parent_event_id": null,
+        "parent_payload_hash": null,
+        "recorded_at": "2026-09-11T17:35:55.774897Z",
+        "schema_version": "v3",
+        "signing_key_fingerprint": "d6650814a31ffe56356d14095f53c187e87e970d26e8104032d2c7f84be2f1e8",
+        "signing_key_id": "authority-evidence-d6650814a31ffe56"
+      },
+      "recorded_at": "2026-09-11T17:35:55.774897Z",
+      "schema_version": "v3",
+      "signature_b64": "md2Kvj1mcvsTH86HXjDTFe2wTvEqpXVe4sk6weOe9qmsRYlin3wVVzovXnAhHVBcuxjLrzmUiESRtu9rRnwWAw==",
+      "signing_key_fingerprint": "d6650814a31ffe56356d14095f53c187e87e970d26e8104032d2c7f84be2f1e8",
+      "signing_key_id": "authority-evidence-d6650814a31ffe56"
+    },
+    "decision_fingerprint": "fe91425de004a71093584c950ddbb54021c16e038b25ad18f6ca3a3a641c2db2",
+    "failures": [],
+    "outcome": {
+      "event_id": "outcome:8be0b748-0687-49ca-81d9-b5e31cbd2e0e",
+      "event_type": "outcome",
+      "evidence_payload_hash": "f9cbbf76aba6035d6659d7b613b5f497ff88e229d608af928b9d841f6c424cb0",
+      "parent_event_id": "consumption:7dae897b-1e93-409f-a32b-ea55dbf0cd55",
+      "parent_payload_hash": "acce4d61ceaa15cd00e5aa7e553ed0d030260aa07d87fe077d0bfa60f1a4e4ee",
+      "payload": {
+        "body": {
+          "evidence_links": [],
+          "grant_id": "8be0b748-0687-49ca-81d9-b5e31cbd2e0e",
+          "outcome_reference": "mock-settlement:case-1-exec",
+          "outcome_state": "succeeded",
+          "recorded_at": "2026-09-11T17:35:55.803987Z"
+        },
+        "event_id": "outcome:8be0b748-0687-49ca-81d9-b5e31cbd2e0e",
+        "event_type": "outcome",
+        "format": "inntris-authority-evidence-v3",
+        "parent_event_id": "consumption:7dae897b-1e93-409f-a32b-ea55dbf0cd55",
+        "parent_payload_hash": "acce4d61ceaa15cd00e5aa7e553ed0d030260aa07d87fe077d0bfa60f1a4e4ee",
+        "recorded_at": "2026-09-11T17:35:55.803987Z",
+        "schema_version": "v3",
+        "signing_key_fingerprint": "d6650814a31ffe56356d14095f53c187e87e970d26e8104032d2c7f84be2f1e8",
+        "signing_key_id": "authority-evidence-d6650814a31ffe56"
+      },
+      "recorded_at": "2026-09-11T17:35:55.803987Z",
+      "schema_version": "v3",
+      "signature_b64": "56Gl+rokqY92YkjHPy0M1GNO09DhviuunUe9z4wNNn5to0du/XnJxUs36xhhX/3NKwHyi0lp1nwYOHD55xeRCA==",
+      "signing_key_fingerprint": "d6650814a31ffe56356d14095f53c187e87e970d26e8104032d2c7f84be2f1e8",
+      "signing_key_id": "authority-evidence-d6650814a31ffe56"
+    },
+    "verifying_public_key_b64": "b2LQAdK5H9LicsFnzC1jWnfay/uPJbmfPiXtB1OpEQQ="
+  },
+  "resolved_authority": {
+    "artefact_digest": "f297a19874766c9390e6342a2f3d83851818c4fdb1676ec9ecc52737b7fcaee2",
+    "delegate_binding_reference": "IcihSy4-_pQZecS2TqKO2PJXl_4hpyu3jVclEx5D9Gw",
+    "delegate_binding_status": "bound",
+    "effective_not_after": "2026-10-11T17:35:55+00:00",
+    "effective_not_before": "2026-09-11T17:34:55+00:00",
+    "external_reference_id": "aEgy7KRRk5F78VPZzBOXEU3yxGPY3t4VifnTNJQIspY",
+    "issuer": "https://issuer.mastercard.com",
+    "mapped_scope": {
+      "allowed_payees": [
+        "payee:id:supplier-a",
+        "payee:id:supplier-b"
+      ],
+      "currency": "USD",
+      "max_amount": "20000.00",
+      "not_after": "2026-10-11T17:35:55+00:00",
+      "not_before": "2026-09-11T17:34:55+00:00"
+    },
+    "validity_rule": "max(L1.iat, L2.iat) .. min(L1.exp, L2.exp) \u2014 the whole chain's intersection, never Layer 2 alone",
+    "verification_status": "verified"
+  },
+  "vi_connector": "api/connectors/mastercard_vi",
+  "vi_credential_material": {
+    "credential_subject": "user-vi-proof-001",
+    "delegate_key_thumbprint": "IcihSy4-_pQZecS2TqKO2PJXl_4hpyu3jVclEx5D9Gw",
+    "delegate_kid": "inntris-agent-key-1",
+    "issuer": "https://issuer.mastercard.com",
+    "issuer_kid": "mastercard-issuer-key-1",
+    "issuer_public_jwk": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "hag9xTbbYTZcLYeiAv63qQdn6sj7wffZmx-MfRXqoq0",
+      "y": "3qoYKdL_O4BahNaPGKNE3_ouPh6vABmwFVMdKNGuZFY"
+    },
+    "layer1_sha256": "a768feecf5727cef66f2b2e98b297889b78f23c9dd89d8a7a927b79b7ca22782",
+    "layer2_sha256": "2d4ff3e71328ece7f08d9780dc1ffc333352271120571e2e70554af2bb19dceb",
+    "layer3_presented": false,
+    "layers_presented": [
+      "layer1",
+      "layer2"
+    ],
+    "mandate_audience": "https://agents.inntris.example/vi",
+    "mandate_pair_reference": "aEgy7KRRk5F78VPZzBOXEU3yxGPY3t4VifnTNJQIspY",
+    "permitted_amount": {
+      "currency": "USD",
+      "max": "20000.00",
+      "max_minor_units": 2000000,
+      "semantics": "per transaction (mandate.payment.amount_range)"
+    },
+    "permitted_payees": [
+      {
+        "id": "supplier-a",
+        "name": "Supplier A",
+        "website": "https://supplier-a.example"
+      },
+      {
+        "id": "supplier-b",
+        "name": "Supplier B",
+        "website": "https://supplier-b.example"
+      }
+    ],
+    "wallet_issuer": "https://wallet.example"
+  },
+  "vi_upstream": {
+    "installed_commit": "356c29635f1c44df7de02edb58699ca9f29bece6",
+    "installed_version": "0.1.0",
+    "matches_pin": true,
+    "pinned_commit": "356c29635f1c44df7de02edb58699ca9f29bece6",
+    "pinned_package_version": "0.1.0",
+    "repository": "https://github.com/agent-intent/verifiable-intent",
+    "site": "https://verifiableintent.dev/",
+    "spec_date": "2026-02-18",
+    "spec_revision": "0.1-draft"
+  },
+  "vi_verification": {
+    "agent_key_thumbprint": "IcihSy4-_pQZecS2TqKO2PJXl_4hpyu3jVclEx5D9Gw",
+    "amount_range_minor_units": {
+      "currency": "USD",
+      "max": 2000000,
+      "min": null
+    },
+    "checkout_constraint_types": [
+      "mandate.checkout.allowed_merchants",
+      "mandate.checkout.line_items"
+    ],
+    "is_verified": true,
+    "issues": [],
+    "mandate_pair_reference": "aEgy7KRRk5F78VPZzBOXEU3yxGPY3t4VifnTNJQIspY",
+    "reference_checks_performed": [
+      "l2_aud",
+      "open_checkout_contains_line_items",
+      "open_payment_has_payment_instrument",
+      "open_payment_contains_reference",
+      "l2_reference_binding",
+      "l1_card_id_cross_check"
+    ],
+    "reference_checks_skipped": [
+      "l2_nonce (no expected value provided)"
+    ],
+    "structural_constraint_types": [
+      "mandate.payment.reference"
+    ],
+    "undisclosed_payee_count": 0,
+    "verification_status": "verified"
+  }
+}

@@ -1,0 +1,239 @@
+{
+  "action_envelope": {
+    "action_type": "wallet_transaction",
+    "domain": "payment",
+    "execution_action_hash": "eaa11c975225bfadbc6ee8b8fba07465fb9c47b47d491bcf901bf0252501d505",
+    "organisation_id": "8c385517-d087-43e9-aa00-3ccd66620a9d",
+    "payload": {
+      "amount": "8500.00",
+      "chain": "eip155:8453",
+      "currency": "USD"
+    },
+    "principal_id": "bc160344-9df6-4774-8425-f1e4af544703",
+    "signed_action_hash": null,
+    "target": {
+      "resource_id": "0xB0B0000000000000000000000000000000000B0B",
+      "resource_type": "eip155:8453"
+    }
+  },
+  "assertions": [
+    {
+      "expectation": "the VI delegation verifies",
+      "held": true
+    },
+    {
+      "expectation": "VI explicitly permits Supplier B",
+      "held": true
+    },
+    {
+      "expectation": "the amount is inside the VI per-transaction range",
+      "held": true
+    },
+    {
+      "expectation": "Inntris BLOCKs",
+      "held": true
+    },
+    {
+      "expectation": "the reason is the live recipient violation code",
+      "held": true
+    },
+    {
+      "expectation": "no grant is issued",
+      "held": true
+    },
+    {
+      "expectation": "no authority token is minted",
+      "held": true
+    },
+    {
+      "expectation": "the refusal still records the policy that refused it",
+      "held": true
+    }
+  ],
+  "case": {
+    "description": "8,500.00 USD to Supplier B. Verifiable Intent permits Supplier B and the amount is inside the mandate's per-transaction range, so the delegation is valid and its supported constraints are satisfied. Supplier B's execution recipient is not allowlisted by this organisation, and the refusal is Inntris's own policy decision \u2014 not a broken credential.",
+    "id": "case-2-organisation-recipient-block",
+    "title": "VI-valid, organisation recipient block"
+  },
+  "delegated_authority_reresolution": null,
+  "execution_attempts": [],
+  "format": "inntris-mastercard-vi-proof-evidence-v1",
+  "grant": null,
+  "inntris_decision": {
+    "authority_scope_digest": null,
+    "decision": "block",
+    "decision_audit_id": "2be8c57b-724d-4f4b-8be9-def19ac7d7ef",
+    "detail": "Recipient '0xB0B0000000000000000000000000000000000B0B' is not in the allowlist configured for chain 'eip155:8453'.",
+    "executor_binding_digest": "e47ae02c101a2e2e9542a500ffd292f29cd44c1c99042850ec8ad98a51fe36b7",
+    "executor_reference": "op-2",
+    "grant_expires_at": null,
+    "grant_id": null,
+    "issue_outcome": null,
+    "policy_hash": "c19d455f3a5d9943737685269e3ef5879a58d1db81a5fa70c930ba44e9b31706",
+    "policy_revision": "inntris-payment-authority-policy-v1|bc160344-9df6-4774-8425-f1e4af544703|1|c19d455f3a5d9943737685269e3ef5879a58d1db81a5fa70c930ba44e9b31706",
+    "policy_snapshot_format": "inntris-payment-authority-policy-v1",
+    "reason_codes": [
+      "wallet_recipient_not_allowed"
+    ]
+  },
+  "notes": {
+    "reason_code_provenance": "wallet_recipient_not_allowed is the existing deployed PolicyViolation code, not a name invented for this proof.",
+    "vi_verdict_precedes_inntris_verdict": "The connector resolved and verified the delegation before any policy check ran. VI=PASS is established first, and the BLOCK that follows is the organisation's."
+  },
+  "receipt_v3": {
+    "chain_verified": true,
+    "consumption": null,
+    "decision": {
+      "event_id": "decision:2be8c57b-724d-4f4b-8be9-def19ac7d7ef",
+      "event_type": "decision",
+      "evidence_payload_hash": "c2ec76387ec1d91ebcc558c1eda8b6dba451982dd934c8dc1711a8f697f0b925",
+      "parent_event_id": null,
+      "parent_payload_hash": null,
+      "payload": {
+        "body": {
+          "action_type": "wallet_transaction",
+          "agent_id": "bc160344-9df6-4774-8425-f1e4af544703",
+          "audit_id": "2be8c57b-724d-4f4b-8be9-def19ac7d7ef",
+          "authority_scope_digest": null,
+          "consequence_class": null,
+          "decision": "block",
+          "domain": "payment",
+          "execution_action_hash": "eaa11c975225bfadbc6ee8b8fba07465fb9c47b47d491bcf901bf0252501d505",
+          "executor_binding_digest": "e47ae02c101a2e2e9542a500ffd292f29cd44c1c99042850ec8ad98a51fe36b7",
+          "grant_expires_at": null,
+          "grant_id": null,
+          "organisation_id": "8c385517-d087-43e9-aa00-3ccd66620a9d",
+          "policy_snapshot_digest": "c19d455f3a5d9943737685269e3ef5879a58d1db81a5fa70c930ba44e9b31706",
+          "policy_snapshot_format": "inntris-payment-authority-policy-v1",
+          "reasons": [
+            "wallet_recipient_not_allowed"
+          ],
+          "signed_action_hash": null
+        },
+        "event_id": "decision:2be8c57b-724d-4f4b-8be9-def19ac7d7ef",
+        "event_type": "decision",
+        "format": "inntris-authority-evidence-v3",
+        "parent_event_id": null,
+        "parent_payload_hash": null,
+        "recorded_at": "2026-09-11T17:35:55.820569Z",
+        "schema_version": "v3",
+        "signing_key_fingerprint": "d6650814a31ffe56356d14095f53c187e87e970d26e8104032d2c7f84be2f1e8",
+        "signing_key_id": "authority-evidence-d6650814a31ffe56"
+      },
+      "recorded_at": "2026-09-11T17:35:55.820569Z",
+      "schema_version": "v3",
+      "signature_b64": "xSLsiSYAoCA3yfAAGmDx9hu6wu5IdDaNmpy/Wot+8Ju2fMGbWCiGB3G8jstaj0TJ1CNucJ1CHlNyVuE7zyd5AQ==",
+      "signing_key_fingerprint": "d6650814a31ffe56356d14095f53c187e87e970d26e8104032d2c7f84be2f1e8",
+      "signing_key_id": "authority-evidence-d6650814a31ffe56"
+    },
+    "decision_fingerprint": "c2ec76387ec1d91ebcc558c1eda8b6dba451982dd934c8dc1711a8f697f0b925",
+    "failures": [],
+    "outcome": null,
+    "verifying_public_key_b64": "b2LQAdK5H9LicsFnzC1jWnfay/uPJbmfPiXtB1OpEQQ="
+  },
+  "resolved_authority": {
+    "artefact_digest": "354e350fdd653e78940990373804285a1f1fe8d4c767bd4b5da6889835f0a552",
+    "delegate_binding_reference": "IcihSy4-_pQZecS2TqKO2PJXl_4hpyu3jVclEx5D9Gw",
+    "delegate_binding_status": "bound",
+    "effective_not_after": "2026-10-11T17:35:55+00:00",
+    "effective_not_before": "2026-09-11T17:34:55+00:00",
+    "external_reference_id": "aEgy7KRRk5F78VPZzBOXEU3yxGPY3t4VifnTNJQIspY",
+    "issuer": "https://issuer.mastercard.com",
+    "mapped_scope": {
+      "allowed_payees": [
+        "payee:id:supplier-a",
+        "payee:id:supplier-b"
+      ],
+      "currency": "USD",
+      "max_amount": "20000.00",
+      "not_after": "2026-10-11T17:35:55+00:00",
+      "not_before": "2026-09-11T17:34:55+00:00"
+    },
+    "validity_rule": "max(L1.iat, L2.iat) .. min(L1.exp, L2.exp) \u2014 the whole chain's intersection, never Layer 2 alone",
+    "verification_status": "verified"
+  },
+  "vi_connector": "api/connectors/mastercard_vi",
+  "vi_credential_material": {
+    "credential_subject": "user-vi-proof-001",
+    "delegate_key_thumbprint": "IcihSy4-_pQZecS2TqKO2PJXl_4hpyu3jVclEx5D9Gw",
+    "delegate_kid": "inntris-agent-key-1",
+    "issuer": "https://issuer.mastercard.com",
+    "issuer_kid": "mastercard-issuer-key-1",
+    "issuer_public_jwk": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "hag9xTbbYTZcLYeiAv63qQdn6sj7wffZmx-MfRXqoq0",
+      "y": "3qoYKdL_O4BahNaPGKNE3_ouPh6vABmwFVMdKNGuZFY"
+    },
+    "layer1_sha256": "6cb28931b09bfac21636631520d7b19ce4f9036611277cce7ac02c65f1308229",
+    "layer2_sha256": "aa3a745a3d6d98a5289b992e35b78159531087f9bdfa3946fdfbe6d17cfbd823",
+    "layer3_presented": false,
+    "layers_presented": [
+      "layer1",
+      "layer2"
+    ],
+    "mandate_audience": "https://agents.inntris.example/vi",
+    "mandate_pair_reference": "aEgy7KRRk5F78VPZzBOXEU3yxGPY3t4VifnTNJQIspY",
+    "permitted_amount": {
+      "currency": "USD",
+      "max": "20000.00",
+      "max_minor_units": 2000000,
+      "semantics": "per transaction (mandate.payment.amount_range)"
+    },
+    "permitted_payees": [
+      {
+        "id": "supplier-a",
+        "name": "Supplier A",
+        "website": "https://supplier-a.example"
+      },
+      {
+        "id": "supplier-b",
+        "name": "Supplier B",
+        "website": "https://supplier-b.example"
+      }
+    ],
+    "wallet_issuer": "https://wallet.example"
+  },
+  "vi_upstream": {
+    "installed_commit": "356c29635f1c44df7de02edb58699ca9f29bece6",
+    "installed_version": "0.1.0",
+    "matches_pin": true,
+    "pinned_commit": "356c29635f1c44df7de02edb58699ca9f29bece6",
+    "pinned_package_version": "0.1.0",
+    "repository": "https://github.com/agent-intent/verifiable-intent",
+    "site": "https://verifiableintent.dev/",
+    "spec_date": "2026-02-18",
+    "spec_revision": "0.1-draft"
+  },
+  "vi_verification": {
+    "agent_key_thumbprint": "IcihSy4-_pQZecS2TqKO2PJXl_4hpyu3jVclEx5D9Gw",
+    "amount_range_minor_units": {
+      "currency": "USD",
+      "max": 2000000,
+      "min": null
+    },
+    "checkout_constraint_types": [
+      "mandate.checkout.allowed_merchants",
+      "mandate.checkout.line_items"
+    ],
+    "is_verified": true,
+    "issues": [],
+    "mandate_pair_reference": "aEgy7KRRk5F78VPZzBOXEU3yxGPY3t4VifnTNJQIspY",
+    "reference_checks_performed": [
+      "l2_aud",
+      "open_checkout_contains_line_items",
+      "open_payment_has_payment_instrument",
+      "open_payment_contains_reference",
+      "l2_reference_binding",
+      "l1_card_id_cross_check"
+    ],
+    "reference_checks_skipped": [
+      "l2_nonce (no expected value provided)"
+    ],
+    "structural_constraint_types": [
+      "mandate.payment.reference"
+    ],
+    "undisclosed_payee_count": 0,
+    "verification_status": "verified"
+  }
+}

@@ -60,6 +60,7 @@ already terminal). There is no window between them.
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 import secrets
 from collections.abc import Callable, Mapping
@@ -1006,18 +1007,42 @@ _AUTHORITY_CONSUMPTION_AUDIT_QUERY: Final[str] = """
 
 
 class _AgentView:
-    """Adapts an ``agents`` row to what the policy snapshot builder reads."""
+    """Adapts an ``agents`` row to what the policy snapshot builder reads.
+
+    ``metadata`` is decoded here because the driver returns a JSONB column
+    as text unless a codec is registered, and the snapshot builder reads
+    it only when it is a mapping. Left as text it reads as "no wallet
+    policy configured", so re-deriving the current policy for a principal
+    that HAS one produced a digest omitting that principal's own chain and
+    recipient allowlists — a different digest from the one its grant was
+    issued under, and therefore ``policy_hash_mismatch`` on every
+    consumption. Decoding is what makes issuance and consumption read the
+    same record.
+    """
 
     __slots__ = ("_row",)
+
+    #: Row columns stored as JSON and read as structured values.
+    _JSON_COLUMNS: Final[frozenset[str]] = frozenset({"metadata"})
 
     def __init__(self, row: Any) -> None:
         self._row = row
 
     def __getattr__(self, name: str) -> Any:
         try:
-            return self._row[name]
+            value = self._row[name]
         except KeyError as exc:
             raise AttributeError(name) from exc
+        if name in self._JSON_COLUMNS and isinstance(value, (str, bytes, bytearray)):
+            try:
+                return json.loads(value)
+            except (TypeError, ValueError):
+                # Returned as-is rather than replaced with {}. The snapshot
+                # builder records an unreadable wallet policy as "invalid";
+                # an empty mapping would instead claim none was configured,
+                # which is a different and untrue statement.
+                return value
+        return value
 
 
 def _default_audit_entry(grant: Any, execution_ref: str | None) -> AuditLogEntry:

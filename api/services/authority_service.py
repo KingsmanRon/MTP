@@ -298,6 +298,7 @@ class AuthorityEvaluationService:
         server_secret: bytes | list[bytes] | tuple[bytes, ...],
         requirement_resolver: Any | None = None,
         authority_provider: Any | None = None,
+        payee_binding_resolver: Any | None = None,
         store: AuthorityStore | None = None,
     ) -> None:
         self._db = database
@@ -308,6 +309,12 @@ class AuthorityEvaluationService:
         )
         self._requirements = requirement_resolver or default_requirement_resolver()
         self._authority_provider = authority_provider
+        # Binds an approved payee identity to the destination an executor
+        # will actually pay. A delegated payee identity is not proof that a
+        # particular account belongs to that payee, so the payment domain
+        # refuses a payee-restricted scope it cannot bind — and without this
+        # it could never be given the means to bind one.
+        self._payee_binding_resolver = payee_binding_resolver
         self._store = store or AuthorityStore(database)
 
     # -- the requirement gate, usable on its own by the legacy path -------
@@ -567,6 +574,35 @@ class AuthorityEvaluationService:
             consequence_class=consequence_class,
         )
 
+        # The policy this decision is made under, captured as soon as there
+        # is an act to attach it to. Every refusal below carries it, not only
+        # the ones that reach the domain policy: a BLOCK whose durable record
+        # cannot name the policy that refused it is a decision nobody can
+        # audit afterwards.
+        snapshot = (
+            build_payment_authority_policy_snapshot(
+                agent,
+                action_type,
+                trust_threshold=PolicyEngine.TRUST_THRESHOLDS.get(action_type),
+                registered_policy_hash=registered_policy_hash,
+                captured_at=now,
+            )
+            if action_type in PAYMENT_ACTION_TYPES
+            else None
+        )
+        #: Spread onto every refusal below. Empty for an action type the
+        #: payment domain does not govern, where no payment policy snapshot
+        #: exists and inventing one would be a fabrication.
+        snapshot_fields: dict[str, Any] = (
+            {
+                "policy_snapshot_digest": snapshot.digest,
+                "policy_snapshot_format": snapshot.preimage["format"],
+                "policy_revision": snapshot.revision,
+            }
+            if snapshot is not None
+            else {}
+        )
+
         # --- Is delegated authority required here? Trusted config decides. ---
         requirement = self.requirement_for(
             organisation_id=agent.org_id, principal_id=agent.id, action_type=action_type
@@ -593,6 +629,7 @@ class AuthorityEvaluationService:
                 domain=envelope.domain,
                 executor_binding_digest=executor.binding_digest,
                 executor_reference=executor.executor_reference,
+                **snapshot_fields,
             )
 
         if requirement.required and resolved is None:
@@ -605,6 +642,7 @@ class AuthorityEvaluationService:
                 domain=envelope.domain,
                 executor_binding_digest=executor.binding_digest,
                 executor_reference=executor.executor_reference,
+                **snapshot_fields,
             )
 
         # --- Shared Core organisation policy. This is the SAME evaluation
@@ -634,6 +672,7 @@ class AuthorityEvaluationService:
                 domain=envelope.domain,
                 executor_binding_digest=executor.binding_digest,
                 executor_reference=executor.executor_reference,
+                **snapshot_fields,
             )
 
         # --- Domain policy. Organisation policy decides; scope only narrows. ---
@@ -646,6 +685,7 @@ class AuthorityEvaluationService:
                 domain=envelope.domain,
                 executor_binding_digest=executor.binding_digest,
                 executor_reference=executor.executor_reference,
+                **snapshot_fields,
             )
 
         domain_policy = PaymentDomainPolicy(
@@ -654,6 +694,7 @@ class AuthorityEvaluationService:
             trust_threshold=PolicyEngine.TRUST_THRESHOLDS.get(action_type),
             registered_policy_hash=registered_policy_hash,
             authority_requirement_resolver=self._requirements,
+            payee_binding_resolver=self._payee_binding_resolver,
             consequence_class=consequence_class,
         )
         # Deliberately SERVER time, not the caller's instant: the question
@@ -662,13 +703,16 @@ class AuthorityEvaluationService:
         # clock-skew window, so the two can differ only within it.
         decision = domain_policy.evaluate(envelope, resolved, at=now)
 
-        snapshot = build_payment_authority_policy_snapshot(
-            agent,
-            action_type,
-            trust_threshold=PolicyEngine.TRUST_THRESHOLDS.get(action_type),
-            registered_policy_hash=registered_policy_hash,
-            captured_at=now,
-        )
+        # Captured above, before the first refusal could return, so the digest
+        # a BLOCK records and the digest a grant is issued under are one value
+        # rather than two derivations that could drift. The action type was
+        # established as a payment one before this point; the guard refuses
+        # rather than trusting that to stay true.
+        if snapshot is None:  # pragma: no cover - unreachable via the checks above
+            raise AuthorityServiceError(
+                "no payment policy snapshot was captured for an action the "
+                "payment domain governs"
+            )
 
         if decision.decision is not Decision.ALLOW:
             # REQUIRE_APPROVAL yields no grant either: the core contract is
