@@ -97,18 +97,12 @@ jobs:
         run: python -m pytest -q
 
       - name: verifiable intent proof
-        # Phase 6: the documented one-command proof, end to end. The evidence
-        # pack is generated output and is deliberately not committed, so this
-        # run is what produces it.
+        # Phase 6: the documented one-command proof, end to end, so the
+        # evidence pack committed under docs/proofs/mastercard-vi cannot
+        # drift from the behaviour it describes. Evidence goes to a scratch
+        # directory — CI proves the cases hold, it does not regenerate the
+        # pack.
         run: python -m scripts.mastercard_vi_proof --evidence-dir "$RUNNER_TEMP/vi-evidence"
-
-      - name: upload the verifiable intent evidence pack
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: mastercard-vi-evidence
-          path: ${{ runner.temp }}/vi-evidence
-          if-no-files-found: error
 
   frontend:
     name: frontend (jest + typecheck + build)

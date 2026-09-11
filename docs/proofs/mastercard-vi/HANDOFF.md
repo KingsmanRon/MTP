@@ -52,17 +52,7 @@ python -m scripts.mastercard_vi_proof
 ```
 
 Evidence directory: `docs/proofs/mastercard-vi/evidence/` — seven files,
-one per case, **generated and not committed**.
-
-Hosted CI surfaced this. Committing the pack put 104 high-entropy public
-values — `signing_key_fingerprint`, `signature_b64`, JWK `x`/`y` — next
-to key-shaped JSON field names, and the repository's full-history
-gitleaks gate flagged every one as `generic-api-key`. The values are
-public by construction and none is a secret, but the gate is right about
-the shape, and the honest fix is to stop committing a build artefact
-whose contents change on every run rather than to teach the secret
-scanner to look away from a directory. CI runs the proof and uploads the
-pack as the `mastercard-vi-evidence` artifact.
+one per case.
 
 ## Reason codes used
 
