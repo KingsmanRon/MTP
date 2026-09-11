@@ -37,3 +37,214 @@ cf2032f52ebe700745e23cc0e279e9e4309a6b89:docs/verify-page-spec.md:generic-api-ke
 75ae7d39de6cb5fbdc6eaaf65c9b5dcd7a1152ed:tests/test_authority_endpoints.py:generic-api-key:2788
 75ae7d39de6cb5fbdc6eaaf65c9b5dcd7a1152ed:tests/test_authority_endpoints.py:generic-api-key:2794
 eaa9f3f6d213fc4bd0ccbbb07c318089ea14336e:.gitleaksignore:generic-api-key:27
+
+# Phase 6 - reviewed false positives in the Verifiable Intent proof evidence.
+#
+# The proof writes one evidence file per case under
+# docs/proofs/mastercard-vi/evidence/. Three of its JSON fields hold a
+# long, high-entropy value beside a field name containing the word key,
+# which is the shape generic-api-key matches. None of the three is a key.
+# Each is a one-way digest computed FROM public material:
+#
+#   * one is the SHA-256 of the Ed25519 receipt verifying key. The
+#     verifying key is the public half; it is published in the same file
+#     and the digest recomputes from it exactly.
+#   * two are RFC 7638 JWK thumbprints of the agent's public P-256 JWK,
+#     which likewise recompute from the public key alone.
+#
+# A digest of a public value discloses nothing the file does not already
+# state outright, and none of them can be presented to anything.
+#
+# Verified before these entries were added, against the exact committed
+# bytes: no RFC 7517 private JWK member appears anywhere in the pack; the
+# only JWK emitted carries crv/kty/x/y and no private member; and a
+# negative search for all five proof private keys - as raw scalars, PKCS8
+# and SEC1 DER, and PEM, in seven encodings, 140 needles - found nothing.
+# No PEM private-key header, database DSN, bearer value or JWT-shaped
+# string is present either. The generator serialises public material only.
+#
+# The proof keys are themselves derived from published labels, so even a
+# genuine disclosure would expose nothing operational. That is not the
+# reason these are ignored; the reason is that they are public digests.
+#
+# Scoped to exact fingerprints, so a new occurrence anywhere - including a
+# new evidence file, or a real credential added to an existing one - still
+# fails the gate.
+#
+# NOTE: as elsewhere in this file, do not write an example value next to
+# any of those field names in a comment. That reproduces the pattern here
+# and the gate flags this file.
+#
+# e5188c8 - the evidence pack on this branch (44 findings)
+e5188c85c3f19b9aea65e222151c86bf54d23a18:docs/proofs/mastercard-vi/evidence/case-1-permitted-executed.json:generic-api-key:156
+e5188c85c3f19b9aea65e222151c86bf54d23a18:docs/proofs/mastercard-vi/evidence/case-1-permitted-executed.json:generic-api-key:162
+e5188c85c3f19b9aea65e222151c86bf54d23a18:docs/proofs/mastercard-vi/evidence/case-1-permitted-executed.json:generic-api-key:197
+e5188c85c3f19b9aea65e222151c86bf54d23a18:docs/proofs/mastercard-vi/evidence/case-1-permitted-executed.json:generic-api-key:203
+e5188c85c3f19b9aea65e222151c86bf54d23a18:docs/proofs/mastercard-vi/evidence/case-1-permitted-executed.json:generic-api-key:229
+e5188c85c3f19b9aea65e222151c86bf54d23a18:docs/proofs/mastercard-vi/evidence/case-1-permitted-executed.json:generic-api-key:235
+e5188c85c3f19b9aea65e222151c86bf54d23a18:docs/proofs/mastercard-vi/evidence/case-1-permitted-executed.json:generic-api-key:264
+e5188c85c3f19b9aea65e222151c86bf54d23a18:docs/proofs/mastercard-vi/evidence/case-1-permitted-executed.json:generic-api-key:315
+e5188c85c3f19b9aea65e222151c86bf54d23a18:docs/proofs/mastercard-vi/evidence/case-2-organisation-recipient-block.json:generic-api-key:120
+e5188c85c3f19b9aea65e222151c86bf54d23a18:docs/proofs/mastercard-vi/evidence/case-2-organisation-recipient-block.json:generic-api-key:126
+e5188c85c3f19b9aea65e222151c86bf54d23a18:docs/proofs/mastercard-vi/evidence/case-2-organisation-recipient-block.json:generic-api-key:158
+e5188c85c3f19b9aea65e222151c86bf54d23a18:docs/proofs/mastercard-vi/evidence/case-2-organisation-recipient-block.json:generic-api-key:209
+e5188c85c3f19b9aea65e222151c86bf54d23a18:docs/proofs/mastercard-vi/evidence/case-3-organisation-spend-block.json:generic-api-key:112
+e5188c85c3f19b9aea65e222151c86bf54d23a18:docs/proofs/mastercard-vi/evidence/case-3-organisation-spend-block.json:generic-api-key:118
+e5188c85c3f19b9aea65e222151c86bf54d23a18:docs/proofs/mastercard-vi/evidence/case-3-organisation-spend-block.json:generic-api-key:150
+e5188c85c3f19b9aea65e222151c86bf54d23a18:docs/proofs/mastercard-vi/evidence/case-3-organisation-spend-block.json:generic-api-key:201
+e5188c85c3f19b9aea65e222151c86bf54d23a18:docs/proofs/mastercard-vi/evidence/case-4-exact-action-binding.json:generic-api-key:151
+e5188c85c3f19b9aea65e222151c86bf54d23a18:docs/proofs/mastercard-vi/evidence/case-4-exact-action-binding.json:generic-api-key:157
+e5188c85c3f19b9aea65e222151c86bf54d23a18:docs/proofs/mastercard-vi/evidence/case-4-exact-action-binding.json:generic-api-key:192
+e5188c85c3f19b9aea65e222151c86bf54d23a18:docs/proofs/mastercard-vi/evidence/case-4-exact-action-binding.json:generic-api-key:198
+e5188c85c3f19b9aea65e222151c86bf54d23a18:docs/proofs/mastercard-vi/evidence/case-4-exact-action-binding.json:generic-api-key:224
+e5188c85c3f19b9aea65e222151c86bf54d23a18:docs/proofs/mastercard-vi/evidence/case-4-exact-action-binding.json:generic-api-key:230
+e5188c85c3f19b9aea65e222151c86bf54d23a18:docs/proofs/mastercard-vi/evidence/case-4-exact-action-binding.json:generic-api-key:259
+e5188c85c3f19b9aea65e222151c86bf54d23a18:docs/proofs/mastercard-vi/evidence/case-4-exact-action-binding.json:generic-api-key:310
+e5188c85c3f19b9aea65e222151c86bf54d23a18:docs/proofs/mastercard-vi/evidence/case-5-idempotent-retry-vs-replay.json:generic-api-key:170
+e5188c85c3f19b9aea65e222151c86bf54d23a18:docs/proofs/mastercard-vi/evidence/case-5-idempotent-retry-vs-replay.json:generic-api-key:176
+e5188c85c3f19b9aea65e222151c86bf54d23a18:docs/proofs/mastercard-vi/evidence/case-5-idempotent-retry-vs-replay.json:generic-api-key:211
+e5188c85c3f19b9aea65e222151c86bf54d23a18:docs/proofs/mastercard-vi/evidence/case-5-idempotent-retry-vs-replay.json:generic-api-key:217
+e5188c85c3f19b9aea65e222151c86bf54d23a18:docs/proofs/mastercard-vi/evidence/case-5-idempotent-retry-vs-replay.json:generic-api-key:243
+e5188c85c3f19b9aea65e222151c86bf54d23a18:docs/proofs/mastercard-vi/evidence/case-5-idempotent-retry-vs-replay.json:generic-api-key:249
+e5188c85c3f19b9aea65e222151c86bf54d23a18:docs/proofs/mastercard-vi/evidence/case-5-idempotent-retry-vs-replay.json:generic-api-key:278
+e5188c85c3f19b9aea65e222151c86bf54d23a18:docs/proofs/mastercard-vi/evidence/case-5-idempotent-retry-vs-replay.json:generic-api-key:329
+e5188c85c3f19b9aea65e222151c86bf54d23a18:docs/proofs/mastercard-vi/evidence/case-6-expiry.json:generic-api-key:137
+e5188c85c3f19b9aea65e222151c86bf54d23a18:docs/proofs/mastercard-vi/evidence/case-6-expiry.json:generic-api-key:143
+e5188c85c3f19b9aea65e222151c86bf54d23a18:docs/proofs/mastercard-vi/evidence/case-6-expiry.json:generic-api-key:175
+e5188c85c3f19b9aea65e222151c86bf54d23a18:docs/proofs/mastercard-vi/evidence/case-6-expiry.json:generic-api-key:226
+e5188c85c3f19b9aea65e222151c86bf54d23a18:docs/proofs/mastercard-vi/evidence/case-7-executor-binding.json:generic-api-key:156
+e5188c85c3f19b9aea65e222151c86bf54d23a18:docs/proofs/mastercard-vi/evidence/case-7-executor-binding.json:generic-api-key:162
+e5188c85c3f19b9aea65e222151c86bf54d23a18:docs/proofs/mastercard-vi/evidence/case-7-executor-binding.json:generic-api-key:197
+e5188c85c3f19b9aea65e222151c86bf54d23a18:docs/proofs/mastercard-vi/evidence/case-7-executor-binding.json:generic-api-key:203
+e5188c85c3f19b9aea65e222151c86bf54d23a18:docs/proofs/mastercard-vi/evidence/case-7-executor-binding.json:generic-api-key:229
+e5188c85c3f19b9aea65e222151c86bf54d23a18:docs/proofs/mastercard-vi/evidence/case-7-executor-binding.json:generic-api-key:235
+e5188c85c3f19b9aea65e222151c86bf54d23a18:docs/proofs/mastercard-vi/evidence/case-7-executor-binding.json:generic-api-key:264
+e5188c85c3f19b9aea65e222151c86bf54d23a18:docs/proofs/mastercard-vi/evidence/case-7-executor-binding.json:generic-api-key:315
+#
+# 85932ed - superseded scratch branch claude/new-session-yuvxz8 (30 findings)
+85932ed487b822376c53749316b86a08ccc46e80:docs/proofs/mastercard-vi/evidence/case-1-permitted-executed.json:generic-api-key:135
+85932ed487b822376c53749316b86a08ccc46e80:docs/proofs/mastercard-vi/evidence/case-1-permitted-executed.json:generic-api-key:141
+85932ed487b822376c53749316b86a08ccc46e80:docs/proofs/mastercard-vi/evidence/case-1-permitted-executed.json:generic-api-key:176
+85932ed487b822376c53749316b86a08ccc46e80:docs/proofs/mastercard-vi/evidence/case-1-permitted-executed.json:generic-api-key:182
+85932ed487b822376c53749316b86a08ccc46e80:docs/proofs/mastercard-vi/evidence/case-1-permitted-executed.json:generic-api-key:208
+85932ed487b822376c53749316b86a08ccc46e80:docs/proofs/mastercard-vi/evidence/case-1-permitted-executed.json:generic-api-key:214
+85932ed487b822376c53749316b86a08ccc46e80:docs/proofs/mastercard-vi/evidence/case-2-organisation-recipient-block.json:generic-api-key:115
+85932ed487b822376c53749316b86a08ccc46e80:docs/proofs/mastercard-vi/evidence/case-2-organisation-recipient-block.json:generic-api-key:121
+85932ed487b822376c53749316b86a08ccc46e80:docs/proofs/mastercard-vi/evidence/case-3-organisation-spend-block.json:generic-api-key:111
+85932ed487b822376c53749316b86a08ccc46e80:docs/proofs/mastercard-vi/evidence/case-3-organisation-spend-block.json:generic-api-key:117
+85932ed487b822376c53749316b86a08ccc46e80:docs/proofs/mastercard-vi/evidence/case-4-tampered-action.json:generic-api-key:142
+85932ed487b822376c53749316b86a08ccc46e80:docs/proofs/mastercard-vi/evidence/case-4-tampered-action.json:generic-api-key:148
+85932ed487b822376c53749316b86a08ccc46e80:docs/proofs/mastercard-vi/evidence/case-4-tampered-action.json:generic-api-key:183
+85932ed487b822376c53749316b86a08ccc46e80:docs/proofs/mastercard-vi/evidence/case-4-tampered-action.json:generic-api-key:189
+85932ed487b822376c53749316b86a08ccc46e80:docs/proofs/mastercard-vi/evidence/case-4-tampered-action.json:generic-api-key:215
+85932ed487b822376c53749316b86a08ccc46e80:docs/proofs/mastercard-vi/evidence/case-4-tampered-action.json:generic-api-key:221
+85932ed487b822376c53749316b86a08ccc46e80:docs/proofs/mastercard-vi/evidence/case-5-replay-vs-idempotent-retry.json:generic-api-key:161
+85932ed487b822376c53749316b86a08ccc46e80:docs/proofs/mastercard-vi/evidence/case-5-replay-vs-idempotent-retry.json:generic-api-key:167
+85932ed487b822376c53749316b86a08ccc46e80:docs/proofs/mastercard-vi/evidence/case-5-replay-vs-idempotent-retry.json:generic-api-key:202
+85932ed487b822376c53749316b86a08ccc46e80:docs/proofs/mastercard-vi/evidence/case-5-replay-vs-idempotent-retry.json:generic-api-key:208
+85932ed487b822376c53749316b86a08ccc46e80:docs/proofs/mastercard-vi/evidence/case-5-replay-vs-idempotent-retry.json:generic-api-key:234
+85932ed487b822376c53749316b86a08ccc46e80:docs/proofs/mastercard-vi/evidence/case-5-replay-vs-idempotent-retry.json:generic-api-key:240
+85932ed487b822376c53749316b86a08ccc46e80:docs/proofs/mastercard-vi/evidence/case-6-expiry.json:generic-api-key:127
+85932ed487b822376c53749316b86a08ccc46e80:docs/proofs/mastercard-vi/evidence/case-6-expiry.json:generic-api-key:133
+85932ed487b822376c53749316b86a08ccc46e80:docs/proofs/mastercard-vi/evidence/case-7-wrong-executor.json:generic-api-key:143
+85932ed487b822376c53749316b86a08ccc46e80:docs/proofs/mastercard-vi/evidence/case-7-wrong-executor.json:generic-api-key:149
+85932ed487b822376c53749316b86a08ccc46e80:docs/proofs/mastercard-vi/evidence/case-7-wrong-executor.json:generic-api-key:184
+85932ed487b822376c53749316b86a08ccc46e80:docs/proofs/mastercard-vi/evidence/case-7-wrong-executor.json:generic-api-key:190
+85932ed487b822376c53749316b86a08ccc46e80:docs/proofs/mastercard-vi/evidence/case-7-wrong-executor.json:generic-api-key:216
+85932ed487b822376c53749316b86a08ccc46e80:docs/proofs/mastercard-vi/evidence/case-7-wrong-executor.json:generic-api-key:222
+#
+# 78a7c3b - superseded scratch branch claude/new-session-yuvxz8 (30 findings)
+78a7c3b857f4412ab02c48db1bb3890f1807c7f0:docs/proofs/mastercard-vi/evidence/case-1-permitted-executed.json:generic-api-key:135
+78a7c3b857f4412ab02c48db1bb3890f1807c7f0:docs/proofs/mastercard-vi/evidence/case-1-permitted-executed.json:generic-api-key:141
+78a7c3b857f4412ab02c48db1bb3890f1807c7f0:docs/proofs/mastercard-vi/evidence/case-1-permitted-executed.json:generic-api-key:176
+78a7c3b857f4412ab02c48db1bb3890f1807c7f0:docs/proofs/mastercard-vi/evidence/case-1-permitted-executed.json:generic-api-key:182
+78a7c3b857f4412ab02c48db1bb3890f1807c7f0:docs/proofs/mastercard-vi/evidence/case-1-permitted-executed.json:generic-api-key:208
+78a7c3b857f4412ab02c48db1bb3890f1807c7f0:docs/proofs/mastercard-vi/evidence/case-1-permitted-executed.json:generic-api-key:214
+78a7c3b857f4412ab02c48db1bb3890f1807c7f0:docs/proofs/mastercard-vi/evidence/case-2-organisation-recipient-block.json:generic-api-key:115
+78a7c3b857f4412ab02c48db1bb3890f1807c7f0:docs/proofs/mastercard-vi/evidence/case-2-organisation-recipient-block.json:generic-api-key:121
+78a7c3b857f4412ab02c48db1bb3890f1807c7f0:docs/proofs/mastercard-vi/evidence/case-3-organisation-spend-block.json:generic-api-key:111
+78a7c3b857f4412ab02c48db1bb3890f1807c7f0:docs/proofs/mastercard-vi/evidence/case-3-organisation-spend-block.json:generic-api-key:117
+78a7c3b857f4412ab02c48db1bb3890f1807c7f0:docs/proofs/mastercard-vi/evidence/case-4-tampered-action.json:generic-api-key:142
+78a7c3b857f4412ab02c48db1bb3890f1807c7f0:docs/proofs/mastercard-vi/evidence/case-4-tampered-action.json:generic-api-key:148
+78a7c3b857f4412ab02c48db1bb3890f1807c7f0:docs/proofs/mastercard-vi/evidence/case-4-tampered-action.json:generic-api-key:183
+78a7c3b857f4412ab02c48db1bb3890f1807c7f0:docs/proofs/mastercard-vi/evidence/case-4-tampered-action.json:generic-api-key:189
+78a7c3b857f4412ab02c48db1bb3890f1807c7f0:docs/proofs/mastercard-vi/evidence/case-4-tampered-action.json:generic-api-key:215
+78a7c3b857f4412ab02c48db1bb3890f1807c7f0:docs/proofs/mastercard-vi/evidence/case-4-tampered-action.json:generic-api-key:221
+78a7c3b857f4412ab02c48db1bb3890f1807c7f0:docs/proofs/mastercard-vi/evidence/case-5-replay-vs-idempotent-retry.json:generic-api-key:161
+78a7c3b857f4412ab02c48db1bb3890f1807c7f0:docs/proofs/mastercard-vi/evidence/case-5-replay-vs-idempotent-retry.json:generic-api-key:167
+78a7c3b857f4412ab02c48db1bb3890f1807c7f0:docs/proofs/mastercard-vi/evidence/case-5-replay-vs-idempotent-retry.json:generic-api-key:202
+78a7c3b857f4412ab02c48db1bb3890f1807c7f0:docs/proofs/mastercard-vi/evidence/case-5-replay-vs-idempotent-retry.json:generic-api-key:208
+78a7c3b857f4412ab02c48db1bb3890f1807c7f0:docs/proofs/mastercard-vi/evidence/case-5-replay-vs-idempotent-retry.json:generic-api-key:234
+78a7c3b857f4412ab02c48db1bb3890f1807c7f0:docs/proofs/mastercard-vi/evidence/case-5-replay-vs-idempotent-retry.json:generic-api-key:240
+78a7c3b857f4412ab02c48db1bb3890f1807c7f0:docs/proofs/mastercard-vi/evidence/case-6-expiry.json:generic-api-key:127
+78a7c3b857f4412ab02c48db1bb3890f1807c7f0:docs/proofs/mastercard-vi/evidence/case-6-expiry.json:generic-api-key:133
+78a7c3b857f4412ab02c48db1bb3890f1807c7f0:docs/proofs/mastercard-vi/evidence/case-7-wrong-executor.json:generic-api-key:143
+78a7c3b857f4412ab02c48db1bb3890f1807c7f0:docs/proofs/mastercard-vi/evidence/case-7-wrong-executor.json:generic-api-key:149
+78a7c3b857f4412ab02c48db1bb3890f1807c7f0:docs/proofs/mastercard-vi/evidence/case-7-wrong-executor.json:generic-api-key:184
+78a7c3b857f4412ab02c48db1bb3890f1807c7f0:docs/proofs/mastercard-vi/evidence/case-7-wrong-executor.json:generic-api-key:190
+78a7c3b857f4412ab02c48db1bb3890f1807c7f0:docs/proofs/mastercard-vi/evidence/case-7-wrong-executor.json:generic-api-key:216
+78a7c3b857f4412ab02c48db1bb3890f1807c7f0:docs/proofs/mastercard-vi/evidence/case-7-wrong-executor.json:generic-api-key:222
+#
+# 5ca73b7 - superseded scratch branch claude/new-session-yuvxz8 (30 findings)
+5ca73b731c6b419e94fdde7afbc0651f2af3f314:docs/proofs/mastercard-vi/evidence/case-1-permitted-executed.json:generic-api-key:135
+5ca73b731c6b419e94fdde7afbc0651f2af3f314:docs/proofs/mastercard-vi/evidence/case-1-permitted-executed.json:generic-api-key:141
+5ca73b731c6b419e94fdde7afbc0651f2af3f314:docs/proofs/mastercard-vi/evidence/case-1-permitted-executed.json:generic-api-key:176
+5ca73b731c6b419e94fdde7afbc0651f2af3f314:docs/proofs/mastercard-vi/evidence/case-1-permitted-executed.json:generic-api-key:182
+5ca73b731c6b419e94fdde7afbc0651f2af3f314:docs/proofs/mastercard-vi/evidence/case-1-permitted-executed.json:generic-api-key:208
+5ca73b731c6b419e94fdde7afbc0651f2af3f314:docs/proofs/mastercard-vi/evidence/case-1-permitted-executed.json:generic-api-key:214
+5ca73b731c6b419e94fdde7afbc0651f2af3f314:docs/proofs/mastercard-vi/evidence/case-2-organisation-recipient-block.json:generic-api-key:115
+5ca73b731c6b419e94fdde7afbc0651f2af3f314:docs/proofs/mastercard-vi/evidence/case-2-organisation-recipient-block.json:generic-api-key:121
+5ca73b731c6b419e94fdde7afbc0651f2af3f314:docs/proofs/mastercard-vi/evidence/case-3-organisation-spend-block.json:generic-api-key:111
+5ca73b731c6b419e94fdde7afbc0651f2af3f314:docs/proofs/mastercard-vi/evidence/case-3-organisation-spend-block.json:generic-api-key:117
+5ca73b731c6b419e94fdde7afbc0651f2af3f314:docs/proofs/mastercard-vi/evidence/case-4-tampered-action.json:generic-api-key:142
+5ca73b731c6b419e94fdde7afbc0651f2af3f314:docs/proofs/mastercard-vi/evidence/case-4-tampered-action.json:generic-api-key:148
+5ca73b731c6b419e94fdde7afbc0651f2af3f314:docs/proofs/mastercard-vi/evidence/case-4-tampered-action.json:generic-api-key:183
+5ca73b731c6b419e94fdde7afbc0651f2af3f314:docs/proofs/mastercard-vi/evidence/case-4-tampered-action.json:generic-api-key:189
+5ca73b731c6b419e94fdde7afbc0651f2af3f314:docs/proofs/mastercard-vi/evidence/case-4-tampered-action.json:generic-api-key:215
+5ca73b731c6b419e94fdde7afbc0651f2af3f314:docs/proofs/mastercard-vi/evidence/case-4-tampered-action.json:generic-api-key:221
+5ca73b731c6b419e94fdde7afbc0651f2af3f314:docs/proofs/mastercard-vi/evidence/case-5-replay-vs-idempotent-retry.json:generic-api-key:161
+5ca73b731c6b419e94fdde7afbc0651f2af3f314:docs/proofs/mastercard-vi/evidence/case-5-replay-vs-idempotent-retry.json:generic-api-key:167
+5ca73b731c6b419e94fdde7afbc0651f2af3f314:docs/proofs/mastercard-vi/evidence/case-5-replay-vs-idempotent-retry.json:generic-api-key:202
+5ca73b731c6b419e94fdde7afbc0651f2af3f314:docs/proofs/mastercard-vi/evidence/case-5-replay-vs-idempotent-retry.json:generic-api-key:208
+5ca73b731c6b419e94fdde7afbc0651f2af3f314:docs/proofs/mastercard-vi/evidence/case-5-replay-vs-idempotent-retry.json:generic-api-key:234
+5ca73b731c6b419e94fdde7afbc0651f2af3f314:docs/proofs/mastercard-vi/evidence/case-5-replay-vs-idempotent-retry.json:generic-api-key:240
+5ca73b731c6b419e94fdde7afbc0651f2af3f314:docs/proofs/mastercard-vi/evidence/case-6-expiry.json:generic-api-key:127
+5ca73b731c6b419e94fdde7afbc0651f2af3f314:docs/proofs/mastercard-vi/evidence/case-6-expiry.json:generic-api-key:133
+5ca73b731c6b419e94fdde7afbc0651f2af3f314:docs/proofs/mastercard-vi/evidence/case-7-wrong-executor.json:generic-api-key:143
+5ca73b731c6b419e94fdde7afbc0651f2af3f314:docs/proofs/mastercard-vi/evidence/case-7-wrong-executor.json:generic-api-key:149
+5ca73b731c6b419e94fdde7afbc0651f2af3f314:docs/proofs/mastercard-vi/evidence/case-7-wrong-executor.json:generic-api-key:184
+5ca73b731c6b419e94fdde7afbc0651f2af3f314:docs/proofs/mastercard-vi/evidence/case-7-wrong-executor.json:generic-api-key:190
+5ca73b731c6b419e94fdde7afbc0651f2af3f314:docs/proofs/mastercard-vi/evidence/case-7-wrong-executor.json:generic-api-key:216
+5ca73b731c6b419e94fdde7afbc0651f2af3f314:docs/proofs/mastercard-vi/evidence/case-7-wrong-executor.json:generic-api-key:222
+#
+# 3253ff4 - superseded scratch branch claude/new-session-yuvxz8 (30 findings)
+3253ff464548516498cb2ef8a85d909557737b20:docs/proofs/mastercard-vi/evidence/case-1-permitted-executed.json:generic-api-key:135
+3253ff464548516498cb2ef8a85d909557737b20:docs/proofs/mastercard-vi/evidence/case-1-permitted-executed.json:generic-api-key:141
+3253ff464548516498cb2ef8a85d909557737b20:docs/proofs/mastercard-vi/evidence/case-1-permitted-executed.json:generic-api-key:176
+3253ff464548516498cb2ef8a85d909557737b20:docs/proofs/mastercard-vi/evidence/case-1-permitted-executed.json:generic-api-key:182
+3253ff464548516498cb2ef8a85d909557737b20:docs/proofs/mastercard-vi/evidence/case-1-permitted-executed.json:generic-api-key:208
+3253ff464548516498cb2ef8a85d909557737b20:docs/proofs/mastercard-vi/evidence/case-1-permitted-executed.json:generic-api-key:214
+3253ff464548516498cb2ef8a85d909557737b20:docs/proofs/mastercard-vi/evidence/case-2-organisation-recipient-block.json:generic-api-key:115
+3253ff464548516498cb2ef8a85d909557737b20:docs/proofs/mastercard-vi/evidence/case-2-organisation-recipient-block.json:generic-api-key:121
+3253ff464548516498cb2ef8a85d909557737b20:docs/proofs/mastercard-vi/evidence/case-3-organisation-spend-block.json:generic-api-key:111
+3253ff464548516498cb2ef8a85d909557737b20:docs/proofs/mastercard-vi/evidence/case-3-organisation-spend-block.json:generic-api-key:117
+3253ff464548516498cb2ef8a85d909557737b20:docs/proofs/mastercard-vi/evidence/case-4-tampered-action.json:generic-api-key:142
+3253ff464548516498cb2ef8a85d909557737b20:docs/proofs/mastercard-vi/evidence/case-4-tampered-action.json:generic-api-key:148
+3253ff464548516498cb2ef8a85d909557737b20:docs/proofs/mastercard-vi/evidence/case-4-tampered-action.json:generic-api-key:183
+3253ff464548516498cb2ef8a85d909557737b20:docs/proofs/mastercard-vi/evidence/case-4-tampered-action.json:generic-api-key:189
+3253ff464548516498cb2ef8a85d909557737b20:docs/proofs/mastercard-vi/evidence/case-4-tampered-action.json:generic-api-key:215
+3253ff464548516498cb2ef8a85d909557737b20:docs/proofs/mastercard-vi/evidence/case-4-tampered-action.json:generic-api-key:221
+3253ff464548516498cb2ef8a85d909557737b20:docs/proofs/mastercard-vi/evidence/case-5-replay-vs-idempotent-retry.json:generic-api-key:161
+3253ff464548516498cb2ef8a85d909557737b20:docs/proofs/mastercard-vi/evidence/case-5-replay-vs-idempotent-retry.json:generic-api-key:167
+3253ff464548516498cb2ef8a85d909557737b20:docs/proofs/mastercard-vi/evidence/case-5-replay-vs-idempotent-retry.json:generic-api-key:202
+3253ff464548516498cb2ef8a85d909557737b20:docs/proofs/mastercard-vi/evidence/case-5-replay-vs-idempotent-retry.json:generic-api-key:208
+3253ff464548516498cb2ef8a85d909557737b20:docs/proofs/mastercard-vi/evidence/case-5-replay-vs-idempotent-retry.json:generic-api-key:234
+3253ff464548516498cb2ef8a85d909557737b20:docs/proofs/mastercard-vi/evidence/case-5-replay-vs-idempotent-retry.json:generic-api-key:240
+3253ff464548516498cb2ef8a85d909557737b20:docs/proofs/mastercard-vi/evidence/case-6-expiry.json:generic-api-key:127
+3253ff464548516498cb2ef8a85d909557737b20:docs/proofs/mastercard-vi/evidence/case-6-expiry.json:generic-api-key:133
+3253ff464548516498cb2ef8a85d909557737b20:docs/proofs/mastercard-vi/evidence/case-7-wrong-executor.json:generic-api-key:143
+3253ff464548516498cb2ef8a85d909557737b20:docs/proofs/mastercard-vi/evidence/case-7-wrong-executor.json:generic-api-key:149
+3253ff464548516498cb2ef8a85d909557737b20:docs/proofs/mastercard-vi/evidence/case-7-wrong-executor.json:generic-api-key:184
+3253ff464548516498cb2ef8a85d909557737b20:docs/proofs/mastercard-vi/evidence/case-7-wrong-executor.json:generic-api-key:190
+3253ff464548516498cb2ef8a85d909557737b20:docs/proofs/mastercard-vi/evidence/case-7-wrong-executor.json:generic-api-key:216
+3253ff464548516498cb2ef8a85d909557737b20:docs/proofs/mastercard-vi/evidence/case-7-wrong-executor.json:generic-api-key:222
