@@ -124,11 +124,31 @@ class ConsumeRequest(BaseModel):
     executor_reference: str | None = Field(None, max_length=512)
 
 
-def _executor_or_403(auth: dict[str, Any], executor_reference: str | None):
+def _executor_or_403(
+    auth: dict[str, Any], executor_reference: str | None, action_type: str | None = None
+):
+    """Derive the executor, and refuse one not entitled to this act.
+
+    Phase 7A, Gate 5. This surface is new, so it enforces the
+    least-privilege checks unconditionally: the legacy ``/verify-token``
+    route carries compatibility debt that this one does not inherit.
+
+    Two separate questions, both asked:
+
+    * may this credential consume execution authority at all?
+    * was it provisioned for THIS action class?
+
+    An executor key scoped to payments must not be usable on a code
+    release, even inside its own organisation.
+    """
     try:
-        return executor_context_from_auth(auth, executor_reference=executor_reference)
+        executor = executor_context_from_auth(auth, executor_reference=executor_reference)
+        executor.require_consume()
+        if action_type is not None:
+            executor.require_action(action_type)
     except ExecutorAuthError as exc:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    return executor
 
 
 def register(app, *, get_db, require_api_scope, get_agent_or_404, server_secret_provider):
@@ -144,7 +164,7 @@ def register(app, *, get_db, require_api_scope, get_agent_or_404, server_secret_
         database=Depends(get_db),
         auth: dict = Depends(require_api_scope("write")),
     ) -> dict[str, Any]:
-        executor = _executor_or_403(auth, body.executor_reference)
+        executor = _executor_or_403(auth, body.executor_reference, body.action_type)
         agent = await get_agent_or_404(database, body.agent_id)
 
         if str(agent.org_id) != str(auth["org_id"]):
@@ -224,7 +244,7 @@ def register(app, *, get_db, require_api_scope, get_agent_or_404, server_secret_
         database=Depends(get_db),
         auth: dict = Depends(require_api_scope("write")),
     ) -> dict[str, Any]:
-        executor = _executor_or_403(auth, body.executor_reference)
+        executor = _executor_or_403(auth, body.executor_reference, body.action_type)
         agent = await get_agent_or_404(database, body.agent_id)
         if str(agent.org_id) != str(auth["org_id"]):
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agent not found")

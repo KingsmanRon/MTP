@@ -38,6 +38,21 @@ EXECUTE_SCOPE: Final[str] = "execute"
 #: this phase must not lock out callers that legitimately execute today.
 CONSUME_SCOPES: Final[frozenset[str]] = frozenset({EXECUTE_SCOPE, "write", "admin"})
 
+#: Separator for an action-scoped execute grant: ``execute:financial_transaction``
+#: permits consuming authority for that action class and no other.
+#:
+#: Phase 7A, Gate 5. A key that can execute *anything* its organisation can
+#: authorise is more privilege than any single executor needs. Scoping is
+#: opt-in per key and additive: a key carrying no ``execute:<action>`` entry
+#: behaves exactly as it does today, so nothing existing is locked out, and a
+#: key carrying one is narrowed to it.
+EXECUTE_SCOPE_SEPARATOR: Final[str] = ":"
+
+#: Requires a dedicated ``execute`` (or ``execute:<action>``) scope rather
+#: than accepting the broad ``write``. Off by default so existing service
+#: keys keep working; the release record states whether it is on.
+REQUIRE_EXECUTE_SCOPE_ENV: Final[str] = "INNTRIS_REQUIRE_EXECUTE_SCOPE"
+
 #: Environments in which a synthetic, organisation-wide executor identity is
 #: tolerated. Production is deliberately absent.
 _NON_PRODUCTION_ENVIRONMENTS: Final[frozenset[str]] = frozenset({"development", "test", "ci"})
@@ -79,18 +94,80 @@ class AuthenticatedExecutorContext:
     executor_reference: str | None = None
 
     @property
-    def may_consume(self) -> bool:
-        return bool(self.scopes & CONSUME_SCOPES)
+    def action_scopes(self) -> frozenset[str]:
+        """Action classes this key is narrowed to, if any.
 
-    def require_consume(self) -> None:
+        Empty means "not narrowed", which is today's behaviour and remains
+        the default. Non-empty means this key may consume authority for
+        exactly these action classes.
+        """
+        return frozenset(
+            scope.split(EXECUTE_SCOPE_SEPARATOR, 1)[1].strip()
+            for scope in self.scopes
+            if scope.startswith(EXECUTE_SCOPE + EXECUTE_SCOPE_SEPARATOR)
+            and scope.split(EXECUTE_SCOPE_SEPARATOR, 1)[1].strip()
+        )
+
+    @property
+    def may_consume(self) -> bool:
+        # An action-scoped key holds no bare ``execute``, so recognise it
+        # here too -- otherwise narrowing a key would remove its ability to
+        # consume anything at all.
+        return bool(self.scopes & CONSUME_SCOPES) or bool(self.action_scopes)
+
+    def require_consume(self, *, require_execute_scope: bool | None = None) -> None:
+        """Refuse a key not entitled to consume execution authority.
+
+        With ``require_execute_scope`` the broad ``write`` is not enough: the
+        key must hold ``execute`` or ``execute:<action>``. That is the
+        least-privilege posture, and it is configurable rather than forced
+        because existing service keys legitimately drive ``/verify-token``
+        today and this phase must not lock them out mid-release.
+        """
+        strict = (
+            require_execute_scope
+            if require_execute_scope is not None
+            else _require_execute_scope_configured()
+        )
+        if strict:
+            if EXECUTE_SCOPE in self.scopes or self.action_scopes:
+                return
+            raise ExecutorAuthError(
+                f"API key requires the dedicated '{EXECUTE_SCOPE}' scope to "
+                f"consume execution authority ({REQUIRE_EXECUTE_SCOPE_ENV} is on)"
+            )
         if not self.may_consume:
             raise ExecutorAuthError(
                 "API key requires one of "
                 f"{', '.join(sorted(CONSUME_SCOPES))} to consume execution authority"
             )
 
+    def require_action(self, action_type: str) -> None:
+        """Refuse an action class this key was not provisioned for.
+
+        A key with no ``execute:<action>`` entry is unnarrowed and passes.
+        A narrowed key passes only for the classes it names -- so an executor
+        provisioned for payments cannot be turned on a code release, even
+        within its own organisation.
+        """
+        narrowed = self.action_scopes
+        if narrowed and action_type not in narrowed:
+            raise ExecutorAuthError(
+                f"API key is scoped to {', '.join(sorted(narrowed))} and may not "
+                f"consume execution authority for {action_type!r}"
+            )
+
     def owns_organisation(self, organisation_id: UUID | str) -> bool:
         return str(self.organisation_id) == str(organisation_id)
+
+
+def _require_execute_scope_configured() -> bool:
+    return (os.getenv(REQUIRE_EXECUTE_SCOPE_ENV, "") or "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
 
 
 def _normalise_scopes(scopes: Any) -> frozenset[str]:
