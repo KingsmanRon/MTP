@@ -230,8 +230,7 @@ class ExecutableAction:
 
         if self.target is not None and not isinstance(self.target, ResourceReference):
             raise InvalidEnvelopeError(
-                "target must be a ResourceReference or None, got "
-                f"{type(self.target).__name__}"
+                "target must be a ResourceReference or None, got " f"{type(self.target).__name__}"
             )
         if not isinstance(self.payload, Mapping):
             raise InvalidEnvelopeError(
@@ -275,9 +274,7 @@ class ExecutableAction:
         try:
             return jcs.sha256_hex(self.preimage())
         except jcs.JCSError as exc:  # pragma: no cover - guarded by _freeze
-            raise InvalidEnvelopeError(
-                f"action could not be canonicalized: {exc}"
-            ) from exc
+            raise InvalidEnvelopeError(f"action could not be canonicalized: {exc}") from exc
 
 
 @dataclass(frozen=True, slots=True)

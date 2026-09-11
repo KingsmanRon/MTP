@@ -98,9 +98,7 @@ class AuthorityReservation:
                 "executor_binding must be an ExecutorBinding, got "
                 f"{type(self.executor_binding).__name__}"
             )
-        require_optional_identifier(
-            self.execution_ref, "execution_ref", error=CoreAuthorityError
-        )
+        require_optional_identifier(self.execution_ref, "execution_ref", error=CoreAuthorityError)
         if not isinstance(self.status, ReservationStatus):
             raise CoreAuthorityError(
                 f"status must be a ReservationStatus, got {type(self.status).__name__}"
@@ -149,12 +147,8 @@ class AuthorityConsumption:
     def __post_init__(self) -> None:
         require_identifier(self.consumption_id, "consumption_id", error=CoreAuthorityError)
         require_identifier(self.grant_id, "grant_id", error=CoreAuthorityError)
-        require_optional_identifier(
-            self.execution_ref, "execution_ref", error=CoreAuthorityError
-        )
-        require_optional_identifier(
-            self.reservation_id, "reservation_id", error=CoreAuthorityError
-        )
+        require_optional_identifier(self.execution_ref, "execution_ref", error=CoreAuthorityError)
+        require_optional_identifier(self.reservation_id, "reservation_id", error=CoreAuthorityError)
         if not isinstance(self.outcome, ConsumptionOutcome):
             raise CoreAuthorityError(
                 f"outcome must be a ConsumptionOutcome, got {type(self.outcome).__name__}"
@@ -173,9 +167,7 @@ class AuthorityConsumption:
             )
         if self.outcome is ConsumptionOutcome.REJECTED:
             if self.rejection_reason is None:
-                raise CoreAuthorityError(
-                    "a REJECTED consumption must carry a rejection_reason"
-                )
+                raise CoreAuthorityError("a REJECTED consumption must carry a rejection_reason")
         elif self.rejection_reason is not None:
             raise CoreAuthorityError(
                 "a rejection_reason is only meaningful on a REJECTED consumption"

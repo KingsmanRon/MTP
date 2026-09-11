@@ -14,6 +14,7 @@ names only ``financial_transaction``.
 
 An unregistered action type must now be denied outright rather than defaulted.
 """
+
 from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import uuid4
@@ -68,9 +69,9 @@ class TestUnknownActionTypeFailsClosed:
             timestamp=datetime.now(UTC),
         )
 
-        assert result.verdict == ActionVerdict.BLOCKED, (
-            f"Unregistered action type approved: {result.reason}"
-        )
+        assert (
+            result.verdict == ActionVerdict.BLOCKED
+        ), f"Unregistered action type approved: {result.reason}"
         assert result.allowed is False
         assert result.violation == PolicyViolation.ACTION_TYPE_UNKNOWN
 
@@ -91,9 +92,9 @@ class TestUnknownActionTypeFailsClosed:
             timestamp=datetime.now(UTC),
         )
 
-        assert result.verdict == ActionVerdict.BLOCKED, (
-            f"Admin typo minted a live approving action type: {result.reason}"
-        )
+        assert (
+            result.verdict == ActionVerdict.BLOCKED
+        ), f"Admin typo minted a live approving action type: {result.reason}"
         assert result.violation == PolicyViolation.ACTION_TYPE_UNKNOWN, (
             "Typo'd action must be rejected as unregistered, not merely "
             f"gated at the old default of 20 (got {result.violation})"
@@ -116,9 +117,9 @@ class TestKnownActionTypesStillWork:
             timestamp=datetime.now(UTC),
         )
 
-        assert result.verdict == ActionVerdict.APPROVED, (
-            f"Attestation action {action_type} regressed: {result.reason}"
-        )
+        assert (
+            result.verdict == ActionVerdict.APPROVED
+        ), f"Attestation action {action_type} regressed: {result.reason}"
 
     @pytest.mark.parametrize(
         "action_type",
@@ -136,19 +137,16 @@ class TestKnownActionTypesStillWork:
             timestamp=datetime.now(UTC),
         )
 
-        assert result.verdict == ActionVerdict.APPROVED, (
-            f"Registered action {action_type} regressed: {result.reason}"
-        )
+        assert (
+            result.verdict == ActionVerdict.APPROVED
+        ), f"Registered action {action_type} regressed: {result.reason}"
 
 
 class TestRegistryInvariant:
     """KNOWN_ACTION_TYPES is what the admin schema validates against."""
 
     def test_registry_is_exactly_the_two_policy_tables(self):
-        from_tables = (
-            frozenset(PolicyEngine.TRUST_THRESHOLDS)
-            | PolicyEngine.ATTESTATION_ACTIONS
-        )
+        from_tables = frozenset(PolicyEngine.TRUST_THRESHOLDS) | PolicyEngine.ATTESTATION_ACTIONS
         assert from_tables == KNOWN_ACTION_TYPES, (
             "A new action type was added to a policy table without reaching "
             "KNOWN_ACTION_TYPES, or vice versa. Both must move together or "

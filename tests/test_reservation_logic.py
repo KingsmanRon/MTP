@@ -6,6 +6,7 @@ back rather than returning — is testable with a mocked connection. This is the
 fix for the check-then-act race where concurrent requests all observed the same
 headroom and all passed.
 """
+
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock
@@ -54,9 +55,7 @@ async def _reserve(db, amount, rate_limit, daily_limit):
 @pytest.mark.asyncio
 async def test_reservation_succeeds_within_limits():
     reservation_id = uuid4()
-    db, conn = _db_with_fetchvals(
-        [1, Decimal("20"), Decimal("30"), reservation_id]
-    )
+    db, conn = _db_with_fetchvals([1, Decimal("20"), Decimal("30"), reservation_id])
     minute_count, daily_spend, returned_id = await _reserve(
         db, amount=Decimal("50"), rate_limit=60, daily_limit=Decimal("1000")
     )
@@ -90,9 +89,7 @@ async def test_daily_limit_trips_after_rate_ok():
 @pytest.mark.asyncio
 async def test_boundary_exactly_at_limit_is_allowed():
     reservation_id = uuid4()
-    db, _conn = _db_with_fetchvals(
-        [60, Decimal("100"), Decimal("800"), reservation_id]
-    )
+    db, _conn = _db_with_fetchvals([60, Decimal("100"), Decimal("800"), reservation_id])
     minute_count, daily_spend, returned_id = await _reserve(
         db, amount=Decimal("100"), rate_limit=60, daily_limit=Decimal("1000")
     )
@@ -104,13 +101,9 @@ async def test_boundary_exactly_at_limit_is_allowed():
 @pytest.mark.asyncio
 async def test_reservation_expires_stale_rows_before_calculating_spend():
     reservation_id = uuid4()
-    db, conn = _db_with_fetchvals(
-        [1, Decimal("0"), Decimal("0"), reservation_id]
-    )
+    db, conn = _db_with_fetchvals([1, Decimal("0"), Decimal("0"), reservation_id])
 
-    await _reserve(
-        db, amount=Decimal("10"), rate_limit=60, daily_limit=Decimal("1000")
-    )
+    await _reserve(db, amount=Decimal("10"), rate_limit=60, daily_limit=Decimal("1000"))
 
     expiry_update = conn.execute.await_args_list[1]
     assert "status = 'expired'" in expiry_update.args[0]

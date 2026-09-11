@@ -16,6 +16,7 @@ from the server and silently breaks signatures. This module centralizes it:
 Import is lightweight (nacl + stdlib via ``api.crypto``); it pulls in no FastAPI
 or database code, so the MCP server and standalone scripts can use it freely.
 """
+
 from __future__ import annotations
 
 import base64

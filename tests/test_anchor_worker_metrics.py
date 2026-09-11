@@ -95,9 +95,7 @@ def test_worker_cycle_metrics_are_updated() -> None:
 
 def test_worker_metrics_port_does_not_inherit_api_port() -> None:
     assert resolve_worker_metrics_port({"PORT": "8000"}) == 9100
-    assert resolve_worker_metrics_port(
-        {"PORT": "8000", "ANCHOR_METRICS_PORT": "9200"}
-    ) == 9200
+    assert resolve_worker_metrics_port({"PORT": "8000", "ANCHOR_METRICS_PORT": "9200"}) == 9200
 
 
 @pytest.mark.asyncio

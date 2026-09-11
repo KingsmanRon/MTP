@@ -39,9 +39,9 @@ def test_every_db_backed_tenant_route_has_privileged_dependency_removed() -> Non
         if not isinstance(route, APIRoute) or not is_tenant_route(route.path):
             continue
         calls = _direct_dependency_calls(route)
-        assert legacy_main.get_db not in calls, (
-            f"tenant route {route.path} can still directly acquire the privileged database"
-        )
+        assert (
+            legacy_main.get_db not in calls
+        ), f"tenant route {route.path} can still directly acquire the privileged database"
         if route.path in TENANT_BOUNDARY_PATHS:
             db_backed_tenant_routes.append(route.path)
             assert calls & {get_admin_tenant_database, get_events_tenant_database}

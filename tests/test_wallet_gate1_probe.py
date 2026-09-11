@@ -9,6 +9,7 @@ second by hand-adding the action type, which silently produces the first.
 
 So the table is tested rather than trusted.
 """
+
 import importlib.util
 import sys
 from pathlib import Path
@@ -77,12 +78,8 @@ class TestDecisionTable:
     def test_approved_verdict_on_a_non_200_is_still_fail_open(self, run_probe):
         assert run_probe(202, {"verdict": "APPROVED"}) == probe.EXIT_FAIL_OPEN
 
-    @pytest.mark.parametrize(
-        "violation", ["action_not_allowed", "action_type_unknown"]
-    )
-    def test_unrecognised_action_type_means_the_deploy_did_not_land(
-        self, run_probe, violation
-    ):
+    @pytest.mark.parametrize("violation", ["action_not_allowed", "action_type_unknown"])
+    def test_unrecognised_action_type_means_the_deploy_did_not_land(self, run_probe, violation):
         code = run_probe(403, {"violation_code": violation})
         assert code == probe.EXIT_DEPLOY_MISSING
 

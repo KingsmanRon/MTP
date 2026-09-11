@@ -27,16 +27,19 @@ logger = logging.getLogger(__name__)
 
 class CryptoError(Exception):
     """Base exception for cryptographic operations."""
+
     pass
 
 
 class SignatureVerificationError(CryptoError):
     """Raised when signature verification fails."""
+
     pass
 
 
 class InvalidPublicKeyError(CryptoError):
     """Raised when a public key is invalid."""
+
     pass
 
 
@@ -115,15 +118,11 @@ class CryptoService:
             try:
                 ts = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
             except ValueError as exc:
-                raise CryptoError(
-                    f"Invalid ISO-8601 timestamp string: {timestamp!r}"
-                ) from exc
+                raise CryptoError(f"Invalid ISO-8601 timestamp string: {timestamp!r}") from exc
         elif isinstance(timestamp, datetime):
             ts = timestamp
         else:
-            raise CryptoError(
-                f"Unsupported timestamp type for action-hash: {type(timestamp)!r}"
-            )
+            raise CryptoError(f"Unsupported timestamp type for action-hash: {type(timestamp)!r}")
 
         if ts.tzinfo is None:
             logger.warning(
@@ -194,11 +193,7 @@ class CryptoService:
             # Phase 0.3. The server still needs to be able to verify those
             # signatures until all deployed agents are upgraded. Do not use
             # this path for new hashing — it is ambiguous across timezones.
-            ts_repr = (
-                timestamp
-                if isinstance(timestamp, str)
-                else timestamp.isoformat()
-            )
+            ts_repr = timestamp if isinstance(timestamp, str) else timestamp.isoformat()
             payload_hash = CryptoService.compute_payload_hash(payload)
             outer_hash = CryptoService.compute_payload_hash
         elif sig_version == CryptoService.SIG_VERSION_CURRENT:
@@ -258,17 +253,13 @@ class CryptoService:
             SignatureVerificationError: If signature verification fails.
         """
         if len(public_key) != 32:
-            raise InvalidPublicKeyError(
-                f"Public key must be 32 bytes, got {len(public_key)}"
-            )
+            raise InvalidPublicKeyError(f"Public key must be 32 bytes, got {len(public_key)}")
 
         try:
             # Decode signature
             signature = base64.b64decode(signature_b64, validate=True)
             if len(signature) != 64:
-                logger.warning(
-                    f"Invalid signature length: expected 64 bytes, got {len(signature)}"
-                )
+                logger.warning(f"Invalid signature length: expected 64 bytes, got {len(signature)}")
                 return False
 
             # Create verify key from public key bytes
@@ -354,9 +345,7 @@ class CryptoService:
         if extra_claims:
             collisions = sorted(set(extra_claims) & set(token_data))
             if collisions:
-                raise CryptoError(
-                    f"extra_claims may not overwrite base token claims: {collisions}"
-                )
+                raise CryptoError(f"extra_claims may not overwrite base token claims: {collisions}")
             token_data.update(extra_claims)
 
         token_json = json.dumps(token_data, sort_keys=True, separators=(",", ":"))

@@ -122,9 +122,7 @@ async def test_tenant_sees_only_own_agents(db: Database) -> None:
 
     # Tenant A must see only agent-a. agent-b is under org_b and must be invisible.
     seen_orgs = {row["org_id"] for row in rows}
-    assert seen_orgs == {org_a}, (
-        f"tenant A saw cross-tenant rows: {seen_orgs}"
-    )
+    assert seen_orgs == {org_a}, f"tenant A saw cross-tenant rows: {seen_orgs}"
     assert any(row["name"] == "agent-a" for row in rows)
     assert not any(row["name"] == "agent-b" for row in rows)
 
@@ -166,9 +164,7 @@ async def test_cross_tenant_insert_rejected_by_with_check(db: Database) -> None:
 
     # The row must not exist — BYPASSRLS read confirms.
     async with db.acquire() as conn:
-        leaked = await conn.fetchval(
-            "SELECT count(*) FROM agents WHERE name = 'smuggled-agent'"
-        )
+        leaked = await conn.fetchval("SELECT count(*) FROM agents WHERE name = 'smuggled-agent'")
     assert leaked == 0
 
 
@@ -180,9 +176,7 @@ async def test_cross_tenant_update_filters_silently(db: Database) -> None:
     agent_b = await _make_agent(db, org_b, "target")
 
     async with db.acquire_as_tenant(org_a) as conn:
-        status = await conn.execute(
-            "UPDATE agents SET name = 'hijacked' WHERE id = $1", agent_b
-        )
+        status = await conn.execute("UPDATE agents SET name = 'hijacked' WHERE id = $1", agent_b)
     # asyncpg returns 'UPDATE N' — N must be 0 because the row is invisible.
     assert status.endswith(" 0"), f"expected UPDATE 0, got {status}"
 
@@ -244,13 +238,11 @@ async def test_audit_logs_are_tenant_scoped_via_agent(db: Database) -> None:
 async def test_api_keys_rls_enabled(db: Database) -> None:
     """Phase 1C.1 enabled RLS on api_keys (schemas.sql had missed it)."""
     async with db.acquire() as conn:
-        rls_enabled = await conn.fetchval(
-            """
+        rls_enabled = await conn.fetchval("""
             SELECT relrowsecurity
             FROM pg_class
             WHERE relname = 'api_keys' AND relnamespace = 'public'::regnamespace
-            """
-        )
+            """)
     assert rls_enabled is True
 
 
@@ -258,14 +250,12 @@ async def test_api_keys_rls_enabled(db: Database) -> None:
 async def test_rate_limit_windows_rls_enabled(db: Database) -> None:
     """Same for rate_limit_windows."""
     async with db.acquire() as conn:
-        rls_enabled = await conn.fetchval(
-            """
+        rls_enabled = await conn.fetchval("""
             SELECT relrowsecurity
             FROM pg_class
             WHERE relname = 'rate_limit_windows'
               AND relnamespace = 'public'::regnamespace
-            """
-        )
+            """)
     assert rls_enabled is True
 
 
@@ -273,15 +263,13 @@ async def test_rate_limit_windows_rls_enabled(db: Database) -> None:
 async def test_helpers_exist(db: Database) -> None:
     """app.set_tenant and app.current_tenant must be present."""
     async with db.acquire() as conn:
-        names = await conn.fetch(
-            """
+        names = await conn.fetch("""
             SELECT proname
             FROM pg_proc p
             JOIN pg_namespace n ON n.oid = p.pronamespace
             WHERE n.nspname = 'app'
             ORDER BY proname
-            """
-        )
+            """)
     proc_names = {row["proname"] for row in names}
     assert "set_tenant" in proc_names
     assert "current_tenant" in proc_names

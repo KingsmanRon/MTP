@@ -4,6 +4,7 @@ Regression for the spend-limit bypass: a financial action whose amount field
 was missing, malformed, NaN, infinite, or negative previously slipped through
 the spend checks (returning None → no check, or NaN → every comparison False).
 """
+
 from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import uuid4
@@ -53,9 +54,7 @@ class TestExtractAmount:
 
     def test_priority_order_first_field_wins(self):
         # amount beats value/total
-        assert PolicyEngine()._extract_amount(
-            {"value": 999, "amount": 5}
-        ) == Decimal("5")
+        assert PolicyEngine()._extract_amount({"value": 999, "amount": 5}) == Decimal("5")
 
     def test_missing_amount_returns_none(self):
         assert PolicyEngine()._extract_amount({"description": "no money here"}) is None

@@ -22,6 +22,7 @@ as unverified. The pack asks you to check the math, not to take our word.
 | `custody_log.json` | Chain-of-custody events for every evidence file (covered) |
 | `receipts/<audit_id>.json` | Public verification receipts, one per action (covered) |
 | `proofs/<audit_id>.json` | Merkle inclusion proofs for anchored receipts (covered) |
+| `authority_evidence/<id>.json` | Receipt v3 authority evidence chains (covered) |
 | `evidence/...` | Source artifacts: policy exports, logs, screenshots, etc. (covered) |
 
 Every file except `manifest.json` and `manifest.sig.json` is listed in the
@@ -106,6 +107,116 @@ Rules that bite:
 - The agent's Ed25519 `signature` is **excluded** from the fingerprint; it is
   verified separately, over the raw 32 bytes of `action_hash`, against the
   `public_key_b64` in the receipt.
+
+## 5b. Receipt v3: authenticated authority evidence
+
+v1 and v2 above are **frozen**. Their field set, canonicalization and
+fingerprint algorithm do not change, and a stored v1 or v2 receipt verifies
+exactly as it always did. Nothing in this section is reachable from their
+path; `schema_version` selects which applies.
+
+### Why v3 signs instead of fingerprinting
+
+A fingerprint proves only that some fields hash to the value stored beside
+them. Anyone who can alter a field can recompute it. That was acceptable for
+v1 and v2 because their real assurance came from the agent's Ed25519
+signature over the action hash and from on-chain anchoring.
+
+The authority lifecycle has neither. Its fields — which policy snapshot,
+which delegated authority, which executor, which grant — carry no agent
+signature, so a fingerprint over them would be self-certifying and worthless
+against tampering. v3 therefore signs.
+
+### Chain shape
+
+A decision receipt is never rewritten once consumption happens. The
+lifecycle is a chain of immutable events:
+
+```
+decision  ──►  consumption  ──►  outcome
+```
+
+An absent link is simply absent: a decision that was never spent is a
+complete and truthful chain of one. Each event carries:
+
+| Field | Meaning |
+| --- | --- |
+| `payload` | The signed truth. Everything below that also appears outside it is convenience for readers |
+| `evidence_payload_hash` | SHA-256 over the **RFC 8785 (JCS)** canonical form of `payload` |
+| `signature_b64` | Ed25519 over the **32 raw bytes** of that hash, not over its hex text |
+| `parent_event_id`, `parent_payload_hash` | Inside the signature, so re-parenting or editing an ancestor breaks every descendant |
+| `signing_key_id`, `signing_key_fingerprint` | Also inside the signature, so substituting a key and rewriting the metadata to match it cannot pass |
+
+Note the canonicalization differs from section 5: v1/v2 use
+`json.dumps(sort_keys=True, separators=(",",":"))` over seven fields; v3 uses
+full RFC 8785, which differs in string escaping and number formatting. The
+two schemes coexist and never touch.
+
+### Four checks, all required
+
+`verify_pack.py` performs all four on every chain in
+`authority_evidence/`:
+
+1. **Recomputed hash.** JCS-canonicalize `payload`, SHA-256 it, compare to
+   `evidence_payload_hash`.
+2. **Signature.** Verify `signature_b64` over the raw bytes of that
+   recomputed hash. Check 1 alone means nothing — a tamperer recomputes the
+   hash too — and this is what makes it mean something.
+3. **Envelope agreement.** Every field duplicated outside `payload` must be
+   *present* and must equal its signed original. An absent outer field is a
+   malformed envelope, not a match against a signed null.
+4. **Continuity.** A valid parent hash proves only that the producer *chose*
+   that parent. It does not prove the events describe the same act: a
+   consumption of grant B can be signed as a child of the decision for grant
+   A and every hash checks out while the history is a fabrication. So
+   `grant_id`, `execution_action_hash` and `executor_binding_digest` are
+   compared between decision and consumption, `grant_id` between consumption
+   and outcome, and a consumption is refused after a decision that was not an
+   ALLOW.
+
+### Which key, and where to get it
+
+The signing key is **dedicated to authority evidence**. It is deliberately
+not the agent request-signing key, not the offline evidence-pack manifest
+seed (`ipk-`), and not the anchor wallet: each asserts a different thing, and
+a key that can assert two things can be misread as asserting the wrong one.
+Inntris Core refuses at startup to use a key that is any of those.
+
+Authority-evidence keys are published as `iae-YYYY-NN` entries at:
+
+* `https://inntris.com/.well-known/inntris-keys.txt`
+* `https://github.com/Inntris/inntris-verify` (KEYS.md)
+* `https://<inntris-api>/.well-known/inntris-authority-keys.json`
+
+Compare at least two. A key that appears in only one of them is a key one
+party could have moved on their own.
+
+Retired keys stay published forever: evidence signed while a key was active
+was legitimate and must stay verifiable. `status` says which key may sign
+something *new*. At most one `iae-` key is active at a time — two would leave
+you unable to say which should have signed a given event, and leave Inntris
+unable to say which to revoke.
+
+The pack commits to the key it claims signed its evidence, inside the signed
+manifest (`manifest.authority_evidence.public_key_b64`). That stops a pack
+being verified against whatever key its bearer supplies — but it is internal
+consistency only, exactly as in section 7, so compare it to the published
+mirror before relying on it.
+
+### What a verified v3 chain proves — and what it does not
+
+It proves that Inntris Core recorded these decisions, consumptions and
+outcomes, and that nobody has altered them since.
+
+It does **not** prove that money settled. The executor's own outcome evidence
+is a linked boundary, not part of this signature.
+
+It is also **not anchored on-chain.** The underlying audit decision row
+participates in the Merkle anchoring pipeline described in section 8 like any
+other audit row; the v3 `evidence_payload_hash` itself is committed by no
+anchor path. v3 events are authenticated by their Ed25519 signature and their
+parent links, and that is the whole of their assurance today. Saying otherwise
+would be the same self-certifying claim v3 exists to avoid.
 
 ## 6. Chain of custody
 
@@ -193,6 +304,9 @@ python verify_pack.py /path/to/pack.zip \
 
 This additionally calls `AnchorRegistry.getBatch(root)` for every anchored
 root in the pack and fails unless the contract reports a nonzero batch.
+
+Chains in `authority_evidence/` are checked as section 5b describes. A pack
+with none verifies exactly as it always did; the section is additive.
 
 The verifier needs only the Python 3.10+ standard library. If `pynacl` or
 `eth-hash` are installed they are used for speed; otherwise built-in

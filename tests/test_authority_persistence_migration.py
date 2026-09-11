@@ -86,9 +86,7 @@ class TestReusesExistingMechanisms:
 
     def test_it_does_not_define_its_own_consumption_table(self) -> None:
         sql = _SQL.read_text(encoding="utf-8")
-        created = [
-            line for line in sql.splitlines() if line.startswith("CREATE TABLE")
-        ]
+        created = [line for line in sql.splitlines() if line.startswith("CREATE TABLE")]
         assert created == ["CREATE TABLE IF NOT EXISTS execution_authority_grants ("]
 
 
@@ -218,18 +216,13 @@ class TestGrantLifetimeBound:
     def test_the_validity_window_is_immutable_after_issuance(self) -> None:
         sql = _SQL.read_text(encoding="utf-8")
         assert "NEW.expires_at <> OLD.expires_at" in sql
-        assert (
-            "NEW.authority_expires_at IS DISTINCT FROM OLD.authority_expires_at" in sql
-        )
+        assert "NEW.authority_expires_at IS DISTINCT FROM OLD.authority_expires_at" in sql
 
 
 class TestOutcomeStateMachine:
     def test_the_outcome_states_are_the_documented_four(self) -> None:
         sql = _SQL.read_text(encoding="utf-8")
-        assert (
-            "outcome_state IN ('pending', 'succeeded', 'failed_final', 'outcome_unknown')"
-            in sql
-        )
+        assert "outcome_state IN ('pending', 'succeeded', 'failed_final', 'outcome_unknown')" in sql
 
     def test_an_outcome_only_exists_for_spent_authority(self) -> None:
         sql = _SQL.read_text(encoding="utf-8")
@@ -274,9 +267,7 @@ class TestForcedRowLevelSecurity:
 class TestHotTableDdlIsMarkedAsAReleaseGate:
     def test_the_unique_constraint_is_documented_as_a_deployment_gate(self) -> None:
         """agents is a hot table; the index build takes ACCESS EXCLUSIVE."""
-        doc = (
-            _REPO / "docs" / "EXECUTION_AUTHORITY_PERSISTENCE.md"
-        ).read_text(encoding="utf-8")
+        doc = (_REPO / "docs" / "EXECUTION_AUTHORITY_PERSISTENCE.md").read_text(encoding="utf-8")
         assert "agents_id_org_unique" in doc
         assert "ACCESS EXCLUSIVE" in doc
         assert "deliberate release decision" in doc

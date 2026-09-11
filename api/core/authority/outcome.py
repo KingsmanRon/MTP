@@ -43,9 +43,7 @@ class OutcomeReference:
 
     def __post_init__(self) -> None:
         require_identifier(self.domain, "domain", error=CoreAuthorityError)
-        require_identifier(
-            self.outcome_reference, "outcome_reference", error=CoreAuthorityError
-        )
+        require_identifier(self.outcome_reference, "outcome_reference", error=CoreAuthorityError)
         if not isinstance(self.status, OutcomeStatus):
             raise CoreAuthorityError(
                 f"status must be an OutcomeStatus, got {type(self.status).__name__}"

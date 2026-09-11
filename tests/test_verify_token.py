@@ -6,6 +6,7 @@ lets a downstream executor refuse to act without a valid, action-bound
 approval. Consumption (consume=true) additionally records an anchored
 ``token_consumed`` audit event and fails closed when it cannot.
 """
+
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
@@ -186,9 +187,13 @@ class _FakeDatabase:
 
 def _consume_body(execution_ref="x402-settlement-1"):
     return {
-        "approval_token": _token(), "agent_id": AGENT_ID,
-        "action_type": ACTION_TYPE, "payload": PAYLOAD,
-        "nonce": NONCE, "timestamp": TIMESTAMP, "consume": True,
+        "approval_token": _token(),
+        "agent_id": AGENT_ID,
+        "action_type": ACTION_TYPE,
+        "payload": PAYLOAD,
+        "nonce": NONCE,
+        "timestamp": TIMESTAMP,
+        "consume": True,
         "execution_ref": execution_ref,
     }
 
@@ -388,8 +393,11 @@ def test_dual_secret_rotation_accepts_old_secret():
     old = b"o" * 40
     new = b"n" * 40
     token = CryptoService.generate_approval_token(
-        agent_id=AGENT_ID, action_hash=_action_hash(), verdict="approved",
-        server_secret=old, expiry_minutes=5,
+        agent_id=AGENT_ID,
+        action_hash=_action_hash(),
+        verdict="approved",
+        server_secret=old,
+        expiry_minutes=5,
     )
     # During rotation we serve [new, old]; an old-secret token still verifies.
     assert CryptoService.verify_approval_token(token, [new, old]) is not None

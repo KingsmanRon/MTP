@@ -1073,6 +1073,38 @@ async def get_receipt_schema_v1():
     return JSONResponse(content=RECEIPT_SCHEMA_V1)
 
 
+@app.get("/schema/receipt/v3.json", tags=["Schema"])
+async def get_receipt_schema_v3():
+    """Return the canonical JSON Schema for receipt v3 authority evidence.
+
+    Structure only. Satisfying it is not verification -- a chain can match
+    every constraint here and be a forgery, which is why the signature and
+    the parent links are the check and this is the description.
+    """
+    from api.receipts.schema_v3 import RECEIPT_SCHEMA_V3_DOCUMENT
+
+    return JSONResponse(content=RECEIPT_SCHEMA_V3_DOCUMENT)
+
+
+@app.get("/.well-known/inntris-authority-keys.json", tags=["Schema"])
+async def get_authority_evidence_keys():
+    """Publish the authority-evidence verification keys.
+
+    A signature is only evidence if somebody else can check it, and they can
+    only check it if they can obtain the public key. Retired keys are
+    included, because a verifier holding a two-year-old chain needs the key
+    it was signed with; ``status`` says which one may sign anything new.
+
+    This endpoint MIRRORS the published key file. A verifier should compare
+    the two rather than trust either alone: an endpoint that could be changed
+    without the public mirror changing would be a single point Inntris could
+    quietly move.
+    """
+    from api.receipts.key_registry import load_published_keys
+
+    return JSONResponse(content=load_published_keys().as_discovery_document())
+
+
 # =============================================================================
 # PUBLIC ENDPOINTS (No Auth Required)
 # =============================================================================

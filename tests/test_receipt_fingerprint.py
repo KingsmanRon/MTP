@@ -60,23 +60,17 @@ class TestCanonicalWireTimestamp:
 
 class TestReceiptFingerprintParity:
     V2_PAYLOAD: dict[str, object] = {
-        "action_hash":
-            "b913fee92806720122d84285c779582172446c1c1c03645cb865f93fc36b8b5b",
+        "action_hash": "b913fee92806720122d84285c779582172446c1c1c03645cb865f93fc36b8b5b",
         "action_type": "financial_transaction",
         "agent_id": "11111111-2222-3333-4444-555555555555",
         "audit_id": "d8dd0902-4750-42d2-9516-92bf6362e815",
-        "policy_hash":
-            "b5e687b5bd9878f561f8050e994fbd8632fec823503fa4bd8c047a3e3b14f686",
+        "policy_hash": "b5e687b5bd9878f561f8050e994fbd8632fec823503fa4bd8c047a3e3b14f686",
         "timestamp": "2026-04-07T22:22:25Z",
         "verdict": "approved",
     }
 
-    V2_EXPECTED_HEX = (
-        "2fc29223fb1265448f2da2afd730628d228bcf3b09bb29b7006d5b19ce30bf63"
-    )
-    V1_EXPECTED_HEX = (
-        "7085431bb41614f6d847cddbf0f579d38550caeb77720de27bc78f5faa7f3c7c"
-    )
+    V2_EXPECTED_HEX = "2fc29223fb1265448f2da2afd730628d228bcf3b09bb29b7006d5b19ce30bf63"
+    V1_EXPECTED_HEX = "7085431bb41614f6d847cddbf0f579d38550caeb77720de27bc78f5faa7f3c7c"
 
     def test_v2_fingerprint_matches_frontend_expected_hex(self) -> None:
         assert _canonical_fingerprint(self.V2_PAYLOAD) == self.V2_EXPECTED_HEX

@@ -80,9 +80,7 @@ def signed_decision(key, **overrides):
 
 class TestLegacyReceiptsAreUntouched:
     @pytest.mark.parametrize("version", ["v1", "v2"])
-    def test_the_stored_fixture_still_verifies_under_its_own_algorithm(
-        self, version: str
-    ) -> None:
+    def test_the_stored_fixture_still_verifies_under_its_own_algorithm(self, version: str) -> None:
         fixture = json.loads((FIXTURES / f"receipt_{version}.json").read_text())
         assert legacy_fingerprint(fixture["fingerprint_payload"]) == (
             fixture["receipt_fingerprint"]
@@ -134,9 +132,7 @@ class TestEvidenceIsSignedNotJustHashed:
 
     def test_a_wrong_key_does_not_verify(self, key) -> None:
         other = load_evidence_signing_key(environment="test")
-        result = verify_evidence_event(
-            signed_decision(key), public_key_b64=other.public_key_b64
-        )
+        result = verify_evidence_event(signed_decision(key), public_key_b64=other.public_key_b64)
         assert not result
         assert any("signature" in reason for reason in result.failures)
 
@@ -186,9 +182,9 @@ class TestEvidenceIsSignedNotJustHashed:
         result = verify_evidence_event(record, public_key_b64=key.public_key_b64)
         assert not result
         assert any("signature" in reason for reason in result.failures)
-        assert not any("evidence_payload_hash" in reason for reason in result.failures), (
-            "the hash now matches; only the signature exposes the tamper"
-        )
+        assert not any(
+            "evidence_payload_hash" in reason for reason in result.failures
+        ), "the hash now matches; only the signature exposes the tamper"
 
     def test_a_forged_signature_does_not_verify(self, key) -> None:
         event = signed_decision(key)
@@ -239,9 +235,7 @@ class TestEvidenceChainIsLinkedAndImmutable:
     def test_a_full_chain_verifies(self, key) -> None:
         assert self._chain(key).verify(public_key_b64=key.public_key_b64)
 
-    def test_the_decision_event_is_unchanged_when_later_events_are_added(
-        self, key
-    ) -> None:
+    def test_the_decision_event_is_unchanged_when_later_events_are_added(self, key) -> None:
         """A decision receipt is never mutated by what happens afterwards."""
         decision = signed_decision(key)
         before = decision.as_public_dict()
@@ -253,9 +247,7 @@ class TestEvidenceChainIsLinkedAndImmutable:
     def test_each_event_commits_to_its_parent(self, key) -> None:
         chain = self._chain(key)
         assert chain.consumption.parent_event_id == chain.decision.event_id
-        assert chain.consumption.parent_payload_hash == (
-            chain.decision.evidence_payload_hash
-        )
+        assert chain.consumption.parent_payload_hash == (chain.decision.evidence_payload_hash)
         assert chain.outcome.parent_event_id == chain.consumption.event_id
 
     def test_re_parenting_an_event_breaks_verification(self, key) -> None:
@@ -296,17 +288,24 @@ class TestSigningKeySeparation:
             load_evidence_signing_key(environment="production", seed_b64=None)
 
     def test_a_configured_seed_is_used(self) -> None:
+        """Deterministic key derivation, in development.
+
+        Production additionally requires the key to be PUBLISHED (Phase 7A,
+        Gate 4): a signature nobody can look up is not evidence. That gate
+        is exercised in tests/test_authority_evidence_publication.py; here
+        the question is only whether the same seed yields the same key.
+        """
         seed = base64.b64encode(b"\x07" * 32).decode("ascii")
-        first = load_evidence_signing_key(environment="production", seed_b64=seed)
-        second = load_evidence_signing_key(environment="production", seed_b64=seed)
+        first = load_evidence_signing_key(environment="development", seed_b64=seed)
+        second = load_evidence_signing_key(environment="development", seed_b64=seed)
         assert first.public_key_b64 == second.public_key_b64
 
     def test_a_malformed_seed_is_refused(self) -> None:
         with pytest.raises(EvidenceError):
-            load_evidence_signing_key(environment="production", seed_b64="not-base64!!")
+            load_evidence_signing_key(environment="development", seed_b64="not-base64!!")
         with pytest.raises(EvidenceError, match="32-byte"):
             load_evidence_signing_key(
-                environment="production", seed_b64=base64.b64encode(b"short").decode()
+                environment="development", seed_b64=base64.b64encode(b"short").decode()
             )
 
     def test_the_key_is_not_an_agent_key_or_anchor_wallet(self, key) -> None:
@@ -318,8 +317,7 @@ class TestSigningKeySeparation:
         body = signed_decision(key).payload["body"]
         assert "authority_scope_digest" in body
         assert not any(
-            suspicious in body
-            for suspicious in ("credential", "secret", "token", "raw_artefact")
+            suspicious in body for suspicious in ("credential", "secret", "token", "raw_artefact")
         )
 
     def test_a_scope_digest_is_never_labelled_an_artefact_digest(self, key) -> None:
@@ -401,10 +399,7 @@ class TestSigningKeyIdentityIsBound:
         record["evidence_payload_hash"] = evidence_payload_hash(record["payload"])
         result = verify_evidence_event(record, public_key_b64=key.public_key_b64)
         assert not result
-        assert (
-            "signature does not verify over the recomputed payload hash"
-            in result.failures
-        )
+        assert "signature does not verify over the recomputed payload hash" in result.failures
 
     def test_tampering_with_the_fingerprint_is_detected(self, key) -> None:
         record = signed_decision(key).as_public_dict()
@@ -422,9 +417,7 @@ class TestSigningKeyIdentityIsBound:
         assert not result
         assert "outer signing_key_id contradicts the signed payload" in result.failures
 
-    def test_a_validly_signed_event_that_names_another_key_is_refused(
-        self, key
-    ) -> None:
+    def test_a_validly_signed_event_that_names_another_key_is_refused(self, key) -> None:
         """The substitution attack the fingerprint check exists to stop.
 
         The attacker signs a payload that *claims* the trusted key signed
@@ -460,9 +453,7 @@ class TestSigningKeyIdentityIsBound:
             "parent_payload_hash": None,
         }
 
-        against_attacker = verify_evidence_event(
-            forged, public_key_b64=attacker.public_key_b64
-        )
+        against_attacker = verify_evidence_event(forged, public_key_b64=attacker.public_key_b64)
         assert not against_attacker
         assert against_attacker.failures == (
             "signing_key_fingerprint does not identify the verifying key",
@@ -487,12 +478,8 @@ class TestSigningKeyIdentityIsBound:
         relabelled["payload"]["signing_key_fingerprint"] = key.fingerprint
         relabelled["signing_key_id"] = key.key_id
         relabelled["signing_key_fingerprint"] = key.fingerprint
-        relabelled["evidence_payload_hash"] = evidence_payload_hash(
-            relabelled["payload"]
-        )
-        assert not verify_evidence_event(
-            relabelled, public_key_b64=attacker.public_key_b64
-        )
+        relabelled["evidence_payload_hash"] = evidence_payload_hash(relabelled["payload"])
+        assert not verify_evidence_event(relabelled, public_key_b64=attacker.public_key_b64)
         assert not verify_evidence_event(relabelled, public_key_b64=key.public_key_b64)
 
 
@@ -551,16 +538,14 @@ class TestTheWholeEnvelopeIsBoundToTheSignature:
     """
 
     def test_a_complete_valid_event_still_verifies(self, key) -> None:
-        assert verify_evidence_event(
-            signed_decision(key), public_key_b64=key.public_key_b64
-        )
+        assert verify_evidence_event(signed_decision(key), public_key_b64=key.public_key_b64)
 
     def test_every_duplicated_field_is_checked(self) -> None:
         """The list must stay exhaustive as the envelope grows."""
-        envelope = set(signed_decision(load_evidence_signing_key(environment="test")).as_public_dict())
-        payload = set(
-            signed_decision(load_evidence_signing_key(environment="test")).payload
+        envelope = set(
+            signed_decision(load_evidence_signing_key(environment="test")).as_public_dict()
         )
+        payload = set(signed_decision(load_evidence_signing_key(environment="test")).payload)
         # Everything present on both sides is bound; nothing is overlooked.
         assert set(ENVELOPE_BOUND_FIELDS) == (envelope & payload) - {"payload"}
 
@@ -603,9 +588,7 @@ class TestTheWholeEnvelopeIsBoundToTheSignature:
         assert not result
         assert f"outer {field} is missing from the envelope" in result.failures
 
-    def test_the_root_parent_fields_are_signed_null_and_still_required(
-        self, key
-    ) -> None:
+    def test_the_root_parent_fields_are_signed_null_and_still_required(self, key) -> None:
         """Names the case the old test exempted, so it cannot regress."""
         event = signed_decision(key)
         assert event.payload["parent_event_id"] is None
@@ -613,9 +596,7 @@ class TestTheWholeEnvelopeIsBoundToTheSignature:
         for field in ("parent_event_id", "parent_payload_hash"):
             record = json.loads(json.dumps(event.as_public_dict()))
             del record[field]
-            assert not verify_evidence_event(
-                record, public_key_b64=key.public_key_b64
-            )
+            assert not verify_evidence_event(record, public_key_b64=key.public_key_b64)
         # And present-with-null, which is the honest form, still verifies.
         assert verify_evidence_event(event, public_key_b64=key.public_key_b64)
 
@@ -639,9 +620,7 @@ class TestTheWholeEnvelopeIsBoundToTheSignature:
         )
         record = json.loads(json.dumps(child.as_public_dict()))
         record["parent_event_id"] = "ev-somewhere-else"
-        assert not verify_evidence_event(
-            record, public_key_b64=key.public_key_b64, parent=parent
-        )
+        assert not verify_evidence_event(record, public_key_b64=key.public_key_b64, parent=parent)
 
     def test_a_complete_valid_chain_still_verifies(self, key) -> None:
         decision = signed_decision(key)
@@ -665,9 +644,7 @@ class TestTheWholeEnvelopeIsBoundToTheSignature:
         outcome = sign_evidence_event(
             event_id="ev-outcome",
             event_type=EvidenceEventType.OUTCOME,
-            body=OutcomeEvidenceV3(
-                grant_id="grant-1", outcome_state="succeeded"
-            ).to_body(),
+            body=OutcomeEvidenceV3(grant_id="grant-1", outcome_state="succeeded").to_body(),
             key=key,
             recorded_at=NOW,
             parent=consumption,
@@ -696,6 +673,4 @@ class TestTheWholeEnvelopeIsBoundToTheSignature:
         )
         forged = json.loads(json.dumps(consumption.as_public_dict()))
         forged["recorded_at"] = "2020-01-01T00:00:00Z"
-        assert not verify_evidence_event(
-            forged, public_key_b64=key.public_key_b64, parent=decision
-        )
+        assert not verify_evidence_event(forged, public_key_b64=key.public_key_b64, parent=decision)

@@ -84,6 +84,7 @@ RISK_RANK = {
 # email, ...) are not classified from changed files and skip policy binding.
 CI_GUARD_ACTIONS = frozenset(RISK_RANK.keys())
 
+
 def canonical_policy_hash(
     mapping: dict[str, list[str]] | None,
     protected_branches: Any,
@@ -165,8 +166,7 @@ def strongest_required_action_type(
     """
     present: set[str] = set()
     compiled = {
-        atype: [glob_to_regex(g) for g in (globs or [])]
-        for atype, globs in (mapping or {}).items()
+        atype: [glob_to_regex(g) for g in (globs or [])] for atype, globs in (mapping or {}).items()
     }
     for path in changed_files or []:
         for atype, regexes in compiled.items():
@@ -205,10 +205,12 @@ class PolicyEngine:
     # These are logged for auditing but do NOT gate on trust score.
     # They record that something happened (eval, push, export receipt),
     # not that the system is authorizing a live operation.
-    ATTESTATION_ACTIONS: frozenset = frozenset({
-        "promptfoo_eval",
-        "repo_change",
-    })
+    ATTESTATION_ACTIONS: frozenset = frozenset(
+        {
+            "promptfoo_eval",
+            "repo_change",
+        }
+    )
 
     # Owned by the payment domain (api/domains/payment/amounts.py) and aliased
     # here so existing readers of PolicyEngine.AMOUNT_REQUIRED_ACTIONS and
@@ -730,6 +732,6 @@ class TrustScorer:
 # against this set, and ``PolicyEngine._check_action_registered`` denies
 # anything outside it, so an action type cannot be admitted at one layer and
 # unknown at the other.
-KNOWN_ACTION_TYPES: frozenset[str] = frozenset(
-    PolicyEngine.TRUST_THRESHOLDS
-) | PolicyEngine.ATTESTATION_ACTIONS
+KNOWN_ACTION_TYPES: frozenset[str] = (
+    frozenset(PolicyEngine.TRUST_THRESHOLDS) | PolicyEngine.ATTESTATION_ACTIONS
+)

@@ -56,9 +56,9 @@ from api.trust.artefact import (
     parse_authority_artefact,
 )
 from api.trust.issuer_registry import (
-    IssuerTrustConfigError,
     TRUST_FILE_ENV,
     TRUST_INLINE_ENV,
+    IssuerTrustConfigError,
     TrustedIssuerRegistry,
     load_registry_from_environment,
     public_key_fingerprint,
@@ -170,12 +170,14 @@ def build_artefact(
         "issuer": issuer,
         "authority_id": authority_id,
         "principal": {"account_reference": account_reference},
-        "scope": scope
-        if scope is not None
-        else {
-            "spend_ceiling": "500.00",
-            "denomination": "USD",
-        },
+        "scope": (
+            scope
+            if scope is not None
+            else {
+                "spend_ceiling": "500.00",
+                "denomination": "USD",
+            }
+        ),
     }
     if delegate_fingerprint is not None:
         payload["delegate"] = {"key_fingerprint": delegate_fingerprint}
@@ -265,9 +267,9 @@ class TestTrustConfiguration:
 
     def test_pem_private_material_anywhere_is_refused(self) -> None:
         document = trust_document()
-        document["issuers"][0]["display_name"] = (
-            "-----BEGIN PRIVATE KEY-----\nnope\n-----END PRIVATE KEY-----"
-        )
+        document["issuers"][0][
+            "display_name"
+        ] = "-----BEGIN PRIVATE KEY-----\nnope\n-----END PRIVATE KEY-----"
         with pytest.raises(IssuerTrustConfigError, match="PEM private key material"):
             TrustedIssuerRegistry.from_document(document)
 
@@ -296,9 +298,7 @@ class TestTrustConfiguration:
         monkeypatch.delenv(TRUST_FILE_ENV, raising=False)
         assert not load_registry_from_environment()
 
-    def test_a_malformed_configuration_raises_rather_than_loading_empty(
-        self, monkeypatch
-    ) -> None:
+    def test_a_malformed_configuration_raises_rather_than_loading_empty(self, monkeypatch) -> None:
         """A broken trust file must fail the deployment, not come up trusting
         nobody and refusing traffic it should serve."""
         monkeypatch.delenv(TRUST_FILE_ENV, raising=False)
@@ -346,9 +346,7 @@ class TestBoundedParsing:
             parse_authority_artefact(artefact)
 
     def test_an_over_long_array_is_refused(self) -> None:
-        artefact = build_artefact(
-            scope={"payees": [f"0x{index:040x}" for index in range(200)]}
-        )
+        artefact = build_artefact(scope={"payees": [f"0x{index:040x}" for index in range(200)]})
         with pytest.raises(ArtefactParseError, match="array length"):
             parse_authority_artefact(artefact)
 
@@ -408,27 +406,18 @@ class TestVerification:
 
     def test_an_unconfigured_issuer_does_not_verify(self) -> None:
         artefact = build_artefact(issuer="somebody-else")
-        resolved = provider().resolve(
-            claim(artefact, issuer="somebody-else"), context()
-        )
+        resolved = provider().resolve(claim(artefact, issuer="somebody-else"), context())
         assert not resolved.is_verified
-        assert (
-            AuthorityVerificationFailure.AUTHORITY_NOT_FOUND in resolved.failure_codes
-        )
+        assert AuthorityVerificationFailure.AUTHORITY_NOT_FOUND in resolved.failure_codes
 
     def test_a_disabled_issuer_does_not_verify(self) -> None:
-        resolved = provider(issuer_status="disabled").resolve(
-            claim(build_artefact()), context()
-        )
+        resolved = provider(issuer_status="disabled").resolve(claim(build_artefact()), context())
         assert AuthorityVerificationFailure.AUTHORITY_REVOKED in resolved.failure_codes
 
     def test_an_attacker_signature_does_not_verify(self) -> None:
         artefact = build_artefact(signing_key=ATTACKER_KEY)
         resolved = provider().resolve(claim(artefact), context())
-        assert (
-            AuthorityVerificationFailure.AUTHORITY_SIGNATURE_INVALID
-            in resolved.failure_codes
-        )
+        assert AuthorityVerificationFailure.AUTHORITY_SIGNATURE_INVALID in resolved.failure_codes
 
     def test_a_tampered_payload_does_not_verify(self) -> None:
         """The exact move: intercept a real delegation, raise the ceiling."""
@@ -442,42 +431,26 @@ class TestVerification:
             }
         )
         resolved = provider().resolve(claim(artefact), context())
-        assert (
-            AuthorityVerificationFailure.AUTHORITY_SIGNATURE_INVALID
-            in resolved.failure_codes
-        )
+        assert AuthorityVerificationFailure.AUTHORITY_SIGNATURE_INVALID in resolved.failure_codes
 
     def test_an_unknown_key_id_does_not_verify(self) -> None:
         artefact = build_artefact(key_id="isk-does-not-exist")
         resolved = provider().resolve(claim(artefact), context())
-        assert (
-            AuthorityVerificationFailure.AUTHORITY_SIGNATURE_INVALID
-            in resolved.failure_codes
-        )
+        assert AuthorityVerificationFailure.AUTHORITY_SIGNATURE_INVALID in resolved.failure_codes
 
     def test_a_retired_key_cannot_authenticate_new_authority(self) -> None:
-        resolved = provider(key_status="retired").resolve(
-            claim(build_artefact()), context()
-        )
-        assert (
-            AuthorityVerificationFailure.AUTHORITY_SIGNATURE_INVALID
-            in resolved.failure_codes
-        )
+        resolved = provider(key_status="retired").resolve(claim(build_artefact()), context())
+        assert AuthorityVerificationFailure.AUTHORITY_SIGNATURE_INVALID in resolved.failure_codes
 
     def test_a_revoked_key_in_configuration_does_not_verify(self) -> None:
-        resolved = provider(key_status="revoked").resolve(
-            claim(build_artefact()), context()
-        )
+        resolved = provider(key_status="revoked").resolve(claim(build_artefact()), context())
         assert AuthorityVerificationFailure.AUTHORITY_REVOKED in resolved.failure_codes
 
     def test_a_key_past_its_validity_window_cannot_sign_new_authority(self) -> None:
         resolved = provider(
             key_not_after="2020-01-01T00:00:00Z",
         ).resolve(claim(build_artefact()), context())
-        assert (
-            AuthorityVerificationFailure.AUTHORITY_SIGNATURE_INVALID
-            in resolved.failure_codes
-        )
+        assert AuthorityVerificationFailure.AUTHORITY_SIGNATURE_INVALID in resolved.failure_codes
 
     def test_rotation_keeps_both_keys_verifying_while_both_are_active(self) -> None:
         reg = provider(include_rotated=True)
@@ -495,27 +468,17 @@ class TestVerification:
             evidence={ARTEFACT_EVIDENCE_KEY: artefact},
         )
         resolved = provider().resolve(mismatched, context())
-        assert (
-            AuthorityVerificationFailure.AUTHORITY_DIGEST_MISMATCH
-            in resolved.failure_codes
-        )
+        assert AuthorityVerificationFailure.AUTHORITY_DIGEST_MISMATCH in resolved.failure_codes
 
     def test_a_claim_naming_a_different_authority_id_is_refused(self) -> None:
         artefact = build_artefact(authority_id="auth-002")
         resolved = provider().resolve(claim(artefact), context())
-        assert (
-            AuthorityVerificationFailure.AUTHORITY_DIGEST_MISMATCH
-            in resolved.failure_codes
-        )
+        assert AuthorityVerificationFailure.AUTHORITY_DIGEST_MISMATCH in resolved.failure_codes
 
     def test_a_claim_with_no_artefact_is_refused(self) -> None:
-        bare = DelegatedAuthorityClaim(
-            issuer=ISSUER_ID, external_reference_id="auth-001"
-        )
+        bare = DelegatedAuthorityClaim(issuer=ISSUER_ID, external_reference_id="auth-001")
         resolved = provider().resolve(bare, context())
-        assert (
-            AuthorityVerificationFailure.AUTHORITY_NOT_FOUND in resolved.failure_codes
-        )
+        assert AuthorityVerificationFailure.AUTHORITY_NOT_FOUND in resolved.failure_codes
 
     def test_resolving_no_claim_is_a_fault_not_a_verdict(self) -> None:
         with pytest.raises(AuthorityProviderFault):
@@ -527,10 +490,7 @@ class TestValidityWindow:
         now = datetime.now(UTC)
         artefact = build_artefact(not_before=now + timedelta(hours=1))
         resolved = provider(now=now).resolve(claim(artefact), context())
-        assert (
-            AuthorityVerificationFailure.AUTHORITY_NOT_YET_VALID
-            in resolved.failure_codes
-        )
+        assert AuthorityVerificationFailure.AUTHORITY_NOT_YET_VALID in resolved.failure_codes
 
     def test_an_expired_delegation_is_refused(self) -> None:
         now = datetime.now(UTC)
@@ -550,24 +510,14 @@ class TestPrincipalBinding:
 
     def test_a_delegation_for_another_principal_is_refused(self) -> None:
         artefact = build_artefact(account_reference="acct-somebody-else")
-        resolved = provider().resolve(
-            claim(artefact), context(account_reference="acct-canary")
-        )
-        assert (
-            AuthorityVerificationFailure.AUTHORITY_PRINCIPAL_MISMATCH
-            in resolved.failure_codes
-        )
+        resolved = provider().resolve(claim(artefact), context(account_reference="acct-canary"))
+        assert AuthorityVerificationFailure.AUTHORITY_PRINCIPAL_MISMATCH in resolved.failure_codes
 
     def test_a_principal_with_no_recorded_identity_cannot_use_any_delegation(
         self,
     ) -> None:
-        resolved = provider().resolve(
-            claim(build_artefact()), context(account_reference=None)
-        )
-        assert (
-            AuthorityVerificationFailure.AUTHORITY_PRINCIPAL_MISMATCH
-            in resolved.failure_codes
-        )
+        resolved = provider().resolve(claim(build_artefact()), context(account_reference=None))
+        assert AuthorityVerificationFailure.AUTHORITY_PRINCIPAL_MISMATCH in resolved.failure_codes
 
     def test_a_delegation_stating_no_principal_is_refused(self) -> None:
         artefact = build_artefact()
@@ -576,10 +526,7 @@ class TestPrincipalBinding:
             ISSUER_KEY.sign(jcs.canonicalize(artefact["payload"])).signature
         ).decode("ascii")
         resolved = provider().resolve(claim(artefact), context())
-        assert (
-            AuthorityVerificationFailure.AUTHORITY_PRINCIPAL_MISMATCH
-            in resolved.failure_codes
-        )
+        assert AuthorityVerificationFailure.AUTHORITY_PRINCIPAL_MISMATCH in resolved.failure_codes
 
 
 class TestDelegateBinding:
@@ -602,19 +549,13 @@ class TestDelegateBinding:
             claim(artefact), context(delegate_fingerprint="a" * 64)
         )
         assert resolved.delegate_binding_status is DelegateBindingStatus.NOT_BOUND
-        assert (
-            AuthorityVerificationFailure.AUTHORITY_DELEGATE_NOT_BOUND
-            in resolved.failure_codes
-        )
+        assert AuthorityVerificationFailure.AUTHORITY_DELEGATE_NOT_BOUND in resolved.failure_codes
 
     def test_a_missing_delegate_claim_is_not_bound(self) -> None:
         resolved = provider(expresses_delegate_binding=True).resolve(
             claim(build_artefact()), context(delegate_fingerprint="a" * 64)
         )
-        assert (
-            AuthorityVerificationFailure.AUTHORITY_DELEGATE_NOT_BOUND
-            in resolved.failure_codes
-        )
+        assert AuthorityVerificationFailure.AUTHORITY_DELEGATE_NOT_BOUND in resolved.failure_codes
 
 
 class TestScopeTranslation:
@@ -625,24 +566,18 @@ class TestScopeTranslation:
     def test_an_unmapped_field_is_carried_through_rather_than_dropped(self) -> None:
         """Downstream it becomes an unsupported constraint and fails closed;
         dropping it would silently broaden what the issuer granted."""
-        artefact = build_artefact(
-            scope={"spend_ceiling": "10.00", "velocity_rule": "3-per-day"}
-        )
+        artefact = build_artefact(scope={"spend_ceiling": "10.00", "velocity_rule": "3-per-day"})
         resolved = provider().resolve(claim(artefact), context())
         assert resolved.scope["velocity_rule"] == "3-per-day"
 
 
 class TestRevocationInMemory:
     def _revoked(self, subject: RevocationSubject, subject_id: str, issuer: str | None):
-        return RevocationSnapshot(
-            revoked=frozenset({(subject.value, issuer or "*", subject_id)})
-        )
+        return RevocationSnapshot(revoked=frozenset({(subject.value, issuer or "*", subject_id)}))
 
     def test_a_revoked_issuer_stops_everything_it_signed(self) -> None:
         snapshot = self._revoked(RevocationSubject.ISSUER, ISSUER_ID, None)
-        resolved = provider(revocations=snapshot).resolve(
-            claim(build_artefact()), context()
-        )
+        resolved = provider(revocations=snapshot).resolve(claim(build_artefact()), context())
         assert AuthorityVerificationFailure.AUTHORITY_REVOKED in resolved.failure_codes
 
     def test_a_revoked_signing_key_stops_its_delegations(self) -> None:
@@ -651,15 +586,11 @@ class TestRevocationInMemory:
             public_key_fingerprint(_public(ISSUER_KEY)),
             ISSUER_ID,
         )
-        resolved = provider(revocations=snapshot).resolve(
-            claim(build_artefact()), context()
-        )
+        resolved = provider(revocations=snapshot).resolve(claim(build_artefact()), context())
         assert AuthorityVerificationFailure.AUTHORITY_REVOKED in resolved.failure_codes
 
     def test_a_revoked_delegation_reference_stops_only_itself(self) -> None:
-        snapshot = self._revoked(
-            RevocationSubject.AUTHORITY_REFERENCE, "auth-001", ISSUER_ID
-        )
+        snapshot = self._revoked(RevocationSubject.AUTHORITY_REFERENCE, "auth-001", ISSUER_ID)
         assert (
             AuthorityVerificationFailure.AUTHORITY_REVOKED
             in provider(revocations=snapshot)
@@ -679,9 +610,9 @@ class TestRevocationInMemory:
             public_key_fingerprint(_public(ISSUER_KEY)),
             "a-different-issuer",
         )
-        assert provider(revocations=snapshot).resolve(
-            claim(build_artefact()), context()
-        ).is_verified
+        assert (
+            provider(revocations=snapshot).resolve(claim(build_artefact()), context()).is_verified
+        )
 
 
 # =============================================================================
@@ -744,9 +675,7 @@ def executor(org_id: UUID) -> AuthenticatedExecutorContext:
         organisation_id=org_id,
         api_key_id=key_id,
         scopes=frozenset({"write"}),
-        binding_digest=executor_binding_digest(
-            organisation_id=org_id, api_key_id=key_id
-        ),
+        binding_digest=executor_binding_digest(organisation_id=org_id, api_key_id=key_id),
     )
 
 
@@ -790,14 +719,9 @@ class TestPrincipalBindingStore:
             approval_reference="CHG-3-2",
             reason="scoped",
         )
-        assert (
-            await load_principal_binding(db, agent_id=agent_id, issuer="other-issuer")
-            == {}
-        )
+        assert await load_principal_binding(db, agent_id=agent_id, issuer="other-issuer") == {}
 
-    async def test_clearing_a_binding_removes_the_identity(
-        self, db, org_and_agent
-    ) -> None:
+    async def test_clearing_a_binding_removes_the_identity(self, db, org_and_agent) -> None:
         org_id, agent_id = org_and_agent
         await set_principal_binding(
             db,
@@ -850,9 +774,7 @@ class TestRevocationStore:
         snapshot = await load_revocations(
             db, subjects=[(RevocationSubject.ISSUER_KEY, fingerprint, ISSUER_ID)]
         )
-        assert snapshot.is_revoked(
-            RevocationSubject.ISSUER_KEY, fingerprint, issuer=ISSUER_ID
-        )
+        assert snapshot.is_revoked(RevocationSubject.ISSUER_KEY, fingerprint, issuer=ISSUER_ID)
 
         await set_revocation(
             db,
@@ -867,9 +789,7 @@ class TestRevocationStore:
         snapshot = await load_revocations(
             db, subjects=[(RevocationSubject.ISSUER_KEY, fingerprint, ISSUER_ID)]
         )
-        assert not snapshot.is_revoked(
-            RevocationSubject.ISSUER_KEY, fingerprint, issuer=ISSUER_ID
-        )
+        assert not snapshot.is_revoked(RevocationSubject.ISSUER_KEY, fingerprint, issuer=ISSUER_ID)
 
     async def test_a_key_revocation_needs_an_issuer(self, db) -> None:
         with pytest.raises(ValueError, match="must name the issuer"):
@@ -902,12 +822,8 @@ class TestRevocationStore:
                 (RevocationSubject.ISSUER_KEY, fingerprint, "issuer-b"),
             ],
         )
-        assert snapshot.is_revoked(
-            RevocationSubject.ISSUER_KEY, fingerprint, issuer="issuer-a"
-        )
-        assert not snapshot.is_revoked(
-            RevocationSubject.ISSUER_KEY, fingerprint, issuer="issuer-b"
-        )
+        assert snapshot.is_revoked(RevocationSubject.ISSUER_KEY, fingerprint, issuer="issuer-a")
+        assert not snapshot.is_revoked(RevocationSubject.ISSUER_KEY, fingerprint, issuer="issuer-b")
 
     async def test_an_unreadable_revocation_store_fails_closed(self) -> None:
         import asyncpg
@@ -950,9 +866,7 @@ class TestEndToEnd:
         service = AuthorityEvaluationService(
             db, server_secret=SERVER_SECRET, trust_registry=registry()
         )
-        artefact = build_artefact(
-            scope={"spend_ceiling": "500.00", "denomination": "USD"}
-        )
+        artefact = build_artefact(scope={"spend_ceiling": "500.00", "denomination": "USD"})
         result = await service.evaluate(
             agent=agent,
             action_type=ACTION,
@@ -974,9 +888,7 @@ class TestEndToEnd:
         service = AuthorityEvaluationService(
             db, server_secret=SERVER_SECRET, trust_registry=registry()
         )
-        artefact = build_artefact(
-            scope={"spend_ceiling": "10.00", "denomination": "USD"}
-        )
+        artefact = build_artefact(scope={"spend_ceiling": "10.00", "denomination": "USD"})
         result = await service.evaluate(
             agent=agent,
             action_type=ACTION,
@@ -988,9 +900,7 @@ class TestEndToEnd:
         assert result.decision is Decision.BLOCK
         assert result.authority_token is None
 
-    async def test_a_delegation_for_another_account_is_blocked(
-        self, db, org_and_agent
-    ) -> None:
+    async def test_a_delegation_for_another_account_is_blocked(self, db, org_and_agent) -> None:
         org_id, agent_id = org_and_agent
         await self._bind(db, org_id, agent_id, value="acct-ours")
         agent = await db.get_agent_by_id(agent_id)
@@ -1029,9 +939,7 @@ class TestEndToEnd:
         )
         assert result.decision is Decision.BLOCK
 
-    async def test_revoking_the_delegation_stops_the_next_issuance(
-        self, db, org_and_agent
-    ) -> None:
+    async def test_revoking_the_delegation_stops_the_next_issuance(self, db, org_and_agent) -> None:
         org_id, agent_id = org_and_agent
         await self._bind(db, org_id, agent_id)
         agent = await db.get_agent_by_id(agent_id)
@@ -1098,8 +1006,7 @@ class TestEndToEnd:
         self, db, org_and_agent
     ) -> None:
         """Presenting authority must never quietly take the wider path."""
-        org_id, agent_id = org_and_agent
-        agent = await db.get_agent_by_id(agent_id)
+        _org_id, _agent_id = org_and_agent
         service = AuthorityEvaluationService(
             db, server_secret=SERVER_SECRET, trust_registry=TrustedIssuerRegistry.empty()
         )

@@ -173,9 +173,7 @@ def _decision_metadata(*, sandbox: bool) -> dict[str, Any]:
     return metadata
 
 
-def evidence_body(
-    payload: dict[str, Any], *, audit_id: Any, agent_id: Any
-) -> dict[str, Any]:
+def evidence_body(payload: dict[str, Any], *, audit_id: Any, agent_id: Any) -> dict[str, Any]:
     """The canonical v3 decision body, in the shape the receipt publishes.
 
     Built here, at decision time, and stored verbatim — so the historical
@@ -234,9 +232,7 @@ async def record_authority_decision(
     async with database.acquire() as conn, conn.transaction():
         # Same per-agent lock the /verify path takes, so a concurrent
         # decision for this agent cannot fork the local hash chain.
-        await conn.execute(
-            "SELECT pg_advisory_xact_lock(hashtext($1)::bigint)", str(agent_id)
-        )
+        await conn.execute("SELECT pg_advisory_xact_lock(hashtext($1)::bigint)", str(agent_id))
         row = await conn.fetchrow(
             _INSERT,
             agent_id,

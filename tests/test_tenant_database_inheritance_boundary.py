@@ -6,7 +6,6 @@ through acquisition methods overridden by the tenant facade, never by touching
 Database._pool directly or reflectively.
 """
 
-
 _RAW_CONNECTION_PRIMITIVES = frozenset(
     {"__init__", "create", "close", "acquire", "acquire_as_tenant"}
 )
@@ -24,15 +23,11 @@ def _code_references_raw_pool(code) -> bool:
 
 def test_tenant_facade_overrides_every_raw_connection_primitive() -> None:
     """Inherited code cannot fall back to the privileged constructor/pool API."""
-    adapter_module = __import__(
-        "api.system_tenant_adapter", fromlist=["TenantScopedDatabase"]
-    )
+    adapter_module = __import__("api.system_tenant_adapter", fromlist=["TenantScopedDatabase"])
     tenant_scoped_database = adapter_module.TenantScopedDatabase
 
     missing = sorted(
-        name
-        for name in _RAW_CONNECTION_PRIMITIVES
-        if name not in tenant_scoped_database.__dict__
+        name for name in _RAW_CONNECTION_PRIMITIVES if name not in tenant_scoped_database.__dict__
     )
     assert missing == [], f"TenantScopedDatabase must override raw DB primitives: {missing}"
 

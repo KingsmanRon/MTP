@@ -16,6 +16,7 @@ from api.main import _resolve_cors_origins
 # development convenience
 # -----------------------------------------------------------------------------
 
+
 def test_development_default_allows_wildcard() -> None:
     assert _resolve_cors_origins("development", "") == ["*"]
 
@@ -32,6 +33,7 @@ def test_development_honors_explicit_list() -> None:
 # -----------------------------------------------------------------------------
 # production lockdown: wildcard / empty -> fatal
 # -----------------------------------------------------------------------------
+
 
 @pytest.mark.parametrize("env", ["production", "staging", "prod", "test"])
 def test_non_dev_rejects_empty(env: str) -> None:
@@ -55,6 +57,7 @@ def test_non_dev_rejects_wildcard_mixed_with_origins() -> None:
 # -----------------------------------------------------------------------------
 # production lockdown: per-origin validation
 # -----------------------------------------------------------------------------
+
 
 def test_non_dev_rejects_missing_scheme() -> None:
     with pytest.raises(SystemExit, match="invalid CORS origin"):

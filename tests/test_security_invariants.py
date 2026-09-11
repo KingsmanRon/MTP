@@ -1,4 +1,5 @@
 """Focused regressions for backend security invariants."""
+
 from datetime import UTC, datetime
 from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -150,9 +151,6 @@ def test_malformed_signature_is_bounded_attack_telemetry_only():
     db.reserve_rate_and_spend.assert_not_called()
     db.create_security_alert.assert_awaited_once()
 
-    attack_keys = [
-        key for key in redis_stub.values
-        if ":security:signature_invalid:" in key
-    ]
+    attack_keys = [key for key in redis_stub.values if ":security:signature_invalid:" in key]
     assert len(attack_keys) == 2
     assert all(redis_stub.expiries[key] <= 3600 for key in attack_keys)

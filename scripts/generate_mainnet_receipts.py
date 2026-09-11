@@ -46,9 +46,14 @@ allowed_actions:
 DEMO_POLICY_HASH = hashlib.sha256(DEMO_POLICY_YAML.encode("utf-8")).hexdigest()
 
 
-def submit_verification(api_url: str, agent_id: str, signing_key: SigningKey,
-                        action_type: str, payload: dict,
-                        policy_hash: str) -> dict:
+def submit_verification(
+    api_url: str,
+    agent_id: str,
+    signing_key: SigningKey,
+    action_type: str,
+    payload: dict,
+    policy_hash: str,
+) -> dict:
     # Signed by the shared product client — same canonicalization the server
     # verifies against (and the same path the MCP tool uses).
     request_body = build_signed_verify_request(
@@ -73,7 +78,11 @@ def submit_verification(api_url: str, agent_id: str, signing_key: SigningKey,
     elif response.status_code in (403, 429):
         # Blocked/rate-limited: the audit log was created but the API returns an error
         # We need to fetch the audit_id from the database
-        return {"verdict": "blocked", "detail": response.json().get("detail", ""), "_status": response.status_code}
+        return {
+            "verdict": "blocked",
+            "detail": response.json().get("detail", ""),
+            "_status": response.status_code,
+        }
     else:
         print(f"  ERROR {response.status_code}: {response.text}")
         sys.exit(1)
@@ -158,9 +167,7 @@ def setup_agent(api_url: str, api_key: str, signing_key: SigningKey) -> str:
     return agent_id
 
 
-def fetch_latest_audit_id(
-    api_url: str, api_key: str, agent_id: str, verdict: str
-) -> str:
+def fetch_latest_audit_id(api_url: str, api_key: str, agent_id: str, verdict: str) -> str:
     """Fetch the most recent audit log ID through the tenant admin API."""
     result = _require(
         requests.get(
@@ -216,8 +223,12 @@ def main():
         agent_id=agent_id,
         signing_key=signing_key,
         action_type="financial_transaction",
-        payload={"amount": 25.00, "currency": "USD", "recipient": "vendor_001",
-                 "description": "Mainnet verification test - approved"},
+        payload={
+            "amount": 25.00,
+            "currency": "USD",
+            "recipient": "vendor_001",
+            "description": "Mainnet verification test - approved",
+        },
         policy_hash=DEMO_POLICY_HASH,
     )
     pass_verdict = pass_result.get("verdict", "unknown")
@@ -234,8 +245,12 @@ def main():
         agent_id=agent_id,
         signing_key=signing_key,
         action_type="financial_transaction",
-        payload={"amount": 75.00, "currency": "USD", "recipient": "vendor_002",
-                 "description": "Mainnet verification test - blocked"},
+        payload={
+            "amount": 75.00,
+            "currency": "USD",
+            "recipient": "vendor_002",
+            "description": "Mainnet verification test - blocked",
+        },
         policy_hash=DEMO_POLICY_HASH,
     )
     block_verdict = block_result.get("verdict", "unknown")
@@ -246,9 +261,7 @@ def main():
 
     # Fetch the BLOCK audit_id through the tenant admin API.
     print("  Fetching BLOCK audit ID from admin audit search...")
-    block_audit_id = fetch_latest_audit_id(
-        api_url, args.api_key, agent_id, "blocked"
-    )
+    block_audit_id = fetch_latest_audit_id(api_url, args.api_key, agent_id, "blocked")
     print(f"  Audit ID: {block_audit_id}")
 
     # --- Summary ---

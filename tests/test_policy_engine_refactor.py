@@ -387,23 +387,17 @@ class TestSpendLimitsStillApplyBeyondPayment:
     @pytest.mark.parametrize(
         "action_type", ["email_send", "api_call", "tool_call", "data_export", "admin_action"]
     )
-    def test_a_non_payment_action_with_an_amount_is_still_capped(
-        self, action_type: str
-    ) -> None:
+    def test_a_non_payment_action_with_an_amount_is_still_capped(self, action_type: str) -> None:
         result = evaluate(agent(), action_type, {"amount": "500.00"})
         assert result.violation is PolicyViolation.PER_ACTION_LIMIT_EXCEEDED
 
     @pytest.mark.parametrize("action_type", ["email_send", "api_call", "data_export"])
     def test_a_non_payment_action_still_hits_the_daily_cap(self, action_type: str) -> None:
-        result = evaluate(
-            agent(), action_type, {"amount": "50.00"}, daily_spend=Decimal("980")
-        )
+        result = evaluate(agent(), action_type, {"amount": "50.00"}, daily_spend=Decimal("980"))
         assert result.violation is PolicyViolation.DAILY_LIMIT_EXCEEDED
 
     @pytest.mark.parametrize("action_type", ["email_send", "api_call", "tool_call"])
-    def test_a_malformed_amount_still_fails_closed_outside_payment(
-        self, action_type: str
-    ) -> None:
+    def test_a_malformed_amount_still_fails_closed_outside_payment(self, action_type: str) -> None:
         result = evaluate(agent(), action_type, {"amount": "-1"})
         assert result.violation is PolicyViolation.AMOUNT_INVALID
 

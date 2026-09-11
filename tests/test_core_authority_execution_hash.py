@@ -53,9 +53,7 @@ class TestRepresentationDoesNotChangeTheHash:
     def test_key_order_does_not_change_the_hash(self) -> None:
         insertion_order = build_action(payload={"amount": "10.00", "currency": "USD"})
         reverse_order = build_action(payload={"currency": "USD", "amount": "10.00"})
-        assert (
-            insertion_order.execution_action_hash == reverse_order.execution_action_hash
-        )
+        assert insertion_order.execution_action_hash == reverse_order.execution_action_hash
 
     def test_whitespace_in_the_source_document_does_not_change_the_hash(self) -> None:
         compact = json.loads('{"amount":"10.00","currency":"USD"}')
@@ -204,8 +202,7 @@ class TestOmittedVersusNull:
 
     def test_absent_target_hashes_differently_from_a_present_one(self) -> None:
         assert (
-            build_action(target=None).execution_action_hash
-            != build_action().execution_action_hash
+            build_action(target=None).execution_action_hash != build_action().execution_action_hash
         )
 
     def test_target_none_and_target_omitted_are_the_same_act(self) -> None:
@@ -292,9 +289,7 @@ class TestFormatVersioning:
             )
 
     def test_a_payload_key_named_format_cannot_shadow_the_version(self) -> None:
-        spoofed = build_action(
-            payload={"format": "inntris-execution-action-v2", "amount": "10.00"}
-        )
+        spoofed = build_action(payload={"format": "inntris-execution-action-v2", "amount": "10.00"})
         assert spoofed.preimage()["format"] == EXECUTION_ACTION_HASH_FORMAT
         assert spoofed.execution_action_hash != build_action().execution_action_hash
 

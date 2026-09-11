@@ -74,7 +74,9 @@ def test_explicit_empty_environment_does_not_fall_back_to_process_secrets() -> N
 
 def test_privileged_and_runtime_roles_must_be_separate() -> None:
     password = _environment()["RUNTIME_DATABASE_PASSWORD"]
-    with pytest.raises(runtime_role.RuntimeRoleConfigurationError, match="privileged migration role"):
+    with pytest.raises(
+        runtime_role.RuntimeRoleConfigurationError, match="privileged migration role"
+    ):
         runtime_role._validate_configuration(
             _environment(
                 ALEMBIC_DATABASE_URL=(
@@ -84,9 +86,7 @@ def test_privileged_and_runtime_roles_must_be_separate() -> None:
         )
     with pytest.raises(runtime_role.RuntimeRoleConfigurationError, match="must use the"):
         runtime_role._validate_configuration(
-            _environment(
-                DATABASE_URL=f"postgresql://postgres:{password}@postgres:5432/inntris"
-            )
+            _environment(DATABASE_URL=f"postgresql://postgres:{password}@postgres:5432/inntris")
         )
 
 

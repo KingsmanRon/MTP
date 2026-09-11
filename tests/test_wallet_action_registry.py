@@ -12,6 +12,7 @@ so declaring a threshold is what registers an action. A future wallet action
 added to the threshold table is registered by construction, and one added to
 neither table is denied by construction. There is no third list to keep in sync.
 """
+
 from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import uuid4
@@ -71,9 +72,7 @@ def _evaluate(agent, action_type="wallet_transaction", payload=None):
         agent=agent,
         action_type=action_type,
         payload=(
-            payload
-            if payload is not None
-            else {"chain": CHAIN, "recipient": ALLOWED_RECIPIENT}
+            payload if payload is not None else {"chain": CHAIN, "recipient": ALLOWED_RECIPIENT}
         ),
         timestamp=datetime.now(UTC),
     )
@@ -100,8 +99,7 @@ class TestWalletActionsAreRegistered:
     def test_registered_wallet_action_passes_the_registry_gate(self, action_type):
         # The gate the class fix added must not deny a legitimate wallet action.
         assert (
-            PolicyEngine()._check_action_registered(action_type).verdict
-            == ActionVerdict.APPROVED
+            PolicyEngine()._check_action_registered(action_type).verdict == ActionVerdict.APPROVED
         )
 
 
@@ -116,9 +114,7 @@ class TestWalletTypoStillFailsClosed:
         # models, so allowed_actions can still carry a typo. The engine's
         # registry check is what catches it. Without the class fix this
         # approved at an invented threshold of 20 with no spend check.
-        agent = _agent(
-            metadata=WALLET_POLICY, allowed_actions=["wallet_transactions"]
-        )
+        agent = _agent(metadata=WALLET_POLICY, allowed_actions=["wallet_transactions"])
 
         result = _evaluate(agent, action_type="wallet_transactions")
 
@@ -129,9 +125,7 @@ class TestWalletTypoStillFailsClosed:
         # An unregistered type must be rejected before the wallet layer is
         # consulted, so an unknown action can never be answered with a
         # wallet-shaped verdict that implies the engine understood it.
-        agent = _agent(
-            metadata=WALLET_POLICY, allowed_actions=["wallet_transactions"]
-        )
+        agent = _agent(metadata=WALLET_POLICY, allowed_actions=["wallet_transactions"])
 
         result = _evaluate(
             agent,
@@ -139,18 +133,16 @@ class TestWalletTypoStillFailsClosed:
             payload={"chain": CHAIN, "recipient": BLOCKED_RECIPIENT},
         )
 
-        assert result.violation == PolicyViolation.ACTION_TYPE_UNKNOWN, (
-            "an unregistered action type must not reach the recipient allowlist"
-        )
+        assert (
+            result.violation == PolicyViolation.ACTION_TYPE_UNKNOWN
+        ), "an unregistered action type must not reach the recipient allowlist"
 
 
 class TestAdmissionAcceptsWalletActions:
     """The write-path registry validator must admit the wallet action types."""
 
     def test_update_request_accepts_both_wallet_actions(self):
-        request = UpdateAgentRequest(
-            allowed_actions=["wallet_transaction", "wallet_signature"]
-        )
+        request = UpdateAgentRequest(allowed_actions=["wallet_transaction", "wallet_signature"])
         assert request.allowed_actions == ["wallet_transaction", "wallet_signature"]
 
     def test_register_request_accepts_both_wallet_actions(self):
@@ -169,9 +161,7 @@ class TestAdmissionAcceptsWalletActions:
     def test_wallet_policy_and_allowed_actions_validate_together(self):
         # Both validators run on the same request: the registry check on
         # allowed_actions and the structural check on metadata.wallet_policy.
-        request = UpdateAgentRequest(
-            allowed_actions=["wallet_transaction"], metadata=WALLET_POLICY
-        )
+        request = UpdateAgentRequest(allowed_actions=["wallet_transaction"], metadata=WALLET_POLICY)
         assert request.metadata == WALLET_POLICY
 
     def test_a_malformed_wallet_policy_is_rejected_alongside_valid_actions(self):
@@ -214,9 +204,9 @@ class TestOptInSurvivesTheClassFix:
         )
         assert result.verdict == ActionVerdict.BLOCKED
         assert result.violation == PolicyViolation.WALLET_RECIPIENT_NOT_ALLOWED
-        assert result.violation.value == "wallet_recipient_not_allowed", (
-            "Gate 1 checks the wire string, not the enum member"
-        )
+        assert (
+            result.violation.value == "wallet_recipient_not_allowed"
+        ), "Gate 1 checks the wire string, not the enum member"
 
 
 class TestSpendCounterCoversWalletActions:
@@ -228,6 +218,4 @@ class TestSpendCounterCoversWalletActions:
         # set the counter measures. Counting must not become blocking:
         # AMOUNT_REQUIRED_ACTIONS is deliberately unchanged.
         assert action_type not in PolicyEngine.AMOUNT_REQUIRED_ACTIONS
-        assert _evaluate(_agent(WALLET_POLICY), action_type).verdict == (
-            ActionVerdict.APPROVED
-        )
+        assert _evaluate(_agent(WALLET_POLICY), action_type).verdict == (ActionVerdict.APPROVED)

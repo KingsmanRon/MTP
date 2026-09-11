@@ -26,10 +26,7 @@ class TestCanonicalizeTimestamp:
 
     def test_preserves_microseconds(self) -> None:
         dt = datetime(2026, 4, 17, 12, 0, 0, 123456, tzinfo=UTC)
-        assert (
-            CryptoService.canonicalize_timestamp(dt)
-            == "2026-04-17T12:00:00.123456Z"
-        )
+        assert CryptoService.canonicalize_timestamp(dt) == "2026-04-17T12:00:00.123456Z"
 
     def test_non_utc_tz_is_normalized_to_utc(self) -> None:
         paris = timezone(timedelta(hours=2))
@@ -42,8 +39,7 @@ class TestCanonicalizeTimestamp:
 
     def test_string_with_z_suffix_round_trips(self) -> None:
         assert (
-            CryptoService.canonicalize_timestamp("2026-04-17T12:00:00Z")
-            == "2026-04-17T12:00:00Z"
+            CryptoService.canonicalize_timestamp("2026-04-17T12:00:00Z") == "2026-04-17T12:00:00Z"
         )
 
     def test_string_with_offset_is_converted(self) -> None:
@@ -75,9 +71,7 @@ class TestActionHashIsTimezoneIndependent:
     def test_same_instant_in_different_forms_hashes_identically(self) -> None:
         utc_dt = datetime(2026, 4, 17, 12, 0, 0, tzinfo=UTC)
         naive_dt = datetime(2026, 4, 17, 12, 0, 0)
-        paris_dt = datetime(
-            2026, 4, 17, 14, 0, 0, tzinfo=timezone(timedelta(hours=2))
-        )
+        paris_dt = datetime(2026, 4, 17, 14, 0, 0, tzinfo=timezone(timedelta(hours=2)))
         z_string = "2026-04-17T12:00:00Z"
         offset_string = "2026-04-17T14:00:00+02:00"
 
@@ -145,9 +139,7 @@ class TestSigVersion:
         # added sig_version=2 in the first place. Two representations of
         # the same instant hash differently under sig_version=1.
         utc_ts = datetime(2026, 4, 17, 12, 0, 0, tzinfo=UTC)
-        paris_ts = datetime(
-            2026, 4, 17, 14, 0, 0, tzinfo=timezone(timedelta(hours=2))
-        )
+        paris_ts = datetime(2026, 4, 17, 14, 0, 0, tzinfo=timezone(timedelta(hours=2)))
         assert self._hash(utc_ts, sig_version=1) != self._hash(paris_ts, sig_version=1)
 
     def test_unknown_sig_version_raises(self) -> None:

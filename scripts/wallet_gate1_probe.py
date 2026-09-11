@@ -28,6 +28,7 @@ Usage:
     python scripts/wallet_gate1_probe.py --chain eip155:8453 \
         --recipient 0x9999999999999999999999999999999999999999
 """
+
 from __future__ import annotations
 
 import argparse
@@ -95,9 +96,7 @@ def main() -> int:
         print("Gate 1 could not run. Missing: " + ", ".join(missing), file=sys.stderr)
         return EXIT_PROBE_FAILED
 
-    client = InntrisAgentClient.from_seed_b64(
-        args.core_url, args.agent_id, seed_b64
-    )
+    client = InntrisAgentClient.from_seed_b64(args.core_url, args.agent_id, seed_b64)
 
     payload = {
         "chain": args.chain,

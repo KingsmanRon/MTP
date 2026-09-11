@@ -20,9 +20,11 @@ from typing import Any
 # action with no recognized amount field fails closed (BLOCKED) rather
 # than being silently treated as a $0 transaction that bypasses the
 # daily/per-action caps entirely.
-AMOUNT_REQUIRED_ACTIONS: frozenset = frozenset({
-    "financial_transaction",
-})
+AMOUNT_REQUIRED_ACTIONS: frozenset = frozenset(
+    {
+        "financial_transaction",
+    }
+)
 
 # Payload fields that may carry a transaction amount, in priority order.
 # The first field present wins; if it is malformed the request is blocked

@@ -4,6 +4,7 @@ The DB privilege error path used to return migration numbers, role names,
 and table names in the public response body. This test pins the response
 to a generic, infra-free string so that regressions surface immediately.
 """
+
 from unittest.mock import AsyncMock, patch
 
 import asyncpg
@@ -43,15 +44,13 @@ class TestPublicVerifyErrorLeak:
             mock_pool.acquire.return_value.__aenter__ = AsyncMock(return_value=conn)
             mock_pool.acquire.return_value.__aexit__ = AsyncMock(return_value=False)
 
-            response = client.get(
-                "/public/verify/00000000-0000-0000-0000-000000000001"
-            )
+            response = client.get("/public/verify/00000000-0000-0000-0000-000000000001")
 
         assert response.status_code == 503
         body = response.text
         body_lower = body.lower()
         for needle in FORBIDDEN_SUBSTRINGS:
-            assert needle.lower() not in body_lower, (
-                f"Public 503 body leaked forbidden substring {needle!r}: {body!r}"
-            )
+            assert (
+                needle.lower() not in body_lower
+            ), f"Public 503 body leaked forbidden substring {needle!r}: {body!r}"
         assert "verification temporarily unavailable" in body_lower

@@ -93,8 +93,7 @@ def _encode_number(n: int | float) -> str:
 
     if not math.isfinite(n):
         raise JCSError(
-            "JCS forbids NaN and Infinity; "
-            "encode as a string or omit the field entirely"
+            "JCS forbids NaN and Infinity; " "encode as a string or omit the field entirely"
         )
 
     if n == 0.0:
@@ -143,15 +142,10 @@ def _canonicalize(obj: Any) -> str:
         items = []
         for key in obj:
             if not isinstance(key, str):
-                raise JCSError(
-                    f"object keys must be strings; got {type(key).__name__}"
-                )
+                raise JCSError(f"object keys must be strings; got {type(key).__name__}")
             items.append((key.encode("utf-16-be"), key, obj[key]))
         items.sort(key=lambda item: item[0])
-        encoded = [
-            _encode_string(key) + ":" + _canonicalize(value)
-            for (_, key, value) in items
-        ]
+        encoded = [_encode_string(key) + ":" + _canonicalize(value) for (_, key, value) in items]
         return "{" + ",".join(encoded) + "}"
 
     raise JCSError(f"unsupported type for JCS canonicalization: {type(obj).__name__}")

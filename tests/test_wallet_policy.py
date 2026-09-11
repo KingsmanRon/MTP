@@ -4,6 +4,7 @@ Two things must hold together: the new chain and recipient allowlists must
 work, and every existing action type must behave exactly as it did before.
 The regression class at the bottom is the second half of that contract.
 """
+
 from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import uuid4
@@ -126,9 +127,7 @@ class TestWalletPolicyEnforcement:
         assert result.violation is None
 
     def test_second_allowlisted_recipient_passes(self):
-        result = _evaluate(
-            _agent(DEMO_POLICY), payload=_wallet_payload(recipient=SECOND_RECIPIENT)
-        )
+        result = _evaluate(_agent(DEMO_POLICY), payload=_wallet_payload(recipient=SECOND_RECIPIENT))
         assert result.verdict == ActionVerdict.APPROVED
 
     def test_blocked_chain(self):

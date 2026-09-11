@@ -161,9 +161,7 @@ def register(app, *, get_db, require_api_scope, get_agent_or_404, server_secret_
             else None
         )
 
-        service = AuthorityEvaluationService(
-            database, server_secret=server_secret_provider()
-        )
+        service = AuthorityEvaluationService(database, server_secret=server_secret_provider())
 
         # The SAME live state /verify reads, so Core sees the real counts
         # rather than defaults. The authoritative rate-limit enforcement is
@@ -231,9 +229,7 @@ def register(app, *, get_db, require_api_scope, get_agent_or_404, server_secret_
         if str(agent.org_id) != str(auth["org_id"]):
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agent not found")
 
-        service = AuthorityConsumptionService(
-            database, server_secret=server_secret_provider()
-        )
+        service = AuthorityConsumptionService(database, server_secret=server_secret_provider())
         try:
             result = await service.consume(
                 authority_token=body.authority_token,
@@ -244,9 +240,7 @@ def register(app, *, get_db, require_api_scope, get_agent_or_404, server_secret_
                 execution_ref=body.execution_ref,
             )
         except ExecutorAuthError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)
-            ) from exc
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
 
         return {
             "outcome": result.outcome.value,
@@ -256,9 +250,7 @@ def register(app, *, get_db, require_api_scope, get_agent_or_404, server_secret_
                 str(result.consumption_audit_id) if result.consumption_audit_id else None
             ),
             "execution_ref": result.execution_ref,
-            "reason": (
-                result.rejection_reason.value if result.rejection_reason else None
-            ),
+            "reason": (result.rejection_reason.value if result.rejection_reason else None),
         }
 
     app.include_router(router)

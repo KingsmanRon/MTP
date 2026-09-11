@@ -113,10 +113,7 @@ class _RedisStub:
 def _counter_value(component: str) -> float:
     for metric in verify_unavailable_total.collect():
         for sample in metric.samples:
-            if (
-                sample.name.endswith("_total")
-                and sample.labels.get("component") == component
-            ):
+            if sample.name.endswith("_total") and sample.labels.get("component") == component:
                 return sample.value
     return 0.0
 
@@ -154,9 +151,7 @@ def test_nonce_replay_returns_401_not_503():
 
 def test_nonce_cache_outage_returns_503_and_counts_unavailability():
     before = _counter_value("nonce_cache")
-    response, db = _post_signed_verify(
-        _RedisStub(nonce_set_error=ConnectionError("redis down"))
-    )
+    response, db = _post_signed_verify(_RedisStub(nonce_set_error=ConnectionError("redis down")))
 
     assert response.status_code == 503
     assert _counter_value("nonce_cache") == before + 1

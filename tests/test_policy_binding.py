@@ -3,6 +3,7 @@
 These tests cover the security backbone that makes the backend -- not the
 client-asserted action_type -- the authority over a code/release change.
 """
+
 import json
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -83,9 +84,7 @@ def test_strongest_required_matches_golden_vectors(case):
 def test_canonical_policy_hash_matches_golden_vector():
     # The server-derived hash must equal what the JS action sends; the JS side
     # asserts the same constant (github-action/index.test.js).
-    computed = canonical_policy_hash(
-        _POLICY["mapping"], _POLICY["protected_branches"]
-    )
+    computed = canonical_policy_hash(_POLICY["mapping"], _POLICY["protected_branches"])
     assert computed == _VECTORS["policy_hash"]
 
 

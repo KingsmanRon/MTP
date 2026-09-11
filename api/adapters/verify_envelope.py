@@ -211,9 +211,7 @@ def lift_target(
     elif resource_ids:
         resource_id = next(iter(resource_ids.values()))
         if len({*resource_types.values()}) > 1:
-            pairs = ", ".join(
-                f"{key}={value!r}" for key, value in sorted(resource_types.items())
-            )
+            pairs = ", ".join(f"{key}={value!r}" for key, value in sorted(resource_types.items()))
             raise AmbiguousTargetError(
                 f"the payload names more than one resource type ({pairs}); an action "
                 "expresses its target exactly once"

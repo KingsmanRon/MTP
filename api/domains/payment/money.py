@@ -77,9 +77,7 @@ class Money:
     def __post_init__(self) -> None:
         object.__setattr__(self, "currency", _require_supported_currency(self.currency))
         if isinstance(self.minor_units, bool) or not isinstance(self.minor_units, int):
-            raise MoneyError(
-                f"minor_units must be an int, got {type(self.minor_units).__name__}"
-            )
+            raise MoneyError(f"minor_units must be an int, got {type(self.minor_units).__name__}")
         if self.minor_units < 0:
             raise MoneyError("minor_units must not be negative")
 
@@ -102,8 +100,7 @@ class Money:
             raise MoneyError("amount must be a number, not a boolean")
         if isinstance(value, float):
             raise MoneyError(
-                "amount must be a Decimal, int or string; a float cannot represent "
-                "money exactly"
+                "amount must be a Decimal, int or string; a float cannot represent " "money exactly"
             )
         try:
             amount = value if isinstance(value, Decimal) else Decimal(str(value))

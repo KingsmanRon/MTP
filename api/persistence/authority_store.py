@@ -381,9 +381,7 @@ class AuthorityStore:
         current_policy_resolver: CurrentPolicyResolver | None = None,
     ) -> None:
         self._db = database
-        self._resolve_current_policy = (
-            current_policy_resolver or default_current_policy_resolver
-        )
+        self._resolve_current_policy = current_policy_resolver or default_current_policy_resolver
 
     # -- issuance ---------------------------------------------------------
 
@@ -496,8 +494,7 @@ class AuthorityStore:
                     rate_limit_per_minute is not None
                     and int(rate_limit_per_minute) != trusted_rate_limit
                 ) or (
-                    daily_limit_usd is not None
-                    and Decimal(daily_limit_usd) != trusted_daily_limit
+                    daily_limit_usd is not None and Decimal(daily_limit_usd) != trusted_daily_limit
                 ):
                     # A caller asserting limits that do not match trusted state
                     # is either stale or trying to name its own ceiling. Either
@@ -547,19 +544,17 @@ class AuthorityStore:
                         grant_status=status,
                     )
 
-                _minute, _daily, reservation_id = (
-                    await self._db.reserve_rate_and_spend_on(
-                        conn,
-                        agent_id=agent_id,
-                        minute_start=minute_start,
-                        day_start=day_start,
-                        amount=amount_usd,
-                        rate_limit_per_minute=trusted_rate_limit,
-                        daily_limit_usd=trusted_daily_limit,
-                        action_hash=execution_action_hash,
-                        approval_token_id=approval_token_id,
-                        expires_at=effective_expiry,
-                    )
+                _minute, _daily, reservation_id = await self._db.reserve_rate_and_spend_on(
+                    conn,
+                    agent_id=agent_id,
+                    minute_start=minute_start,
+                    day_start=day_start,
+                    amount=amount_usd,
+                    rate_limit_per_minute=trusted_rate_limit,
+                    daily_limit_usd=trusted_daily_limit,
+                    action_hash=execution_action_hash,
+                    approval_token_id=approval_token_id,
+                    expires_at=effective_expiry,
                 )
 
                 grant_id = await conn.fetchval(
@@ -905,12 +900,8 @@ class AuthorityStore:
                 # was issued under.
                 return DecisionReason.AUTHORITY_SCOPE_EXCEEDED
 
-        if (
-            grant["authority_expires_at"] is not None
-            and now >= grant["authority_expires_at"]
-        ):
+        if grant["authority_expires_at"] is not None and now >= grant["authority_expires_at"]:
             return DecisionReason.AUTHORITY_EXPIRED
-
 
         try:
             current_hash, _revision = self._resolve_current_policy(

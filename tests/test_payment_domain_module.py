@@ -146,9 +146,7 @@ def supplier_a_binding(account=BOUND_ACCOUNT) -> StubBindingResolver:
         {
             SUPPLIER_A: PayeeBinding(
                 payee_reference=SUPPLIER_A,
-                destination=ExecutionDestination(
-                    network=CHAIN, account=account, asset="USD"
-                ),
+                destination=ExecutionDestination(network=CHAIN, account=account, asset="USD"),
                 source="organisation-supplier-register",
             )
         }
@@ -206,9 +204,7 @@ class TestMoneyNormalisation:
         assert normalise_payment_money({"currency": "USD"}) is None
 
     def test_two_agreeing_representations_are_accepted(self) -> None:
-        money = normalise_payment_money(
-            {"amount": "10.00", "value": "10.00", "currency": "USD"}
-        )
+        money = normalise_payment_money({"amount": "10.00", "value": "10.00", "currency": "USD"})
         assert money == Money("USD", 1000)
 
     def test_two_conflicting_amounts_are_rejected(self) -> None:
@@ -248,9 +244,12 @@ class TestMoneyNormalisation:
 class TestPayeeBinding:
     def test_a_matching_destination_has_no_mismatch(self) -> None:
         binding = supplier_a_binding()._bindings[SUPPLIER_A]
-        assert binding.mismatch_against(
-            ExecutionDestination(network=CHAIN, account=BOUND_ACCOUNT, asset="USD")
-        ) is None
+        assert (
+            binding.mismatch_against(
+                ExecutionDestination(network=CHAIN, account=BOUND_ACCOUNT, asset="USD")
+            )
+            is None
+        )
 
     def test_an_unrelated_account_is_an_account_mismatch(self) -> None:
         binding = supplier_a_binding()._bindings[SUPPLIER_A]
@@ -281,9 +280,12 @@ class TestPayeeBinding:
 
     def test_evm_account_matching_keeps_the_existing_case_rule(self) -> None:
         binding = supplier_a_binding()._bindings[SUPPLIER_A]
-        assert binding.mismatch_against(
-            ExecutionDestination(network=CHAIN, account=BOUND_ACCOUNT.upper(), asset="USD")
-        ) is None
+        assert (
+            binding.mismatch_against(
+                ExecutionDestination(network=CHAIN, account=BOUND_ACCOUNT.upper(), asset="USD")
+            )
+            is None
+        )
 
     def test_a_binding_needs_a_real_destination(self) -> None:
         with pytest.raises(PayeeBindingError, match="ExecutionDestination"):
@@ -598,9 +600,7 @@ class TestDelegatedScopeOnlyNarrows:
             resolved(
                 verified=False,
                 issues=(
-                    AuthorityVerificationIssue(
-                        AuthorityVerificationFailure.AUTHORITY_REVOKED
-                    ),
+                    AuthorityVerificationIssue(AuthorityVerificationFailure.AUTHORITY_REVOKED),
                 ),
             ),
             at=NOW,
@@ -836,17 +836,13 @@ class TestDelegatedCurrencyIsParsedIndependently:
             parse_delegation_constraints({"currency": "  "})
 
     def test_a_max_amount_uses_the_same_parsed_currency(self) -> None:
-        constraints = parse_delegation_constraints(
-            {"max_amount": "20.00", "currency": "usd"}
-        )
+        constraints = parse_delegation_constraints({"max_amount": "20.00", "currency": "usd"})
         assert constraints.currency == "USD"
         assert constraints.max_amount == Money("USD", 2000)
         assert constraints.max_amount.currency == constraints.currency
 
     def test_an_unsupported_currency_makes_its_limit_unenforceable_too(self) -> None:
-        constraints = parse_delegation_constraints(
-            {"max_amount": "20.00", "currency": "EUR"}
-        )
+        constraints = parse_delegation_constraints({"max_amount": "20.00", "currency": "EUR"})
         assert constraints.currency is None
         assert constraints.max_amount is None
         assert set(constraints.unsupported_constraints) == {"currency", "max_amount"}
@@ -970,6 +966,5 @@ class TestDelegatedCurrencyIsEnforcedIndependently:
                 "not_after": constraints.not_after,
             }
             assert retained[key] is not None, (
-                f"scope key {key!r} is declared enforceable but parses to no "
-                "retained constraint"
+                f"scope key {key!r} is declared enforceable but parses to no " "retained constraint"
             )

@@ -113,9 +113,7 @@ def test_update_agent_policy_controls_are_validated_and_saved():
 def test_update_agent_metadata_is_merged_not_replaced():
     org_id = uuid4()
     agent_id = uuid4()
-    agent = _agent_record(
-        id=agent_id, org_id=org_id, metadata={"source": "public_registration"}
-    )
+    agent = _agent_record(id=agent_id, org_id=org_id, metadata={"source": "public_registration"})
     now = datetime.now(UTC)
     updated_row = {
         "id": agent_id,

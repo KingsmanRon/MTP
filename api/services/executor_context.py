@@ -40,9 +40,7 @@ CONSUME_SCOPES: Final[frozenset[str]] = frozenset({EXECUTE_SCOPE, "write", "admi
 
 #: Environments in which a synthetic, organisation-wide executor identity is
 #: tolerated. Production is deliberately absent.
-_NON_PRODUCTION_ENVIRONMENTS: Final[frozenset[str]] = frozenset(
-    {"development", "test", "ci"}
-)
+_NON_PRODUCTION_ENVIRONMENTS: Final[frozenset[str]] = frozenset({"development", "test", "ci"})
 
 
 class ExecutorAuthError(PermissionError):
@@ -128,10 +126,10 @@ def executor_context_from_auth(
         # executor identity. That fallback would make two production keys
         # indistinguishable, so one could spend the other's grant.
         environment = (
-            environment
-            if environment is not None
-            else os.getenv("ENVIRONMENT", "development")
-        ).strip().lower()
+            (environment if environment is not None else os.getenv("ENVIRONMENT", "development"))
+            .strip()
+            .lower()
+        )
         if environment not in _NON_PRODUCTION_ENVIRONMENTS:
             raise ExecutorAuthError(
                 "authenticated context carries no API key identity; execution "
@@ -139,13 +137,11 @@ def executor_context_from_auth(
             )
         api_key_id = f"org-default:{organisation_id}"
 
-    digest = executor_binding_digest(
-        organisation_id=organisation_id, api_key_id=api_key_id
-    )
+    digest = executor_binding_digest(organisation_id=organisation_id, api_key_id=api_key_id)
     return AuthenticatedExecutorContext(
-        organisation_id=organisation_id
-        if isinstance(organisation_id, UUID)
-        else UUID(str(organisation_id)),
+        organisation_id=(
+            organisation_id if isinstance(organisation_id, UUID) else UUID(str(organisation_id))
+        ),
         api_key_id=str(api_key_id),
         scopes=_normalise_scopes(auth.get("scopes")),
         binding_digest=digest,

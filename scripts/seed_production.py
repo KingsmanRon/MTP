@@ -76,8 +76,7 @@ async def seed_database(
     try:
         # Check if organization already exists
         existing_org = await conn.fetchrow(
-            "SELECT id, name FROM organizations WHERE name = $1",
-            org_name
+            "SELECT id, name FROM organizations WHERE name = $1", org_name
         )
 
         # Generate API key first (needed for org creation)
@@ -85,7 +84,7 @@ async def seed_database(
 
         if existing_org:
             print(f"Organization '{org_name}' already exists (ID: {existing_org['id']})")
-            org_id = existing_org['id']
+            org_id = existing_org["id"]
         else:
             # Create organization with api_key_hash
             org_id = uuid4()
@@ -106,8 +105,7 @@ async def seed_database(
 
         # Check if API key with this prefix exists
         existing_key = await conn.fetchrow(
-            "SELECT id FROM api_keys WHERE key_prefix = $1",
-            key_prefix
+            "SELECT id FROM api_keys WHERE key_prefix = $1", key_prefix
         )
 
         if existing_key:
@@ -136,9 +134,7 @@ async def seed_database(
         # Create demo agent if requested
         if create_demo_agent:
             existing_agent = await conn.fetchrow(
-                "SELECT id FROM agents WHERE org_id = $1 AND name = $2",
-                org_id,
-                "Demo Agent"
+                "SELECT id FROM agents WHERE org_id = $1 AND name = $2", org_id, "Demo Agent"
             )
 
             if existing_agent:
@@ -210,19 +206,15 @@ async def seed_database(
 def main():
     parser = argparse.ArgumentParser(description="Seed production database for Inntris")
     parser.add_argument(
-        "--org-name",
-        default="Inntris Admin",
-        help="Organization name (default: Inntris Admin)"
+        "--org-name", default="Inntris Admin", help="Organization name (default: Inntris Admin)"
     )
     parser.add_argument(
-        "--create-demo-agent",
-        action="store_true",
-        help="Create an optional sandbox demo agent"
+        "--create-demo-agent", action="store_true", help="Create an optional sandbox demo agent"
     )
     parser.add_argument(
         "--database-url",
         default=os.getenv("DATABASE_URL"),
-        help="Database URL (default: from DATABASE_URL env var)"
+        help="Database URL (default: from DATABASE_URL env var)",
     )
 
     args = parser.parse_args()
@@ -232,11 +224,13 @@ def main():
         print("Usage: DATABASE_URL='postgresql://...' python scripts/seed_production.py")
         sys.exit(1)
 
-    asyncio.run(seed_database(
-        database_url=args.database_url,
-        org_name=args.org_name,
-        create_demo_agent=args.create_demo_agent,
-    ))
+    asyncio.run(
+        seed_database(
+            database_url=args.database_url,
+            org_name=args.org_name,
+            create_demo_agent=args.create_demo_agent,
+        )
+    )
 
 
 if __name__ == "__main__":

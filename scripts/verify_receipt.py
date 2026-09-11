@@ -28,6 +28,7 @@ Usage:
 
 Exit code is 0 only if every *attempted* check passed.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -155,7 +156,9 @@ def main() -> None:
     ap.add_argument("record", help="audit_id (UUID) or 0x-prefixed transaction hash")
     ap.add_argument("--api", default="https://api.inntris.com", help="API base URL")
     ap.add_argument("--rpc", default=None, help="Base RPC URL for the on-chain check")
-    ap.add_argument("--contract", default=None, help="AnchorRegistry address for the on-chain check")
+    ap.add_argument(
+        "--contract", default=None, help="AnchorRegistry address for the on-chain check"
+    )
     args = ap.parse_args()
 
     api = args.api.rstrip("/")
@@ -204,8 +207,10 @@ def main() -> None:
     proof = _get(f"{api}/public/verify/{audit_id}/proof")
     pstatus = proof.get("status")
     if pstatus == "sandbox":
-        print("[note] sandbox receipt — not anchored on-chain by design; the "
-              "fingerprint + signature above are the integrity guarantee")
+        print(
+            "[note] sandbox receipt — not anchored on-chain by design; the "
+            "fingerprint + signature above are the integrity guarantee"
+        )
     elif pstatus != "anchored":
         print(f"[SKIP] proof status is '{pstatus}' — not yet anchored; skipping Merkle check")
     else:
@@ -236,7 +241,9 @@ def main() -> None:
             elif args.rpc or args.contract:
                 print("[SKIP] on-chain check needs BOTH --rpc and --contract")
             else:
-                print(f"[note] to confirm on-chain, inspect tx {proof.get('tx_hash')} on basescan.org")
+                print(
+                    f"[note] to confirm on-chain, inspect tx {proof.get('tx_hash')} on basescan.org"
+                )
 
     print()
     if failures:

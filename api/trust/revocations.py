@@ -78,9 +78,7 @@ class RevocationSnapshot:
 #: exact triples are intersected in Python below, so an issuer_key
 #: revocation recorded for one issuer can never be read as applying to
 #: another issuer that happens to use the same fingerprint.
-_LOOKUP_QUERY: Final[
-    str
-] = """
+_LOOKUP_QUERY: Final[str] = """
     SELECT subject_type, subject_id, COALESCE(issuer, '*') AS issuer
     FROM authority_trust_revocations
     WHERE revoked
@@ -124,10 +122,7 @@ async def load_revocations(
         RevocationSnapshot._key(subject, subject_id, issuer)
         for subject, subject_id, issuer in subjects
     }
-    found = {
-        (record["subject_type"], record["issuer"], record["subject_id"])
-        for record in records
-    }
+    found = {(record["subject_type"], record["issuer"], record["subject_id"]) for record in records}
     return RevocationSnapshot(revoked=frozenset(wanted & found))
 
 
@@ -158,9 +153,7 @@ async def set_revocation(
     if subject_type is RevocationSubject.ISSUER:
         issuer = None
     elif not issuer:
-        raise ValueError(
-            f"{subject_type.value} revocations must name the issuer they apply to"
-        )
+        raise ValueError(f"{subject_type.value} revocations must name the issuer they apply to")
 
     async with database.acquire() as conn:
         row = await conn.fetchrow(
@@ -199,21 +192,19 @@ async def set_revocation(
     return dict(row)
 
 
-async def list_revocations(database: Any, *, include_reinstated: bool = False) -> list[
-    dict[str, Any]
-]:
+async def list_revocations(
+    database: Any, *, include_reinstated: bool = False
+) -> list[dict[str, Any]]:
     """Every revocation row, newest change first."""
     clause = "" if include_reinstated else "WHERE revoked"
     async with database.acquire() as conn:
-        records = await conn.fetch(
-            f"""
+        records = await conn.fetch(f"""
             SELECT id, subject_type, subject_id, issuer, revoked, reason,
                    changed_by, approval_reference, created_at, updated_at
             FROM authority_trust_revocations
             {clause}
             ORDER BY updated_at DESC
-            """
-        )
+            """)
     return [dict(record) for record in records]
 
 

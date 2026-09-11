@@ -255,7 +255,9 @@ async def _system_resolver(hostname: str, port: int) -> Sequence[str]:
             proto=socket.IPPROTO_TCP,
         )
     except socket.gaierror as exc:
-        raise WebhookDeliveryError("Webhook hostname could not be resolved", retryable=True) from exc
+        raise WebhookDeliveryError(
+            "Webhook hostname could not be resolved", retryable=True
+        ) from exc
     return [str(record[4][0]) for record in records]
 
 
@@ -703,7 +705,9 @@ async def deliver_queued_webhook(
                     error,
                     response_status,
                 )
-                outcome = "security_rejected" if isinstance(exc, WebhookSecurityError) else "dead_letter"
+                outcome = (
+                    "security_rejected" if isinstance(exc, WebhookSecurityError) else "dead_letter"
+                )
                 webhook_delivery_attempts_total.labels(outcome=outcome).inc()
                 logger.warning(
                     "Webhook delivery dead lettered",

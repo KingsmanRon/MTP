@@ -26,12 +26,7 @@ import pytest
 from api import jcs
 from api.crypto import CryptoError, CryptoService
 
-VECTORS_PATH = (
-    Path(__file__).parent
-    / "fixtures"
-    / "canonicalization"
-    / "jcs_vectors.json"
-)
+VECTORS_PATH = Path(__file__).parent / "fixtures" / "canonicalization" / "jcs_vectors.json"
 
 
 def _load_vectors() -> list[dict]:
@@ -101,11 +96,19 @@ class TestSigVersion3:
         # 1.0 as "1.0"; JCS emits "1".
         payload = {"amount": 1.0}
         current = CryptoService.compute_action_hash(
-            self.AGENT_ID, self.ACTION, payload, self.NONCE, self.TS,
+            self.AGENT_ID,
+            self.ACTION,
+            payload,
+            self.NONCE,
+            self.TS,
             sig_version=CryptoService.SIG_VERSION_CURRENT,
         )
         jcs_hash = CryptoService.compute_action_hash(
-            self.AGENT_ID, self.ACTION, payload, self.NONCE, self.TS,
+            self.AGENT_ID,
+            self.ACTION,
+            payload,
+            self.NONCE,
+            self.TS,
             sig_version=CryptoService.SIG_VERSION_JCS,
         )
         assert current != jcs_hash
@@ -114,11 +117,19 @@ class TestSigVersion3:
         a = {"b": 2, "a": 1}
         b = {"a": 1, "b": 2}
         ha = CryptoService.compute_action_hash(
-            self.AGENT_ID, self.ACTION, a, self.NONCE, self.TS,
+            self.AGENT_ID,
+            self.ACTION,
+            a,
+            self.NONCE,
+            self.TS,
             sig_version=CryptoService.SIG_VERSION_JCS,
         )
         hb = CryptoService.compute_action_hash(
-            self.AGENT_ID, self.ACTION, b, self.NONCE, self.TS,
+            self.AGENT_ID,
+            self.ACTION,
+            b,
+            self.NONCE,
+            self.TS,
             sig_version=CryptoService.SIG_VERSION_JCS,
         )
         assert ha == hb
@@ -126,14 +137,21 @@ class TestSigVersion3:
     def test_jcs_rejects_nan_as_crypto_error(self) -> None:
         with pytest.raises(CryptoError):
             CryptoService.compute_action_hash(
-                self.AGENT_ID, self.ACTION, {"bad": float("nan")},
-                self.NONCE, self.TS,
+                self.AGENT_ID,
+                self.ACTION,
+                {"bad": float("nan")},
+                self.NONCE,
+                self.TS,
                 sig_version=CryptoService.SIG_VERSION_JCS,
             )
 
     def test_unknown_version_still_raises(self) -> None:
         with pytest.raises(CryptoError):
             CryptoService.compute_action_hash(
-                self.AGENT_ID, self.ACTION, {"ok": 1},
-                self.NONCE, self.TS, sig_version=99,
+                self.AGENT_ID,
+                self.ACTION,
+                {"ok": 1},
+                self.NONCE,
+                self.TS,
+                sig_version=99,
             )

@@ -3,6 +3,7 @@
 The rotation DB path (history insert + in-place key swap) is exercised by the
 RLS integration suite; here we cover the pure pieces that gate the endpoint.
 """
+
 import base64
 from datetime import UTC, datetime
 from decimal import Decimal

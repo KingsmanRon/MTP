@@ -66,8 +66,7 @@ def _parse_instant(value: Any, field: str) -> datetime:
             raise DelegationScopeError(f"scope.{field} is not an ISO-8601 instant") from exc
     else:
         raise DelegationScopeError(
-            f"scope.{field} must be a datetime or ISO-8601 string, got "
-            f"{type(value).__name__}"
+            f"scope.{field} must be a datetime or ISO-8601 string, got " f"{type(value).__name__}"
         )
     if instant.tzinfo is None:
         raise DelegationScopeError(f"scope.{field} must be timezone-aware")
@@ -124,9 +123,7 @@ def parse_delegation_constraints(scope: Mapping[str, Any] | None) -> PaymentDele
     raw_currency = scope.get("currency")
     if raw_currency is not None:
         if not isinstance(raw_currency, str) or not raw_currency.strip():
-            raise DelegationScopeError(
-                "scope.currency must be a non-empty ISO 4217 code"
-            )
+            raise DelegationScopeError("scope.currency must be a non-empty ISO 4217 code")
         code = raw_currency.strip().upper()
         if code in SUPPORTED_CURRENCIES:
             currency = code
@@ -158,14 +155,14 @@ def parse_delegation_constraints(scope: Mapping[str, Any] | None) -> PaymentDele
     allowed_payees: frozenset[str] | None = None
     raw_payees = scope.get("allowed_payees")
     if raw_payees is not None:
-        if isinstance(raw_payees, (str, bytes)) or not isinstance(raw_payees, (list, tuple, set, frozenset)):
+        if isinstance(raw_payees, (str, bytes)) or not isinstance(
+            raw_payees, (list, tuple, set, frozenset)
+        ):
             raise DelegationScopeError("scope.allowed_payees must be a list of payee references")
         payees = set()
         for entry in raw_payees:
             if not isinstance(entry, str) or not entry.strip():
-                raise DelegationScopeError(
-                    "scope.allowed_payees entries must be non-empty strings"
-                )
+                raise DelegationScopeError("scope.allowed_payees entries must be non-empty strings")
             payees.add(entry)
         if not payees:
             raise DelegationScopeError("scope.allowed_payees must not be empty when present")

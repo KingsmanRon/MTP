@@ -48,9 +48,7 @@ def test_receipt_agent_uses_audited_production_promotion(monkeypatch):
     assert agent_id == "00000000-0000-0000-0000-000000000001"
     assert len(posts) == 2
     assert posts[-1][0].endswith(f"/admin/agents/{agent_id}/promote")
-    assert posts[-1][1]["approval_reference"].startswith(
-        "mainnet-receipt-generation:"
-    )
+    assert posts[-1][1]["approval_reference"].startswith("mainnet-receipt-generation:")
 
 
 def test_blocked_receipt_lookup_uses_tenant_admin_search(monkeypatch):

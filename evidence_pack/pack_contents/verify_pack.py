@@ -40,8 +40,10 @@ from __future__ import annotations
 
 import argparse
 import base64
+import binascii
 import hashlib
 import json
+import re
 import sys
 import urllib.error
 import urllib.parse
@@ -62,12 +64,30 @@ SIGNATURE_NAME = "manifest.sig.json"
 _MASK64 = (1 << 64) - 1
 
 _KECCAK_ROUND_CONSTANTS = (
-    0x0000000000000001, 0x0000000000008082, 0x800000000000808A, 0x8000000080008000,
-    0x000000000000808B, 0x0000000080000001, 0x8000000080008081, 0x8000000000008009,
-    0x000000000000008A, 0x0000000000000088, 0x0000000080008009, 0x000000008000000A,
-    0x000000008000808B, 0x800000000000008B, 0x8000000000008089, 0x8000000000008003,
-    0x8000000000008002, 0x8000000000000080, 0x000000000000800A, 0x800000008000000A,
-    0x8000000080008081, 0x8000000000008080, 0x0000000080000001, 0x8000000080008008,
+    0x0000000000000001,
+    0x0000000000008082,
+    0x800000000000808A,
+    0x8000000080008000,
+    0x000000000000808B,
+    0x0000000080000001,
+    0x8000000080008081,
+    0x8000000000008009,
+    0x000000000000008A,
+    0x0000000000000088,
+    0x0000000080008009,
+    0x000000008000000A,
+    0x000000008000808B,
+    0x800000000000008B,
+    0x8000000000008089,
+    0x8000000000008003,
+    0x8000000000008002,
+    0x8000000000000080,
+    0x000000000000800A,
+    0x800000008000000A,
+    0x8000000080008081,
+    0x8000000000008080,
+    0x0000000080000001,
+    0x8000000080008008,
 )
 
 _KECCAK_ROTATIONS = (
@@ -89,8 +109,7 @@ def _rotl64(value: int, shift: int) -> int:
 def _keccak_f1600(lanes: list[list[int]]) -> list[list[int]]:
     for round_constant in _KECCAK_ROUND_CONSTANTS:
         # theta
-        c = [lanes[x][0] ^ lanes[x][1] ^ lanes[x][2] ^ lanes[x][3] ^ lanes[x][4]
-             for x in range(5)]
+        c = [lanes[x][0] ^ lanes[x][1] ^ lanes[x][2] ^ lanes[x][3] ^ lanes[x][4] for x in range(5)]
         d = [c[(x - 1) % 5] ^ _rotl64(c[(x + 1) % 5], 1) for x in range(5)]
         lanes = [[lanes[x][y] ^ d[x] for y in range(5)] for x in range(5)]
         # rho + pi
@@ -118,9 +137,9 @@ def pure_keccak256(data: bytes) -> bytes:
 
     lanes = [[0] * 5 for _ in range(5)]
     for offset in range(0, len(padded), rate):
-        block = padded[offset:offset + rate]
+        block = padded[offset : offset + rate]
         for i in range(rate // 8):
-            lanes[i % 5][i // 5] ^= int.from_bytes(block[8 * i:8 * i + 8], "little")
+            lanes[i % 5][i // 5] ^= int.from_bytes(block[8 * i : 8 * i + 8], "little")
         lanes = _keccak_f1600(lanes)
 
     out = bytearray()
@@ -144,9 +163,9 @@ def load_keccak256():
     except ImportError:
         pass
     empty = pure_keccak256(b"").hex()
-    assert empty == "c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470", (
-        "pure-Python keccak self-test failed"
-    )
+    assert (
+        empty == "c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470"
+    ), "pure-Python keccak self-test failed"
     return pure_keccak256, "pure-python"
 
 
@@ -333,9 +352,7 @@ def recompute_merkle_root(
 ) -> str:
     """Rebuild the root from a leaf. positions[i] True == sibling on the RIGHT."""
     if len(proof) != len(positions):
-        raise ValueError(
-            f"malformed proof: {len(proof)} siblings but {len(positions)} positions"
-        )
+        raise ValueError(f"malformed proof: {len(proof)} siblings but {len(positions)} positions")
     current = bytes.fromhex(action_hash)
     for sibling_hex, sibling_on_right in zip(proof, positions, strict=True):
         sibling = bytes.fromhex(sibling_hex)
@@ -431,11 +448,246 @@ def _decode_key_argument(value: str) -> bytes:
     return base64.b64decode(candidate)
 
 
+# ---------------------------------------------------------------------------
+# RFC 8785 JSON Canonicalization Scheme (receipt v3 only)
+# ---------------------------------------------------------------------------
+# v1 and v2 fingerprints are a SEVEN-FIELD json.dumps(sort_keys=True) contract
+# and are FROZEN -- recompute_fingerprint below is unchanged and must stay so.
+# v3 evidence payloads are canonicalised under RFC 8785 instead, which differs
+# in string escaping and number formatting. The two schemes coexist here and
+# never touch: schema_version selects which applies.
+#
+# Implemented inline because this verifier must run on a stock Python with no
+# installed packages. That is the whole point of it.
+
+_JCS_SHORT_ESCAPES = {
+    0x08: "\\b",
+    0x09: "\\t",
+    0x0A: "\\n",
+    0x0C: "\\f",
+    0x0D: "\\r",
+    0x22: '\\"',
+    0x5C: "\\\\",
+}
+
+
+def _jcs_string(value: str) -> str:
+    out = ['"']
+    for char in value:
+        code_point = ord(char)
+        short = _JCS_SHORT_ESCAPES.get(code_point)
+        if short is not None:
+            out.append(short)
+        elif code_point < 0x20:
+            out.append(f"\\u{code_point:04x}")
+        else:
+            out.append(char)
+    out.append('"')
+    return "".join(out)
+
+
+_JCS_SCI = re.compile(r"^(-?\d+(?:\.\d+)?)e([+-])0*(\d+)$")
+
+
+def _jcs_number(value) -> str:
+    if isinstance(value, bool):
+        raise ValueError("booleans are not numbers")
+    if isinstance(value, int):
+        return str(value)
+    if not isinstance(value, float):
+        raise ValueError(f"unsupported numeric type: {type(value).__name__}")
+    if value != value or value in (float("inf"), float("-inf")):
+        raise ValueError("JCS forbids NaN and Infinity")
+    if value == 0.0:
+        return "0"
+    if value.is_integer() and abs(value) < 1e21:
+        return str(int(value))
+    text = repr(value)
+    match = _JCS_SCI.match(text)
+    if match:
+        mantissa, sign, exponent = match.groups()
+        if mantissa.endswith(".0"):
+            mantissa = mantissa[:-2]
+        return f"{mantissa}e{sign}{int(exponent)}"
+    return text
+
+
+def _jcs(obj) -> str:
+    if obj is None:
+        return "null"
+    if obj is True:
+        return "true"
+    if obj is False:
+        return "false"
+    if isinstance(obj, str):
+        return _jcs_string(obj)
+    if isinstance(obj, (int, float)):
+        return _jcs_number(obj)
+    if isinstance(obj, (list, tuple)):
+        return "[" + ",".join(_jcs(item) for item in obj) + "]"
+    if isinstance(obj, dict):
+        # JCS sorts keys by UTF-16 code units.
+        items = sorted(
+            ((key.encode("utf-16-be"), key, value) for key, value in obj.items()),
+            key=lambda entry: entry[0],
+        )
+        return "{" + ",".join(_jcs_string(key) + ":" + _jcs(value) for _, key, value in items) + "}"
+    raise ValueError(f"unsupported type for JCS: {type(obj).__name__}")
+
+
+def jcs_sha256_hex(obj) -> str:
+    return hashlib.sha256(_jcs(obj).encode("utf-8")).hexdigest()
+
+
+# ---------------------------------------------------------------------------
+# Receipt v3: authenticated authority evidence
+# ---------------------------------------------------------------------------
+
+EVIDENCE_PAYLOAD_FORMAT = "inntris-authority-evidence-v3"
+
+#: Fields duplicated between an event's public envelope and its signed
+#: payload. Every duplicate is a field an attacker can edit for free: the
+#: signature still verifies over the untouched payload, and a reader who
+#: trusts the outer copy is reading something nobody signed. Presence is
+#: required, not merely agreement -- an absent outer field must not read as
+#: equal to a signed null.
+EVIDENCE_ENVELOPE_FIELDS = (
+    "event_id",
+    "event_type",
+    "schema_version",
+    "recorded_at",
+    "parent_event_id",
+    "parent_payload_hash",
+    "signing_key_id",
+    "signing_key_fingerprint",
+)
+
+EVIDENCE_ORDER = ("decision", "consumption", "outcome")
+
+#: Facts about WHICH act was authorised. A consumption disagreeing with its
+#: decision on any of these means the two are not one history, however
+#: perfectly the hashes chain.
+CONSUMPTION_CONTINUITY_FIELDS = (
+    "grant_id",
+    "execution_action_hash",
+    "executor_binding_digest",
+)
+
+
+def verify_evidence_event(event, public_key, parent, ed25519_verify):
+    """Verify one v3 event. Returns a list of failure strings."""
+    failures = []
+    payload = event.get("payload")
+    if not isinstance(payload, dict):
+        return ["payload is missing or not an object"]
+
+    if payload.get("format") != EVIDENCE_PAYLOAD_FORMAT:
+        failures.append(f"payload format is not {EVIDENCE_PAYLOAD_FORMAT}")
+
+    try:
+        recomputed = jcs_sha256_hex(payload)
+    except ValueError as exc:
+        return [f"payload cannot be canonicalised: {exc}"]
+
+    if recomputed != event.get("evidence_payload_hash"):
+        failures.append("evidence_payload_hash does not match the payload")
+
+    # Recomputing the hash is not enough on its own: anybody who edits a
+    # field can recompute it. The signature is what makes the recomputed
+    # hash mean something.
+    try:
+        signature = base64.b64decode(event.get("signature_b64") or "")
+    except (ValueError, binascii.Error):
+        signature = b""
+    if not signature or not ed25519_verify(public_key, bytes.fromhex(recomputed), signature):
+        failures.append("signature does not verify over the recomputed payload hash")
+
+    # The signer's identity is inside the signature, so substituting a key
+    # and rewriting the metadata to match cannot pass.
+    supplied_fingerprint = hashlib.sha256(public_key).hexdigest()
+    if payload.get("signing_key_fingerprint") != supplied_fingerprint:
+        failures.append("signing_key_fingerprint does not identify the verifying key")
+
+    for field in EVIDENCE_ENVELOPE_FIELDS:
+        if field not in event:
+            failures.append(f"outer {field} is missing from the envelope")
+        elif event[field] != payload.get(field):
+            failures.append(f"outer {field} contradicts the signed payload")
+
+    if parent is not None:
+        if payload.get("parent_event_id") != parent.get("event_id"):
+            failures.append("parent_event_id does not match the preceding event")
+        if payload.get("parent_payload_hash") != parent.get("evidence_payload_hash"):
+            failures.append("parent_payload_hash does not match the preceding event")
+    elif payload.get("parent_event_id") is not None:
+        failures.append("event claims a parent but none precedes it")
+
+    return failures
+
+
+def _evidence_body(event):
+    """The SIGNED body of an event: payload.body, and nothing else.
+
+    Continuity is judged from the signed body alone, never from the outer
+    envelope, so a third party with the events and the key reaches the same
+    verdict as Inntris does.
+    """
+    if not isinstance(event, dict):
+        return {}
+    payload = event.get("payload")
+    if not isinstance(payload, dict):
+        return {}
+    body = payload.get("body")
+    return body if isinstance(body, dict) else {}
+
+
+def evidence_continuity_failures(events_by_type):
+    """Why these events are not one history. Empty means they are.
+
+    A valid parent hash proves only that the producer CHOSE that parent. It
+    does not prove the events describe the same act: a consumption of grant
+    B can be signed as a child of the decision for grant A and every hash
+    checks out while the history is a fabrication.
+    """
+    failures = []
+    decision = _evidence_body(events_by_type.get("decision"))
+    consumption = events_by_type.get("consumption")
+    outcome = events_by_type.get("outcome")
+
+    if "decision" not in events_by_type:
+        return ["chain has no decision event"]
+
+    if consumption is not None:
+        body = _evidence_body(consumption)
+        if decision.get("decision") != "allow":
+            failures.append("a consumption follows a decision that was not an allow")
+        for field in CONSUMPTION_CONTINUITY_FIELDS:
+            decided, spent = decision.get(field), body.get(field)
+            if decided is None or spent is None:
+                failures.append(f"consumption {field} is missing")
+            elif decided != spent:
+                failures.append(f"consumption {field} does not match the decision")
+
+    if outcome is not None:
+        if consumption is None:
+            failures.append("an outcome without a consumption")
+        else:
+            spent = _evidence_body(consumption).get("grant_id")
+            reported = _evidence_body(outcome).get("grant_id")
+            if reported is None or spent is None:
+                failures.append("outcome grant_id is missing")
+            elif reported != spent:
+                failures.append("outcome grant_id does not match the consumption")
+
+    return failures
+
+
 def verify_pack(
     pack_path: Path,
     pinned_pubkey: bytes | None,
     rpc_url: str | None,
     contract_override: str | None,
+    pinned_evidence_pubkey: bytes | None = None,
 ) -> int:
     report = Reporter()
     keccak256, keccak_impl = load_keccak256()
@@ -588,6 +840,109 @@ def verify_pack(
     if not receipt_names:
         report.warn("pack contains no receipts/ entries")
 
+    # ---- 4b) Receipt v3: authenticated authority evidence -------------------
+    # v1 and v2 above are unchanged. v3 is a separate, additive section: a pack
+    # with no authority_evidence/ entries verifies exactly as it always did.
+    #
+    # What v3 adds over a fingerprint: a fingerprint proves only that some
+    # fields hash to the value stored beside them, and anybody who edits a
+    # field can recompute it. The authority lifecycle has no agent signature
+    # over its fields, so v3 signs -- and this section checks that signature,
+    # the chain links between events, and that the events describe one act.
+    evidence_names = sorted(n for n in pack_files if n.startswith("authority_evidence/"))
+    evidence_key_b64 = (manifest.get("authority_evidence") or {}).get("public_key_b64")
+    if evidence_names and not evidence_key_b64:
+        report.fail(
+            "pack contains authority_evidence/ but the signed manifest names no "
+            "authority-evidence public key; the events cannot be checked against "
+            "any key the pack commits to"
+        )
+        evidence_names = []
+
+    # The key inside the manifest proves INTERNAL consistency only, exactly as
+    # the manifest key does: a forger who rebuilt the pack signs the evidence
+    # with their own key and names that key here. Closing that requires a key
+    # from a channel Inntris does not control at verification time, which is
+    # what --evidence-pubkey is for.
+    evidence_key = None
+    if evidence_names:
+        try:
+            manifest_evidence_key = base64.b64decode(evidence_key_b64)
+        except (ValueError, binascii.Error):
+            manifest_evidence_key = b""
+        if len(manifest_evidence_key) != 32:
+            report.fail("the manifest authority-evidence key is not a 32-byte Ed25519 key")
+            evidence_names = []
+        elif pinned_evidence_pubkey is not None:
+            if pinned_evidence_pubkey == manifest_evidence_key:
+                report.ok(
+                    "authority-evidence key matches the pinned published key "
+                    f"({hashlib.sha256(manifest_evidence_key).hexdigest()[:16]}...)"
+                )
+                evidence_key = manifest_evidence_key
+            else:
+                report.fail(
+                    "authority-evidence key in the pack is NOT the pinned published "
+                    f"key (pack {hashlib.sha256(manifest_evidence_key).hexdigest()}, "
+                    f"pinned {hashlib.sha256(pinned_evidence_pubkey).hexdigest()})"
+                )
+                evidence_names = []
+        else:
+            report.warn(
+                "no --evidence-pubkey pinned: the v3 signatures prove internal "
+                "consistency only. Cross-check this fingerprint against "
+                "https://inntris.com/.well-known/inntris-keys.txt: "
+                + hashlib.sha256(manifest_evidence_key).hexdigest()
+            )
+            evidence_key = manifest_evidence_key
+
+    for name in evidence_names:
+        chain = json.loads(reader.read(name))
+        chain_id = chain.get("grant_id") or chain.get("decision_audit_id") or name
+
+        events_by_type = {}
+        for event_type in EVIDENCE_ORDER:
+            event = chain.get(event_type)
+            if isinstance(event, dict):
+                events_by_type[event_type] = event
+
+        if "decision" not in events_by_type:
+            report.fail(f"evidence {chain_id}: no decision event")
+            continue
+
+        chain_failures = []
+        previous = None
+        for event_type in EVIDENCE_ORDER:
+            event = events_by_type.get(event_type)
+            if event is None:
+                continue
+            signed_type = (event.get("payload") or {}).get("event_type")
+            if signed_type != event_type:
+                chain_failures.append(f"{event_type}: the signed event_type says {signed_type!r}")
+            chain_failures.extend(
+                f"{event_type}: {failure}"
+                for failure in verify_evidence_event(event, evidence_key, previous, ed25519_verify)
+            )
+            previous = event
+
+        chain_failures.extend(evidence_continuity_failures(events_by_type))
+
+        if chain_failures:
+            for failure in chain_failures:
+                report.fail(f"evidence {chain_id}: {failure}")
+        else:
+            present = ", ".join(t for t in EVIDENCE_ORDER if t in events_by_type)
+            report.ok(f"evidence {chain_id}: v3 chain verifies ({present})")
+
+    if evidence_names:
+        published = (manifest.get("authority_evidence") or {}).get("key_id")
+        report.warn(
+            "v3 evidence is authenticated by its Ed25519 signature and its "
+            "parent links ONLY. The evidence_payload_hash is not itself "
+            f"anchored on-chain. Confirm key {published or '(unnamed)'} against "
+            "https://inntris.com/.well-known/inntris-keys.txt before relying on it."
+        )
+
     # ---- 5) Optional on-chain anchor check ---------------------------------
     anchor_meta = manifest.get("anchor") or {}
     contract = contract_override or anchor_meta.get("contract")
@@ -639,6 +994,13 @@ def main() -> None:
         "instead of trusting the copy embedded in the pack",
     )
     parser.add_argument(
+        "--evidence-pubkey",
+        default=None,
+        help="pin the published Inntris AUTHORITY EVIDENCE signing key (iae-..., "
+        "hex or base64) instead of trusting the copy named in the manifest. "
+        "This is a different key from --pubkey and asserts a different thing",
+    )
+    parser.add_argument(
         "--rpc",
         default=None,
         help="Base JSON-RPC URL for the optional on-chain AnchorRegistry check",
@@ -651,7 +1013,8 @@ def main() -> None:
     args = parser.parse_args()
 
     pinned = _decode_key_argument(args.pubkey) if args.pubkey else None
-    sys.exit(verify_pack(Path(args.pack), pinned, args.rpc, args.contract))
+    pinned_evidence = _decode_key_argument(args.evidence_pubkey) if args.evidence_pubkey else None
+    sys.exit(verify_pack(Path(args.pack), pinned, args.rpc, args.contract, pinned_evidence))
 
 
 if __name__ == "__main__":

@@ -6,5 +6,5 @@
 # a conscious re-publication: bump this file, the inntris-verify repo, and
 # the inntris.com .well-known mirror in the same sitting, then tag a release
 # there (see that repo's CHANGELOG.md for the full procedure).
-332928c85e25149810a068cfe21f9d15aca31f083469bc9ee3d958f67165a366  evidence_pack/pack_contents/verify_pack.py
-4ca88e1630b922fef65abac38cf2a8708a7f04be1de473925f3b17eec4fe0801  evidence_pack/pack_contents/METHODOLOGY.md
+aa48f28be5af31c5dc1bec586ccd054fe9e58684e74976853b9a9a2b1b7845c2  evidence_pack/pack_contents/verify_pack.py
+75c4c26e9eaa3d06d3a27ede23ac87cfb5348d3f5af94d5914ec6306f2c4fc2e  evidence_pack/pack_contents/METHODOLOGY.md

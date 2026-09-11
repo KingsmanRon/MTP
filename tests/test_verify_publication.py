@@ -13,11 +13,35 @@ ZERO_SEED_PUBLIC_KEY = "3b6a27bcceb6a42d62a3a8d02a6f0d73653215771de243a63ac048a1
 
 
 def test_current_publication_contract_is_complete() -> None:
+    """The digests are hard-coded deliberately.
+
+    This test failing is the point: a change to the published verifier or
+    methodology must force a conscious re-publication of the lock, the
+    inntris-verify mirror and the .well-known copy in the same sitting,
+    rather than drifting quietly.
+
+    Updated in Phase 7A, Gate 4, when verify_pack.py gained receipt-v3
+    chain verification and METHODOLOGY.md gained section 5b.
+    """
     messages = check_verify_publication.validate_publication(PROJECT_ROOT)
 
-    assert any("verify_pack.py 332928c8" in message for message in messages)
-    assert any("METHODOLOGY.md 4ca88e16" in message for message in messages)
+    assert any("verify_pack.py aa48f28b" in message for message in messages)
+    assert any("METHODOLOGY.md 75c4c26e" in message for message in messages)
     assert any("fingerprint 089c7611" in message for message in messages)
+
+
+def test_no_authority_evidence_key_is_published_yet() -> None:
+    """Receipt v3 cannot be signed in production until one is.
+
+    Gate 4 requires that publicly advertised v3 receipts wait for the
+    verifier publication gate. That is enforced in
+    api/receipts/key_registry.py rather than remembered, and this records
+    the current state: no iae- key exists, so production refuses to sign.
+    """
+    messages = check_verify_publication.validate_publication(PROJECT_ROOT)
+
+    assert not any("published key iae-" in message for message in messages)
+    assert any("CANNOT be signed in production" in message for message in messages)
 
 
 def test_publication_checker_rejects_pending_key_marker(tmp_path: Path) -> None:
@@ -40,7 +64,9 @@ def test_publication_checker_rejects_wrong_key_fingerprint(tmp_path: Path) -> No
         encoding="utf-8",
     )
 
-    with pytest.raises(check_verify_publication.PublicationCheckError, match="fingerprint mismatch"):
+    with pytest.raises(
+        check_verify_publication.PublicationCheckError, match="fingerprint mismatch"
+    ):
         check_verify_publication.check_mirror(tmp_path, {})
 
 

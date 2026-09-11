@@ -109,9 +109,7 @@ class PayeeBinding:
         ):
             raise PayeeBindingError("bound_at must be a timezone-aware datetime or None")
 
-    def mismatch_against(
-        self, proposed: ExecutionDestination
-    ) -> DestinationMismatch | None:
+    def mismatch_against(self, proposed: ExecutionDestination) -> DestinationMismatch | None:
         """``None`` when ``proposed`` is the destination this payee is bound to."""
         if not isinstance(proposed, ExecutionDestination):
             raise PayeeBindingError(
@@ -125,9 +123,7 @@ class PayeeBinding:
 class PayeeBindingResolver(Protocol):
     """Supplies payee bindings from trusted server-side state."""
 
-    def binding_for(
-        self, organisation_id: str, payee_reference: str
-    ) -> PayeeBinding | None:
+    def binding_for(self, organisation_id: str, payee_reference: str) -> PayeeBinding | None:
         """Return this organisation's binding for ``payee_reference``.
 
         ``None`` means no binding is established. That is not permission:

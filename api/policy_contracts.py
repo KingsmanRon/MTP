@@ -21,6 +21,7 @@ from api.models import ActionVerdict
 
 class PolicyViolation(Enum):
     """Types of policy violations."""
+
     AGENT_NOT_ACTIVE = "agent_not_active"
     ACTION_NOT_ALLOWED = "action_not_allowed"
     ACTION_BLOCKED = "action_blocked"
@@ -44,6 +45,7 @@ class PolicyViolation(Enum):
 @dataclass
 class PolicyResult:
     """Result of policy evaluation."""
+
     allowed: bool
     verdict: ActionVerdict
     violation: PolicyViolation | None = None

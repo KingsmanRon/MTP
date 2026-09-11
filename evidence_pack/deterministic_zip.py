@@ -43,7 +43,7 @@ PINNED_COMPRESSLEVEL = 9
 
 # Fixed entry metadata: 3 = Unix creator, regular file with 0644 permissions.
 _CREATE_SYSTEM_UNIX = 3
-_EXTERNAL_ATTR_0644 = (0o100644 << 16)
+_EXTERNAL_ATTR_0644 = 0o100644 << 16
 
 
 class DeterministicZipError(ValueError):

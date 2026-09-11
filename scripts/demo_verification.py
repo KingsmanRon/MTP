@@ -145,8 +145,10 @@ def main():
     if logs.get("logs"):
         print(f"  Found {logs['total']} audit log(s) for this agent:")
         for log in logs["logs"]:
-            print(f"    - {log['id'][:8]}…  {log['action_type']:<22} "
-                  f"{log['verdict']:<10} sig_valid={log['signature_valid']}")
+            print(
+                f"    - {log['id'][:8]}…  {log['action_type']:<22} "
+                f"{log['verdict']:<10} sig_valid={log['signature_valid']}"
+            )
     else:
         print("  No audit logs found yet.")
 

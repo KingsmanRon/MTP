@@ -99,14 +99,17 @@ class TestSignedActionHashIsCarriedNotRecomputed:
 
     def test_the_signed_hash_vector_is_the_one_phase_1_pinned(self) -> None:
         """Byte-for-byte: this digest is already in deployed receipts."""
-        assert CryptoService.compute_action_hash(
-            agent_id=str(AGENT_ID),
-            action_type="financial_transaction",
-            payload=PAYMENT_PAYLOAD,
-            nonce=NONCE,
-            timestamp=TIMESTAMP,
-            sig_version=2,
-        ) == "54c1b2efb425d09f13a99de1d0bf43656bc5ce7b62255c07992d584ad6228d82"
+        assert (
+            CryptoService.compute_action_hash(
+                agent_id=str(AGENT_ID),
+                action_type="financial_transaction",
+                payload=PAYMENT_PAYLOAD,
+                nonce=NONCE,
+                timestamp=TIMESTAMP,
+                sig_version=2,
+            )
+            == "54c1b2efb425d09f13a99de1d0bf43656bc5ce7b62255c07992d584ad6228d82"
+        )
 
     def test_the_two_hashes_are_different_and_never_interchanged(self) -> None:
         signed = CryptoService.compute_action_hash(
@@ -295,15 +298,11 @@ class TestTargetLifting:
             action_type="wallet_transaction",
             payload={"chain": CHAIN, "recipient": RECIPIENT},
         )
-        assert (
-            with_reference.execution_action_hash != without_reference.execution_action_hash
-        )
+        assert with_reference.execution_action_hash != without_reference.execution_action_hash
 
     def test_two_disagreeing_destinations_fail_closed(self) -> None:
         with pytest.raises(AmbiguousTargetError, match="more than one destination"):
-            lift_target(
-                {"recipient": "acct_123", "payee": "acct_999"}, "financial_transaction"
-            )
+            lift_target({"recipient": "acct_123", "payee": "acct_999"}, "financial_transaction")
 
     def test_two_agreeing_destinations_are_accepted(self) -> None:
         _remaining, target = lift_target(

@@ -38,9 +38,7 @@ from evidence_pack.deterministic_zip import validate_arcname, write_deterministi
 from workers.anchor_worker import compute_merkle_proof, compute_merkle_root
 
 SNAPSHOT = datetime(2026, 6, 30, 0, 0, 0, tzinfo=UTC)
-VERIFIER_PATH = (
-    Path(__file__).parent.parent / "evidence_pack" / "pack_contents" / "verify_pack.py"
-)
+VERIFIER_PATH = Path(__file__).parent.parent / "evidence_pack" / "pack_contents" / "verify_pack.py"
 
 
 def _load_verifier_module(name: str = "verify_pack_embedded"):

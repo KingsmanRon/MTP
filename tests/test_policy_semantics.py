@@ -1,4 +1,5 @@
 """Tests for F7: attestation vs runtime action type semantics."""
+
 from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import uuid4
@@ -18,11 +19,19 @@ def _agent(allowed_actions=None, trust_score=50, status=AgentStatus.ACTIVE):
         status=status,
         daily_limit_usd=Decimal("1000"),
         per_action_limit_usd=Decimal("100"),
-        allowed_actions=allowed_actions or [
-            "tool_call", "promptfoo_eval", "repo_change",
-            "data_export", "admin_action", "financial_transaction",
-            "email_send", "api_call", "ci_workflow_change",
-            "protected_branch_merge", "production_deployment",
+        allowed_actions=allowed_actions
+        or [
+            "tool_call",
+            "promptfoo_eval",
+            "repo_change",
+            "data_export",
+            "admin_action",
+            "financial_transaction",
+            "email_send",
+            "api_call",
+            "ci_workflow_change",
+            "protected_branch_merge",
+            "production_deployment",
         ],
         blocked_actions=[],
         rate_limit_per_minute=60,
@@ -46,9 +55,9 @@ class TestAttestationActions:
             payload={},
             timestamp=datetime.now(UTC),
         )
-        assert result.verdict == ActionVerdict.APPROVED, (
-            f"Expected APPROVED, got {result.verdict}: {result.reason}"
-        )
+        assert (
+            result.verdict == ActionVerdict.APPROVED
+        ), f"Expected APPROVED, got {result.verdict}: {result.reason}"
 
     def test_repo_change_approved_regardless_of_trust_score(self):
         engine = PolicyEngine()

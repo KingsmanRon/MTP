@@ -30,6 +30,7 @@ from api.observability import (
 # JsonFormatter
 # -----------------------------------------------------------------------------
 
+
 def _format_record(record: logging.LogRecord) -> dict:
     return json.loads(JsonFormatter().format(record))
 
@@ -55,7 +56,13 @@ def test_json_formatter_includes_request_id_when_set() -> None:
     token = request_id_var.set("abc-123")
     try:
         record = logging.LogRecord(
-            "x", logging.INFO, __file__, 1, "msg", (), None,
+            "x",
+            logging.INFO,
+            __file__,
+            1,
+            "msg",
+            (),
+            None,
         )
         parsed = _format_record(record)
         assert parsed["request_id"] == "abc-123"
@@ -108,6 +115,7 @@ def test_configure_json_logging_swaps_root_handlers() -> None:
 # -----------------------------------------------------------------------------
 # RequestIdMiddleware
 # -----------------------------------------------------------------------------
+
 
 class _CaptureSend:
     """Minimal ASGI send-callable that captures the response start message."""
@@ -194,11 +202,13 @@ def test_non_http_scope_passes_through() -> None:
 # Metric registration
 # -----------------------------------------------------------------------------
 
+
 def test_expected_metric_names_are_exported() -> None:
     """Alert rules and dashboards depend on these exact names. Rename
     protection: if someone changes them, CI breaks before the dashboards
     do."""
     from api import observability as obs
+
     # Presence check (names below are the public API of the module).
     assert hasattr(obs, "verify_requests_total")
     assert hasattr(obs, "signature_failures_total")

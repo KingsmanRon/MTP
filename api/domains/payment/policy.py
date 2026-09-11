@@ -73,6 +73,7 @@ PAYMENT_ACTION_TYPES: Final[frozenset[str]] = frozenset(
     {"financial_transaction", "wallet_transaction", "wallet_signature"}
 )
 
+
 def _allow() -> PolicyResult:
     return PolicyResult(allowed=True, verdict=ActionVerdict.APPROVED)
 
@@ -269,9 +270,7 @@ _AUTHORITY_FAILURE_REASONS: Final[dict[AuthorityVerificationFailure, DecisionRea
     AuthorityVerificationFailure.AUTHORITY_SIGNATURE_INVALID: (
         DecisionReason.AUTHORITY_VERIFICATION_FAILED
     ),
-    AuthorityVerificationFailure.AUTHORITY_NOT_YET_VALID: (
-        DecisionReason.AUTHORITY_NOT_YET_VALID
-    ),
+    AuthorityVerificationFailure.AUTHORITY_NOT_YET_VALID: (DecisionReason.AUTHORITY_NOT_YET_VALID),
     AuthorityVerificationFailure.AUTHORITY_EXPIRED: DecisionReason.AUTHORITY_EXPIRED,
     AuthorityVerificationFailure.AUTHORITY_REVOKED: DecisionReason.AUTHORITY_REVOKED,
     AuthorityVerificationFailure.AUTHORITY_PRINCIPAL_MISMATCH: (
@@ -309,9 +308,7 @@ def payment_destination(
     if not isinstance(network, str) or not isinstance(asset, str):
         return None
     try:
-        return ExecutionDestination(
-            network=network, account=target.resource_id, asset=asset
-        )
+        return ExecutionDestination(network=network, account=target.resource_id, asset=asset)
     except ValueError:
         return None
 
@@ -396,9 +393,11 @@ class PaymentDomainPolicy:
         destination = payment_destination(envelope, money)
 
         wallet_result = evaluate_wallet_allowlists(
-            (self.agent.metadata or {}).get("wallet_policy")
-            if isinstance(getattr(self.agent, "metadata", None), dict)
-            else None,
+            (
+                (self.agent.metadata or {}).get("wallet_policy")
+                if isinstance(getattr(self.agent, "metadata", None), dict)
+                else None
+            ),
             action.action_type,
             destination.network if destination is not None else None,
             destination.account if destination is not None else None,
@@ -420,9 +419,7 @@ class PaymentDomainPolicy:
             )
             requirement_required = bool(requirement.required)
 
-        has_verified_authority = (
-            resolved_authority is not None and resolved_authority.is_verified
-        )
+        has_verified_authority = resolved_authority is not None and resolved_authority.is_verified
 
         if requirement_required and not has_verified_authority:
             # Fail closed. The non-delegated path is not a fallback for an
@@ -501,9 +498,7 @@ class PaymentDomainPolicy:
     ) -> tuple[DecisionReason, ...]:
         reasons = tuple(
             dict.fromkeys(
-                _AUTHORITY_FAILURE_REASONS.get(
-                    code, DecisionReason.AUTHORITY_VERIFICATION_FAILED
-                )
+                _AUTHORITY_FAILURE_REASONS.get(code, DecisionReason.AUTHORITY_VERIFICATION_FAILED)
                 for code in resolved_authority.failure_codes
             )
         )

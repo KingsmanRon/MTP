@@ -33,18 +33,14 @@ class PrincipalBindingUnavailable(RuntimeError):
     """The principal's issuer identity could not be established."""
 
 
-_LOOKUP: Final[
-    str
-] = """
+_LOOKUP: Final[str] = """
     SELECT binding_key, binding_value
     FROM authority_principal_bindings
     WHERE agent_id = $1 AND issuer = $2
 """
 
 
-async def load_principal_binding(
-    database: Any, *, agent_id: UUID, issuer: str
-) -> dict[str, str]:
+async def load_principal_binding(database: Any, *, agent_id: UUID, issuer: str) -> dict[str, str]:
     """Every binding recorded for this principal at this issuer.
 
     An empty mapping is a real answer: this principal has no identity at
@@ -186,9 +182,7 @@ async def clear_principal_binding(
     return deleted is not None
 
 
-async def list_principal_bindings(
-    database: Any, *, agent_id: UUID
-) -> list[dict[str, Any]]:
+async def list_principal_bindings(database: Any, *, agent_id: UUID) -> list[dict[str, Any]]:
     """Every binding recorded for one principal, across issuers."""
     async with database.acquire() as conn:
         records = await conn.fetch(

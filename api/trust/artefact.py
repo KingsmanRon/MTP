@@ -95,9 +95,7 @@ class ArtefactBounds:
             value = getattr(self, name)
             if not isinstance(value, int) or value <= 0:
                 raise ValueError(f"{name} must be a positive integer")
-        if not isinstance(self.budget_seconds, (int, float)) or (
-            self.budget_seconds <= 0
-        ):
+        if not isinstance(self.budget_seconds, (int, float)) or (self.budget_seconds <= 0):
             raise ValueError("budget_seconds must be positive")
 
 
@@ -124,8 +122,7 @@ class Deadline:
     def check(self, stage: str) -> None:
         if self.expired:
             raise ArtefactParseError(
-                f"authority resolution exceeded its {self._budget}s budget at "
-                f"stage {stage!r}"
+                f"authority resolution exceeded its {self._budget}s budget at " f"stage {stage!r}"
             )
 
 
@@ -240,13 +237,9 @@ class DelegatedAuthorityArtefact:
 
     def __post_init__(self) -> None:
         for name in ("principal_claims", "delegate_claims", "scope_claims"):
-            object.__setattr__(
-                self, name, MappingProxyType(dict(getattr(self, name)))
-            )
+            object.__setattr__(self, name, MappingProxyType(dict(getattr(self, name))))
         if self.delegate_proof is not None:
-            object.__setattr__(
-                self, "delegate_proof", MappingProxyType(dict(self.delegate_proof))
-            )
+            object.__setattr__(self, "delegate_proof", MappingProxyType(dict(self.delegate_proof)))
 
 
 def parse_authority_artefact(
@@ -282,15 +275,11 @@ def parse_authority_artefact(
 
     # Size FIRST, before any parse. Everything downstream is bounded by it.
     if len(payload_bytes) > bounds.max_bytes:
-        raise ArtefactParseError(
-            f"artefact exceeds the {bounds.max_bytes}-byte limit"
-        )
+        raise ArtefactParseError(f"artefact exceeds the {bounds.max_bytes}-byte limit")
     deadline.check("size")
 
     try:
-        document = json.loads(
-            payload_bytes.decode("utf-8"), object_pairs_hook=_no_duplicate_keys
-        )
+        document = json.loads(payload_bytes.decode("utf-8"), object_pairs_hook=_no_duplicate_keys)
     except UnicodeDecodeError as exc:
         raise ArtefactParseError("artefact is not valid UTF-8") from exc
     except json.JSONDecodeError as exc:
@@ -311,9 +300,7 @@ def parse_authority_artefact(
             f"unknown artefact format {declared_format!r}; expected {ARTEFACT_FORMAT!r}"
         )
 
-    algorithm = _require_text(
-        signature.get("algorithm"), "signature.algorithm", bounds=bounds
-    )
+    algorithm = _require_text(signature.get("algorithm"), "signature.algorithm", bounds=bounds)
     if algorithm != SUPPORTED_ALGORITHM:
         raise ArtefactParseError(
             f"unsupported signature algorithm {algorithm!r}; this build "
@@ -321,9 +308,7 @@ def parse_authority_artefact(
         )
 
     issuer = _require_text(payload.get("issuer"), "payload.issuer", bounds=bounds)
-    authority_id = _require_text(
-        payload.get("authority_id"), "payload.authority_id", bounds=bounds
-    )
+    authority_id = _require_text(payload.get("authority_id"), "payload.authority_id", bounds=bounds)
 
     principal_claims = _require_mapping(payload.get("principal"), "payload.principal")
     delegate_claims = (
@@ -344,9 +329,7 @@ def parse_authority_artefact(
     try:
         signed_bytes = jcs.canonicalize(payload)
     except (TypeError, ValueError) as exc:
-        raise ArtefactParseError(
-            f"payload cannot be canonicalised: {exc}"
-        ) from exc
+        raise ArtefactParseError(f"payload cannot be canonicalised: {exc}") from exc
     deadline.check("canonicalise")
 
     delegate_proof = (
@@ -366,12 +349,8 @@ def parse_authority_artefact(
         not_before=not_before,
         not_after=not_after,
         signature_algorithm=algorithm,
-        signature_key_id=_require_text(
-            signature.get("key_id"), "signature.key_id", bounds=bounds
-        ),
-        signature_value_b64=_require_text(
-            signature.get("value"), "signature.value", bounds=bounds
-        ),
+        signature_key_id=_require_text(signature.get("key_id"), "signature.key_id", bounds=bounds),
+        signature_value_b64=_require_text(signature.get("value"), "signature.value", bounds=bounds),
         delegate_proof=delegate_proof,
     )
 

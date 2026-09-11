@@ -33,8 +33,18 @@ _LOCK_ENTRY = re.compile(r"^(?P<digest>[0-9a-f]{64})  (?P<path>\S+)$")
 _MIRROR_HASH = re.compile(
     r"^(?P<name>verify_pack\.py|METHODOLOGY\.md) sha256 (?P<digest>[0-9a-f]{64})$"
 )
+# Two kinds of key live in this file and they assert different things:
+#
+#   ipk-  evidence-pack MANIFEST signing key. Says "Inntris assembled this
+#         pack and it has not changed since".
+#   iae-  AUTHORITY EVIDENCE signing key (Phase 7A, Gate 4). Says "Inntris
+#         Core decided this, spent that, and recorded this outcome".
+#
+# The prefixes are distinct so a reader can never mistake one assertion for
+# the other, and the checker below refuses a file where one key claims to be
+# both.
 _KEY_ENTRY = re.compile(
-    r"^(?P<key_id>ipk-\d{4}-\d{2}) "
+    r"^(?P<key_id>(?P<kind>ipk|iae)-\d{4}-\d{2}) "
     r"(?P<public_key>[0-9a-f]{64}) "
     r"sha256 (?P<fingerprint>[0-9a-f]{64}) "
     r"(?P<status>active|retired) "
@@ -112,6 +122,8 @@ def check_mirror(root: Path, pins: dict[Path, str]) -> list[tuple[str, str]]:
         raise PublicationCheckError("the public key mirror still contains the pending marker")
 
     key_entries: dict[str, tuple[str, str]] = {}
+    kinds: dict[str, list[tuple[str, str]]] = {"ipk": [], "iae": []}
+    seen_public_keys: dict[str, str] = {}
     mirror_hashes: dict[str, str] = {}
     for line in mirror_lines:
         key_match = _KEY_ENTRY.fullmatch(line)
@@ -121,12 +133,25 @@ def check_mirror(root: Path, pins: dict[Path, str]) -> list[tuple[str, str]]:
                 raise PublicationCheckError(f"duplicate key ID in the public mirror: {key_id}")
             public_key = bytes.fromhex(key_match.group("public_key"))
             if public_key == bytes(32):
-                raise PublicationCheckError("the published Ed25519 public key must not be all zeroes")
+                raise PublicationCheckError(
+                    "the published Ed25519 public key must not be all zeroes"
+                )
             date.fromisoformat(key_match.group("effective_date"))
             fingerprint = hashlib.sha256(public_key).hexdigest()
             if fingerprint != key_match.group("fingerprint"):
                 raise PublicationCheckError(f"fingerprint mismatch for {key_id}")
+            # One key, one meaning. A key published as both a pack-manifest
+            # key and an authority-evidence key could have a signature over
+            # one kind of statement read as the other.
+            previous = seen_public_keys.get(fingerprint)
+            if previous is not None:
+                raise PublicationCheckError(
+                    f"{key_id} publishes the same public key as {previous}; a key "
+                    "must assert exactly one kind of thing"
+                )
+            seen_public_keys[fingerprint] = key_id
             key_entries[key_id] = (key_match.group("status"), fingerprint)
+            kinds[key_match.group("kind")].append((key_id, key_match.group("status")))
             continue
 
         hash_match = _MIRROR_HASH.fullmatch(line)
@@ -139,8 +164,27 @@ def check_mirror(root: Path, pins: dict[Path, str]) -> list[tuple[str, str]]:
 
         raise PublicationCheckError(f"unrecognised entry in the public key mirror: {line}")
 
-    if not key_entries or not any(status == "active" for status, _ in key_entries.values()):
-        raise PublicationCheckError("the public key mirror must contain at least one active key")
+    if not kinds["ipk"] or not any(status == "active" for _id, status in kinds["ipk"]):
+        raise PublicationCheckError(
+            "the public key mirror must contain at least one active ipk- "
+            "evidence-pack signing key"
+        )
+
+    # Authority-evidence keys (iae-) are OPTIONAL in this file and mandatory
+    # only once v3 evidence is published. Until an active one exists,
+    # api/receipts/key_registry.py refuses to sign v3 evidence in production,
+    # which is the mechanical form of the Phase 7A Gate 4 rule "do not emit
+    # publicly advertised v3 receipts until the verifier publication gate
+    # passes". What IS checked here: at most one may be active, because two
+    # active signing keys leave a reader unable to say which should have
+    # signed a given event -- and leave an operator responding to a
+    # compromise unable to say which to revoke.
+    active_authority = [key_id for key_id, status in kinds["iae"] if status == "active"]
+    if len(active_authority) > 1:
+        raise PublicationCheckError(
+            "more than one active authority-evidence key is published: "
+            + ", ".join(sorted(active_authority))
+        )
 
     expected_hashes = {path.name: digest for path, digest in pins.items()}
     if mirror_hashes != expected_hashes:
@@ -158,13 +202,16 @@ def validate_publication(root: Path = PROJECT_ROOT) -> list[str]:
     check_attributes(root)
     check_pinned_files(root, pins)
     published_keys = check_mirror(root, pins)
-    messages = [
-        f"pinned {path.as_posix()} {digest}" for path, digest in sorted(pins.items())
-    ]
+    messages = [f"pinned {path.as_posix()} {digest}" for path, digest in sorted(pins.items())]
     messages.extend(
         f"published key {key_id} fingerprint {fingerprint}"
         for key_id, fingerprint in published_keys
     )
+    if not any(key_id.startswith("iae-") for key_id, _fp in published_keys):
+        messages.append(
+            "no active authority-evidence (iae-) key is published; receipt v3 "
+            "evidence CANNOT be signed in production until one is"
+        )
     return messages
 
 

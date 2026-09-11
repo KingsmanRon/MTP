@@ -223,42 +223,35 @@ def test_integration_clean_postgres_migration_replay(
         cursor.execute("SELECT version_num FROM alembic_version")
         assert cursor.fetchone()[0] == expected_head
 
-        cursor.execute(
-            """
+        cursor.execute("""
                 SELECT column_name
                 FROM information_schema.columns
                 WHERE table_schema = 'public'
                   AND table_name = 'agents'
-                """
-        )
+                """)
         agent_columns = {row[0] for row in cursor.fetchall()}
         assert "org_id" in agent_columns
         assert "organization_id" not in agent_columns
 
-        cursor.execute(
-            """
+        cursor.execute("""
                 SELECT pg_get_functiondef(
                     'app.erase_personal_data(uuid,uuid,text,text,text)'::regprocedure
                 )
-                """
-        )
+                """)
         erasure_source = cursor.fetchone()[0]
         assert "a.org_id = p_org_id" in erasure_source
         assert "app.erasure_request_id" in erasure_source
 
-        cursor.execute(
-            """
+        cursor.execute("""
                 SELECT pg_get_functiondef(
                     'public.prevent_audit_log_modification()'::regprocedure
                 )
-                """
-        )
+                """)
         trigger_source = cursor.fetchone()[0]
         assert "matching pending ledger row" in trigger_source
         assert "Erasure cannot modify forensic audit fields" in trigger_source
 
-        cursor.execute(
-            """
+        cursor.execute("""
                 SELECT
                     has_function_privilege(
                         'inntris_worker',
@@ -268,8 +261,7 @@ def test_integration_clean_postgres_migration_replay(
                     has_table_privilege(
                         'inntris_worker', 'public.erasure_requests', 'INSERT'
                     )
-                """
-        )
+                """)
         can_execute, can_insert_ledger = cursor.fetchone()
         assert can_execute is False
         assert can_insert_ledger is False
@@ -285,13 +277,11 @@ async def test_integration_erasure_is_scoped_and_preserves_forensics(
 
     conn = await asyncpg.connect(migrated_database_url)
     try:
-        org_id = await conn.fetchval(
-            """
+        org_id = await conn.fetchval("""
             INSERT INTO organizations (name, contact_email, api_key_hash)
             VALUES ('erasure-test-org', 'dpo@example.com', decode('00', 'hex'))
             RETURNING id
-            """
-        )
+            """)
         agent_id = await conn.fetchval(
             """
             INSERT INTO agents (

@@ -149,6 +149,11 @@ def load_evidence_signing_key(
     anybody can check. Outside production an ephemeral key is minted so
     tests and local runs work without secret handling.
     """
+    from api.receipts.key_registry import (
+        assert_key_is_published,
+        assert_key_separation,
+    )
+
     raw = seed_b64 if seed_b64 is not None else os.getenv(EVIDENCE_SIGNING_KEY_ENV)
     env = (environment or os.getenv("ENVIRONMENT", "development")).strip().lower()
 
@@ -156,13 +161,12 @@ def load_evidence_signing_key(
         try:
             seed = base64.b64decode(raw, validate=True)
         except Exception as exc:
-            raise EvidenceError(
-                f"{EVIDENCE_SIGNING_KEY_ENV} must be base64-encoded"
-            ) from exc
+            raise EvidenceError(f"{EVIDENCE_SIGNING_KEY_ENV} must be base64-encoded") from exc
         if len(seed) != 32:
-            raise EvidenceError(
-                f"{EVIDENCE_SIGNING_KEY_ENV} must decode to a 32-byte Ed25519 seed"
-            )
+            raise EvidenceError(f"{EVIDENCE_SIGNING_KEY_ENV} must decode to a 32-byte Ed25519 seed")
+        # Phase 7A, Gate 4: the separation this module's docstring claims is
+        # enforced here rather than left to whoever fills in the variables.
+        assert_key_separation(seed)
         key = SigningKey(seed)
     else:
         if env not in _NON_PRODUCTION:
@@ -173,10 +177,22 @@ def load_evidence_signing_key(
             )
         key = SigningKey.generate()
 
-    fingerprint = hashlib.sha256(
-        bytes(key.verify_key.encode(encoder=RawEncoder))
-    ).hexdigest()
-    return EvidenceSigningKey(signing_key=key, key_id=f"authority-evidence-{fingerprint[:16]}")
+    fingerprint = hashlib.sha256(bytes(key.verify_key.encode(encoder=RawEncoder))).hexdigest()
+
+    # Phase 7A, Gate 4: the publication gate. In production a key whose
+    # fingerprint is not published as active cannot sign, because a
+    # signature nobody can look up is not evidence -- and it is worse than
+    # no evidence, because it reads as authenticated.
+    published = assert_key_is_published(fingerprint, environment=env)
+
+    return EvidenceSigningKey(
+        signing_key=key,
+        # The PUBLISHED id when there is one, so what an event says about
+        # its signer is the identifier a verifier can actually look up.
+        key_id=(
+            published.key_id if published is not None else f"authority-evidence-{fingerprint[:16]}"
+        ),
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -383,9 +399,7 @@ def verify_evidence_event(
     if raw_public_key:
         supplied_fingerprint = hashlib.sha256(raw_public_key).hexdigest()
         if payload.get("signing_key_fingerprint") != supplied_fingerprint:
-            failures.append(
-                "signing_key_fingerprint does not identify the verifying key"
-            )
+            failures.append("signing_key_fingerprint does not identify the verifying key")
     # --- The whole envelope is bound, not just the payload ---------------
     # Every field duplicated outside the signature is a field an attacker
     # can edit for free: the signature still verifies over the untouched
@@ -401,9 +415,7 @@ def verify_evidence_event(
             # envelope, whatever its signed value happens to be.
             failures.append(f"outer {field_name} is missing from the envelope")
         elif record[field_name] != payload.get(field_name):
-            failures.append(
-                f"outer {field_name} contradicts the signed payload"
-            )
+            failures.append(f"outer {field_name} contradicts the signed payload")
 
     if parent is not None:
         parent_record = (
@@ -478,25 +490,19 @@ def evidence_chain_continuity_failures(
         # Only an ALLOW can be followed by a consumption. Authority that was
         # refused cannot have been spent.
         if decision_body.get("decision") != "allow":
-            failures.append(
-                "continuity: a consumption follows a decision that was not an allow"
-            )
+            failures.append("continuity: a consumption follows a decision that was not an allow")
 
         for field_name in CONSUMPTION_CONTINUITY_FIELDS:
             decided, spent = decision_body.get(field_name), consumption_body.get(field_name)
             if decided is None or spent is None:
                 failures.append(f"continuity: consumption {field_name} is missing")
             elif decided != spent:
-                failures.append(
-                    f"continuity: consumption {field_name} does not match the decision"
-                )
+                failures.append(f"continuity: consumption {field_name} does not match the decision")
 
         for field_name in OPTIONAL_CONTINUITY_FIELDS:
             decided, spent = decision_body.get(field_name), consumption_body.get(field_name)
             if decided is not None and spent is not None and decided != spent:
-                failures.append(
-                    f"continuity: consumption {field_name} does not match the decision"
-                )
+                failures.append(f"continuity: consumption {field_name} does not match the decision")
 
     if outcome is not None:
         outcome_body = _body(outcome)
@@ -510,9 +516,7 @@ def evidence_chain_continuity_failures(
             if reported is None or spent_grant is None:
                 failures.append("continuity: outcome grant_id is missing")
             elif reported != spent_grant:
-                failures.append(
-                    "continuity: outcome grant_id does not match the consumption"
-                )
+                failures.append("continuity: outcome grant_id does not match the consumption")
 
     return tuple(failures)
 
@@ -546,9 +550,7 @@ class AuthorityEvidenceChain:
         failures: list[str] = []
         previous: SignedEvidenceEvent | None = None
         for event in self.events():
-            result = verify_evidence_event(
-                event, public_key_b64=public_key_b64, parent=previous
-            )
+            result = verify_evidence_event(event, public_key_b64=public_key_b64, parent=previous)
             failures.extend(f"{event.event_type.value}: {reason}" for reason in result.failures)
             previous = event
         failures.extend(

@@ -138,9 +138,7 @@ def build_payment_authority_policy_snapshot(
         "principal": {
             "agent_id": str(agent.id),
             "organisation_id": str(agent.org_id),
-            "status": (
-                agent.status.value if hasattr(agent.status, "value") else str(agent.status)
-            ),
+            "status": (agent.status.value if hasattr(agent.status, "value") else str(agent.status)),
             "trust_score": int(agent.trust_score),
             "key_version": int(getattr(agent, "key_version", 1)),
             # ``updated_at`` is deliberately NOT here. It is a row mtime, not

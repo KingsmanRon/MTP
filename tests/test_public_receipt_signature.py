@@ -5,6 +5,7 @@ hash from the public receipt alone, rather than trusting the server's
 ``signature_valid`` boolean. Malformed-submission sentinels (not real 64-byte
 signatures) must NOT be surfaced.
 """
+
 import base64
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock

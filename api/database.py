@@ -1122,9 +1122,7 @@ class Database:
         )
         if reservation is not None:
             if reservation["status"] != "reserved":
-                raise ValueError(
-                    f"spend reservation is {reservation['status']}, not reserved"
-                )
+                raise ValueError(f"spend reservation is {reservation['status']}, not reserved")
             await conn.execute(
                 """
                 UPDATE spend_reservations

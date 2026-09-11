@@ -228,9 +228,7 @@ def _decode_public_key(raw: Any, *, where: str) -> bytes:
         try:
             decoded = base64.b64decode(text, validate=True)
         except (ValueError, TypeError) as exc:
-            raise IssuerTrustConfigError(
-                f"{where}: public_key must be hex or base64"
-            ) from exc
+            raise IssuerTrustConfigError(f"{where}: public_key must be hex or base64") from exc
     if len(decoded) != _ED25519_PUBLIC_KEY_BYTES:
         raise IssuerTrustConfigError(
             f"{where}: public_key must decode to {_ED25519_PUBLIC_KEY_BYTES} "
@@ -287,8 +285,7 @@ def _build_key(raw: Any, *, issuer_id: str) -> IssuerKey:
         # key is not a typo to tolerate: one of the two is wrong and there is
         # no way to tell which.
         raise IssuerTrustConfigError(
-            f"{where}: declared fingerprint does not match the public key "
-            f"(computed {computed})"
+            f"{where}: declared fingerprint does not match the public key " f"(computed {computed})"
         )
 
     status_raw = raw.get("status", KeyStatus.ACTIVE.value)
@@ -296,8 +293,7 @@ def _build_key(raw: Any, *, issuer_id: str) -> IssuerKey:
         status = KeyStatus(str(status_raw))
     except ValueError as exc:
         raise IssuerTrustConfigError(
-            f"{where}: status must be one of "
-            f"{', '.join(s.value for s in KeyStatus)}"
+            f"{where}: status must be one of " f"{', '.join(s.value for s in KeyStatus)}"
         ) from exc
 
     not_before = _instant(raw.get("not_before"), where=f"{where}.not_before")
@@ -356,8 +352,7 @@ def _build_issuer(raw: Any) -> TrustedIssuer:
     for claim, binding in bindings.items():
         if not isinstance(claim, str) or not isinstance(binding, str):
             raise IssuerTrustConfigError(
-                f"issuer {issuer_id}: principal_claim_bindings must map strings "
-                "to strings"
+                f"issuer {issuer_id}: principal_claim_bindings must map strings " "to strings"
             )
 
     expresses_delegate_binding = bool(raw.get("expresses_delegate_binding", False))
@@ -376,9 +371,7 @@ def _build_issuer(raw: Any) -> TrustedIssuer:
 
     scope_mapping = raw.get("scope_field_mapping", {})
     if not isinstance(scope_mapping, dict):
-        raise IssuerTrustConfigError(
-            f"issuer {issuer_id}: scope_field_mapping must be an object"
-        )
+        raise IssuerTrustConfigError(f"issuer {issuer_id}: scope_field_mapping must be an object")
 
     return TrustedIssuer(
         issuer_id=issuer_id,
@@ -410,10 +403,7 @@ class TrustedIssuerRegistry:
     def fingerprints(self) -> dict[str, list[str]]:
         """issuer -> fingerprints, for the release evidence record."""
         return {
-            issuer_id: [
-                f"{key.key_id}:{key.fingerprint}:{key.status.value}"
-                for key in issuer.keys
-            ]
+            issuer_id: [f"{key.key_id}:{key.fingerprint}:{key.status.value}" for key in issuer.keys]
             for issuer_id, issuer in sorted(self.issuers.items())
         }
 
@@ -435,9 +425,7 @@ class TrustedIssuerRegistry:
         for entry in issuers_raw:
             issuer = _build_issuer(entry)
             if issuer.issuer_id in issuers:
-                raise IssuerTrustConfigError(
-                    f"duplicate issuer_id {issuer.issuer_id!r}"
-                )
+                raise IssuerTrustConfigError(f"duplicate issuer_id {issuer.issuer_id!r}")
             issuers[issuer.issuer_id] = issuer
         return cls(issuers=issuers)
 
@@ -463,17 +451,13 @@ def load_registry_from_environment(
     inline = (env.get(TRUST_INLINE_ENV) or "").strip()
     path_value = (env.get(TRUST_FILE_ENV) or "").strip()
     if inline and path_value:
-        raise IssuerTrustConfigError(
-            f"set exactly one of {TRUST_INLINE_ENV} and {TRUST_FILE_ENV}"
-        )
+        raise IssuerTrustConfigError(f"set exactly one of {TRUST_INLINE_ENV} and {TRUST_FILE_ENV}")
 
     if inline:
         try:
             document = json.loads(inline)
         except json.JSONDecodeError as exc:
-            raise IssuerTrustConfigError(
-                f"{TRUST_INLINE_ENV} is not valid JSON"
-            ) from exc
+            raise IssuerTrustConfigError(f"{TRUST_INLINE_ENV} is not valid JSON") from exc
     elif path_value:
         path = Path(path_value)
         try:

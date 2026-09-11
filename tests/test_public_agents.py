@@ -1,4 +1,5 @@
 """Tests for POST /public/agents/register and /public/agents/register-promptfoo."""
+
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
@@ -29,8 +30,8 @@ def _make_db_mock():
     agent_id = uuid4()
 
     conn = AsyncMock()
-    conn.fetchrow = AsyncMock(return_value=None)       # no existing org
-    conn.fetchval = AsyncMock(return_value=org_id)     # org insert
+    conn.fetchrow = AsyncMock(return_value=None)  # no existing org
+    conn.fetchval = AsyncMock(return_value=org_id)  # org insert
 
     # acquire() must be a sync callable returning an async context manager
     acm = MagicMock()

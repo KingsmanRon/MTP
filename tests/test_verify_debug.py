@@ -9,6 +9,7 @@ These cover the integrator-onboarding path:
   canonicalization bug without parsing free text — while preserving the
   human ``detail`` string for back-compat and still recording the forensic row.
 """
+
 import base64
 from datetime import UTC, datetime
 from decimal import Decimal

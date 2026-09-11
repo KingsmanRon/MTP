@@ -5,6 +5,7 @@ anchor worker's existing exclusion key (get_unanchored_logs) — plus a sandbox
 flag, and the public receipt must report sandbox=true / integrity_status=sandbox
 instead of a forever-"pending_anchor".
 """
+
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
@@ -32,6 +33,7 @@ def test_non_sandbox_agent_row_not_flagged():
 # ---------------------------------------------------------------------------
 # Receipt surfacing
 # ---------------------------------------------------------------------------
+
 
 class _AcquireCtx:
     def __init__(self, conn):
@@ -65,15 +67,28 @@ def _receipt_db(row_values):
 def test_receipt_surfaces_sandbox():
     rid = uuid4()
     row = {
-        "id": rid, "timestamp": datetime.now(UTC),
-        "verdict": "approved", "verdict_reason": None, "action_type": "tool_call",
-        "agent_id": uuid4(), "agent_name": "sb", "org_id": uuid4(),
-        "payload": {}, "trust_score_at_time": 50,
-        "action_hash": "a" * 64, "signature_valid": True,
-        "signature": None, "agent_public_key": None,
-        "merkle_root": None, "tx_hash": None, "block_number": None,
-        "chain_id": 8453, "anchored_at": None, "merkle_root_id": None,
-        "policy_hash": None, "metadata": {"sandbox": True, "test_request": True},
+        "id": rid,
+        "timestamp": datetime.now(UTC),
+        "verdict": "approved",
+        "verdict_reason": None,
+        "action_type": "tool_call",
+        "agent_id": uuid4(),
+        "agent_name": "sb",
+        "org_id": uuid4(),
+        "payload": {},
+        "trust_score_at_time": 50,
+        "action_hash": "a" * 64,
+        "signature_valid": True,
+        "signature": None,
+        "agent_public_key": None,
+        "merkle_root": None,
+        "tx_hash": None,
+        "block_number": None,
+        "chain_id": 8453,
+        "anchored_at": None,
+        "merkle_root_id": None,
+        "policy_hash": None,
+        "metadata": {"sandbox": True, "test_request": True},
     }
     db = _receipt_db(row)
     app.dependency_overrides[get_db] = lambda: db

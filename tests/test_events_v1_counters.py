@@ -6,6 +6,7 @@ created with ``status = 'active'`` (it never goes through /verify's activation
 path). Activity counters are owned by the audit insert trigger, not by a
 manual pre-insert UPDATE in the handler.
 """
+
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 

@@ -90,9 +90,7 @@ def require_digest(
     if not isinstance(value, str):
         raise error(f"{field} must be a string, got {type(value).__name__}")
     if len(value) != DIGEST_LENGTH or not _HEX_ALPHABET.issuperset(value):
-        raise error(
-            f"{field} must be a lowercase {DIGEST_LENGTH}-character SHA-256 hex digest"
-        )
+        raise error(f"{field} must be a lowercase {DIGEST_LENGTH}-character SHA-256 hex digest")
     return value
 
 

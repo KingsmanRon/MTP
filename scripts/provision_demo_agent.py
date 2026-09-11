@@ -19,6 +19,7 @@ Usage:
   export INNTRIS_ORG_ID=<uuid>            # must match the API key's org
   python scripts/provision_demo_agent.py --name "demo repo guard" --trust 85
 """
+
 from __future__ import annotations
 
 import argparse
@@ -81,8 +82,7 @@ def main() -> None:
     ]:
         if not val:
             _die(
-                f"missing {flag} "
-                "(set INNTRIS_API_URL / INNTRIS_ADMIN_API_KEY / INNTRIS_ORG_ID)"
+                f"missing {flag} " "(set INNTRIS_API_URL / INNTRIS_ADMIN_API_KEY / INNTRIS_ORG_ID)"
             )
     if not 0 <= args.trust <= 100:
         _die("--trust must be 0..100")

@@ -76,9 +76,7 @@ TERMINAL_GRANT_STATUSES: Final[frozenset[GrantStatus]] = frozenset(
 
 #: The complete transition table. Everything absent from it is forbidden.
 ALLOWED_GRANT_TRANSITIONS: Final[dict[GrantStatus, frozenset[GrantStatus]]] = {
-    GrantStatus.ACTIVE: frozenset(
-        {GrantStatus.CONSUMED, GrantStatus.REVOKED, GrantStatus.EXPIRED}
-    ),
+    GrantStatus.ACTIVE: frozenset({GrantStatus.CONSUMED, GrantStatus.REVOKED, GrantStatus.EXPIRED}),
     GrantStatus.CONSUMED: frozenset(),
     GrantStatus.REVOKED: frozenset(),
     GrantStatus.EXPIRED: frozenset(),
@@ -194,9 +192,7 @@ class ExecutionAuthorityGrant:
 
     def __post_init__(self) -> None:
         require_identifier(self.grant_id, "grant_id", error=InvalidGrantError)
-        require_digest(
-            self.execution_action_hash, "execution_action_hash", error=InvalidGrantError
-        )
+        require_digest(self.execution_action_hash, "execution_action_hash", error=InvalidGrantError)
         require_optional_digest(
             self.signed_action_hash, "signed_action_hash", error=InvalidGrantError
         )

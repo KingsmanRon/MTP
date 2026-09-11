@@ -374,9 +374,7 @@ class AuthorityEvaluationService:
         #: per service instance; see api/trust/issuer_registry.py for why
         #: there is no network key discovery behind this.
         self._trust_registry = (
-            trust_registry
-            if trust_registry is not None
-            else load_registry_from_environment()
+            trust_registry if trust_registry is not None else load_registry_from_environment()
         )
         self._store = store or AuthorityStore(database)
 
@@ -417,9 +415,7 @@ class AuthorityEvaluationService:
             str(organisation_id), str(principal_id), action_type
         )
 
-    async def provider_for(
-        self, claim: DelegatedAuthorityClaim | None
-    ) -> Any | None:
+    async def provider_for(self, claim: DelegatedAuthorityClaim | None) -> Any | None:
         """Build the trust-resolving provider for this claim.
 
         Async because live revocation state has to be read before the
@@ -486,9 +482,7 @@ class AuthorityEvaluationService:
         )
 
         try:
-            return await load_principal_binding(
-                self._db, agent_id=agent.id, issuer=claim.issuer
-            )
+            return await load_principal_binding(self._db, agent_id=agent.id, issuer=claim.issuer)
         except PrincipalBindingUnavailable as exc:
             raise AuthorityUnresolvable(
                 DecisionReason.AUTHORITY_PROVIDER_UNAVAILABLE,
@@ -800,9 +794,7 @@ class AuthorityEvaluationService:
             # can fail closed on its own, and neither can be reached from a
             # request body.
             provider = await self.provider_for(authority_claim)
-            principal_binding = await self.principal_binding_for(
-                authority_claim, agent=agent
-            )
+            principal_binding = await self.principal_binding_for(authority_claim, agent=agent)
             resolved = self.resolve_authority(
                 authority_claim,
                 agent=agent,

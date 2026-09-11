@@ -100,9 +100,7 @@ def test_non_cryptographic_ingestion_agent_cannot_be_promoted():
     org_id = uuid4()
     agent_id = uuid4()
     agent = _agent_record(agent_id, org_id)
-    agent.metadata.update(
-        {"source": "events_v1_bootstrap", "non_cryptographic": True}
-    )
+    agent.metadata.update({"source": "events_v1_bootstrap", "non_cryptographic": True})
     database = _database(agent)
 
     _override_tenant_db(database)

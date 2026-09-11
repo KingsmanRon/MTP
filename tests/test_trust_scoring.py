@@ -5,6 +5,7 @@ adjustment (``int(50 + 0.1) == 50``) meant scores could only ever fall, making
 the 70/80 trust thresholds for admin/CI/deploy actions unreachable. Adjustments
 are now integers so consistent good behavior climbs the score.
 """
+
 from api.policy import TrustScorer
 
 

@@ -317,8 +317,7 @@ async def test_tenant_login_cannot_set_role_worker(tenant_db) -> None:
 @pytest.mark.asyncio
 async def test_rls_drift_guard_classifies_every_public_table(system_db) -> None:
     async with system_db.acquire() as conn:
-        rows = await conn.fetch(
-            """
+        rows = await conn.fetch("""
             SELECT c.relname AS table_name,
                    c.relrowsecurity AS rls_enabled,
                    c.relforcerowsecurity AS force_rls,
@@ -334,8 +333,7 @@ async def test_rls_drift_guard_classifies_every_public_table(system_db) -> None:
               AND c.relkind IN ('r', 'p')
             GROUP BY c.relname, c.relrowsecurity, c.relforcerowsecurity
             ORDER BY c.relname
-            """
-        )
+            """)
 
     assert {row["table_name"] for row in rows} == EXPECTED_PUBLIC_TABLES
     for row in rows:

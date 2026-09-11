@@ -81,15 +81,13 @@ class TenantDatabase:
         switch, so search_path and timeout guardrails are pinned here as well.
         """
         if org_id is None:
-            await conn.execute(
-                """
+            await conn.execute("""
                 SELECT
                   set_config('role','inntris_api',true),
                   set_config('search_path','pg_catalog, public',true),
                   set_config('statement_timeout','30s',true),
                   set_config('idle_in_transaction_session_timeout','15s',true)
-                """
-            )
+                """)
             return
 
         await conn.execute(
@@ -107,16 +105,14 @@ class TenantDatabase:
     async def assert_safe_identity(self) -> None:
         """Fail unless the DSN authenticates as the intended restricted role."""
         async with self._pool.acquire() as conn:
-            identity = await conn.fetchrow(
-                """
+            identity = await conn.fetchrow("""
                 SELECT session_user AS session_user,
                        current_user AS current_user,
                        r.rolsuper AS is_superuser,
                        r.rolbypassrls AS bypass_rls
                 FROM pg_roles r
                 WHERE r.rolname = current_user
-                """
-            )
+                """)
             if identity is None:
                 raise TenantDatabaseError("Unable to resolve tenant database identity")
             if (

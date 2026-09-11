@@ -66,12 +66,17 @@ class EvidencePackBuilder:
         inntris_commit: str | None = None,
         anchor: dict[str, Any] | None = None,
         notes: str | None = None,
+        authority_evidence_key: dict[str, Any] | None = None,
     ) -> None:
         self.pack_name = pack_name
         self.snapshot_time = snapshot_time
         self.inntris_commit = inntris_commit
         self.anchor = anchor
         self.notes = notes
+        #: {"key_id": ..., "public_key_b64": ..., "fingerprint_sha256": ...}
+        #: for the authority-evidence signing key, when the pack carries v3
+        #: evidence. Lands inside the signed manifest.
+        self.authority_evidence_key = authority_evidence_key
         self._entries: dict[str, bytes] = {}
         self._custody_events: list[dict[str, Any]] = []
 
@@ -111,6 +116,33 @@ class EvidencePackBuilder:
         self._add_entry(f"receipts/{audit_id}.json", canonicalize(receipt))
         if proof is not None:
             self._add_entry(f"proofs/{audit_id}.json", canonicalize(proof))
+
+    def add_authority_evidence(self, chain: dict[str, Any], *, chain_id: str | None = None) -> None:
+        """Add one receipt-v3 authority evidence chain.
+
+        ``chain`` is ``{"decision": event, "consumption": event | None,
+        "outcome": event | None}`` in the wire form ``as_public_dict``
+        produces. Absent links are simply absent -- a decision that was
+        never spent is a complete and truthful chain of one.
+
+        The signing key must have been supplied to the builder: a pack
+        carrying evidence it names no key for cannot be checked against any
+        key it commits to, and the public verifier refuses it.
+        """
+        if self.authority_evidence_key is None:
+            raise ValueError(
+                "authority_evidence_key is required before adding v3 evidence; "
+                "a pack whose evidence names no key cannot be verified"
+            )
+        decision = chain.get("decision")
+        if not isinstance(decision, dict):
+            raise ValueError("an authority evidence chain needs a decision event")
+        identifier = (
+            chain_id or (decision.get("payload") or {}).get("grant_id") or decision.get("event_id")
+        )
+        if not identifier:
+            raise ValueError("authority evidence chain has no usable identifier")
+        self._add_entry(f"authority_evidence/{identifier}.json", canonicalize(chain))
 
     def add_document(self, arcname: str, content: bytes | str) -> None:
         """Add a freeform document (scope description, policy export, ...)."""
@@ -156,6 +188,7 @@ class EvidencePackBuilder:
             custody_events=custody_log["events"],
             inntris_commit=self.inntris_commit,
             anchor=self.anchor,
+            authority_evidence=self.authority_evidence_key,
             notes=self.notes,
         )
         manifest_raw = manifest_bytes(manifest)

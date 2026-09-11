@@ -85,9 +85,7 @@ class TrustedProxyClientMiddleware:
 
     def __init__(self, app, hops: int = 1):  # type: ignore[no-untyped-def]
         if not 1 <= hops <= MAX_TRUSTED_PROXY_HOPS:
-            raise ValueError(
-                f"hops must be between 1 and {MAX_TRUSTED_PROXY_HOPS}"
-            )
+            raise ValueError(f"hops must be between 1 and {MAX_TRUSTED_PROXY_HOPS}")
         self.app = app
         self.hops = hops
 

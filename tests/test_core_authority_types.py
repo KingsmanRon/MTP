@@ -230,9 +230,7 @@ class TestResolvedAuthority:
             ),
         )
         assert not resolved.is_verified
-        assert resolved.failure_codes == (
-            AuthorityVerificationFailure.AUTHORITY_SIGNATURE_INVALID,
-        )
+        assert resolved.failure_codes == (AuthorityVerificationFailure.AUTHORITY_SIGNATURE_INVALID,)
 
     def test_an_unavailable_provider_is_never_verified(self) -> None:
         reference = DelegatedAuthorityReference(
@@ -250,9 +248,7 @@ class TestResolvedAuthority:
                 trusted(),
                 reference=verified_reference(),
                 issues=(
-                    AuthorityVerificationIssue(
-                        AuthorityVerificationFailure.AUTHORITY_EXPIRED
-                    ),
+                    AuthorityVerificationIssue(AuthorityVerificationFailure.AUTHORITY_EXPIRED),
                 ),
             )
 
@@ -339,9 +335,7 @@ class TestDecisionVocabulary:
     def test_every_existing_policy_violation_has_an_identical_reason(self) -> None:
         reason_values = {reason.value for reason in DecisionReason}
         missing = {
-            violation.value
-            for violation in PolicyViolation
-            if violation.value not in reason_values
+            violation.value for violation in PolicyViolation if violation.value not in reason_values
         }
         assert not missing, f"existing policy vocabulary not represented: {sorted(missing)}"
 
@@ -440,9 +434,7 @@ class TestGrantStateModel:
         assert is_allowed_transition(GrantStatus.ACTIVE, target)
 
     @pytest.mark.parametrize("terminal", sorted(TERMINAL_GRANT_STATUSES))
-    def test_terminal_states_have_no_outgoing_transitions(
-        self, terminal: GrantStatus
-    ) -> None:
+    def test_terminal_states_have_no_outgoing_transitions(self, terminal: GrantStatus) -> None:
         assert ALLOWED_GRANT_TRANSITIONS[terminal] == frozenset()
         for target in GrantStatus:
             assert not is_allowed_transition(terminal, target)
@@ -473,9 +465,7 @@ class TestGrantStateModel:
 
 class TestRejectionPrecedence:
     def test_the_precedence_covers_every_rejection_reason_once(self) -> None:
-        assert len(set(CONSUMPTION_REJECTION_PRECEDENCE)) == len(
-            CONSUMPTION_REJECTION_PRECEDENCE
-        )
+        assert len(set(CONSUMPTION_REJECTION_PRECEDENCE)) == len(CONSUMPTION_REJECTION_PRECEDENCE)
 
     def test_identity_and_integrity_outrank_lifecycle(self) -> None:
         order = list(CONSUMPTION_REJECTION_PRECEDENCE)
@@ -690,9 +680,7 @@ class TestOutcome:
         assert unreachable.status is not OutcomeStatus.FAILED
 
     def test_an_evidence_link_pins_its_artefact(self) -> None:
-        link = EvidenceLink(
-            evidence_type="audit-record", locator="record-1", digest=DIGEST_A
-        )
+        link = EvidenceLink(evidence_type="audit-record", locator="record-1", digest=DIGEST_A)
         assert link.digest == DIGEST_A
 
     def test_a_malformed_evidence_digest_is_rejected(self) -> None:
@@ -829,9 +817,7 @@ class TestCorePlacementRule:
         offences: list[str] = []
         for source in self._sources():
             text = source.read_text(encoding="utf-8").lower()
-            offences.extend(
-                f"{source.name}: {term}" for term in self.FORBIDDEN if term in text
-            )
+            offences.extend(f"{source.name}: {term}" for term in self.FORBIDDEN if term in text)
         assert not offences, offences
 
     def test_the_boundary_uses_the_neutral_nouns(self) -> None:

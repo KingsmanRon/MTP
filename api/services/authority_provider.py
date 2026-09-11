@@ -219,9 +219,7 @@ class TrustedIssuerAuthorityProvider:
                 issuer=raw_authority.issuer,
                 external_reference_id=raw_authority.external_reference_id,
                 artefact_digest=_NO_ARTEFACT_DIGEST,
-                issues=_issue(
-                    AuthorityVerificationFailure.AUTHORITY_ARTEFACT_INVALID, str(exc)
-                ),
+                issues=_issue(AuthorityVerificationFailure.AUTHORITY_ARTEFACT_INVALID, str(exc)),
             )
 
         digest = artefact.artefact_digest
@@ -355,9 +353,7 @@ class TrustedIssuerAuthorityProvider:
             )
 
         # --- 7. Principal binding -----------------------------------------
-        principal_issue = self._principal_issue(
-            issuer, artefact, expected_principal_context
-        )
+        principal_issue = self._principal_issue(issuer, artefact, expected_principal_context)
         if principal_issue is not None:
             return _unverified(
                 issuer=artefact.issuer,
@@ -489,9 +485,7 @@ class TrustedIssuerAuthorityProvider:
                 )
             )
         for subject_type, subject_id, scoped_issuer, detail in checks:
-            if self._revocations.is_revoked(
-                subject_type, subject_id, issuer=scoped_issuer
-            ):
+            if self._revocations.is_revoked(subject_type, subject_id, issuer=scoped_issuer):
                 return _issue(AuthorityVerificationFailure.AUTHORITY_REVOKED, detail)
         return None
 
@@ -537,9 +531,7 @@ class TrustedIssuerAuthorityProvider:
         issuer: TrustedIssuer,
         artefact: DelegatedAuthorityArtefact,
         context: ExecutionContext,
-    ) -> tuple[
-        DelegateBindingStatus, str | None, tuple[AuthorityVerificationIssue, ...] | None
-    ]:
+    ) -> tuple[DelegateBindingStatus, str | None, tuple[AuthorityVerificationIssue, ...] | None]:
         if not issuer.expresses_delegate_binding:
             # UNSUPPORTED, not BOUND. The issuer makes no statement about
             # which delegate may act, and inventing one would be Core
@@ -576,8 +568,7 @@ class TrustedIssuerAuthorityProvider:
                 None,
                 _issue(
                     AuthorityVerificationFailure.AUTHORITY_DELEGATE_NOT_BOUND,
-                    "the delegation names a delegate key that is not bound to "
-                    "this principal",
+                    "the delegation names a delegate key that is not bound to " "this principal",
                 ),
             )
         return DelegateBindingStatus.BOUND, claimed, None
@@ -634,23 +625,18 @@ async def build_authority_provider(
         # round trips independent of which key the artefact turns out to
         # have been signed with.
         subjects.extend(
-            (RevocationSubject.ISSUER_KEY, key.fingerprint, claim.issuer)
-            for key in issuer.keys
+            (RevocationSubject.ISSUER_KEY, key.fingerprint, claim.issuer) for key in issuer.keys
         )
         delegate = _claimed_delegate_fingerprint(claim)
         if delegate:
-            subjects.append(
-                (RevocationSubject.DELEGATE_KEY, delegate, claim.issuer)
-            )
+            subjects.append((RevocationSubject.DELEGATE_KEY, delegate, claim.issuer))
 
     try:
         revocations = await load_revocations(database, subjects=subjects)
     except RevocationLookupUnavailable as exc:
         raise AuthorityProviderFault(str(exc)) from exc
 
-    return TrustedIssuerAuthorityProvider(
-        registry, revocations, bounds=bounds, now=now
-    )
+    return TrustedIssuerAuthorityProvider(registry, revocations, bounds=bounds, now=now)
 
 
 def _claimed_delegate_fingerprint(claim: DelegatedAuthorityClaim) -> str | None:

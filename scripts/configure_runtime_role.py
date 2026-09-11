@@ -132,8 +132,7 @@ def configure_runtime_role(environ: Mapping[str, str] | None = None) -> None:
                 )
             cursor.execute(
                 sql.SQL(
-                    "ALTER ROLE {} WITH LOGIN NOSUPERUSER NOCREATEDB "
-                    "NOCREATEROLE PASSWORD %s"
+                    "ALTER ROLE {} WITH LOGIN NOSUPERUSER NOCREATEDB " "NOCREATEROLE PASSWORD %s"
                 ).format(sql.Identifier(RUNTIME_ROLE)),
                 (password_verifier,),
             )

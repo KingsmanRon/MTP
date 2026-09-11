@@ -49,6 +49,7 @@ Inntris approves, and a blocked action is never executed.
     INNTRIS_MOONPAY_LIVE    "1" to allow a real spend     (or --moonpay-live; off by default)
     INNTRIS_PRODUCTION_DEMO "1" to explicitly promote demo agents for execution and anchoring
 """
+
 from __future__ import annotations
 
 import argparse
@@ -229,10 +230,7 @@ def provision_agent(
         timeout=15,
     )
     if activated.status_code != 200:
-        die(
-            f"activate agent '{name}' failed (HTTP {activated.status_code}): "
-            f"{activated.text}"
-        )
+        die(f"activate agent '{name}' failed (HTTP {activated.status_code}): " f"{activated.text}")
 
     patch: dict = {
         "trust_score": trust,
@@ -261,10 +259,7 @@ def provision_agent(
             timeout=15,
         )
         if promoted.status_code != 200:
-            die(
-                f"promote agent '{name}' failed (HTTP {promoted.status_code}): "
-                f"{promoted.text}"
-            )
+            die(f"promote agent '{name}' failed (HTTP {promoted.status_code}): " f"{promoted.text}")
     return agent_id, signing_key, fingerprint
 
 
@@ -449,19 +444,28 @@ def moonpay_execute(payload: dict, gate: dict) -> None:
     if EXECUTION_MODE != "moonpay-cli":
         verdict_line(f"MoonPay execution [simulated] — {intent}")
         kv("mode", "mock — MoonPay-style execution simulated (no real spend)")
-        kv("ref", "MOCK-" + hashlib.sha256(
-            json.dumps(payload, sort_keys=True).encode()).hexdigest()[:12])
+        kv(
+            "ref",
+            "MOCK-" + hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()[:12],
+        )
         return
 
     found = shutil.which(MOONPAY_CLI_BIN)
     if not found:
         verdict_line(f"MoonPay execution [simulated] — {intent}")
-        kv("mode", f"moonpay-cli requested but '{MOONPAY_CLI_BIN}' not on PATH — fell back to simulated")
+        kv(
+            "mode",
+            f"moonpay-cli requested but '{MOONPAY_CLI_BIN}' not on PATH — fell back to simulated",
+        )
         return
 
     if not MOONPAY_LIVE or not MOONPAY_CLI_CMD:
         verdict_line(f"MoonPay execution [dry-run] — would {intent}")
-        why = "omit --moonpay-live for dry-run" if not MOONPAY_LIVE else "set INNTRIS_MOONPAY_CLI_CMD to enable"
+        why = (
+            "omit --moonpay-live for dry-run"
+            if not MOONPAY_LIVE
+            else "set INNTRIS_MOONPAY_CLI_CMD to enable"
+        )
         kv("mode", f"MoonPay CLI path — '{MOONPAY_CLI_BIN}' detected at {found}; no spend ({why})")
         return
 
@@ -534,9 +538,13 @@ def scenario_card() -> None:
     )
     api_key, org_id = ADMIN_API_KEY, ORG_ID
     agent_id, signing_key, fp = provision_agent(
-        api_key, org_id, "Corporate Card Agent",
+        api_key,
+        org_id,
+        "Corporate Card Agent",
         allowed=["financial_transaction"],
-        per_action=100, daily=500, trust=85,
+        per_action=100,
+        daily=500,
+        trust=85,
         metadata={"integration": "moonagents-card", "demo": True},
     )
     kv("agent_id", agent_id)
@@ -546,8 +554,11 @@ def scenario_card() -> None:
     # A — authorised, in-policy purchase -> APPROVED -> execute gate -> MoonPay.
     step("A", "Authorised $49.99 card purchase at an allowed vendor")
     card_payload = {
-        "amount": 49.99, "currency": "USD", "vendor": "github.com",
-        "mcc": "5734", "description": "SaaS subscription",
+        "amount": 49.99,
+        "currency": "USD",
+        "vendor": "github.com",
+        "mcc": "5734",
+        "description": "SaaS subscription",
     }
     code, j, body = act(agent_id, signing_key, "financial_transaction", card_payload)
     expect_approved(code, j, "in-policy card spend")
@@ -565,9 +576,17 @@ def scenario_card() -> None:
 
     # B — amount over the per-action ceiling.
     step("B", "Same card, $750 purchase — over the $100 per-action ceiling")
-    code, j, _ = act(agent_id, signing_key, "financial_transaction", {
-        "amount": 750.0, "currency": "USD", "vendor": "github.com", "mcc": "5734",
-    })
+    code, j, _ = act(
+        agent_id,
+        signing_key,
+        "financial_transaction",
+        {
+            "amount": 750.0,
+            "currency": "USD",
+            "vendor": "github.com",
+            "mcc": "5734",
+        },
+    )
     expect_block(code, j, 403, "per_action_limit_exceeded")
     skip_execution()
 
@@ -579,9 +598,13 @@ def scenario_card() -> None:
 
     # D — tampered signature (impersonation).
     step("D", "Tampered signature — an impersonation attempt")
-    code, j, _ = act(agent_id, signing_key, "financial_transaction",
-                     {"amount": 20.0, "currency": "USD", "vendor": "github.com"},
-                     tamper_sig=True)
+    code, j, _ = act(
+        agent_id,
+        signing_key,
+        "financial_transaction",
+        {"amount": 20.0, "currency": "USD", "vendor": "github.com"},
+        tamper_sig=True,
+    )
     expect_block(code, j, 401, "signature_invalid (identity check failed)")
     skip_execution()
 
@@ -602,9 +625,13 @@ def scenario_treasury() -> None:
     )
     api_key, org_id = ADMIN_API_KEY, ORG_ID
     agent_id, signing_key, fp = provision_agent(
-        api_key, org_id, "Treasury Movement Agent",
+        api_key,
+        org_id,
+        "Treasury Movement Agent",
         allowed=["financial_transaction"],
-        per_action=2000, daily=3000, trust=85,
+        per_action=2000,
+        daily=3000,
+        trust=85,
         metadata={"integration": "treasury-ops", "asset": "USDC"},
     )
     kv("agent_id", agent_id)
@@ -612,11 +639,18 @@ def scenario_treasury() -> None:
 
     # A — in-policy move -> APPROVED + execute gate.
     step("A", "Move $1,500 USDC to an approved ops wallet")
-    code, j, body = act(agent_id, signing_key, "financial_transaction", {
-        "amount": 1500.0, "asset": "USDC", "chain": "base",
-        "to_wallet": "0xOPS00000000000000000000000000000000000A1",
-        "business_purpose": "vendor_payment_2026Q2",
-    })
+    code, j, body = act(
+        agent_id,
+        signing_key,
+        "financial_transaction",
+        {
+            "amount": 1500.0,
+            "asset": "USDC",
+            "chain": "base",
+            "to_wallet": "0xOPS00000000000000000000000000000000000A1",
+            "business_purpose": "vendor_payment_2026Q2",
+        },
+    )
     expect_approved(code, j, "in-policy treasury move")
     kv("audit_id", j.get("audit_id"))
     kv("daily_remaining", (j.get("limits_remaining") or {}).get("daily_remaining_usd"))
@@ -628,36 +662,64 @@ def scenario_treasury() -> None:
 
     # B — over the per-action ceiling ("requires stronger approval").
     step("B", "Move $5,000 USDC — above the $2,000 ceiling (needs stronger approval)")
-    code, j, _ = act(agent_id, signing_key, "financial_transaction", {
-        "amount": 5000.0, "asset": "USDC", "chain": "base",
-        "to_wallet": "0xOPS00000000000000000000000000000000000A1",
-        "business_purpose": "large_settlement",
-    })
+    code, j, _ = act(
+        agent_id,
+        signing_key,
+        "financial_transaction",
+        {
+            "amount": 5000.0,
+            "asset": "USDC",
+            "chain": "base",
+            "to_wallet": "0xOPS00000000000000000000000000000000000A1",
+            "business_purpose": "large_settlement",
+        },
+    )
     expect_block(code, j, 403, "per_action_limit_exceeded (fail closed above ceiling)")
 
     # C — cumulative daily ceiling.
     step("C", "Keep moving $1,500 — the move that crosses the $3,000 daily ceiling is blocked")
-    code, j, _ = act(agent_id, signing_key, "financial_transaction", {
-        "amount": 1500.0, "asset": "USDC", "chain": "base",
-        "to_wallet": "0xOPS00000000000000000000000000000000000A1",
-        "business_purpose": "second_move",
-    })
+    code, j, _ = act(
+        agent_id,
+        signing_key,
+        "financial_transaction",
+        {
+            "amount": 1500.0,
+            "asset": "USDC",
+            "chain": "base",
+            "to_wallet": "0xOPS00000000000000000000000000000000000A1",
+            "business_purpose": "second_move",
+        },
+    )
     expect_approved(code, j, "second $1,500 move (cumulative now at the $3,000 ceiling)")
-    code, j, _ = act(agent_id, signing_key, "financial_transaction", {
-        "amount": 1500.0, "asset": "USDC", "chain": "base",
-        "to_wallet": "0xOPS00000000000000000000000000000000000A1",
-        "business_purpose": "third_move",
-    })
+    code, j, _ = act(
+        agent_id,
+        signing_key,
+        "financial_transaction",
+        {
+            "amount": 1500.0,
+            "asset": "USDC",
+            "chain": "base",
+            "to_wallet": "0xOPS00000000000000000000000000000000000A1",
+            "business_purpose": "third_move",
+        },
+    )
     expect_block(code, j, 403, "daily_limit_exceeded")
 
     # D — compromised-agent drill: demote trust below the financial threshold (30).
     step("D", "Compromised-agent drill: demote trust to 25; treasury moves now fail the threshold")
     set_trust(api_key, agent_id, 25)
-    code, j, _ = act(agent_id, signing_key, "financial_transaction", {
-        "amount": 50.0, "asset": "USDC", "chain": "base",
-        "to_wallet": "0xOPS00000000000000000000000000000000000A1",
-        "business_purpose": "tiny_move",
-    })
+    code, j, _ = act(
+        agent_id,
+        signing_key,
+        "financial_transaction",
+        {
+            "amount": 50.0,
+            "asset": "USDC",
+            "chain": "base",
+            "to_wallet": "0xOPS00000000000000000000000000000000000A1",
+            "business_purpose": "tiny_move",
+        },
+    )
     expect_block(code, j, 403, "trust_score_too_low (financial threshold is 30)")
 
 
@@ -673,9 +735,13 @@ def scenario_accounting() -> None:
     )
     api_key, org_id = ADMIN_API_KEY, ORG_ID
     agent_id, signing_key, fp = provision_agent(
-        api_key, org_id, "Ledger Reconciliation Agent",
+        api_key,
+        org_id,
+        "Ledger Reconciliation Agent",
         allowed=["classify_transaction", "reconcile_ledger", "close_books", "data_export"],
-        per_action=0, daily=0, trust=85,
+        per_action=0,
+        daily=0,
+        trust=85,
         metadata={"integration": "entendre-style-accounting"},
     )
     kv("agent_id", agent_id)
@@ -712,14 +778,20 @@ def scenario_accounting() -> None:
         mutated = recompute_fingerprint(altered)
         kv("after altering verdict", mutated[:40] + "…")
         kv("still matches?", mutated == rec.get("receipt_fingerprint"))
-        verdict_line("Any change to who/what/which-policy/verdict breaks the fingerprint [TAMPER-EVIDENT]")
+        verdict_line(
+            "Any change to who/what/which-policy/verdict breaks the fingerprint [TAMPER-EVIDENT]"
+        )
 
     # C — a different, low-trust agent cannot export the closed books.
     step("C", "A low-trust helper agent attempts data_export of the closed books")
     low_id, low_sk, _ = provision_agent(
-        api_key, org_id, "Untrusted Helper Agent",
+        api_key,
+        org_id,
+        "Untrusted Helper Agent",
         allowed=["data_export", "tool_call"],
-        per_action=0, daily=0, trust=25,
+        per_action=0,
+        daily=0,
+        trust=25,
     )
     code, j, _ = act(low_id, low_sk, "data_export", {"report": "q2_close", "rows": 4821})
     expect_block(code, j, 403, "trust_score_too_low (data_export threshold is 40)")
@@ -738,10 +810,14 @@ def scenario_refund() -> None:
 
     # The agent that IS authorised to issue refunds (with caps).
     ref_id, ref_sk, _ = provision_agent(
-        api_key, org_id, "Refund Service Agent",
+        api_key,
+        org_id,
+        "Refund Service Agent",
         allowed=["refund_issue"],
         blocked=["financial_transaction", "admin_action", "data_export"],
-        per_action=200, daily=500, trust=85,
+        per_action=200,
+        daily=500,
+        trust=85,
         metadata={"integration": "refund-service"},
     )
     kv("authorised agent", f"{ref_id}")
@@ -749,9 +825,13 @@ def scenario_refund() -> None:
 
     # A support agent that is NOT authorised to issue refunds.
     sup_id, sup_sk, _ = provision_agent(
-        api_key, org_id, "Support Chatbot Agent",
+        api_key,
+        org_id,
+        "Support Chatbot Agent",
         allowed=["tool_call", "api_call"],
-        per_action=0, daily=0, trust=85,
+        per_action=0,
+        daily=0,
+        trust=85,
         metadata={"integration": "support-chatbot"},
     )
     kv("support agent", f"{sup_id}")
@@ -759,9 +839,16 @@ def scenario_refund() -> None:
 
     # A — authorised refund -> APPROVED + execute gate.
     step("A", "Authorised refund of $40 against a real order")
-    code, j, body = act(ref_id, ref_sk, "refund_issue", {
-        "amount": 40.0, "order_id": "ORD-99821", "reason": "damaged_item",
-    })
+    code, j, body = act(
+        ref_id,
+        ref_sk,
+        "refund_issue",
+        {
+            "amount": 40.0,
+            "order_id": "ORD-99821",
+            "reason": "damaged_item",
+        },
+    )
     expect_approved(code, j, "authorised refund")
     kv("audit_id", j.get("audit_id"))
     gate = execute_gate(ref_id, body, j.get("approval_token"))
@@ -772,24 +859,45 @@ def scenario_refund() -> None:
 
     # B — THE headline: an agent issues a refund it is not authorised to issue.
     step("B", "Support chatbot tries to issue a refund — it was never authorised to")
-    code, j, _ = act(sup_id, sup_sk, "refund_issue", {
-        "amount": 40.0, "order_id": "ORD-99821", "reason": "customer_asked_nicely",
-    })
+    code, j, _ = act(
+        sup_id,
+        sup_sk,
+        "refund_issue",
+        {
+            "amount": 40.0,
+            "order_id": "ORD-99821",
+            "reason": "customer_asked_nicely",
+        },
+    )
     expect_block(code, j, 403, "action_not_allowed — refund_issue not in this agent's allow-list")
 
     # C — authorised agent, oversized refund.
     step("C", "Authorised agent, $5,000 refund — over the $200 ceiling")
-    code, j, _ = act(ref_id, ref_sk, "refund_issue", {
-        "amount": 5000.0, "order_id": "ORD-00007", "reason": "vip",
-    })
+    code, j, _ = act(
+        ref_id,
+        ref_sk,
+        "refund_issue",
+        {
+            "amount": 5000.0,
+            "order_id": "ORD-00007",
+            "reason": "vip",
+        },
+    )
     expect_block(code, j, 403, "per_action_limit_exceeded")
 
     # D — refund-drain: many small refunds until the daily cap trips.
     step("D", "Refund-drain: keep issuing $200 refunds until the $500 daily cap trips")
     for i in range(3):
-        code, j, _ = act(ref_id, ref_sk, "refund_issue", {
-            "amount": 200.0, "order_id": f"ORD-DR{i}", "reason": "batch",
-        })
+        code, j, _ = act(
+            ref_id,
+            ref_sk,
+            "refund_issue",
+            {
+                "amount": 200.0,
+                "order_id": f"ORD-DR{i}",
+                "reason": "batch",
+            },
+        )
         if code == 200:
             verdict_line(f"refund #{i + 1} of $200 APPROVED")
         else:

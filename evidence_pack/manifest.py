@@ -38,6 +38,7 @@ def build_manifest(
     custody_events: list[dict[str, Any]],
     inntris_commit: str | None = None,
     anchor: dict[str, Any] | None = None,
+    authority_evidence: dict[str, Any] | None = None,
     notes: str | None = None,
 ) -> dict[str, Any]:
     """Assemble the manifest dict covering every pack file.
@@ -71,6 +72,13 @@ def build_manifest(
         manifest["inntris_commit"] = inntris_commit
     if anchor:
         manifest["anchor"] = anchor
+    if authority_evidence:
+        # The v3 signing key, INSIDE the signed manifest. A pack that shipped
+        # evidence and let the reader supply their own key would verify
+        # against whatever key an attacker handed them; committing it here
+        # means the pack states which key it claims signed its evidence, and
+        # the reader compares that to the published mirror.
+        manifest["authority_evidence"] = authority_evidence
     if notes:
         manifest["notes"] = notes
     return manifest

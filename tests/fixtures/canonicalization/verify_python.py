@@ -10,6 +10,7 @@ Usage:
     python tests/fixtures/canonicalization/verify_python.py --compute
         (prints actual hashes for __COMPUTED__ vectors)
 """
+
 import hashlib
 import json
 import sys

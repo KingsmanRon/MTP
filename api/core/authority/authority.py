@@ -145,8 +145,7 @@ class AuthorityVerificationIssue:
     def __post_init__(self) -> None:
         if not isinstance(self.code, AuthorityVerificationFailure):
             raise InvalidAuthorityConstructionError(
-                "code must be an AuthorityVerificationFailure, got "
-                f"{type(self.code).__name__}"
+                "code must be an AuthorityVerificationFailure, got " f"{type(self.code).__name__}"
             )
 
 
@@ -225,16 +224,9 @@ class DelegatedAuthorityReference:
             and self.not_after is not None
             and self.not_after <= self.not_before
         ):
-            raise InvalidAuthorityConstructionError(
-                "not_after must be strictly after not_before"
-            )
-        if (
-            self.verification_status is VerificationStatus.VERIFIED
-            and self.verified_at is None
-        ):
-            raise InvalidAuthorityConstructionError(
-                "a VERIFIED reference must record verified_at"
-            )
+            raise InvalidAuthorityConstructionError("not_after must be strictly after not_before")
+        if self.verification_status is VerificationStatus.VERIFIED and self.verified_at is None:
+            raise InvalidAuthorityConstructionError("a VERIFIED reference must record verified_at")
 
     @property
     def is_verified(self) -> bool:
@@ -304,9 +296,7 @@ class ResolvedAuthority:
             and self.not_after is not None
             and self.not_after <= self.not_before
         ):
-            raise InvalidAuthorityConstructionError(
-                "not_after must be strictly after not_before"
-            )
+            raise InvalidAuthorityConstructionError("not_after must be strictly after not_before")
         issues = tuple(self.issues)
         for issue in issues:
             if not isinstance(issue, AuthorityVerificationIssue):
@@ -425,6 +415,4 @@ class AuthorityRequirement:
             raise InvalidAuthorityConstructionError(
                 f"required must be a bool, got {type(self.required).__name__}"
             )
-        require_optional_identifier(
-            self.source, "source", error=InvalidAuthorityConstructionError
-        )
+        require_optional_identifier(self.source, "source", error=InvalidAuthorityConstructionError)
