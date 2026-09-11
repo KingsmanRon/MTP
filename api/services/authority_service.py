@@ -128,8 +128,7 @@ def authority_decision_instant(timestamp: Any) -> datetime | None:
             ) from exc
     else:
         raise AuthorityTimestampError(
-            "timestamp must be an ISO-8601 string, got "
-            f"{type(timestamp).__name__}"
+            "timestamp must be an ISO-8601 string, got " f"{type(timestamp).__name__}"
         )
     if parsed.tzinfo is None:
         raise AuthorityTimestampError(
@@ -196,7 +195,7 @@ class EvaluationResult:
 
 
 class StaticAuthorityRequirementResolver:
-    """Trusted configuration answer, defaulting to today's behaviour.
+    """Trusted configuration answer from the environment. Legacy fallback.
 
     An organisation not explicitly enrolled gets ``required=False``, which
     is exactly how Core behaves now. Enrolment is a deliberate act, so
@@ -204,6 +203,24 @@ class StaticAuthorityRequirementResolver:
 
     A resolver that cannot answer must return ``required=True``; this one
     always can, because absence from the enrolled set *is* the answer.
+
+    Phase 7A note
+    -------------
+    The authoritative answer now comes from ``authority_requirements``
+    (migration 0023) via
+    :func:`api.persistence.authority_requirements.resolve_requirement_context`,
+    which supports per-principal and per-action-class scoping, an audit
+    trail and kill switches. This env-var resolver is retained for two
+    narrow purposes and is deliberately additive to the database answer,
+    never a substitute for it:
+
+    * a break-glass enrolment that does not need a database write;
+    * tests and local development with no database.
+
+    Because it is additive, ``INNTRIS_AUTHORITY_REQUIRED_ORGS`` can only
+    turn the requirement ON. It can never turn off a requirement the
+    database says applies — an environment variable must not be able to
+    silently disable a control an organisation deliberately configured.
     """
 
     def __init__(self, required_organisations: frozenset[str] = frozenset()) -> None:
@@ -242,8 +259,56 @@ def default_requirement_resolver() -> StaticAuthorityRequirementResolver:
     return StaticAuthorityRequirementResolver(enrolled)
 
 
-def legacy_authority_gate(
+class CombinedRequirementResolver:
+    """The database answer, with environment enrolment able only to add.
+
+    Both resolvers are asked and the answers are combined with OR, so the
+    break-glass environment variable can turn a requirement ON for an
+    organisation the database has no row for, and can never turn one OFF.
+
+    One exception, deliberately: when the ``requirement_enforcement`` kill
+    switch is engaged, nothing is required. That switch exists precisely to
+    undo a rollout that went too wide, and a break-glass variable somebody
+    set last month must not defeat the control an operator is pulling now.
+    """
+
+    def __init__(self, primary: Any, environment: Any) -> None:
+        self._primary = primary
+        self._environment = environment
+
+    @property
+    def enforcement_suppressed(self) -> bool:
+        return bool(getattr(self._primary, "enforcement_suppressed", False))
+
+    @property
+    def issuance_halted(self) -> bool:
+        return bool(getattr(self._primary, "issuance_halted", False))
+
+    def requirement(
+        self, organisation_id: str, principal_id: str, action_class: str
+    ) -> AuthorityRequirement:
+        primary = self._primary.requirement(organisation_id, principal_id, action_class)
+        if primary.required or self.enforcement_suppressed:
+            return primary
+        fallback = self._environment.requirement(organisation_id, principal_id, action_class)
+        return fallback if fallback.required else primary
+
+
+async def requirement_resolver_for(
+    database: Any, *, organisation_id: Any, principal_id: Any
+) -> CombinedRequirementResolver:
+    """Build the one resolver both HTTP surfaces consult for this subject."""
+    from api.persistence.authority_requirements import resolve_requirement_context
+
+    primary = await resolve_requirement_context(
+        database, organisation_id=organisation_id, principal_id=principal_id
+    )
+    return CombinedRequirementResolver(primary, default_requirement_resolver())
+
+
+async def legacy_authority_gate(
     *,
+    database: Any,
     organisation_id: Any,
     principal_id: Any,
     action_type: str,
@@ -259,10 +324,14 @@ def legacy_authority_gate(
 
     ``None`` means the organisation is not enrolled and behaviour is
     unchanged -- which is every organisation until someone enrols one.
+
+    It consults the SAME resolver ``/authority/evaluate`` uses, so the two
+    surfaces cannot answer "is authority required here" differently.
     """
-    requirement = default_requirement_resolver().requirement(
-        str(organisation_id), str(principal_id), action_type
+    resolver = await requirement_resolver_for(
+        database, organisation_id=organisation_id, principal_id=principal_id
     )
+    requirement = resolver.requirement(str(organisation_id), str(principal_id), action_type)
     if requirement.required and not has_verified_authority:
         return DecisionReason.AUTHORITY_REQUIRED_BUT_MISSING
     return None
@@ -284,19 +353,53 @@ class AuthorityEvaluationService:
         # First entry signs; every entry verifies. See the note on the
         # consumption service for why this preserves secret rotation.
         self._server_secret = (
-            [server_secret] if isinstance(server_secret, (bytes, bytearray)) else list(server_secret)
+            [server_secret]
+            if isinstance(server_secret, (bytes, bytearray))
+            else list(server_secret)
         )
-        self._requirements = requirement_resolver or default_requirement_resolver()
+        #: An injected resolver pins the answer (tests, and any caller that
+        #: has already resolved it). ``None`` means the database is the
+        #: source of truth and the snapshot is read per evaluation — see
+        #: :meth:`resolver_for`.
+        self._injected_requirements = requirement_resolver
+        self._requirements: Any = requirement_resolver or default_requirement_resolver()
         self._authority_provider = authority_provider
         self._store = store or AuthorityStore(database)
 
     # -- the requirement gate, usable on its own by the legacy path -------
 
+    async def resolver_for(self, *, organisation_id: Any, principal_id: Any) -> Any:
+        """The requirement resolver for this subject, read from the database.
+
+        Read once per evaluation rather than cached: requirement rows are a
+        handful per organisation behind a covering index, and a cache here
+        would be a window in which an organisation that has just turned the
+        requirement ON still issues authority without it.
+        """
+        if self._injected_requirements is not None:
+            return self._injected_requirements
+        return await requirement_resolver_for(
+            self._db, organisation_id=organisation_id, principal_id=principal_id
+        )
+
     def requirement_for(
-        self, *, organisation_id: Any, principal_id: Any, action_type: str
+        self,
+        *,
+        organisation_id: Any,
+        principal_id: Any,
+        action_type: str,
+        resolver: Any | None = None,
     ) -> AuthorityRequirement:
-        """Ask trusted configuration whether delegated authority is required."""
-        return self._requirements.requirement(
+        """Ask a resolver whether delegated authority is required.
+
+        Synchronous by design: it answers from values already held, so no
+        decision path reaches for I/O part-way through making a decision.
+        ``evaluate`` resolves once and passes the result down, which also
+        keeps this service free of per-request mutable state — two
+        concurrent evaluations on one instance cannot see each other's
+        configuration.
+        """
+        return (resolver or self._requirements).requirement(
             str(organisation_id), str(principal_id), action_type
         )
 
@@ -318,8 +421,7 @@ class AuthorityEvaluationService:
         if self._authority_provider is None:
             raise AuthorityUnresolvable(
                 DecisionReason.AUTHORITY_PROVIDER_UNAVAILABLE,
-                "delegated authority was presented but no provider is "
-                "configured to resolve it",
+                "delegated authority was presented but no provider is " "configured to resolve it",
             )
         from api.core.authority.authority import trusted_authority_construction
 
@@ -476,9 +578,7 @@ class AuthorityEvaluationService:
                 signed_action_hash=verified_signed_action_hash,
             ),
         )
-        return replace(
-            result, decision_audit_id=audit_id, decision_recorded_at=recorded_at
-        )
+        return replace(result, decision_audit_id=audit_id, decision_recorded_at=recorded_at)
 
     async def _decide(
         self,
@@ -547,9 +647,33 @@ class AuthorityEvaluationService:
         )
 
         # --- Is delegated authority required here? Trusted config decides. ---
+        resolver = await self.resolver_for(organisation_id=agent.org_id, principal_id=agent.id)
         requirement = self.requirement_for(
-            organisation_id=agent.org_id, principal_id=agent.id, action_type=action_type
+            organisation_id=agent.org_id,
+            principal_id=agent.id,
+            action_type=action_type,
+            resolver=resolver,
         )
+
+        # --- Kill switch: no NEW authority while issuance is halted --------
+        # Checked before any policy work so a halt is unambiguous: there is
+        # no path from here to a grant. Consumption of authority already
+        # issued is deliberately unaffected — halting that would strand
+        # grants an executor is part-way through and turn one uncertain
+        # payment into an unanswerable one.
+        if getattr(resolver, "issuance_halted", False):
+            return EvaluationResult(
+                decision=Decision.BLOCK,
+                reasons=(DecisionReason.AUTHORITY_ISSUANCE_HALTED,),
+                execution_action_hash=envelope.execution_action_hash,
+                detail=(
+                    "new execution authority issuance is halted by the "
+                    "authority_issuance kill switch"
+                ),
+                domain=envelope.domain,
+                executor_binding_digest=executor.binding_digest,
+                executor_reference=executor.executor_reference,
+            )
 
         # --- A presented delegation is never silently discarded -------------
         # The contract has two shapes, and only two:
@@ -632,7 +756,10 @@ class AuthorityEvaluationService:
             daily_spend=daily_spend,
             trust_threshold=PolicyEngine.TRUST_THRESHOLDS.get(action_type),
             registered_policy_hash=registered_policy_hash,
-            authority_requirement_resolver=self._requirements,
+            # The SAME resolver the gate above consulted, so the domain
+            # policy cannot answer "is authority required here" differently
+            # from the decision that has already been made on it.
+            authority_requirement_resolver=resolver,
             consequence_class=consequence_class,
         )
         # Deliberately SERVER time, not the caller's instant: the question
@@ -662,9 +789,7 @@ class AuthorityEvaluationService:
                 domain=envelope.domain,
                 executor_binding_digest=executor.binding_digest,
                 executor_reference=executor.executor_reference,
-                consequence_class=(
-                    consequence_class.value if consequence_class else None
-                ),
+                consequence_class=(consequence_class.value if consequence_class else None),
                 authority_scope_digest=_scope_digest_for(resolved),
             )
 
@@ -679,9 +804,7 @@ class AuthorityEvaluationService:
             signed_action_hash=verified_signed_action_hash,
             consequence_class=consequence_class,
             authority_scope_digest=scope_digest,
-            authority_expires_at=(
-                resolved.not_after if resolved is not None else None
-            ),
+            authority_expires_at=(resolved.not_after if resolved is not None else None),
             now=now,
         )
         if not issued.authorises_execution:
@@ -697,9 +820,7 @@ class AuthorityEvaluationService:
                 domain=envelope.domain,
                 executor_binding_digest=executor.binding_digest,
                 executor_reference=executor.executor_reference,
-                consequence_class=(
-                    consequence_class.value if consequence_class else None
-                ),
+                consequence_class=(consequence_class.value if consequence_class else None),
                 authority_scope_digest=scope_digest,
             )
 
@@ -725,9 +846,7 @@ class AuthorityEvaluationService:
             domain=envelope.domain,
             executor_binding_digest=executor.binding_digest,
             executor_reference=executor.executor_reference,
-            consequence_class=(
-                consequence_class.value if consequence_class else None
-            ),
+            consequence_class=(consequence_class.value if consequence_class else None),
             authority_scope_digest=scope_digest,
         )
 
@@ -834,7 +953,9 @@ class AuthorityConsumptionService:
         # accepts the previous one while it is still configured. Removing
         # the previous secret makes old tokens fail normally.
         self._server_secret = (
-            [server_secret] if isinstance(server_secret, (bytes, bytearray)) else list(server_secret)
+            [server_secret]
+            if isinstance(server_secret, (bytes, bytearray))
+            else list(server_secret)
         )
         self._store = store or AuthorityStore(database)
 

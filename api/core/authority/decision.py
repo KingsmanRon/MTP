@@ -109,6 +109,15 @@ class DecisionReason(StrEnum):
     #: production execution, whatever the principal's status is now.
     GRANT_SANDBOX_EXECUTION_DENIED = "grant_sandbox_execution_denied"
 
+    # --- New: operational controls (Phase 7A, Gate 2/8) ---
+    #: A kill switch is halting NEW execution authority in this scope. It is
+    #: deliberately its own reason rather than being folded into
+    #: ``authority_required_but_missing``: an operator reading a refusal must
+    #: be able to tell "the platform is holding issuance" apart from "this
+    #: organisation requires a delegation you did not present". Presenting a
+    #: valid delegation fixes the second and does nothing for the first.
+    AUTHORITY_ISSUANCE_HALTED = "authority_issuance_halted"
+
     # --- New: approval workflow ---
     APPROVAL_REQUIRED = "approval_required"
 
@@ -160,9 +169,7 @@ class ApprovalRequirement:
             raise CoreAuthorityError(
                 f"reason must be a DecisionReason, got {type(self.reason).__name__}"
             )
-        require_optional_identifier(
-            self.approver_scope, "approver_scope", error=CoreAuthorityError
-        )
+        require_optional_identifier(self.approver_scope, "approver_scope", error=CoreAuthorityError)
 
 
 @dataclass(frozen=True, slots=True)

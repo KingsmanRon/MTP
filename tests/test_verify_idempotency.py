@@ -116,6 +116,28 @@ class _VerifyDatabase:
         assert agent_id == self.agent.id
         return self.agent
 
+    def acquire(self):
+        """A connection whose requirement tables exist and hold no rows.
+
+        That is production's state for every organisation nobody enrolled,
+        which is what these tests are about. Returning no rows here is the
+        difference between "nothing is configured" (the requirement gate is
+        a no-op) and "the configuration could not be read" (the gate fails
+        closed) -- see api/persistence/authority_requirements.py.
+        """
+
+        class _NoRows:
+            async def __aenter__(self_inner):
+                return self_inner
+
+            async def __aexit__(self_inner, *_exc):
+                return False
+
+            async def fetch(self_inner, *_args):
+                return []
+
+        return _NoRows()
+
     async def claim_verify_request(self, **kwargs):
         key = (kwargs["agent_id"], kwargs["request_ref"])
         existing = self.idempotency.get(key)

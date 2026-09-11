@@ -2077,7 +2077,8 @@ async def verify_action(
         # organisation this is a no-op and the decision below is unchanged.
         from api.services.authority_service import legacy_authority_gate
 
-        _authority_gap = legacy_authority_gate(
+        _authority_gap = await legacy_authority_gate(
+            database=database,
             organisation_id=agent.org_id,
             principal_id=agent.id,
             action_type=request_data.action_type,
