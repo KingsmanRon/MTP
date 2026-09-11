@@ -1,0 +1,20 @@
+{
+  "_comment": "The neutral delegated scope the main fixture maps to, pinned as data. The two validity fields are omitted because they are derived from the Layer 2 iat/exp and are therefore relative to when the fixture was minted; every other key is fixed. If a change to the scope mapper moves any value here, this file must move with it deliberately.",
+  "delegation": {
+    "payees": ["Supplier A", "Supplier B"],
+    "currency": "USD",
+    "per_transaction_maximum_minor_units": 2000000,
+    "per_transaction_maximum_major_units": "20000.00"
+  },
+  "scope": {
+    "currency": "USD",
+    "max_amount": "20000.00",
+    "allowed_payees": ["payee:id:supplier-a", "payee:id:supplier-b"]
+  },
+  "scope_keys_derived_from_layer2_validity": ["not_before", "not_after"],
+  "checkout_constraint_types_recorded_but_not_mapped": [
+    "mandate.checkout.allowed_merchants",
+    "mandate.checkout.line_items"
+  ],
+  "payment_constraint_types_verified_structurally": ["mandate.payment.reference"]
+}

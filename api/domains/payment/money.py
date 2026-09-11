@@ -114,18 +114,37 @@ class Money:
         if amount < 0:
             raise MoneyError(f"amount must not be negative (got {amount})")
 
+        # Scaling through ``Decimal.scaleb`` would go through the active
+        # decimal context, which rounds silently once a value exceeds its
+        # precision (28 significant digits by default). Rounding is exactly
+        # what this method promises never to do, so the shift is done on the
+        # digit tuple instead: exact for any magnitude, and independent of
+        # whatever context the caller happens to be running under.
         exponent = SUPPORTED_CURRENCIES[code]
-        scaled = amount.scaleb(exponent)
-        if scaled != scaled.to_integral_value():
-            raise AmountPrecisionError(
-                f"amount {amount} has more precision than {code} minor units "
-                f"({exponent} decimal places); it cannot be represented exactly"
-            )
-        return cls(currency=code, minor_units=int(scaled))
+        _, digits, decimal_exponent = amount.as_tuple()
+        unscaled = int("".join(str(digit) for digit in digits) or "0")
+        shift = int(decimal_exponent) + exponent
+        if shift >= 0:
+            minor_units = unscaled * 10**shift
+        else:
+            minor_units, remainder = divmod(unscaled, 10 ** (-shift))
+            if remainder:
+                raise AmountPrecisionError(
+                    f"amount {amount} has more precision than {code} minor units "
+                    f"({exponent} decimal places); it cannot be represented exactly"
+                )
+        return cls(currency=code, minor_units=minor_units)
 
     def as_decimal(self) -> Decimal:
-        """The exact major-unit value."""
-        return Decimal(self.minor_units).scaleb(-self.exponent)
+        """The exact major-unit value.
+
+        Built from the digit tuple for the same reason as
+        :meth:`from_decimal`: a context-bound shift would round a large
+        amount rather than represent it.
+        """
+        return Decimal(
+            (0, tuple(int(digit) for digit in str(self.minor_units)), -self.exponent)
+        )
 
     def _require_same_currency(self, other: Money) -> None:
         if self.currency != other.currency:
