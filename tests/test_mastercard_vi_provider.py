@@ -16,8 +16,10 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import importlib.util
 import itertools
 import json
+import os
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -59,11 +61,22 @@ from api.domains.payment.delegation import KNOWN_SCOPE_KEYS, parse_delegation_co
 from api.domains.payment.policy import PaymentDomainPolicy
 from api.models import AgentRecord, AgentStatus
 
+# In CI the reference implementation is installed by an explicit step, so a
+# skip there does not mean "optional dependency absent" — it means that step
+# silently did not run, and the connector's whole test surface would vanish
+# without anything going red. Fail loudly instead.
+if importlib.util.find_spec("verifiable_intent") is None and os.environ.get("CI"):
+    raise RuntimeError(
+        "the pinned verifiable-intent reference implementation is missing in CI; "
+        "the 'install the pinned Verifiable Intent reference implementation' step "
+        "must run before pytest"
+    )
+
 vi = pytest.importorskip(
     "verifiable_intent",
     reason=(
-        "the pinned verifiable-intent reference implementation is a dev "
-        "dependency; install with pip install -e '.[dev]'"
+        "the pinned verifiable-intent reference implementation is an optional "
+        "extra; install with pip install -e '.[mastercard-vi]'"
     ),
 )
 

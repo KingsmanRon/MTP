@@ -19,7 +19,7 @@ certification, endorsement or conformance is claimed or implied.
 | Repository | <https://github.com/agent-intent/verifiable-intent> |
 | **Pinned commit** | `356c29635f1c44df7de02edb58699ca9f29bece6` |
 | Commit date | 2026-04-20 |
-| Python package version | `verifiable-intent` **0.1.0** |
+| Python package version | `verifiable-intent` **0.1.0** (no PyPI release; installed from the pinned commit) |
 | Spec revision observed | **0.1-draft**, dated 2026-02-18 |
 | Documents read | `spec/README.md`, `spec/credential-format.md`, `spec/constraints.md`, `spec/security-model.md` |
 
@@ -34,6 +34,33 @@ agree, and a test asserts it:
 
 The connector refuses to verify anything if the installed package version
 is not the pinned one. Nothing floats against `main`.
+
+### How it is installed
+
+```
+pip install -e '.[mastercard-vi]'
+```
+
+It is a **separate extra**, deliberately not folded into `[dev]`. The
+project has no PyPI release, so it can only be a URL requirement — and
+`pip freeze` emits URL requirements without a version, which
+`pip-audit --strict` refuses outright ("URL requirements cannot be pinned
+to a specific package version"). Putting it in `[dev]` therefore breaks
+the SCA gate, and the alternative — filtering it out of the audited
+requirement set — would quietly shrink what that gate covers for every
+other dependency too.
+
+So the CI Python job installs this extra as its own step, and the SCA job
+keeps auditing exactly the dependency set it can audit. It follows that
+pip-audit does not cover this package: nothing can, since there is no
+advisory source for an unpublished project. It is a test-only dependency,
+absent from `requirements.txt` and from the runtime `dependencies`, so it
+never reaches a deployed image.
+
+Because the package is an optional extra, its tests would otherwise
+*skip* when it is missing. A skip in CI would mean the install step
+silently did not run while the connector's entire test surface vanished,
+so both test modules fail loudly rather than skip when `CI` is set.
 
 Every field in this document is **VERIFIED** against the cited draft
 unless it is explicitly marked **ASSUMED**, which is reserved for

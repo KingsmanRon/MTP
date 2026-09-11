@@ -72,6 +72,16 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e '.[dev]'
 
+      - name: install the pinned Verifiable Intent reference implementation
+        # Installed as its own step rather than through '.[dev]' so it never
+        # reaches the SCA job's audited dependency set: the project has no
+        # PyPI release, so it can only be a URL requirement, and pip-audit
+        # --strict refuses those. Without this step the connector's tests
+        # would skip rather than fail, which is the worst of both worlds —
+        # so this is a hard install, pinned to the same commit the connector
+        # records in api/connectors/mastercard_vi/profile.py.
+        run: pip install -e '.[mastercard-vi]'
+
       - name: replay migrations on clean Postgres
         run: alembic upgrade head
 

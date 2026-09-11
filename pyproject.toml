@@ -61,11 +61,21 @@ dependencies = [
 # Inntris verifies between two CI runs. The connector imports it lazily and
 # fails closed when it is absent, so it stays out of the runtime
 # dependencies and out of any deployment that does not use the connector.
+#
+# Deliberately NOT part of ``dev``. The project is not published to PyPI, so
+# this can only be a URL requirement — and ``pip freeze`` emits URL
+# requirements without a version, which ``pip-audit --strict`` refuses
+# outright ("URL requirements cannot be pinned to a specific package
+# version"). Folding it into ``dev`` would therefore break the SCA gate, and
+# the alternative — filtering it out of the audited requirement set — would
+# quietly shrink what that gate covers. Keeping it in its own extra means
+# the audit still sees every dependency it is able to audit, and the jobs
+# that need this one install it explicitly. See
+# ``docs/integrations/mastercard-vi-profile.md`` §1.
 mastercard-vi = [
     "verifiable-intent @ git+https://github.com/agent-intent/verifiable-intent.git@356c29635f1c44df7de02edb58699ca9f29bece6",
 ]
 dev = [
-    "verifiable-intent @ git+https://github.com/agent-intent/verifiable-intent.git@356c29635f1c44df7de02edb58699ca9f29bece6",
     "pytest>=9.0.3,<10.0.0",
     "pytest-asyncio>=1.0.0,<2.0.0",
     "pytest-cov>=4.1.0,<5.0.0",
