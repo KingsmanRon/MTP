@@ -133,3 +133,7 @@ out/
 # graphify (local knowledge-graph tooling — NEVER commit; local-only artifacts)
 # -----------------------------------------------------------------------------
 graphify-out/
+
+# Proof harness scratch state. The evidence files are committed; the
+# mock execution journal is per-run and is not.
+docs/proofs/mastercard-vi/execution-journal.sqlite*
