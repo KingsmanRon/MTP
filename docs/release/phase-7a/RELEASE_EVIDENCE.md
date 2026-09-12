@@ -16,7 +16,7 @@ found by this phase's own measurement rather than a missing artefact.
 | Repository | `KingsmanRon/MTP` |
 | Branch | `claude/new-session-c8k710` |
 | Base (reviewed Phase-6 integration head) | `60388bab70b3048473ac76f359fb8050861edfda` |
-| Release HEAD | `7194bd63d094620e1004ab7da5a838a28d9f9028` |
+| Release HEAD | `a93d61c763aa955a6a67ab08f5215579e0489078` |
 | Migration revision | `0025_authority_binding` (single head) |
 | Change size | 129 files, +13,619 / −1,366 |
 
@@ -37,6 +37,7 @@ found by this phase's own measurement rather than a missing artefact.
 | `69f27a2` | 6, 7, 8 | Race stress, fault injection, measured performance |
 | `4e0c877` | 9 | Secret-scan fix at source |
 | `7194bd6` | 8 | Restore rehearsal correctness fix |
+| `a93d61c` | — | This release evidence, canary procedure, recommendation |
 
 ---
 
@@ -534,7 +535,7 @@ running one.
 | | |
 |---|---|
 | Repository | `KingsmanRon/MTP` |
-| Release branch/HEAD | `claude/new-session-c8k710` @ `7194bd63d094620e1004ab7da5a838a28d9f9028` |
+| Release branch/HEAD | `claude/new-session-c8k710` @ `a93d61c763aa955a6a67ab08f5215579e0489078` |
 | Migration revision | `0025_authority_binding` |
 | Staging upgrade evidence | `docs/release/phase-7a/staging_migration.json` — 7 revisions, 4.696 s, no rewrites |
 | Mixed-version result | Legacy tokens unmodified; no backfill; forward-repair documented |
