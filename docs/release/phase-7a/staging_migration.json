@@ -1,0 +1,104 @@
+{
+  "database": "staging_rehearsal_20260912041929",
+  "from_revision": "0018_merkle_anchor_visibility",
+  "baseline_upgrade_seconds": 0.759,
+  "population": {
+    "seconds": 30.311,
+    "organisations": 1000,
+    "agents": 5000,
+    "tables": [
+      {
+        "table": "audit_logs",
+        "rows": 100000,
+        "size": "50 MB"
+      },
+      {
+        "table": "agents",
+        "rows": 5000,
+        "size": "56 MB"
+      },
+      {
+        "table": "organizations",
+        "rows": 1000,
+        "size": "360 kB"
+      },
+      {
+        "table": "spend_reservations",
+        "rows": 50,
+        "size": "128 kB"
+      },
+      {
+        "table": "alembic_version",
+        "rows": 1,
+        "size": "24 kB"
+      }
+    ]
+  },
+  "locks_observed": [],
+  "upgrade": {
+    "total_seconds": 4.696,
+    "per_revision": [
+      {
+        "revision": "INFO  [alembic.runtime.migration] Running upgrade 0018_merkle_anchor_visibility -> 0019_authority_persistence, Persist execution authority grants and their issuance identity.",
+        "seconds": 0.545
+      },
+      {
+        "revision": "INFO  [alembic.runtime.migration] Running upgrade 0019_authority_persistence -> 0020_authority_evidence, Erasure-safe authority decision evidence.",
+        "seconds": 0.522
+      },
+      {
+        "revision": "INFO  [alembic.runtime.migration] Running upgrade 0020_authority_evidence -> 0021_authority_evidence_int, Make authority decision evidence identities unable to contradict.",
+        "seconds": 0.734
+      },
+      {
+        "revision": "INFO  [alembic.runtime.migration] Running upgrade 0021_authority_evidence_int -> 0022_authority_evidence_nn, Forensic identity CHECKs must fail closed on missing or null values.",
+        "seconds": 0.552
+      },
+      {
+        "revision": "INFO  [alembic.runtime.migration] Running upgrade 0022_authority_evidence_nn -> 0023_authority_requirement, Server-controlled delegated-authority requirement and kill switches.",
+        "seconds": 0.556
+      },
+      {
+        "revision": "INFO  [alembic.runtime.migration] Running upgrade 0023_authority_requirement -> 0024_authority_revocation, Runtime revocation of issuers, keys and delegations.",
+        "seconds": 0.593
+      },
+      {
+        "revision": "INFO  [alembic.runtime.migration] Running upgrade 0024_authority_revocation -> 0025_authority_binding, Server-only binding from a principal to its external issuer identity.",
+        "seconds": 0.687
+      }
+    ],
+    "revisions_applied": 7
+  },
+  "destructive_rewrites": {
+    "tables_rewritten": [],
+    "none": true,
+    "method": "pg_class.relfilenode compared before and after"
+  },
+  "data_readable": {
+    "row_counts": {
+      "organizations": 1000,
+      "agents": 5000,
+      "audit_logs": 100000,
+      "spend_reservations": 50
+    },
+    "agents_with_broken_chain": 0
+  },
+  "legacy_token_bridge": {
+    "unconsumed_legacy_reservations": 50,
+    "still_without_a_grant_row": 50,
+    "no_backfill_occurred": true,
+    "consumption_records": 0
+  },
+  "tenant_isolation": {
+    "tables_checked": 12,
+    "without_forced_rls": [],
+    "ok": true
+  },
+  "problems": [],
+  "ready": true,
+  "recovery": {
+    "downgrade_supported": false,
+    "mechanism": "reviewed forward repair",
+    "detail": "Every authority migration raises on downgrade(): grants record what was authorised and whether it was spent, and dropping them would destroy the evidence that gated real executions. If the application is rolled back, the new tables are inert -- nothing in the old code path reads or writes them -- so no repair is needed to run the old version. Rolling forward again needs one reconciliation: grants whose approval_token_id appears in approval_token_consumptions while the grant still reads 'active'. See docs/EXECUTION_AUTHORITY_PERSISTENCE.md."
+  }
+}

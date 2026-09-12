@@ -81,11 +81,17 @@ _FORBIDDEN_KEYS: Final[frozenset[str]] = frozenset(
 )
 
 #: Markers of PEM-encoded private material appearing in any string value.
-_FORBIDDEN_MARKERS: Final[tuple[str, ...]] = (
-    "-----BEGIN PRIVATE KEY-----",
-    "-----BEGIN RSA PRIVATE KEY-----",
-    "-----BEGIN EC PRIVATE KEY-----",
-    "-----BEGIN OPENSSH PRIVATE KEY-----",
+#:
+#: Assembled from parts rather than written literally. A secret scanner
+#: cannot tell a detection pattern from the thing it detects, so spelling
+#: these out here would make this file itself a finding -- and the remedy
+#: for that would be an ignore entry, which disarms the gate for everyone.
+#: Building them costs nothing and keeps the scan fully armed.
+_PEM_OPEN: Final[str] = "-" * 5 + "BEGIN "
+_PEM_CLOSE: Final[str] = " KEY" + "-" * 5
+_FORBIDDEN_MARKERS: Final[tuple[str, ...]] = tuple(
+    f"{_PEM_OPEN}{kind}{_PEM_CLOSE}"
+    for kind in ("PRIVATE", "RSA PRIVATE", "EC PRIVATE", "OPENSSH PRIVATE")
 )
 
 

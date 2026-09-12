@@ -37,3 +37,14 @@ cf2032f52ebe700745e23cc0e279e9e4309a6b89:docs/verify-page-spec.md:generic-api-ke
 75ae7d39de6cb5fbdc6eaaf65c9b5dcd7a1152ed:tests/test_authority_endpoints.py:generic-api-key:2788
 75ae7d39de6cb5fbdc6eaaf65c9b5dcd7a1152ed:tests/test_authority_endpoints.py:generic-api-key:2794
 eaa9f3f6d213fc4bd0ccbbb07c318089ea14336e:.gitleaksignore:generic-api-key:27
+
+# Phase 7A, Gate 3. api/trust/issuer_registry.py refuses a trust configuration
+# containing PEM private material, so it has to name the markers it looks for.
+# A scanner cannot tell a detection pattern from the thing it detects.
+#
+# The literals were REMOVED at source in the following commit -- they are now
+# assembled from parts, so the working tree scans clean and the gate stays
+# fully armed for everyone. This entry covers only the single historical
+# commit that still carries them. There is no key material in it: the match is
+# the header string alone.
+ad809912f9c1e0562348c313dbdfe931c347ab11:api/trust/issuer_registry.py:private-key:85
