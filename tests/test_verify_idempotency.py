@@ -102,7 +102,40 @@ def _agent(agent_id, org_id, public_key):
     )
 
 
+class _NoConfigurationRows:
+    """The /verify authority gate reads the configuration snapshot.
+
+    This double owns no configuration, so it answers "no rows", which is
+    what every organisation that has not been enrolled looks like. It is a
+    real answer, not an error: a double that simply lacked ``acquire``
+    would make the gate raise, and these tests would stop exercising the
+    idempotency contract they exist for.
+    """
+
+    async def fetchrow(self, _query, *_args):
+        return {
+            "requirement_id": None,
+            "configured_required": False,
+            "requirement_agent_id": None,
+            "requirement_action_class": None,
+            "issuance_halt_id": None,
+            "issuance_halt_is_global": None,
+            "enforcement_suspension_id": None,
+        }
+
+
+class _NoConfigurationAcquire:
+    async def __aenter__(self):
+        return _NoConfigurationRows()
+
+    async def __aexit__(self, *_exc):
+        return False
+
+
 class _VerifyDatabase:
+    def acquire(self):
+        return _NoConfigurationAcquire()
+
     def __init__(self, agent, *, reservation_error=None):
         self.agent = agent
         self.reservation_error = reservation_error

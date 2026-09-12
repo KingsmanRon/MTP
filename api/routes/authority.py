@@ -161,6 +161,10 @@ def register(app, *, get_db, require_api_scope, get_agent_or_404, server_secret_
             else None
         )
 
+        # No requirement_resolver: production resolves the authority
+        # configuration from the DATABASE, which is its sole source. The
+        # injectable resolver is a test/proof seam only, and passing one
+        # here would substitute a static answer for the operator's.
         service = AuthorityEvaluationService(
             database, server_secret=server_secret_provider()
         )

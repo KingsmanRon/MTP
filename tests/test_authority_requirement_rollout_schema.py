@@ -37,6 +37,10 @@ from api.database import Database  # noqa: E402
 
 INTEGRATION_ENABLED = os.getenv("INNTRIS_DB_INTEGRATION") == "1"
 DATABASE_URL = os.getenv("DATABASE_URL", "")
+#: Migration 028 makes the runtime role read-only on these tables, so
+#: seeding configuration needs a privileged DSN. That the runtime role
+#: CANNOT do this is itself asserted below.
+MIGRATOR_URL = os.getenv("ALEMBIC_DATABASE_URL", "")
 
 pytestmark = pytest.mark.skipif(
     not (INTEGRATION_ENABLED and DATABASE_URL),
@@ -44,6 +48,18 @@ pytestmark = pytest.mark.skipif(
 )
 
 REQUIREMENT_TABLES = ("authority_requirements", "authority_controls")
+
+
+@pytest.fixture
+async def seed() -> AsyncIterator[asyncpg.Connection]:
+    """Privileged connection for writing configuration rows."""
+    if not MIGRATOR_URL:
+        pytest.skip("seeding authority configuration requires ALEMBIC_DATABASE_URL")
+    conn = await asyncpg.connect(MIGRATOR_URL)
+    try:
+        yield conn
+    finally:
+        await conn.close()
 
 
 @pytest.fixture
@@ -94,43 +110,42 @@ async def _make_agent(db: Database, org_id: UUID) -> UUID:
     return agent_id
 
 
-async def _add_requirement(db, org_id, *, agent_id=None, action_class=None, required=True):
-    async with db.acquire() as conn:
-        return await conn.fetchval(
-            """INSERT INTO authority_requirements
-                 (org_id, agent_id, action_class, required, reason, changed_by,
-                  approval_reference)
-               VALUES ($1,$2,$3,$4,'test','test-suite','APPROVAL-1')
-               RETURNING id""",
-            org_id, agent_id, action_class, required,
-        )
+async def _add_requirement(seed, org_id, *, agent_id=None, action_class=None, required=True):
+    return await seed.fetchval(
+        """INSERT INTO authority_requirements
+             (org_id, agent_id, action_class, required, reason, changed_by,
+              approval_reference)
+           VALUES ($1,$2,$3,$4,'test','test-suite','APPROVAL-1')
+           RETURNING id""",
+        org_id, agent_id, action_class, required,
+    )
 
 
 class TestTheAnswerIsUnique:
-    async def test_two_org_wide_rows_are_impossible(self, db) -> None:
+    async def test_two_org_wide_rows_are_impossible(self, db, seed) -> None:
         org_id = await _make_org(db)
-        await _add_requirement(db, org_id, required=True)
+        await _add_requirement(seed, org_id, required=True)
         with pytest.raises(asyncpg.UniqueViolationError):
-            await _add_requirement(db, org_id, required=False)
+            await _add_requirement(seed, org_id, required=False)
 
-    async def test_two_rows_for_one_principal_and_class_are_impossible(self, db) -> None:
+    async def test_two_rows_for_one_principal_and_class_are_impossible(self, db, seed) -> None:
         org_id = await _make_org(db)
         agent_id = await _make_agent(db, org_id)
-        await _add_requirement(db, org_id, agent_id=agent_id, action_class="financial_transaction")
+        await _add_requirement(seed, org_id, agent_id=agent_id, action_class="financial_transaction")
         with pytest.raises(asyncpg.UniqueViolationError):
             await _add_requirement(
-                db, org_id, agent_id=agent_id, action_class="financial_transaction",
+                seed, org_id, agent_id=agent_id, action_class="financial_transaction",
                 required=False,
             )
 
-    async def test_the_ladder_rungs_do_not_collide_with_each_other(self, db) -> None:
+    async def test_the_ladder_rungs_do_not_collide_with_each_other(self, db, seed) -> None:
         """All four specificity rungs may coexist; only duplicates collide."""
         org_id = await _make_org(db)
         agent_id = await _make_agent(db, org_id)
-        await _add_requirement(db, org_id)
-        await _add_requirement(db, org_id, action_class="financial_transaction")
-        await _add_requirement(db, org_id, agent_id=agent_id)
-        await _add_requirement(db, org_id, agent_id=agent_id, action_class="financial_transaction")
+        await _add_requirement(seed, org_id)
+        await _add_requirement(seed, org_id, action_class="financial_transaction")
+        await _add_requirement(seed, org_id, agent_id=agent_id)
+        await _add_requirement(seed, org_id, agent_id=agent_id, action_class="financial_transaction")
         async with db.acquire() as conn:
             count = await conn.fetchval(
                 "SELECT count(*) FROM authority_requirements WHERE org_id = $1", org_id
@@ -139,53 +154,50 @@ class TestTheAnswerIsUnique:
 
 
 class TestTenantOwnership:
-    async def test_a_requirement_cannot_name_another_tenants_principal(self, db) -> None:
+    async def test_a_requirement_cannot_name_another_tenants_principal(self, db, seed) -> None:
         org_a = await _make_org(db)
         org_b = await _make_org(db)
         foreign_agent = await _make_agent(db, org_b)
         with pytest.raises(asyncpg.ForeignKeyViolationError):
-            await _add_requirement(db, org_a, agent_id=foreign_agent)
+            await _add_requirement(seed, org_a, agent_id=foreign_agent)
 
-    async def test_a_requirement_cannot_name_an_agent_that_does_not_exist(self, db) -> None:
+    async def test_a_requirement_cannot_name_an_agent_that_does_not_exist(self, db, seed) -> None:
         org_id = await _make_org(db)
         with pytest.raises(asyncpg.ForeignKeyViolationError):
-            await _add_requirement(db, org_id, agent_id=uuid4())
+            await _add_requirement(seed, org_id, agent_id=uuid4())
 
 
 class TestKillSwitches:
-    async def test_an_unknown_control_name_is_refused(self, db) -> None:
+    async def test_an_unknown_control_name_is_refused(self, db, seed) -> None:
         org_id = await _make_org(db)
-        async with db.acquire() as conn:
-            with pytest.raises(asyncpg.CheckViolationError):
-                await conn.execute(
+        with pytest.raises(asyncpg.CheckViolationError):
+            await seed.execute(
                     """INSERT INTO authority_controls
                          (control, org_id, engaged, reason, changed_by, approval_reference)
                        VALUES ('not_a_real_control',$1,TRUE,'t','t','A')""",
                     org_id,
                 )
 
-    async def test_a_global_and_an_org_row_may_coexist_but_not_duplicate(self, db) -> None:
+    async def test_a_global_and_an_org_row_may_coexist_but_not_duplicate(self, db, seed) -> None:
         org_id = await _make_org(db)
-        async with db.acquire() as conn:
-            await conn.execute(
+        await seed.execute(
+            """INSERT INTO authority_controls
+                 (control, org_id, engaged, reason, changed_by, approval_reference)
+               VALUES ('authority_issuance',$1,TRUE,'t','t','A')""",
+            org_id,
+        )
+        with pytest.raises(asyncpg.UniqueViolationError):
+            await seed.execute(
                 """INSERT INTO authority_controls
                      (control, org_id, engaged, reason, changed_by, approval_reference)
-                   VALUES ('authority_issuance',$1,TRUE,'t','t','A')""",
+                   VALUES ('authority_issuance',$1,FALSE,'t','t','A')""",
                 org_id,
             )
-            with pytest.raises(asyncpg.UniqueViolationError):
-                await conn.execute(
-                    """INSERT INTO authority_controls
-                         (control, org_id, engaged, reason, changed_by, approval_reference)
-                       VALUES ('authority_issuance',$1,FALSE,'t','t','A')""",
-                    org_id,
-                )
 
-    async def test_both_named_controls_are_accepted(self, db) -> None:
+    async def test_both_named_controls_are_accepted(self, db, seed) -> None:
         org_id = await _make_org(db)
-        async with db.acquire() as conn:
-            for control in ("requirement_enforcement", "authority_issuance"):
-                await conn.execute(
+        for control in ("requirement_enforcement", "authority_issuance"):
+            await seed.execute(
                     """INSERT INTO authority_controls
                          (control, org_id, engaged, reason, changed_by, approval_reference)
                        VALUES ($2,$1,TRUE,'t','t','A')""",
@@ -194,8 +206,13 @@ class TestKillSwitches:
 
 
 class TestPermissionsAndIsolation:
-    async def test_the_runtime_role_cannot_delete_a_requirement(self, db) -> None:
-        """Lifting a requirement is an UPDATE that keeps the record."""
+    async def test_the_runtime_role_holds_only_select(self, db) -> None:
+        """Migration 028: authority configuration is read-only at runtime.
+
+        The role that serves requests must not edit the trust configuration
+        those requests are judged against. There is no management write
+        surface yet, so nothing needs more than SELECT.
+        """
         async with db.acquire() as conn:
             granted = await conn.fetch(
                 """SELECT table_name, privilege_type
@@ -205,10 +222,33 @@ class TestPermissionsAndIsolation:
             )
         privileges = {(r["table_name"], r["privilege_type"]) for r in granted}
         for table in REQUIREMENT_TABLES:
-            assert (table, "SELECT") in privileges
-            assert (table, "INSERT") in privileges
-            assert (table, "UPDATE") in privileges
-            assert (table, "DELETE") not in privileges
+            assert (table, "SELECT") in privileges, f"the reader needs SELECT on {table}"
+            for forbidden in ("INSERT", "UPDATE", "DELETE"):
+                assert (table, forbidden) not in privileges, (
+                    f"the runtime role must not hold {forbidden} on {table}"
+                )
+
+    async def test_the_runtime_role_write_is_actually_refused(self, db) -> None:
+        """Not merely absent from the grant table -- refused in practice."""
+        org_id = await _make_org(db)
+        async with db.acquire() as conn:
+            with pytest.raises(asyncpg.InsufficientPrivilegeError):
+                await conn.execute(
+                    """INSERT INTO authority_requirements
+                         (org_id, agent_id, action_class, required, reason,
+                          changed_by, approval_reference)
+                       VALUES ($1,NULL,NULL,TRUE,'t','t','A')""",
+                    org_id,
+                )
+
+    async def test_a_global_enforcement_suspension_is_impossible(self, seed) -> None:
+        """One switch must not suspend every organisation's requirement."""
+        with pytest.raises(asyncpg.CheckViolationError):
+            await seed.execute(
+                """INSERT INTO authority_controls
+                     (control, org_id, engaged, reason, changed_by, approval_reference)
+                   VALUES ('requirement_enforcement',NULL,TRUE,'t','t','A')"""
+            )
 
     async def test_row_level_security_is_enabled_and_forced(self, db) -> None:
         async with db.acquire() as conn:
@@ -222,11 +262,11 @@ class TestPermissionsAndIsolation:
             assert row["relrowsecurity"], f"{row['relname']} has RLS disabled"
             assert row["relforcerowsecurity"], f"{row['relname']} does not FORCE RLS"
 
-    async def test_a_tenant_sees_only_its_own_requirements(self, db) -> None:
+    async def test_a_tenant_sees_only_its_own_requirements(self, db, seed) -> None:
         org_a = await _make_org(db)
         org_b = await _make_org(db)
-        await _add_requirement(db, org_a)
-        await _add_requirement(db, org_b)
+        await _add_requirement(seed, org_a)
+        await _add_requirement(seed, org_b)
 
         async with db.acquire_as_tenant(org_a) as conn:
             visible = await conn.fetch("SELECT org_id FROM authority_requirements")
@@ -235,19 +275,29 @@ class TestPermissionsAndIsolation:
         assert org_a in org_ids
         assert org_b not in org_ids
 
-    async def test_the_global_kill_switch_is_invisible_to_a_tenant(self, db) -> None:
-        """A platform-wide halt is not a tenant-visible setting."""
+    async def test_the_global_kill_switch_is_invisible_to_a_tenant(self, db, seed) -> None:
+        """A platform-wide halt is not a tenant-visible setting.
+
+        ``authority_issuance`` is used because it is the control that may be
+        global; migration 028 forbids a global ``requirement_enforcement``.
+        """
         org_id = await _make_org(db)
-        async with db.acquire() as conn:
-            await conn.execute(
-                """INSERT INTO authority_controls
-                     (control, org_id, engaged, reason, changed_by, approval_reference)
-                   VALUES ('requirement_enforcement',NULL,TRUE,'global','platform','A')
-                   ON CONFLICT DO NOTHING"""
+        # A global halt really is global: it must be removed again, or every
+        # other test in the process is evaluated under a platform-wide stop.
+        await seed.execute(
+            """INSERT INTO authority_controls
+                 (control, org_id, engaged, reason, changed_by, approval_reference)
+               VALUES ('authority_issuance',NULL,FALSE,'global-visibility','platform','A')
+               ON CONFLICT DO NOTHING"""
+        )
+        try:
+            async with db.acquire_as_tenant(org_id) as conn:
+                visible = await conn.fetch("SELECT org_id FROM authority_controls")
+            assert all(row["org_id"] is not None for row in visible)
+        finally:
+            await seed.execute(
+                "DELETE FROM authority_controls WHERE reason = 'global-visibility'"
             )
-        async with db.acquire_as_tenant(org_id) as conn:
-            visible = await conn.fetch("SELECT org_id FROM authority_controls")
-        assert all(row["org_id"] is not None for row in visible)
 
 
 class TestDefaultBehaviourIsUnchanged:
@@ -264,18 +314,17 @@ class TestDefaultBehaviourIsUnchanged:
         assert requirements == 0
         assert controls == 0
 
-    async def test_updated_at_is_maintained_by_the_database(self, db) -> None:
+    async def test_updated_at_is_maintained_by_the_database(self, db, seed) -> None:
         org_id = await _make_org(db)
-        requirement_id = await _add_requirement(db, org_id, required=True)
-        async with db.acquire() as conn:
-            before = await conn.fetchval(
-                "SELECT updated_at FROM authority_requirements WHERE id = $1", requirement_id
-            )
-            await conn.execute(
-                "UPDATE authority_requirements SET required = FALSE WHERE id = $1",
-                requirement_id,
-            )
-            after = await conn.fetchval(
-                "SELECT updated_at FROM authority_requirements WHERE id = $1", requirement_id
-            )
+        requirement_id = await _add_requirement(seed, org_id, required=True)
+        before = await seed.fetchval(
+            "SELECT updated_at FROM authority_requirements WHERE id = $1", requirement_id
+        )
+        await seed.execute(
+            "UPDATE authority_requirements SET required = FALSE WHERE id = $1",
+            requirement_id,
+        )
+        after = await seed.fetchval(
+            "SELECT updated_at FROM authority_requirements WHERE id = $1", requirement_id
+        )
         assert after > before

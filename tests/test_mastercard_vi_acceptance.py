@@ -23,7 +23,7 @@ from uuid import uuid4
 
 import pytest
 
-pytest.importorskip("asyncpg")
+asyncpg = pytest.importorskip("asyncpg")
 pytest.importorskip(
     "verifiable_intent",
     reason=(
@@ -38,7 +38,6 @@ from api.core.authority.lifecycle import ConsumptionOutcome  # noqa: E402
 from api.database import Database  # noqa: E402
 from api.persistence.authority_store import IssueOutcome  # noqa: E402
 from api.services.authority_service import (  # noqa: E402
-    AUTHORITY_REQUIRED_ORGS_ENV,
     AuthorityEvaluationService,
     legacy_authority_gate,
 )
@@ -56,6 +55,8 @@ from scripts.mastercard_vi.journal import ExecutionState  # noqa: E402
 
 INTEGRATION_ENABLED = os.getenv("INNTRIS_DB_INTEGRATION") == "1"
 DATABASE_URL = os.getenv("DATABASE_URL", "")
+#: Authority configuration is read-only at runtime (migration 028).
+MIGRATOR_URL = os.getenv("ALEMBIC_DATABASE_URL", "")
 
 pytestmark = pytest.mark.skipif(
     not (INTEGRATION_ENABLED and DATABASE_URL),
@@ -128,13 +129,33 @@ def spend_kwargs(result, claim, executor, *, amount=AMOUNT, account=SUPPLIER_A_A
 
 
 class TestRequiredDelegationOmitted:
-    """An organisation that opted in cannot be served by the path that skips it."""
+    """An organisation that opted in cannot be served by the path that skips it.
+
+    Enrolment is a requirement ROW now, not an environment variable; the
+    behaviour these cases pin is unchanged.
+    """
+
+    @staticmethod
+    async def _require(org_id) -> None:
+        if not MIGRATOR_URL:
+            pytest.skip("seeding authority configuration requires ALEMBIC_DATABASE_URL")
+        conn = await asyncpg.connect(MIGRATOR_URL)
+        try:
+            await conn.execute(
+                """INSERT INTO authority_requirements
+                     (org_id,agent_id,action_class,required,reason,changed_by,
+                      approval_reference)
+                   VALUES ($1,NULL,NULL,TRUE,'acceptance','proof','A')""",
+                org_id,
+            )
+        finally:
+            await conn.close()
 
     async def test_authority_evaluate_fails_closed_without_the_delegation(
-        self, harness: ProofHarness, database: Database, monkeypatch
+        self, harness: ProofHarness, database: Database
     ) -> None:
         principal = await harness.create_principal(label="case8-new")
-        monkeypatch.setenv(AUTHORITY_REQUIRED_ORGS_ENV, str(principal.org_id))
+        await self._require(principal.org_id)
         # Built after the enrolment, exactly as a deployment would be.
         service = AuthorityEvaluationService(
             database,
@@ -156,19 +177,20 @@ class TestRequiredDelegationOmitted:
         assert result.authority_token is None
 
     async def test_the_legacy_verify_gate_refuses_the_same_organisation(
-        self, harness: ProofHarness, monkeypatch
+        self, harness: ProofHarness, database: Database
     ) -> None:
         """/verify has no field to carry a delegation, so it cannot bypass.
 
-        The legacy route consults the same requirement resolver. For an
+        The legacy route reads the same configuration snapshot. For an
         enrolled organisation the answer is always "required and absent",
         which is what stops it quietly issuing a token under a rule the
         organisation deliberately turned on.
         """
         principal = await harness.create_principal(label="case8-legacy")
-        monkeypatch.setenv(AUTHORITY_REQUIRED_ORGS_ENV, str(principal.org_id))
+        await self._require(principal.org_id)
         assert (
-            legacy_authority_gate(
+            await legacy_authority_gate(
+                database,
                 organisation_id=principal.org_id,
                 principal_id=principal.agent_id,
                 action_type="wallet_transaction",
@@ -177,13 +199,14 @@ class TestRequiredDelegationOmitted:
         )
 
     async def test_a_non_enrolled_organisation_is_unaffected(
-        self, harness: ProofHarness, monkeypatch
+        self, harness: ProofHarness, database: Database
     ) -> None:
         """Enrolment is a deliberate act; nothing changes until someone does it."""
         principal = await harness.create_principal(label="case8-other")
-        monkeypatch.setenv(AUTHORITY_REQUIRED_ORGS_ENV, str(uuid4()))
+        # Deliberately seed nothing: absence of a row IS the answer.
         assert (
-            legacy_authority_gate(
+            await legacy_authority_gate(
+                database,
                 organisation_id=principal.org_id,
                 principal_id=principal.agent_id,
                 action_type="wallet_transaction",

@@ -125,20 +125,26 @@ class StubBindingResolver:
         return self._bindings.get(payee_reference)
 
 
-class StubRequirementResolver:
-    def __init__(self, required: bool) -> None:
-        self._required = required
+def stub_configuration(required: bool):
+    """The resolved snapshot the policy now receives, not a resolver.
 
-    def requirement(self, organisation_id: str, principal_id: str, action_class: str):
-        from api.core.authority.authority import AuthorityRequirement
+    The policy no longer queries authority configuration itself -- it is
+    handed one immutable answer for the whole decision -- so the stub is a
+    value, not something with a ``requirement()`` method to call again.
+    """
+    from datetime import UTC, datetime
+    from uuid import uuid4
 
-        return AuthorityRequirement(
-            trusted_authority_construction(),
-            organisation_id=organisation_id,
-            principal_id=principal_id,
-            action_class=action_class,
-            required=self._required,
-        )
+    from api.persistence.authority_configuration import AuthorityRuntimeConfiguration
+
+    return AuthorityRuntimeConfiguration(
+        organisation_id=str(uuid4()),
+        principal_id=str(uuid4()),
+        action_class="financial_transaction",
+        resolved_at=datetime.now(UTC),
+        configured_required=required,
+        requirement_scope="stub" if required else None,
+    )
 
 
 def supplier_a_binding(account=BOUND_ACCOUNT) -> StubBindingResolver:
@@ -701,7 +707,7 @@ class TestPayeeIsBoundToTheExecutionDestination:
 
 
 class TestAuthorityRequirementDoesNotFallThrough:
-    def test_no_resolver_means_current_behaviour(self) -> None:
+    def test_no_configuration_means_current_behaviour(self) -> None:
         subject = agent()
         decision = PaymentDomainPolicy(agent=subject).evaluate(envelope(subject), at=NOW)
         assert decision.decision is Decision.ALLOW
@@ -709,14 +715,14 @@ class TestAuthorityRequirementDoesNotFallThrough:
     def test_a_resolver_saying_not_required_means_current_behaviour(self) -> None:
         subject = agent()
         decision = PaymentDomainPolicy(
-            agent=subject, authority_requirement_resolver=StubRequirementResolver(False)
+            agent=subject, authority_configuration=stub_configuration(False)
         ).evaluate(envelope(subject), at=NOW)
         assert decision.decision is Decision.ALLOW
 
     def test_required_but_absent_cannot_take_the_non_delegated_path(self) -> None:
         subject = agent()
         decision = PaymentDomainPolicy(
-            agent=subject, authority_requirement_resolver=StubRequirementResolver(True)
+            agent=subject, authority_configuration=stub_configuration(True)
         ).evaluate(envelope(subject), at=NOW)
         assert decision.decision is Decision.BLOCK
         assert DecisionReason.AUTHORITY_REQUIRED_BUT_MISSING in decision.reasons
@@ -724,7 +730,7 @@ class TestAuthorityRequirementDoesNotFallThrough:
     def test_required_and_unverified_blocks_with_the_verification_reason(self) -> None:
         subject = agent()
         decision = PaymentDomainPolicy(
-            agent=subject, authority_requirement_resolver=StubRequirementResolver(True)
+            agent=subject, authority_configuration=stub_configuration(True)
         ).evaluate(
             envelope(subject),
             resolved(
@@ -742,7 +748,7 @@ class TestAuthorityRequirementDoesNotFallThrough:
     def test_required_and_verified_proceeds_to_the_intersection(self) -> None:
         subject = agent()
         decision = PaymentDomainPolicy(
-            agent=subject, authority_requirement_resolver=StubRequirementResolver(True)
+            agent=subject, authority_configuration=stub_configuration(True)
         ).evaluate(
             envelope(subject),
             resolved({"max_amount": "20.00", "currency": "USD"}),

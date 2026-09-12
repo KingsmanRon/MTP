@@ -35,6 +35,11 @@ from api.crypto import CryptoService
 from api.database import Database
 from api.domains.payment.policy import PAYMENT_ACTION_TYPES, PaymentDomainPolicy
 from api.domains.payment.snapshot import build_payment_authority_policy_snapshot
+from api.persistence.authority_configuration import (
+    AuthorityConfigurationUnavailable,
+    AuthorityRuntimeConfiguration,
+    resolve_authority_configuration,
+)
 from api.persistence.authority_decisions import (
     build_decision_payload,
     record_authority_decision,
@@ -244,25 +249,61 @@ class StaticAuthorityRequirementResolver:
         )
 
 
-#: Environment variable naming the organisations that REQUIRE delegated
-#: authority, comma-separated. Absent means no organisation is enrolled,
-#: which is exactly today's behaviour.
+#: DECOMMISSIONED as a source of authority decisions. The database is the
+#: sole production source; this name survives only as a deployment
+#: tripwire, because the repository cannot prove what is set in a hosting
+#: dashboard. A non-empty value in production means somebody enrolled an
+#: organisation the old way and that enrolment would now be silently
+#: ignored -- so startup refuses rather than quietly dropping it.
+#:
+#: It is never unioned with, intersected with, or used as a fallback for
+#: the database answer.
 AUTHORITY_REQUIRED_ORGS_ENV: Final[str] = "INNTRIS_AUTHORITY_REQUIRED_ORGS"
 
+#: Environments where a leftover value is tolerated with a warning rather
+#: than refused. Production is deliberately absent.
+_NON_PRODUCTION_ENVIRONMENTS: Final[frozenset[str]] = frozenset(
+    {"development", "test", "ci"}
+)
 
-def default_requirement_resolver() -> StaticAuthorityRequirementResolver:
-    """The single resolver both HTTP surfaces consult.
 
-    Built fresh from the environment on each call so a deployment can
-    enrol an organisation without a code change, and so tests can enrol
-    one without leaking that state into other tests.
+class LegacyAuthorityEnrolmentError(RuntimeError):
+    """A decommissioned enrolment variable is still set in production."""
+
+
+def assert_legacy_authority_enrolment_decommissioned(
+    *, environment: str | None = None
+) -> None:
+    """Refuse to start while a legacy enrolment value is still configured.
+
+    The variable no longer feeds any decision, so a deployment that still
+    sets it believes an organisation is enrolled when it is not -- a silent
+    fail-open of exactly the control this subsystem exists to enforce.
+    Failing loudly is the only honest response: the alternative is a
+    requirement that stopped applying with nothing saying so.
     """
     raw = os.getenv(AUTHORITY_REQUIRED_ORGS_ENV, "")
-    enrolled = frozenset(part.strip() for part in raw.split(",") if part.strip())
-    return StaticAuthorityRequirementResolver(enrolled)
+    if not raw.strip():
+        return
+
+    resolved = (
+        environment if environment is not None else os.getenv("ENVIRONMENT", "development")
+    ).strip().lower()
+    message = (
+        f"{AUTHORITY_REQUIRED_ORGS_ENV} is set but no longer configures anything. "
+        "Delegated-authority enrolment moved to the authority_requirements table. "
+        "Migrate each listed organisation to a requirement row, then unset this "
+        "variable. It is deliberately NOT used as a fallback: leaving it set and "
+        "starting anyway would mean an organisation you believe is enrolled is not."
+    )
+    if resolved in _NON_PRODUCTION_ENVIRONMENTS:
+        logger.warning("%s", message)
+        return
+    raise LegacyAuthorityEnrolmentError(message)
 
 
-def legacy_authority_gate(
+async def legacy_authority_gate(
+    database: Any,
     *,
     organisation_id: Any,
     principal_id: Any,
@@ -272,18 +313,29 @@ def legacy_authority_gate(
     """The requirement gate, for a caller that cannot carry authority.
 
     ``/verify`` has no field in which to present delegated authority, so
-    for an enrolled organisation the answer is always "required and
-    absent". Returning a reason here is what stops the legacy route
-    quietly issuing a token that bypasses a rule the organisation
+    for an organisation whose requirement is in force the answer is always
+    "required and absent". Returning a reason here is what stops the legacy
+    route quietly issuing a token that bypasses a rule the organisation
     deliberately turned on.
 
-    ``None`` means the organisation is not enrolled and behaviour is
-    unchanged -- which is every organisation until someone enrols one.
+    It reads the SAME configuration the authority endpoint reads, so the two
+    surfaces cannot disagree about whether authority is required.
+
+    ``None`` means the requirement is not in force and behaviour is
+    unchanged. A configuration that cannot be read returns the typed
+    unavailable reason; it never falls through to "not required".
     """
-    requirement = default_requirement_resolver().requirement(
-        str(organisation_id), str(principal_id), action_type
-    )
-    if requirement.required and not has_verified_authority:
+    try:
+        configuration = await resolve_authority_configuration(
+            database,
+            organisation_id=organisation_id,
+            principal_id=principal_id,
+            action_class=action_type,
+        )
+    except AuthorityConfigurationUnavailable:
+        return DecisionReason.AUTHORITY_CONFIGURATION_UNAVAILABLE
+
+    if configuration.effective_required and not has_verified_authority:
         return DecisionReason.AUTHORITY_REQUIRED_BUT_MISSING
     return None
 
@@ -307,7 +359,11 @@ class AuthorityEvaluationService:
         self._server_secret = (
             [server_secret] if isinstance(server_secret, (bytes, bytearray)) else list(server_secret)
         )
-        self._requirements = requirement_resolver or default_requirement_resolver()
+        # Production passes nothing here and the DATABASE answers. The
+        # parameter survives only as an explicit test/proof seam; there is
+        # no environment-derived default any more, because a second source
+        # is exactly what this subsystem must not have.
+        self._requirements = requirement_resolver
         self._authority_provider = authority_provider
         # Binds an approved payee identity to the destination an executor
         # will actually pay. A delegated payee identity is not proof that a
@@ -319,12 +375,38 @@ class AuthorityEvaluationService:
 
     # -- the requirement gate, usable on its own by the legacy path -------
 
-    def requirement_for(
+    async def resolve_configuration(
         self, *, organisation_id: Any, principal_id: Any, action_type: str
-    ) -> AuthorityRequirement:
-        """Ask trusted configuration whether delegated authority is required."""
-        return self._requirements.requirement(
-            str(organisation_id), str(principal_id), action_type
+    ) -> AuthorityRuntimeConfiguration:
+        """The whole effective configuration for this operation, read ONCE.
+
+        Resolved here and then carried through evaluation. Nothing
+        downstream may ask again: three questions answered against a
+        mutable table at three different instants can disagree, and a
+        decision assembled from halves of two configurations never
+        corresponded to one the operator actually set.
+
+        An injected resolver is honoured for tests and the proof harness.
+        It answers only the requirement; controls have no static analogue,
+        so a seam can never engage or lift one.
+        """
+        if self._requirements is not None:
+            requirement = self._requirements.requirement(
+                str(organisation_id), str(principal_id), action_type
+            )
+            return AuthorityRuntimeConfiguration(
+                organisation_id=str(organisation_id),
+                principal_id=str(principal_id),
+                action_class=action_type,
+                resolved_at=datetime.now(UTC),
+                configured_required=bool(requirement.required),
+                requirement_scope="injected-resolver" if requirement.required else None,
+            )
+        return await resolve_authority_configuration(
+            self._db,
+            organisation_id=organisation_id,
+            principal_id=principal_id,
+            action_class=action_type,
         )
 
     def resolve_authority(
@@ -603,10 +685,51 @@ class AuthorityEvaluationService:
             else {}
         )
 
-        # --- Is delegated authority required here? Trusted config decides. ---
-        requirement = self.requirement_for(
-            organisation_id=agent.org_id, principal_id=agent.id, action_type=action_type
-        )
+        # --- The effective configuration, read ONCE for this decision -------
+        # One snapshot answers all three questions: is issuance halted, which
+        # requirement row wins, and is enforcement suspended. It is then
+        # carried through; nothing below re-reads it.
+        try:
+            configuration = await self.resolve_configuration(
+                organisation_id=agent.org_id,
+                principal_id=agent.id,
+                action_type=action_type,
+            )
+        except AuthorityConfigurationUnavailable:
+            # Not "required" and not "not required" -- unknown, and the halt
+            # state is equally unknown. Nothing may be issued under that.
+            return EvaluationResult(
+                decision=Decision.BLOCK,
+                reasons=(DecisionReason.AUTHORITY_CONFIGURATION_UNAVAILABLE,),
+                execution_action_hash=envelope.execution_action_hash,
+                domain=envelope.domain,
+                executor_binding_digest=executor.binding_digest,
+                executor_reference=executor.executor_reference,
+                detail=(
+                    "the effective authority configuration could not be read; "
+                    "no new execution authority may be issued"
+                ),
+                **snapshot_fields,
+            )
+
+        if configuration.issuance_halted:
+            # Issuance only. Consumption of authority already issued is
+            # deliberately untouched -- halting that would strand an
+            # executor mid-flight.
+            return EvaluationResult(
+                decision=Decision.BLOCK,
+                reasons=(DecisionReason.AUTHORITY_ISSUANCE_HALTED,),
+                execution_action_hash=envelope.execution_action_hash,
+                domain=envelope.domain,
+                executor_binding_digest=executor.binding_digest,
+                executor_reference=executor.executor_reference,
+                detail=(
+                    "new execution authority issuance is halted "
+                    + ("platform-wide" if configuration.issuance_halt_is_global
+                       else "for this organisation")
+                ),
+                **snapshot_fields,
+            )
 
         # --- A presented delegation is never silently discarded -------------
         # The contract has two shapes, and only two:
@@ -632,7 +755,7 @@ class AuthorityEvaluationService:
                 **snapshot_fields,
             )
 
-        if requirement.required and resolved is None:
+        if configuration.effective_required and resolved is None:
             # Fail closed. No grant, no token, and the legacy path calls this
             # same gate so it cannot silently take the non-delegated route.
             return EvaluationResult(
@@ -693,7 +816,7 @@ class AuthorityEvaluationService:
             daily_spend=daily_spend,
             trust_threshold=PolicyEngine.TRUST_THRESHOLDS.get(action_type),
             registered_policy_hash=registered_policy_hash,
-            authority_requirement_resolver=self._requirements,
+            authority_configuration=configuration,
             payee_binding_resolver=self._payee_binding_resolver,
             consequence_class=consequence_class,
         )

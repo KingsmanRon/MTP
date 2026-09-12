@@ -953,6 +953,17 @@ async def startup_event():
     global db_pool, redis_pool, webhook_recovery_task
     logger.info("Starting Inntris Core API v1.0.0")
 
+    # Refuse to serve while a decommissioned enrolment variable is still
+    # set. It no longer configures anything, so starting anyway would mean
+    # an organisation somebody believes is enrolled is not -- a silent
+    # fail-open of the delegated-authority requirement. Deliberately before
+    # any pool is opened: there is nothing to serve under that ambiguity.
+    from api.services.authority_service import (
+        assert_legacy_authority_enrolment_decommissioned,
+    )
+
+    assert_legacy_authority_enrolment_decommissioned()
+
     # Initialize database pool
     dsn = os.getenv("DATABASE_URL", DATABASE_URL)
     try:
@@ -2107,22 +2118,35 @@ async def verify_action(
         #
         # No organisation is enrolled by default: for every existing
         # organisation this is a no-op and the decision below is unchanged.
+        from api.core.authority.decision import DecisionReason
         from api.services.authority_service import legacy_authority_gate
 
-        _authority_gap = legacy_authority_gate(
+        _authority_gap = await legacy_authority_gate(
+            database,
             organisation_id=agent.org_id,
             principal_id=agent.id,
             action_type=request_data.action_type,
         )
         if _authority_gap is not None and policy_result.allowed:
+            # Two distinct refusals share this branch, and they must not be
+            # reported as the same thing: one says the requirement applies
+            # and was not met, the other says we could not establish what
+            # the requirement is. Neither may fall through to an approval.
+            if _authority_gap is DecisionReason.AUTHORITY_CONFIGURATION_UNAVAILABLE:
+                _authority_reason = (
+                    "The delegated-authority configuration could not be read, so "
+                    "this request cannot be authorised."
+                )
+            else:
+                _authority_reason = (
+                    "Delegated authority is required for this organisation and "
+                    "was not presented."
+                )
             policy_result = PolicyResult(
                 allowed=False,
                 verdict=ActionVerdict.BLOCKED,
                 violation=PolicyViolation.ACTION_NOT_ALLOWED,
-                reason=(
-                    "Delegated authority is required for this organisation and "
-                    "was not presented."
-                ),
+                reason=_authority_reason,
             )
 
         verdict = policy_result.verdict

@@ -73,6 +73,9 @@ from api.services.executor_context import (  # noqa: E402
 
 INTEGRATION_ENABLED = os.getenv("INNTRIS_DB_INTEGRATION") == "1"
 DATABASE_URL = os.getenv("DATABASE_URL", "")
+#: Migration 028 makes authority configuration read-only at runtime, so
+#: seeding a requirement row needs a privileged DSN.
+MIGRATOR_URL = os.getenv("ALEMBIC_DATABASE_URL", "")
 
 pytestmark = pytest.mark.skipif(
     not (INTEGRATION_ENABLED and DATABASE_URL),
@@ -510,10 +513,33 @@ class TestExecutorBinding:
 
 
 class TestServerControlledAuthorityRequirement:
-    def test_no_organisation_is_enrolled_by_default(self, monkeypatch) -> None:
-        monkeypatch.delenv(AUTHORITY_REQUIRED_ORGS_ENV, raising=False)
+    """The requirement now comes from the database, never the environment.
+
+    ``INNTRIS_AUTHORITY_REQUIRED_ORGS`` is decommissioned as a source: it
+    is a startup tripwire only, so these assert that setting it changes
+    nothing and that requirement rows are what decide.
+    """
+
+    @staticmethod
+    async def _require(org_id, *, agent_id=None, action_class=None, required=True):
+        if not MIGRATOR_URL:
+            pytest.skip("seeding authority configuration requires ALEMBIC_DATABASE_URL")
+        conn = await asyncpg.connect(MIGRATOR_URL)
+        try:
+            await conn.execute(
+                """INSERT INTO authority_requirements
+                     (org_id, agent_id, action_class, required, reason,
+                      changed_by, approval_reference)
+                   VALUES ($1,$2,$3,$4,'test','test-suite','APPROVAL-1')""",
+                org_id, agent_id, action_class, required,
+            )
+        finally:
+            await conn.close()
+
+    async def test_no_organisation_is_enrolled_by_default(self, db) -> None:
         assert (
-            legacy_authority_gate(
+            await legacy_authority_gate(
+                db,
                 organisation_id=uuid4(),
                 principal_id=uuid4(),
                 action_type="financial_transaction",
@@ -521,25 +547,27 @@ class TestServerControlledAuthorityRequirement:
             is None
         )
 
-    def test_an_enrolled_organisation_blocks_the_legacy_route(
-        self, monkeypatch
-    ) -> None:
+    async def test_a_required_row_blocks_the_legacy_route(self, db, org_and_agent) -> None:
         """/verify has no field for authority, so it must fail closed."""
-        org = uuid4()
-        monkeypatch.setenv(AUTHORITY_REQUIRED_ORGS_ENV, str(org))
+        org_id, agent = org_and_agent
+        await self._require(org_id)
         assert (
-            legacy_authority_gate(
-                organisation_id=org,
-                principal_id=uuid4(),
+            await legacy_authority_gate(
+                db,
+                organisation_id=org_id,
+                principal_id=agent.id,
                 action_type="financial_transaction",
             )
             is DecisionReason.AUTHORITY_REQUIRED_BUT_MISSING
         )
 
-    def test_another_organisation_is_unaffected(self, monkeypatch) -> None:
-        monkeypatch.setenv(AUTHORITY_REQUIRED_ORGS_ENV, str(uuid4()))
+    async def test_another_organisation_is_unaffected(self, db, org_and_agent) -> None:
+        """A requirement is scoped to the organisation that configured it."""
+        org_id, _agent = org_and_agent
+        await self._require(org_id)
         assert (
-            legacy_authority_gate(
+            await legacy_authority_gate(
+                db,
                 organisation_id=uuid4(),
                 principal_id=uuid4(),
                 action_type="financial_transaction",
@@ -547,24 +575,43 @@ class TestServerControlledAuthorityRequirement:
             is None
         )
 
-    def test_verified_authority_satisfies_the_requirement(self, monkeypatch) -> None:
-        org = uuid4()
-        monkeypatch.setenv(AUTHORITY_REQUIRED_ORGS_ENV, str(org))
+    async def test_verified_authority_satisfies_the_requirement(
+        self, db, org_and_agent
+    ) -> None:
+        org_id, agent = org_and_agent
+        await self._require(org_id)
         assert (
-            legacy_authority_gate(
-                organisation_id=org,
-                principal_id=uuid4(),
+            await legacy_authority_gate(
+                db,
+                organisation_id=org_id,
+                principal_id=agent.id,
                 action_type="financial_transaction",
                 has_verified_authority=True,
             )
             is None
         )
 
-    async def test_an_enrolled_organisation_gets_no_grant_without_authority(
+    async def test_the_legacy_environment_variable_is_not_a_source(
         self, db, org_and_agent, monkeypatch
     ) -> None:
+        """Setting the decommissioned variable must change no decision."""
         org_id, agent = org_and_agent
         monkeypatch.setenv(AUTHORITY_REQUIRED_ORGS_ENV, str(org_id))
+        assert (
+            await legacy_authority_gate(
+                db,
+                organisation_id=org_id,
+                principal_id=agent.id,
+                action_type="financial_transaction",
+            )
+            is None
+        ), "the environment variable must not enrol an organisation"
+
+    async def test_a_required_organisation_gets_no_grant_without_authority(
+        self, db, org_and_agent
+    ) -> None:
+        org_id, agent = org_and_agent
+        await self._require(org_id)
         service = AuthorityEvaluationService(db, server_secret=SERVER_SECRET)
         result = await service.evaluate(
             agent=agent,

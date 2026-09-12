@@ -109,6 +109,16 @@ class DecisionReason(StrEnum):
     #: production execution, whatever the principal's status is now.
     GRANT_SANDBOX_EXECUTION_DENIED = "grant_sandbox_execution_denied"
 
+    # --- New: runtime authority configuration ---
+    #: The effective authority configuration could not be read. This is not
+    #: "required" and not "not required" -- the service does not know either,
+    #: and it equally does not know whether issuance is halted. Nothing may
+    #: be issued under it.
+    AUTHORITY_CONFIGURATION_UNAVAILABLE = "authority_configuration_unavailable"
+    #: A kill switch is engaged for this scope: no NEW authority is issued.
+    #: Consumption of already-issued authority is unaffected.
+    AUTHORITY_ISSUANCE_HALTED = "authority_issuance_halted"
+
     # --- New: approval workflow ---
     APPROVAL_REQUIRED = "approval_required"
 

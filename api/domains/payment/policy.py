@@ -333,7 +333,11 @@ class PaymentDomainPolicy:
     payee_binding_resolver: PayeeBindingResolver | None = None
     #: Trusted answer to "is delegated authority required here". ``None``
     #: means the organisation is not enrolled, which is today's behaviour.
-    authority_requirement_resolver: Any = None
+    #: The configuration snapshot resolved ONCE for this decision. The
+    #: policy must not re-query mutable authority configuration: a
+    #: second read can disagree with the first and produce a decision
+    #: assembled from two different configurations.
+    authority_configuration: Any = None
     consequence_class: ConsequenceClass | None = None
 
     def snapshot(self, action_type: str) -> PaymentAuthorityPolicySnapshot:
@@ -413,12 +417,11 @@ class PaymentDomainPolicy:
                 return block(DecisionReason(spend_result.violation.value))
 
         # --- 2. Is delegated authority required at all? ---
-        requirement_required = False
-        if self.authority_requirement_resolver is not None:
-            requirement = self.authority_requirement_resolver.requirement(
-                str(self.agent.org_id), str(self.agent.id), action.action_type
-            )
-            requirement_required = bool(requirement.required)
+        requirement_required = (
+            bool(self.authority_configuration.effective_required)
+            if self.authority_configuration is not None
+            else False
+        )
 
         has_verified_authority = (
             resolved_authority is not None and resolved_authority.is_verified
