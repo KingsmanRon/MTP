@@ -29,18 +29,37 @@ cycle:
 
 1. the entry advisory lock — ``authority-issuance:<agent>:<ref>`` for
    issuance, ``authority-grant:<grant>`` for consumption;
-2. the ``agents`` row, ``FOR SHARE`` — this is the mutable principal and
+2. the token advisory lock ``approval-token:<token>`` (consumption only);
+3. the per-agent forensic-chain advisory lock, keyed on the agent id — the
+   same key ``assign_audit_chain_sequence`` takes on every ``audit_logs``
+   INSERT, and the same one the legacy consumption path reaches through
+   that trigger.
+
+   It MUST be taken before the ``agents`` row. ``audit_logs`` carries two
+   triggers: ``assign_audit_chain_sequence`` BEFORE INSERT, which takes
+   this lock, and ``update_agent_action_stats`` AFTER INSERT, which
+   UPDATEs the agent's own row. Every audit append is therefore
+   chain-then-principal. A path that holds the principal row while waiting
+   for this lock is principal-then-chain, and two consumers of different
+   grants for one principal then close an ABBA cycle. That was the
+   confirmed cause of the Gate-7 deadlock, reproducible deterministically
+   on two connections;
+4. the ``agents`` row, ``FOR SHARE`` — this is the mutable principal and
    policy state that authorisation is derived from. Taking it here, and
    holding it until commit, is what closes the window in which a
    concurrent ``UPDATE agents`` could change policy after it was read but
    before the claim committed. ``FOR SHARE`` rather than ``FOR UPDATE``:
    concurrent consumptions of *different* grants for one agent may all
    read it at once, while any writer to that row waits;
-3. the ``execution_authority_grants`` row, ``FOR UPDATE``;
-4. the spend advisory lock ``spend-reservation:<agent>`` (issuance only,
+5. the ``execution_authority_grants`` row, ``FOR UPDATE``;
+6. the spend advisory lock ``spend-reservation:<agent>`` (issuance only,
    inside the reused reservation primitive);
-5. inserts into ``audit_logs`` / ``approval_token_consumptions``, then the
+7. inserts into ``audit_logs`` / ``approval_token_consumptions``, then the
    grant and reservation updates.
+
+Consumption chooses the keys for 2 and 3 from an unlocked discovery read,
+which confers no authority; once the authoritative rows are held it refuses
+outright if any identity that picked a lock has changed since.
 
 Nothing acquires a lock earlier in this list while holding one later in
 it.
@@ -659,7 +678,52 @@ class AuthorityStore:
                 f"authority-grant:{grant_id}",
             )
 
-            # Lock order step 2: pin the mutable principal/policy state BEFORE
+            # --- Discovery read: lock keys only, never authority ---------
+            # This read is deliberately UNLOCKED and confers nothing. It
+            # exists solely to learn which token and which principal this
+            # grant names, because those choose the next two lock keys and a
+            # lock key cannot be chosen from a row that is not yet read.
+            #
+            # Nothing below trusts it. Every security decision is made from
+            # the locked rows, and the identity recheck after them refuses
+            # outright if any value used to pick a lock has moved since.
+            discovered = await conn.fetchrow(
+                """
+                SELECT id, agent_id, org_id, approval_token_id
+                FROM execution_authority_grants
+                WHERE id = $1
+                """,
+                grant_id,
+            )
+            if discovered is None:
+                return ConsumeResult(
+                    outcome=ConsumptionOutcome.REJECTED,
+                    grant_id=grant_id,
+                    rejection_reason=DecisionReason.GRANT_NOT_FOUND,
+                )
+
+            # Lock order step 2: the token.
+            await conn.execute(
+                "SELECT pg_advisory_xact_lock(hashtext($1)::bigint)",
+                f"approval-token:{discovered['approval_token_id']}",
+            )
+
+            # Lock order step 3: the per-agent forensic chain, taken HERE --
+            # before the principal row, not left to the audit trigger after
+            # it. Every ``audit_logs`` INSERT runs
+            # ``assign_audit_chain_sequence`` (BEFORE, takes this lock) and
+            # then ``update_agent_action_stats`` (AFTER, UPDATEs the agents
+            # row). So the audit path is chain-then-principal. Holding the
+            # principal row across the append, as this path used to, made it
+            # principal-then-chain -- an ABBA inversion between two
+            # consumers of different grants for one principal, and the
+            # confirmed cause of the Gate-7 deadlock.
+            await conn.execute(
+                "SELECT pg_advisory_xact_lock(hashtext($1)::bigint)",
+                str(discovered["agent_id"]),
+            )
+
+            # Lock order step 4: pin the mutable principal/policy state BEFORE
             # anything is derived from it, and hold it until this transaction
             # commits. Without this row lock a concurrent UPDATE agents could
             # commit between the read and the claim, and the claim would land
@@ -675,7 +739,7 @@ class AuthorityStore:
                 grant_id,
             )
 
-            # Lock order step 3: the grant itself.
+            # Lock order step 5: the grant itself.
             grant = await conn.fetchrow(
                 """
                 SELECT g.*
@@ -689,6 +753,32 @@ class AuthorityStore:
                 return ConsumeResult(
                     outcome=ConsumptionOutcome.REJECTED,
                     rejection_reason=DecisionReason.GRANT_NOT_FOUND,
+                )
+
+            # --- Fail closed if a lock key moved under us ----------------
+            # The locks above were chosen from the unlocked discovery row. If
+            # any identity that picked one differs now that the authoritative
+            # rows are held, this transaction is holding locks for a grant
+            # that no longer exists as it was read, and the correct answer is
+            # to refuse. Releasing and re-acquiring different locks inside
+            # one attempt would reintroduce exactly the ordering hazard this
+            # sequence exists to remove.
+            #
+            # These columns are not updated by any current write path. That
+            # is not the reason this check is here: "nothing updates it
+            # today" is an assumption about code, and this is authority to
+            # move money.
+            if (
+                grant["id"] != discovered["id"]
+                or grant["agent_id"] != discovered["agent_id"]
+                or grant["org_id"] != discovered["org_id"]
+                or grant["approval_token_id"] != discovered["approval_token_id"]
+                or agent_row["id"] != discovered["agent_id"]
+            ):
+                return ConsumeResult(
+                    outcome=ConsumptionOutcome.REJECTED,
+                    grant_id=grant_id,
+                    rejection_reason=DecisionReason.GRANT_MALFORMED,
                 )
 
             # --- Immutable identity is checked BEFORE recovery -----------
