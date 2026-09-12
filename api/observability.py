@@ -271,6 +271,79 @@ if _HAS_PROMETHEUS:
         "account of it.",
         ["action_type"],
     )
+    # --- Phase 7A, Gate 8: the authority lifecycle -----------------------
+    # Each of these answers a question an operator has at 03:00 and cannot
+    # answer from logs alone. The alert rules in ops/prometheus derive from
+    # measurements, not from intuition -- see docs/AUTHORITY_SLO.md.
+    authority_decisions_total = Counter(
+        "inntris_authority_decisions_total",
+        "Authority evaluations by decision and reason. A rising block rate "
+        "for one reason is the signal that a control has started biting.",
+        ["decision", "reason"],
+    )
+    authority_evaluation_latency_seconds = Histogram(
+        "inntris_authority_evaluation_latency_seconds",
+        "Wall time for one authority evaluation, including issuance.",
+        buckets=(0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5),
+    )
+    authority_consumptions_total = Counter(
+        "inntris_authority_consumptions_total",
+        "Authority consumptions by outcome and rejection reason. A consume "
+        "failure is money that may not have moved when somebody believes it "
+        "did, so the rejection reason is carried rather than aggregated away.",
+        ["outcome", "reason"],
+    )
+    authority_consume_latency_seconds = Histogram(
+        "inntris_authority_consume_latency_seconds",
+        "Wall time for one consumption, seconds. Contention shows here "
+        "before it shows anywhere else: consumers of one grant serialise.",
+        buckets=(0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5),
+    )
+    authority_policy_revalidation_failures_total = Counter(
+        "inntris_authority_policy_revalidation_failures_total",
+        "Consumptions refused because current policy no longer matches the "
+        "policy the grant was issued under. Expected occasionally after a "
+        "deliberate policy change; a sustained rate means something is "
+        "issuing against policy it cannot spend under.",
+        ["reason"],
+    )
+    authority_unresolved_outcomes = Gauge(
+        "inntris_authority_unresolved_outcomes",
+        "Grants consumed whose downstream outcome is still unknown. These "
+        "hold spend capacity that is never released automatically, because "
+        "'we could not ask' is not 'it did not happen'. A growing number "
+        "means reconciliation is falling behind real executions.",
+    )
+    authority_verification_failures_total = Counter(
+        "inntris_authority_verification_failures_total",
+        "Delegated-authority resolutions that did not produce usable "
+        "evidence, by failure code. Distinguishes a customer presenting a "
+        "bad delegation from Inntris being unable to check one at all.",
+        ["code"],
+    )
+    authority_key_resolution_failures_total = Counter(
+        "inntris_authority_key_resolution_failures_total",
+        "Failures to establish issuer trust: an unconfigured issuer, an "
+        "unknown or retired signing key, or revocation state that could not "
+        "be read. The last of these fails closed and is an Inntris fault, "
+        "not a caller fault.",
+        ["reason"],
+    )
+    authority_kill_switch_engaged = Gauge(
+        "inntris_authority_kill_switch_engaged",
+        "1 while a named kill switch is engaged in some scope. "
+        "requirement_enforcement engaged WEAKENS enforcement and should "
+        "never be left on quietly.",
+        ["control"],
+    )
+    authority_requirement_suppressed_total = Counter(
+        "inntris_authority_requirement_suppressed_total",
+        "Times a configured delegated-authority requirement was suppressed "
+        "by the requirement_enforcement kill switch. Every one of these is "
+        "an act that a control says should have carried a delegation and "
+        "did not.",
+    )
+
 else:  # pragma: no cover — exercised in stub mode
     verify_requests_total = _NoopMetric()
     signature_failures_total = _NoopMetric()
@@ -291,6 +364,16 @@ else:  # pragma: no cover — exercised in stub mode
     verify_stage_latency_seconds = _NoopMetric()
     verify_unavailable_total = _NoopMetric()
     spend_check_skipped_total = _NoopMetric()
+    authority_decisions_total = _NoopMetric()
+    authority_evaluation_latency_seconds = _NoopMetric()
+    authority_consumptions_total = _NoopMetric()
+    authority_consume_latency_seconds = _NoopMetric()
+    authority_policy_revalidation_failures_total = _NoopMetric()
+    authority_unresolved_outcomes = _NoopMetric()
+    authority_verification_failures_total = _NoopMetric()
+    authority_key_resolution_failures_total = _NoopMetric()
+    authority_kill_switch_engaged = _NoopMetric()
+    authority_requirement_suppressed_total = _NoopMetric()
 
 
 async def metrics_endpoint() -> Response:

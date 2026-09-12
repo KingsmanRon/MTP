@@ -1,0 +1,121 @@
+{
+  "recorded_at": "2026-09-12T04:13:38.210083Z",
+  "configuration": {
+    "concurrency": 32,
+    "iterations": 320,
+    "contention_rounds": 10,
+    "python": "3.12.3"
+  },
+  "stages": [
+    {
+      "stage": "authority_evaluation",
+      "samples": 320,
+      "failures": 0,
+      "failure_reasons": {},
+      "failure_rate": 0.0,
+      "p50_ms": 119.479,
+      "p95_ms": 1297.755,
+      "p99_ms": 1416.384,
+      "max_ms": 1453.902,
+      "mean_ms": 245.369,
+      "wall_seconds": 2.517,
+      "throughput_per_second": 127.14
+    },
+    {
+      "stage": "consume",
+      "samples": 1,
+      "failures": 319,
+      "failure_reasons": {
+        "TimeoutError": 262,
+        "sqlstate:40P01 (deadlock_detected)": 57
+      },
+      "failure_rate": 0.996875,
+      "p50_ms": 29023.554,
+      "p95_ms": 29023.554,
+      "p99_ms": 29023.554,
+      "max_ms": 29023.554,
+      "mean_ms": 29023.554,
+      "wall_seconds": 278.364,
+      "throughput_per_second": 0.0
+    },
+    {
+      "stage": "lock_contention",
+      "samples": 320,
+      "failures": 0,
+      "failure_reasons": {},
+      "failure_rate": 0.0,
+      "p50_ms": 40.684,
+      "p95_ms": 68.722,
+      "p99_ms": 89.633,
+      "max_ms": 95.617,
+      "mean_ms": 40.592,
+      "wall_seconds": 0.796,
+      "throughput_per_second": 401.87
+    },
+    {
+      "stage": "multi_agent_issuance",
+      "samples": 320,
+      "failures": 0,
+      "failure_reasons": {},
+      "failure_rate": 0.0,
+      "p50_ms": 59.344,
+      "p95_ms": 104.965,
+      "p99_ms": 132.274,
+      "max_ms": 143.686,
+      "mean_ms": 60.94,
+      "wall_seconds": 0.644,
+      "throughput_per_second": 496.61
+    },
+    {
+      "stage": "multi_agent_consume",
+      "samples": 275,
+      "failures": 45,
+      "failure_reasons": {
+        "sqlstate:40P01 (deadlock_detected)": 45
+      },
+      "failure_rate": 0.140625,
+      "p50_ms": 4.947,
+      "p95_ms": 14.727,
+      "p99_ms": 6992.597,
+      "max_ms": 7011.263,
+      "mean_ms": 119.252,
+      "wall_seconds": 9.056,
+      "throughput_per_second": 30.37
+    },
+    {
+      "stage": "vi_verification",
+      "samples": 320,
+      "failures": 0,
+      "failure_reasons": {},
+      "failure_rate": 0.0,
+      "p50_ms": 0.203,
+      "p95_ms": 0.267,
+      "p99_ms": 0.365,
+      "max_ms": 0.539,
+      "mean_ms": 0.215,
+      "wall_seconds": 0.069,
+      "throughput_per_second": 4639.9
+    },
+    {
+      "stage": "receipt_signing",
+      "samples": 320,
+      "failures": 0,
+      "failure_reasons": {},
+      "failure_rate": 0.0,
+      "p50_ms": 0.136,
+      "p95_ms": 0.17,
+      "p99_ms": 0.192,
+      "max_ms": 0.218,
+      "mean_ms": 0.141,
+      "wall_seconds": 0.045,
+      "throughput_per_second": 7053.94
+    }
+  ],
+  "database": {
+    "sessions_waiting_on_locks_now": 0,
+    "deadlocks_total": 479,
+    "transactions_committed": 6582,
+    "transactions_rolled_back": 663
+  },
+  "caveat": "Measured on the benchmark host against its own PostgreSQL. Absolute latencies are host-specific; the shape (which stage dominates, how contention behaves) is what transfers. Re-run on staging hardware before quoting these as production SLOs."
+}

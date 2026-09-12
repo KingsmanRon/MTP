@@ -126,3 +126,162 @@ groups:
             The primary RPC is not serving reads for operation
             {{ $labels.operation }}. Anchoring still works, but the primary
             needs attention before the failover endpoint also degrades.
+
+  # ===========================================================================
+  # Phase 7A, Gate 8 — the execution authority lifecycle
+  # ===========================================================================
+  # Every threshold below comes from docs/AUTHORITY_SLO.md, which quotes what
+  # loadtests/authority_benchmark.py measured. None was chosen by intuition: a
+  # threshold picked that way either fires constantly or never fires, and both
+  # are worse than no alert.
+  - name: inntris_authority
+    rules:
+      - alert: InntrisAuthorityConsumeFailures
+        # A consume failure is money that may not have moved when somebody
+        # believes it did. Rejections are normal (a revoked delegation, a
+        # suspended principal); ERRORS are not, and they are counted apart.
+        expr: increase(inntris_authority_consumptions_total{outcome="error"}[5m]) > 0
+        labels:
+          severity: critical
+        annotations:
+          summary: Execution authority consumption is raising errors
+          description: >
+            A consumption raised rather than returning a decision, so the
+            caller does not know whether authority was spent. See
+            docs/runbooks/authority_incident.md.
+
+      - alert: InntrisAuthorityDeadlocks
+        # Gate 7 release blocker. Measured at 14% on the multi-principal
+        # consume path; the objective is zero, so any sustained rate is the
+        # known defect recurring rather than a new surprise.
+        expr: increase(inntris_authority_consumptions_total{reason="exception"}[15m]) > 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: Authority consumption is failing repeatedly
+          description: >
+            Consumption exceptions over 15 minutes. If these are PostgreSQL
+            40P01 deadlocks this is the known Gate 7 blocker in
+            docs/AUTHORITY_SLO.md; reduce concurrent consumption per
+            principal and escalate.
+
+      - alert: InntrisAuthorityEvaluationSlow
+        # SLO: p99 < 500ms, from a measured 132ms multi-principal p99.
+        expr: >
+          histogram_quantile(
+            0.99,
+            sum(rate(inntris_authority_evaluation_latency_seconds_bucket[10m])) by (le)
+          ) > 0.5
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: Authority evaluation p99 is above its measured SLO
+          description: >
+            p99 above 500ms for 10 minutes. Measured baseline is 132ms
+            multi-principal. Concurrent load against ONE principal is the
+            usual cause -- the audit hash chain serialises per agent.
+
+      - alert: InntrisAuthorityConsumeSlow
+        # SLO: p99 < 250ms.
+        expr: >
+          histogram_quantile(
+            0.99,
+            sum(rate(inntris_authority_consume_latency_seconds_bucket[10m])) by (le)
+          ) > 0.25
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: Authority consumption p99 is above its measured SLO
+          description: >
+            Contention shows here before anywhere else. Check concurrent
+            consumptions per principal.
+
+      - alert: InntrisAuthorityPolicyRevalidationFailures
+        # Expected in a burst right after a deliberate policy change, so this
+        # alerts on a SUSTAINED rate rather than on any occurrence.
+        expr: sum(rate(inntris_authority_policy_revalidation_failures_total[15m])) > 0.1
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: Grants are repeatedly failing policy revalidation at consumption
+          description: >
+            Sustained refusals because current policy no longer matches what a
+            grant was issued under. A burst after a policy change is expected;
+            a sustained rate means something is issuing authority it cannot
+            spend. See the reason label.
+
+      - alert: InntrisAuthorityKeyResolutionFailures
+        # OUR fault, not the caller's: we could not establish issuer trust at
+        # all. Fails closed, so nothing unsafe happens -- but nothing is
+        # authorised either.
+        expr: increase(inntris_authority_key_resolution_failures_total[10m]) > 0
+        labels:
+          severity: critical
+        annotations:
+          summary: Inntris cannot establish delegated-authority trust
+          description: >
+            Issuer trust or revocation state could not be resolved, so new
+            delegated authority is being refused fail-closed. Check the
+            database and the trust configuration before anything else.
+
+      - alert: InntrisAuthorityVerificationFailureSpike
+        # Callers presenting delegations that do not verify. Counted apart
+        # from the alert above because the remedy is entirely different.
+        expr: sum(rate(inntris_authority_verification_failures_total[15m])) > 0.5
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: Delegated authority is failing verification at an unusual rate
+          description: >
+            See the code label. authority_revoked in bulk may mean an issuer
+            revoked a key; authority_principal_mismatch in bulk may mean a
+            provisioning error in principal bindings.
+
+      - alert: InntrisAuthorityUnresolvedOutcomes
+        # These hold spend capacity that is NEVER released automatically,
+        # because "we could not ask" is not "it did not happen". A growing
+        # number means reconciliation is falling behind real executions.
+        expr: inntris_authority_unresolved_outcomes > 10
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: Consumed grants with unknown downstream outcomes are accumulating
+          description: >
+            Each one holds spend capacity indefinitely by design. Work the
+            reconciliation procedure in docs/runbooks/authority_incident.md.
+            Do NOT release capacity without the rail's own evidence.
+
+      - alert: InntrisAuthorityIssuanceHalted
+        # Informational but must not be silent: a halt left engaged after an
+        # incident is an outage nobody is looking at.
+        expr: inntris_authority_kill_switch_engaged{control="authority_issuance"} == 1
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: The authority issuance kill switch has been engaged for 30 minutes
+          description: >
+            No new execution authority is being issued in that scope. Release
+            it with scripts/authority_control.py restore once the incident is
+            over.
+
+      - alert: InntrisAuthorityRequirementSuppressed
+        # The ONE control that weakens enforcement. It should never be on
+        # quietly.
+        expr: inntris_authority_kill_switch_engaged{control="requirement_enforcement"} == 1
+        for: 15m
+        labels:
+          severity: critical
+        annotations:
+          summary: Delegated-authority requirements are being SUPPRESSED
+          description: >
+            The requirement_enforcement kill switch is engaged, so acts an
+            organisation configured to require a delegation are proceeding
+            without one. This is a deliberate rollback lever and must not be
+            left engaged.

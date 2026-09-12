@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
@@ -36,6 +37,15 @@ from api.crypto import CryptoService
 from api.database import Database
 from api.domains.payment.policy import PAYMENT_ACTION_TYPES, PaymentDomainPolicy
 from api.domains.payment.snapshot import build_payment_authority_policy_snapshot
+from api.observability import (
+    authority_consume_latency_seconds,
+    authority_consumptions_total,
+    authority_decisions_total,
+    authority_evaluation_latency_seconds,
+    authority_key_resolution_failures_total,
+    authority_policy_revalidation_failures_total,
+    authority_verification_failures_total,
+)
 from api.persistence.authority_decisions import (
     build_decision_payload,
     record_authority_decision,
@@ -61,6 +71,59 @@ from api.trust.issuer_registry import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _observe_decision(result: EvaluationResult, started: float) -> None:
+    """Record one evaluation on the dashboards Gate 8 alerts read."""
+    authority_evaluation_latency_seconds.observe(time.perf_counter() - started)
+    reason = result.reasons[0].value if result.reasons else "none"
+    authority_decisions_total.labels(decision=result.decision.value, reason=reason).inc()
+    for decision_reason in result.reasons:
+        if decision_reason in _VERIFICATION_FAILURE_REASONS:
+            authority_verification_failures_total.labels(code=decision_reason.value).inc()
+        if decision_reason is DecisionReason.AUTHORITY_PROVIDER_UNAVAILABLE:
+            # An Inntris fault, not a caller fault: we could not establish
+            # trust at all. Counted apart from "their delegation is bad".
+            authority_key_resolution_failures_total.labels(reason=decision_reason.value).inc()
+
+
+def _observe_consumption(result: ConsumeResult, started: float) -> None:
+    authority_consume_latency_seconds.observe(time.perf_counter() - started)
+    reason = result.rejection_reason.value if result.rejection_reason else "none"
+    authority_consumptions_total.labels(outcome=result.outcome.value, reason=reason).inc()
+    if result.rejection_reason in _POLICY_REVALIDATION_REASONS:
+        authority_policy_revalidation_failures_total.labels(
+            reason=result.rejection_reason.value
+        ).inc()
+
+
+#: Refusals that mean "the presented delegation is not usable evidence".
+_VERIFICATION_FAILURE_REASONS: Final[frozenset[DecisionReason]] = frozenset(
+    {
+        DecisionReason.AUTHORITY_UNVERIFIED,
+        DecisionReason.AUTHORITY_VERIFICATION_FAILED,
+        DecisionReason.AUTHORITY_EXPIRED,
+        DecisionReason.AUTHORITY_REVOKED,
+        DecisionReason.AUTHORITY_NOT_YET_VALID,
+        DecisionReason.AUTHORITY_PRINCIPAL_MISMATCH,
+        DecisionReason.AUTHORITY_DELEGATE_NOT_BOUND,
+        DecisionReason.AUTHORITY_SCOPE_EXCEEDED,
+        DecisionReason.AUTHORITY_SCOPE_UNSUPPORTED,
+    }
+)
+
+#: Refusals that mean "current policy no longer permits what was issued".
+#: These are the ones that say a grant outlived the state it rested on.
+_POLICY_REVALIDATION_REASONS: Final[frozenset[DecisionReason]] = frozenset(
+    {
+        DecisionReason.POLICY_HASH_MISMATCH,
+        DecisionReason.AGENT_NOT_ACTIVE,
+        DecisionReason.AUTHORITY_EXPIRED,
+        DecisionReason.AUTHORITY_REVOKED,
+        DecisionReason.AUTHORITY_SCOPE_EXCEEDED,
+        DecisionReason.AUTHORITY_UNVERIFIED,
+    }
+)
 
 #: Version tag on the authority bearer token. The token is produced by the
 #: EXISTING approval-token primitive (HMAC over a claim set, verified with
@@ -597,6 +660,7 @@ class AuthorityEvaluationService:
         durable record cannot be attached on some return paths and
         forgotten on others: every outcome leaves through here.
         """
+        started = time.perf_counter()
         result = await self._decide(
             agent=agent,
             action_type=action_type,
@@ -615,6 +679,10 @@ class AuthorityEvaluationService:
             registered_policy_hash=registered_policy_hash,
             at=at,
         )
+        # Instrumented HERE rather than at each of the dozen return sites:
+        # one place cannot drift, and a decision that skipped the counter
+        # would be a decision the dashboard never saw.
+        _observe_decision(result, started)
         return await self._record_decision(
             result,
             agent=agent,
@@ -1092,6 +1160,39 @@ class AuthorityConsumptionService:
         the caller must present the unforgeable token AND authenticate as
         the executor the grant was bound to.
         """
+        started = time.perf_counter()
+        try:
+            result = await self._consume(
+                authority_token=authority_token,
+                executor=executor,
+                agent=agent,
+                action_type=action_type,
+                payload=payload,
+                execution_ref=execution_ref,
+                authority_evidence=authority_evidence,
+                at=at,
+            )
+        except Exception:
+            # A consumption that RAISED is the worst case for an operator:
+            # the caller does not know whether authority was spent. Count it
+            # separately from a clean rejection rather than losing it.
+            authority_consumptions_total.labels(outcome="error", reason="exception").inc()
+            raise
+        _observe_consumption(result, started)
+        return result
+
+    async def _consume(
+        self,
+        *,
+        authority_token: str,
+        executor: AuthenticatedExecutorContext,
+        agent: Any,
+        action_type: str,
+        payload: dict[str, Any],
+        execution_ref: str,
+        authority_evidence: ResolvedAuthorityEvidence | None = None,
+        at: datetime | None = None,
+    ) -> ConsumeResult:
         executor.require_consume()
 
         # Authenticity and expiry are separate questions. A forged token is
