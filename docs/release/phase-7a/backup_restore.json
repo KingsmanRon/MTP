@@ -1,0 +1,63 @@
+{
+  "recorded_at": "2026-09-12T04:23:54.520807Z",
+  "target_database": "restore_rehearsal_20260912042352",
+  "dump": {
+    "seconds": 0.617,
+    "bytes": 4637055
+  },
+  "restore": {
+    "seconds": 1.099
+  },
+  "migration_revision": {
+    "source": "0025_authority_binding",
+    "restored": "0025_authority_binding",
+    "match": true
+  },
+  "row_counts": {
+    "source": {
+      "approval_token_consumptions": 1398,
+      "execution_authority_grants": 5945,
+      "authority_decision_evidence": 1819,
+      "administrative_audit_events": 465,
+      "audit_logs": 3396,
+      "spend_reservations": 5945,
+      "authority_requirements": 238,
+      "authority_controls": 97,
+      "authority_trust_revocations": 24,
+      "authority_principal_bindings": 48,
+      "agents": 3963,
+      "organizations": 3976
+    },
+    "restored": {
+      "approval_token_consumptions": 1398,
+      "execution_authority_grants": 5945,
+      "authority_decision_evidence": 1819,
+      "administrative_audit_events": 465,
+      "audit_logs": 3396,
+      "spend_reservations": 5945,
+      "authority_requirements": 238,
+      "authority_controls": 97,
+      "authority_trust_revocations": 24,
+      "authority_principal_bindings": 48,
+      "agents": 3963,
+      "organizations": 3976
+    },
+    "tables_with_missing_rows": {}
+  },
+  "append_only_triggers": {
+    "approval_token_consumptions": "refused (RaiseError)",
+    "administrative_audit_events": "refused (RaiseError)"
+  },
+  "row_level_security": {
+    "tables_checked": 12,
+    "without_forced_rls": [],
+    "ok": true
+  },
+  "spent_authority_stays_spent": {
+    "checked": true,
+    "ok": true,
+    "refused_with": "UniqueViolationError"
+  },
+  "problems": [],
+  "usable": true
+}

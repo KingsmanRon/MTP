@@ -196,14 +196,30 @@ async def check_append_only(dsn: str) -> dict[str, str]:
                     """,
                     table,
                 )
-                results[table] = (
-                    f"no rows to test; {present} trigger(s) present in catalog"
-                )
+                results[table] = f"no rows to test; {present} trigger(s) present in catalog"
+                continue
+            # Update a column to ITSELF, chosen from the catalog. A hardcoded
+            # column name would differ per table, and an UPDATE that fails
+            # because the column does not exist looks exactly like an UPDATE
+            # the trigger refused -- a false pass on the check that matters
+            # most here.
+            column = await conn.fetchval(
+                """
+                SELECT attname FROM pg_attribute
+                WHERE attrelid = $1::regclass AND attnum > 0 AND NOT attisdropped
+                ORDER BY attnum LIMIT 1
+                """,
+                f"public.{table}",
+            )
+            if column is None:
+                results[table] = "FAILED: no column to attempt an update on"
                 continue
             try:
                 async with conn.transaction():
-                    await conn.execute(f"UPDATE {table} SET created_at = NOW()")
+                    await conn.execute(f'UPDATE {table} SET "{column}" = "{column}"')
                 results[table] = "FAILED: an update was accepted"
+            except asyncpg.UndefinedColumnError:
+                results[table] = "FAILED: the update could not even be attempted"
             except asyncpg.PostgresError as exc:
                 results[table] = f"refused ({type(exc).__name__})"
     finally:
@@ -228,9 +244,7 @@ async def check_row_level_security(dsn: str) -> dict[str, Any]:
         await conn.close()
 
     unprotected = [
-        row["relname"]
-        for row in rows
-        if not (row["relrowsecurity"] and row["relforcerowsecurity"])
+        row["relname"] for row in rows if not (row["relrowsecurity"] and row["relforcerowsecurity"])
     ]
     return {
         "tables_checked": len(rows),
@@ -248,17 +262,12 @@ async def check_spent_authority_stays_spent(dsn: str) -> dict[str, Any]:
     """
     conn = await asyncpg.connect(dsn)
     try:
-        if (
-            await conn.fetchval("SELECT to_regclass('public.approval_token_consumptions')")
-            is None
-        ):
+        if await conn.fetchval("SELECT to_regclass('public.approval_token_consumptions')") is None:
             return {"checked": False, "reason": "table absent"}
-        row = await conn.fetchrow(
-            """
+        row = await conn.fetchrow("""
             SELECT token_id, token_digest, agent_id, action_hash, audit_log_id
             FROM approval_token_consumptions LIMIT 1
-            """
-        )
+            """)
         if row is None:
             return {"checked": False, "reason": "no consumed tokens in the backup"}
         try:
@@ -341,9 +350,7 @@ async def rehearse(args: argparse.Namespace) -> dict[str, Any]:
             },
             "append_only_triggers": await check_append_only(target_dsn),
             "row_level_security": await check_row_level_security(target_dsn),
-            "spent_authority_stays_spent": await check_spent_authority_stays_spent(
-                target_dsn
-            ),
+            "spent_authority_stays_spent": await check_spent_authority_stays_spent(target_dsn),
         }
 
         problems: list[str] = []
@@ -369,9 +376,7 @@ async def rehearse(args: argparse.Namespace) -> dict[str, Any]:
         if not args.keep:
             admin = await asyncpg.connect(admin_dsn)
             try:
-                await admin.execute(
-                    f'DROP DATABASE IF EXISTS "{target_name}" WITH (FORCE)'
-                )
+                await admin.execute(f'DROP DATABASE IF EXISTS "{target_name}" WITH (FORCE)')
             finally:
                 await admin.close()
 
@@ -379,13 +384,9 @@ async def rehearse(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        prog="backup_restore_rehearsal", description=__doc__
-    )
+    parser = argparse.ArgumentParser(prog="backup_restore_rehearsal", description=__doc__)
     parser.add_argument("--target-database", default=None)
-    parser.add_argument(
-        "--keep", action="store_true", help="Leave the restored database in place"
-    )
+    parser.add_argument("--keep", action="store_true", help="Leave the restored database in place")
     parser.add_argument("--json", type=Path, default=None)
     return parser
 
