@@ -164,6 +164,46 @@ def _scope_label(agent_id: Any, action_class: Any) -> str:
     return "organisation"
 
 
+async def resolve_authority_configuration_on(
+    conn: Any,
+    *,
+    organisation_id: Any,
+    principal_id: Any,
+    action_class: str,
+) -> AuthorityRuntimeConfiguration:
+    """Resolve on a CALLER-SUPPLIED connection, inside the caller's transaction.
+
+    Consumption needs this. Acquiring a fresh connection would put the read
+    in a different transaction from the claim, so a control committed in
+    between could let a claim commit that the configuration no longer
+    permits. Reading on the consuming connection, after its locks and
+    immediately before the claim, makes the window as short as the
+    transaction itself.
+
+    It deliberately takes NO lock on the configuration rows. Adding one
+    would introduce a new lock class into the consume path, and a future
+    management surface that writes an administrative audit row would then
+    take (configuration -> forensic chain) while consumption takes
+    (forensic chain -> configuration) -- the same shape of inversion Gate 7
+    was opened to remove.
+    """
+    organisation_uuid = (
+        organisation_id if isinstance(organisation_id, UUID) else UUID(str(organisation_id))
+    )
+    principal_uuid = (
+        principal_id if isinstance(principal_id, UUID) else UUID(str(principal_id))
+    )
+    try:
+        row = await conn.fetchrow(
+            _RESOLVE, organisation_uuid, principal_uuid, action_class
+        )
+    except _DATABASE_FAILURES as exc:
+        raise AuthorityConfigurationUnavailable(
+            "the effective authority configuration could not be read"
+        ) from exc
+    return _from_row(row, organisation_uuid, principal_uuid, action_class)
+
+
 async def resolve_authority_configuration(
     database: Any,
     *,
@@ -197,6 +237,12 @@ async def resolve_authority_configuration(
             "the effective authority configuration could not be read"
         ) from exc
 
+    return _from_row(row, organisation_uuid, principal_uuid, action_class)
+
+
+def _from_row(
+    row: Any, organisation_uuid: UUID, principal_uuid: UUID, action_class: str
+) -> AuthorityRuntimeConfiguration:
     if row is None:
         # The statement always returns exactly one row, so this means the
         # database answered something this code does not understand. Treat

@@ -98,6 +98,10 @@ from api.core.authority.grant import GrantStatus, first_rejection
 from api.core.authority.lifecycle import ConsumptionOutcome
 from api.database import Database, LimitReservationError
 from api.models import ActionVerdict, AuditLogEntry
+from api.persistence.authority_configuration import (
+    AuthorityConfigurationUnavailable,
+    resolve_authority_configuration_on,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -889,6 +893,53 @@ class AuthorityStore:
                     outcome=ConsumptionOutcome.REJECTED,
                     grant_id=grant_id,
                     rejection_reason=revalidation,
+                )
+
+            # --- The CURRENT authority requirement, not the one at issuance --
+            # A grant issued while delegation was optional must not keep a
+            # permanent right to bypass a stricter configuration. This is a
+            # FRESH consume: recovery of an already-committed consumption
+            # returned long before here, and is deliberately untouched --
+            # tightening the requirement afterwards must not turn the record
+            # of a historical fact into a new decision.
+            #
+            # Read on THIS connection, inside the transaction that holds the
+            # locks and immediately before the claim, so the answer and the
+            # claim commit together. It takes no lock on the configuration
+            # rows: a new lock class here is how the Gate-7 inversion would
+            # come back, because a future management surface writing an
+            # administrative audit row would take configuration then forensic
+            # chain, against consumption's chain then configuration.
+            try:
+                configuration = await resolve_authority_configuration_on(
+                    conn,
+                    organisation_id=grant["org_id"],
+                    principal_id=grant["agent_id"],
+                    action_class=grant["action_type"],
+                )
+            except AuthorityConfigurationUnavailable:
+                # Unknown is not permission. Refuse the fresh spend.
+                return ConsumeResult(
+                    outcome=ConsumptionOutcome.REJECTED,
+                    grant_id=grant_id,
+                    rejection_reason=DecisionReason.AUTHORITY_CONFIGURATION_UNAVAILABLE,
+                )
+
+            # ``authority_scope_digest`` is the durable proof that this grant
+            # was issued under a delegation that VERIFIED: the policy refuses
+            # to ALLOW an unverified one, and a non-ALLOW never reaches
+            # issuance, so the column is non-NULL only for a grant whose
+            # delegation was checked. A naked boolean would not carry that;
+            # this digest commits to the issuer, the external reference, the
+            # artefact digest and the scope.
+            if (
+                configuration.effective_required
+                and grant["authority_scope_digest"] is None
+            ):
+                return ConsumeResult(
+                    outcome=ConsumptionOutcome.REJECTED,
+                    grant_id=grant_id,
+                    rejection_reason=DecisionReason.AUTHORITY_REQUIRED_BUT_MISSING,
                 )
 
             # --- The claim, through the existing single-use authority ----
