@@ -84,7 +84,10 @@ from api.schemas.admin import (
     AuditSearchResponse,
     OrganizationResponse,
 )
-from api.services.authority_service import LegacyTokenDowngradeError
+from api.services.authority_service import (
+    PRINCIPAL_BINDING_METADATA_KEY,
+    LegacyTokenDowngradeError,
+)
 from api.services.core_evaluation import CorePolicyInputs, evaluate_core_policy
 from api.webhooks import (
     WebhookDeliveryError,
@@ -202,8 +205,37 @@ AGENT_LIFECYCLE_METADATA_KEYS = {
     "production_approved_by",
     "sandbox",
 }
-PUBLIC_REGISTRATION_METADATA_BLOCKLIST = {
+
+#: Agent metadata that is SERVER-OWNED trusted state, not a caller's to
+#: assert. These are facts the server is supposed to have ESTABLISHED about
+#: a principal; a caller able to write one would be asserting it about
+#: itself, which is the same as the server having established nothing.
+#:
+#: ``authority_principal_binding`` names the delegate keys and audience a
+#: principal's delegated authority is bound to.
+#: ``api/services/authority_service.py`` reads it as trusted, and the
+#: Verifiable Intent provider prefers a binding carried on the execution
+#: context over its own injected resolver. So a caller able to write it
+#: could bind a delegate key of its own choosing to itself, or empty
+#: ``revoked_agent_key_thumbprints`` and cancel a revocation.
+#:
+#: Blocked at every caller-controlled ingress rather than route by route:
+#: provisioning stays out of band, which is what the reader already
+#: documents. A dedicated authority-management operation may expose it
+#: later; generic metadata editing must not.
+SERVER_OWNED_AGENT_METADATA_KEYS = {
+    PRINCIPAL_BINDING_METADATA_KEY,
+}
+
+#: Everything a caller may not put in agent metadata, whichever ingress it
+#: arrives through. One set so a new ingress cannot pick up half the rules.
+CALLER_BLOCKED_AGENT_METADATA_KEYS = {
     *AGENT_LIFECYCLE_METADATA_KEYS,
+    *SERVER_OWNED_AGENT_METADATA_KEYS,
+}
+
+PUBLIC_REGISTRATION_METADATA_BLOCKLIST = {
+    *CALLER_BLOCKED_AGENT_METADATA_KEYS,
     "allowed_actions",
     "blocked_actions",
     "daily_limit_usd",
@@ -3483,7 +3515,7 @@ async def register_agent(
         registration_metadata = {
             key: value
             for key, value in request_data.metadata.items()
-            if key not in AGENT_LIFECYCLE_METADATA_KEYS
+            if key not in CALLER_BLOCKED_AGENT_METADATA_KEYS
         }
         registration_metadata["sandbox"] = True
 
@@ -3536,6 +3568,22 @@ async def update_agent(
 
         metadata_updates = updates.get("metadata")
         if isinstance(metadata_updates, dict):
+            # Server-owned trusted state is refused outright rather than
+            # silently dropped: a caller that believes it provisioned a
+            # principal binding, and was ignored, is worse off than one told
+            # no. There is deliberately no "write" escape hatch -- this is
+            # not generic metadata, and a later provisioning surface must be
+            # a dedicated authority-management operation.
+            server_owned = set(metadata_updates) & SERVER_OWNED_AGENT_METADATA_KEYS
+            if server_owned:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        "Server-owned agent metadata cannot be set through this "
+                        f"endpoint: {', '.join(sorted(server_owned))}. It is "
+                        "provisioned out of band by a trusted operator."
+                    ),
+                )
             protected_updates = set(metadata_updates) & AGENT_LIFECYCLE_METADATA_KEYS
             if protected_updates:
                 raise HTTPException(
