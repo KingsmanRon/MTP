@@ -96,6 +96,39 @@ SELECT
 """
 
 
+#: The SHARED configuration lock. Any transaction that will COMMIT a
+#: decision derived from the authority configuration takes this first and
+#: holds it to commit; every mutation of authority_requirements /
+#: authority_controls takes the EXCLUSIVE form (migration 029 takes it from
+#: a BEFORE trigger, so a writer cannot forget).
+#:
+#: Both halves of the key are derived by PostgreSQL:
+#: ``authority_config_lock_namespace()`` is defined by migration 029 and is
+#: the SAME function the write trigger calls. Nothing about the key is
+#: computed in Python, so a reader and a writer cannot come to address two
+#: different locks through a difference in string formatting -- which is
+#: the one failure mode that would look like serialisation and provide
+#: none. A hash collision merely serialises two organisations that did not
+#: need it; it can never produce a missed lock.
+_SHARED_LOCK: Final[str] = (
+    "SELECT pg_advisory_xact_lock_shared("
+    "hashtext(authority_config_lock_namespace()), hashtext($1))"
+)
+
+
+async def lock_authority_configuration_shared(
+    conn: Any, *, organisation_id: Any
+) -> None:
+    """Take the shared configuration lock for this organisation.
+
+    Must be called on the connection whose transaction will commit the
+    decision, before the configuration is read, and the transaction must
+    hold it through commit. Reading the configuration without it, or
+    acquiring it after the read, leaves the window this exists to close.
+    """
+    await conn.execute(_SHARED_LOCK, str(organisation_id))
+
+
 class AuthorityConfigurationUnavailable(RuntimeError):
     """The effective configuration could not be established."""
 

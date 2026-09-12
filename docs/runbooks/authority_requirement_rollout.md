@@ -98,6 +98,54 @@ production organisation:
 Do not enrol a production organisation until this exists, or an alternative
 semantic is explicitly approved.
 
+## Linearisation — the lock discipline
+
+One advisory namespace per organisation, `authority-config:<org_id>`:
+
+- **Fresh consumption and fresh issuance** take it **SHARED** and hold it to
+  commit, then read the configuration on that same connection.
+- **Every mutation** of `authority_requirements` / `authority_controls` takes
+  it **EXCLUSIVE** and holds it to commit. Migration 029 takes it from a
+  `BEFORE INSERT OR UPDATE OR DELETE` row trigger, so a writer cannot forget
+  and a direct SQL writer cannot bypass it.
+
+Both halves of the key are derived by PostgreSQL —
+`hashtext(authority_config_lock_namespace())` and `hashtext(<org text>)` —
+and the application calls the same `authority_config_lock_namespace()`
+function the trigger calls. Nothing about the key is computed in Python. A
+hash collision merely serialises two organisations that did not need it; it
+can never produce a missed lock.
+
+What this buys:
+
+> If a configuration change commits before a fresh consumption or issuance
+> commits, that operation either observed the new configuration, or it had
+> already linearised before the change by holding the shared lock that
+> prevented the change from committing.
+
+`org_id` is immutable on both tables. Moving a row between organisations
+would mean two different locks governing one statement, so the trigger
+refuses it outright rather than picking one.
+
+### Lock order — read this before adding a management path
+
+```
+GRANT/ISSUE → TOKEN → CONFIG → FORENSIC CHAIN → PRINCIPAL ROW → GRANT ROW → claim/audit
+```
+
+A management path must take **CONFIG (exclusive) first**, then do its
+administrative audit work:
+
+```
+CONFIG exclusive → configuration mutation → administrative audit → commit
+```
+
+It must **never** take `FORENSIC CHAIN → CONFIG`. Consumption holds CONFIG
+before CHAIN, so the reverse order closes the ABBA cycle Gate 7 was opened
+to remove. Concretely: write the configuration row **before** the audit row,
+because the trigger takes CONFIG at the moment the configuration row is
+written — a path that wrote its audit row first would still invert.
+
 ## Management writes
 
 There is no authority-management write surface, and the runtime role cannot

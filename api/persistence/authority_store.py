@@ -30,7 +30,20 @@ cycle:
 1. the entry advisory lock — ``authority-issuance:<agent>:<ref>`` for
    issuance, ``authority-grant:<grant>`` for consumption;
 2. the token advisory lock ``approval-token:<token>`` (consumption only);
-3. the per-agent forensic-chain advisory lock, keyed on the agent id — the
+3. the organisation's authority-configuration advisory lock
+   ``authority-config:<org>``, taken SHARED by consumption and EXCLUSIVE by
+   every write to ``authority_requirements`` / ``authority_controls``
+   (migration 029 takes it from a BEFORE trigger, so a writer cannot
+   forget). Held to commit, it linearises a spend against a configuration
+   change: the change cannot commit while a consumption holds the shared
+   form, and a consumption starting after the writer holds the exclusive
+   form waits and then observes the new configuration.
+
+   It precedes the forensic-chain lock deliberately. A management path
+   takes configuration and then does its administrative audit work, so
+   configuration must come first here too. ``FORENSIC CHAIN -> CONFIG`` is
+   the ABBA shape Gate 7 was opened to remove and must never be written;
+4. the per-agent forensic-chain advisory lock, keyed on the agent id — the
    same key ``assign_audit_chain_sequence`` takes on every ``audit_logs``
    INSERT, and the same one the legacy consumption path reaches through
    that trigger.
@@ -44,17 +57,17 @@ cycle:
    grants for one principal then close an ABBA cycle. That was the
    confirmed cause of the Gate-7 deadlock, reproducible deterministically
    on two connections;
-4. the ``agents`` row, ``FOR SHARE`` — this is the mutable principal and
+5. the ``agents`` row, ``FOR SHARE`` — this is the mutable principal and
    policy state that authorisation is derived from. Taking it here, and
    holding it until commit, is what closes the window in which a
    concurrent ``UPDATE agents`` could change policy after it was read but
    before the claim committed. ``FOR SHARE`` rather than ``FOR UPDATE``:
    concurrent consumptions of *different* grants for one agent may all
    read it at once, while any writer to that row waits;
-5. the ``execution_authority_grants`` row, ``FOR UPDATE``;
-6. the spend advisory lock ``spend-reservation:<agent>`` (issuance only,
+6. the ``execution_authority_grants`` row, ``FOR UPDATE``;
+7. the spend advisory lock ``spend-reservation:<agent>`` (issuance only,
    inside the reused reservation primitive);
-7. inserts into ``audit_logs`` / ``approval_token_consumptions``, then the
+8. inserts into ``audit_logs`` / ``approval_token_consumptions``, then the
    grant and reservation updates.
 
 Consumption chooses the keys for 2 and 3 from an unlocked discovery read,
@@ -100,6 +113,7 @@ from api.database import Database, LimitReservationError
 from api.models import ActionVerdict, AuditLogEntry
 from api.persistence.authority_configuration import (
     AuthorityConfigurationUnavailable,
+    lock_authority_configuration_shared,
     resolve_authority_configuration_on,
 )
 
@@ -493,7 +507,75 @@ class AuthorityStore:
                     f"authority-issuance:{agent_id}:{issuance_ref}",
                 )
 
-                # Lock order step 2: the principal's own policy row. This is
+                # Lock order step 2: the organisation's authority
+                # configuration, SHARED, held until this transaction commits.
+                #
+                # This closes the issuance half of the same race consumption
+                # closes. The evaluating service reads the configuration on
+                # its OWN connection to decide policy, so that read is a
+                # different transaction from this one: a tightening or an
+                # issuance halt could commit in between and this grant would
+                # still be written under the configuration read before it.
+                #
+                # Taking the lock HERE and re-reading below means the read
+                # that actually gates issuance shares its lifetime with the
+                # INSERT that commits the grant. The service's earlier read
+                # informs the policy decision; this one is the authority.
+                await lock_authority_configuration_shared(
+                    conn, organisation_id=organisation_id
+                )
+
+                try:
+                    configuration = await resolve_authority_configuration_on(
+                        conn,
+                        organisation_id=organisation_id,
+                        principal_id=agent_id,
+                        action_class=action_type,
+                    )
+                except AuthorityConfigurationUnavailable:
+                    return IssueResult(
+                        outcome=IssueOutcome.REFUSED,
+                        reason=DecisionReason.AUTHORITY_CONFIGURATION_UNAVAILABLE,
+                        detail=(
+                            "the effective authority configuration could not be "
+                            "read; no new execution authority may be issued"
+                        ),
+                    )
+
+                if configuration.issuance_halted:
+                    # "No NEW authority" means exactly this point: after the
+                    # halt commits, nothing further is issued. Already-issued
+                    # authority is untouched -- that is a consume-side
+                    # question and deliberately not this control's business.
+                    return IssueResult(
+                        outcome=IssueOutcome.REFUSED,
+                        reason=DecisionReason.AUTHORITY_ISSUANCE_HALTED,
+                        detail=(
+                            "new execution authority issuance is halted "
+                            + (
+                                "platform-wide"
+                                if configuration.issuance_halt_is_global
+                                else "for this organisation"
+                            )
+                        ),
+                    )
+
+                # A requirement that tightened after the policy decision must
+                # not be outrun by the issuance that decision authorised.
+                if (
+                    configuration.effective_required
+                    and authority_scope_digest is None
+                ):
+                    return IssueResult(
+                        outcome=IssueOutcome.REFUSED,
+                        reason=DecisionReason.AUTHORITY_REQUIRED_BUT_MISSING,
+                        detail=(
+                            "delegated authority is required for this principal "
+                            "and this grant would carry none"
+                        ),
+                    )
+
+                # Lock order step 3: the principal's own policy row. This is
                 # where capacity comes from, and holding it means a concurrent
                 # limit change cannot land between reading the ceiling and
                 # reserving against it.
@@ -712,7 +794,29 @@ class AuthorityStore:
                 f"approval-token:{discovered['approval_token_id']}",
             )
 
-            # Lock order step 3: the per-agent forensic chain, taken HERE --
+            # Lock order step 3: the organisation's authority configuration,
+            # SHARED, held until commit. Every mutation of
+            # authority_requirements / authority_controls takes the EXCLUSIVE
+            # form of this same key (migration 029 enforces it from a BEFORE
+            # trigger, so a writer cannot forget).
+            #
+            # That is what linearises a spend against a configuration change:
+            # a change cannot commit while this transaction holds the shared
+            # form, and a consumption starting after the writer holds the
+            # exclusive form waits and then sees the new configuration. Shared
+            # holders do not block one another, so concurrent consumption in
+            # one organisation is unaffected, and different organisations use
+            # different keys and never interact.
+            #
+            # It is taken BEFORE the forensic chain lock on purpose. A
+            # management path takes configuration and then does its audit
+            # work, so configuration must come first here too; the reverse
+            # order is the ABBA shape Gate 7 was opened to remove.
+            await lock_authority_configuration_shared(
+                conn, organisation_id=discovered["org_id"]
+            )
+
+            # Lock order step 4: the per-agent forensic chain, taken HERE --
             # before the principal row, not left to the audit trigger after
             # it. Every ``audit_logs`` INSERT runs
             # ``assign_audit_chain_sequence`` (BEFORE, takes this lock) and
@@ -727,7 +831,7 @@ class AuthorityStore:
                 str(discovered["agent_id"]),
             )
 
-            # Lock order step 4: pin the mutable principal/policy state BEFORE
+            # Lock order step 5: pin the mutable principal/policy state BEFORE
             # anything is derived from it, and hold it until this transaction
             # commits. Without this row lock a concurrent UPDATE agents could
             # commit between the read and the claim, and the claim would land
@@ -743,7 +847,7 @@ class AuthorityStore:
                 grant_id,
             )
 
-            # Lock order step 5: the grant itself.
+            # Lock order step 6: the grant itself.
             grant = await conn.fetchrow(
                 """
                 SELECT g.*

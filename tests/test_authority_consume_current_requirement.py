@@ -389,11 +389,13 @@ class TestConcurrentConfigurationChange:
                 )
         await self._assert_no_torn_state(db, grants)
 
-        # The tightening is now definitively committed: nothing more may pass.
+        # The tightening is now definitively committed, so nothing more may
+        # pass -- and it is now refused a step EARLIER than when this test was
+        # written: issuance itself is gated on the configuration, so there is
+        # no grant left to present.
         after = await issue(store, org_id, agent_id, "race-h-after")
-        late = await consume(store, "race-h-after", after)
-        assert late.outcome is ConsumptionOutcome.REJECTED
-        assert late.rejection_reason is DecisionReason.AUTHORITY_REQUIRED_BUT_MISSING
+        assert after.grant_id is None, "a grant was issued after the tightening"
+        assert after.reason is DecisionReason.AUTHORITY_REQUIRED_BUT_MISSING
 
     async def test_I_lifting_a_suspension_races_fresh_consume(
         self, db, seed, store, principal
@@ -429,8 +431,8 @@ class TestConcurrentConfigurationChange:
                 )
         await self._assert_no_torn_state(db, grants)
 
-        # With the suspension lifted the requirement is in force again.
+        # With the suspension lifted the requirement is in force again, and
+        # issuance is gated on it too, so no grant is produced to present.
         after = await issue(store, org_id, agent_id, "race-i-after")
-        late = await consume(store, "race-i-after", after)
-        assert late.outcome is ConsumptionOutcome.REJECTED
-        assert late.rejection_reason is DecisionReason.AUTHORITY_REQUIRED_BUT_MISSING
+        assert after.grant_id is None
+        assert after.reason is DecisionReason.AUTHORITY_REQUIRED_BUT_MISSING
