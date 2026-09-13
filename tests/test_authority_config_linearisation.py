@@ -522,21 +522,31 @@ class TestAdversarial:
             )
             await rtx.rollback()
             await asyncio.wait_for(task, timeout=20.0)
-            trigger_lock = await writer.fetchrow(
+            # An organisation-scoped write holds TWO exclusive configuration
+            # locks since 030 -- the global one and this organisation's --
+            # so the question is whether the application's key is among
+            # them, not whether the writer happens to hold exactly one.
+            trigger_locks = await writer.fetch(
                 """SELECT classid, objid, objsubid FROM pg_locks
                    WHERE locktype = 'advisory' AND pid = pg_backend_pid()
                      AND granted AND mode = 'ExclusiveLock'"""
+            )
+            global_objid = await writer.fetchval(
+                "SELECT hashtext(authority_config_lock_key(NULL))::OID"
             )
             await wtx.rollback()
         finally:
             await reader.close(timeout=5)
 
-        assert trigger_lock is not None
-        assert (app_lock["classid"], app_lock["objid"], app_lock["objsubid"]) == (
-            trigger_lock["classid"],
-            trigger_lock["objid"],
-            trigger_lock["objsubid"],
-        ), "the application and the trigger addressed different advisory keys"
+        held = {(r["classid"], r["objid"], r["objsubid"]) for r in trigger_locks}
+        assert held, "the trigger took no exclusive advisory lock"
+        assert (
+            app_lock["classid"], app_lock["objid"], app_lock["objsubid"]
+        ) in held, "the application and the trigger addressed different advisory keys"
+        assert (app_lock["classid"], global_objid, 2) in held, (
+            "the trigger did not also take the GLOBAL configuration lock; an "
+            "organisation write must rank under it"
+        )
 
     async def test_a_direct_sql_delete_still_takes_the_lock(self, db, writer) -> None:
         """DELETE is covered even though the runtime role cannot DELETE."""

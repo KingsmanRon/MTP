@@ -30,16 +30,39 @@ cycle:
 1. the entry advisory lock — ``authority-issuance:<agent>:<ref>`` for
    issuance, ``authority-grant:<grant>`` for consumption;
 2. the token advisory lock ``approval-token:<token>`` (consumption only);
-3. the organisation's authority-configuration advisory lock
-   ``authority-config:<org>``, taken SHARED by consumption and EXCLUSIVE by
-   every write to ``authority_requirements`` / ``authority_controls``
-   (migration 029 takes it from a BEFORE trigger, so a writer cannot
-   forget). Held to commit, it linearises a spend against a configuration
-   change: the change cannot commit while a consumption holds the shared
-   form, and a consumption starting after the writer holds the exclusive
-   form waits and then observes the new configuration.
+3. the authority-configuration advisory locks, taken SHARED by the paths
+   that read the configuration and EXCLUSIVE by every write to
+   ``authority_requirements`` / ``authority_controls`` (migrations 029 and
+   030 take them from a BEFORE trigger, so a writer cannot forget). Held to
+   commit, they linearise a decision against a configuration change: the
+   change cannot commit while a decision holds the shared form, and a
+   decision starting after the writer holds the exclusive form waits and
+   then observes the new configuration.
 
-   It precedes the forensic-chain lock deliberately. A management path
+   There are two, and they are RANKED::
+
+       CONFIG_GLOBAL   authority-config:global
+           ->
+       CONFIG_ORG      authority-config:<org>
+
+   **Issuance takes both**, global first. Issuance is gated by the global
+   ``authority_issuance`` control as well as the organisation's own rows,
+   and the scope that is read has to be the scope that is locked: holding
+   only the organisation key let a global halt commit underneath an
+   issuance already in flight, which then still wrote its grant.
+
+   **Consumption takes only CONFIG_ORG.** Consumption does not consult the
+   global control — halting NEW issuance must not invalidate authority
+   already issued — so taking the global key would serialise every spend on
+   the platform behind a lock that changes no decision consumption makes.
+
+   **Every configuration write takes CONFIG_GLOBAL first**, whatever the
+   row's scope, and then CONFIG_ORG when the row is organisation scoped.
+   That is what makes the ranking total: ``CONFIG_ORG -> CONFIG_GLOBAL`` is
+   unconstructible, so no two writers can form a cycle, and an issuer past
+   the global key can never queue behind a writer for the organisation key.
+
+   CONFIG precedes the forensic-chain lock deliberately. A management path
    takes configuration and then does its administrative audit work, so
    configuration must come first here too. ``FORENSIC CHAIN -> CONFIG`` is
    the ABBA shape Gate 7 was opened to remove and must never be written;
@@ -113,6 +136,7 @@ from api.database import Database, LimitReservationError
 from api.models import ActionVerdict, AuditLogEntry
 from api.persistence.authority_configuration import (
     AuthorityConfigurationUnavailable,
+    lock_authority_configuration_global_shared,
     lock_authority_configuration_shared,
     resolve_authority_configuration_on,
 )
@@ -507,7 +531,30 @@ class AuthorityStore:
                     f"authority-issuance:{agent_id}:{issuance_ref}",
                 )
 
-                # Lock order step 2: the organisation's authority
+                # Lock order step 2: the PLATFORM-WIDE authority
+                # configuration, SHARED, held until this transaction commits.
+                #
+                # Issuance is gated by the GLOBAL authority_issuance control
+                # as well as this organisation's own rows, and the scope that
+                # is read has to be the scope that is locked. Holding only
+                # the organisation key left exactly one gap: the two keys do
+                # not conflict, so a global halt could commit while this
+                # issuance was already in flight and this transaction would
+                # still write its grant -- authority issued under a halt that
+                # was already in force.
+                #
+                # It is taken BEFORE the organisation's key, and the write
+                # trigger takes global-then-organisation unconditionally for
+                # every configuration row. CONFIG_ORG -> CONFIG_GLOBAL is
+                # therefore unconstructible, which is what makes the
+                # hierarchy total and keeps writers from forming a cycle. It
+                # also means this transaction can never queue behind a
+                # configuration writer at step 3: a writer can only hold the
+                # organisation key exclusively if it also holds the global
+                # one, which it cannot while this shared lock is held.
+                await lock_authority_configuration_global_shared(conn)
+
+                # Lock order step 3: the organisation's authority
                 # configuration, SHARED, held until this transaction commits.
                 #
                 # This closes the issuance half of the same race consumption
@@ -517,7 +564,7 @@ class AuthorityStore:
                 # issuance halt could commit in between and this grant would
                 # still be written under the configuration read before it.
                 #
-                # Taking the lock HERE and re-reading below means the read
+                # Taking the locks HERE and re-reading below means the read
                 # that actually gates issuance shares its lifetime with the
                 # INSERT that commits the grant. The service's earlier read
                 # informs the policy decision; this one is the authority.
@@ -575,7 +622,7 @@ class AuthorityStore:
                         ),
                     )
 
-                # Lock order step 3: the principal's own policy row. This is
+                # Lock order step 4: the principal's own policy row. This is
                 # where capacity comes from, and holding it means a concurrent
                 # limit change cannot land between reading the ceiling and
                 # reserving against it.

@@ -100,28 +100,54 @@ semantic is explicitly approved.
 
 ## Linearisation — the lock discipline
 
-One advisory namespace per organisation, `authority-config:<org_id>`:
+There are **two** configuration locks, in one advisory namespace, and they
+are **ranked**:
 
-- **Fresh consumption and fresh issuance** take it **SHARED** and hold it to
-  commit, then read the configuration on that same connection.
-- **Every mutation** of `authority_requirements` / `authority_controls` takes
-  it **EXCLUSIVE** and holds it to commit. Migration 029 takes it from a
-  `BEFORE INSERT OR UPDATE OR DELETE` row trigger, so a writer cannot forget
-  and a direct SQL writer cannot bypass it.
+```
+CONFIG_GLOBAL   authority-config:global      ← platform-wide rows (org_id IS NULL)
+    ↓
+CONFIG_ORG      authority-config:<org_id>    ← one organisation's rows
+```
 
-Both halves of the key are derived by PostgreSQL —
-`hashtext(authority_config_lock_namespace())` and `hashtext(<org text>)` —
-and the application calls the same `authority_config_lock_namespace()`
-function the trigger calls. Nothing about the key is computed in Python. A
-hash collision merely serialises two organisations that did not need it; it
-can never produce a missed lock.
+Who takes what:
+
+| Path | Takes | Why |
+|---|---|---|
+| **Issuance** | `CONFIG_GLOBAL` shared → `CONFIG_ORG` shared | gated by the global `authority_issuance` halt *and* the organisation's rows, so it must lock both scopes it reads |
+| **Fresh consumption** | `CONFIG_ORG` shared only | does not consult the global control; halting new issuance must not invalidate authority already issued |
+| **Every configuration write** | `CONFIG_GLOBAL` exclusive → `CONFIG_ORG` exclusive (org-scoped rows only) | migrations 029/030 take these from a `BEFORE INSERT OR UPDATE OR DELETE` row trigger, so a writer cannot forget and a direct SQL writer cannot bypass them |
+
+Each path takes its locks on the connection whose transaction will commit
+the decision, reads the configuration on that same connection, and holds
+them to commit.
+
+**The global lock is taken first on every configuration write, whatever the
+row's scope.** That is what makes the ranking total: `CONFIG_ORG →
+CONFIG_GLOBAL` becomes unconstructible, so no two writers — in any statement
+order, across any number of rows — can form a cycle. It also means an
+issuance past the global lock can never queue behind a configuration writer,
+because a writer can only hold `CONFIG_ORG` exclusively if it also holds
+`CONFIG_GLOBAL`.
+
+Why the global lock had to exist: `authority-config:<A>` and
+`authority-config:global` do not conflict, yet the effective configuration
+for organisation A *consults* the global row. Issuance holding only the
+organisation key let a platform-wide halt commit underneath an issuance
+already in flight, and that issuance still wrote its grant. **The scope that
+is read has to be the scope that is locked.**
+
+Every part of both keys is derived by PostgreSQL —
+`authority_config_lock_namespace()` and `authority_config_lock_key()`, the
+same functions the trigger calls. Nothing about a key is computed in Python,
+including the literal `global`. A hash collision merely serialises two
+scopes that did not need it; it can never produce a missed lock.
 
 What this buys:
 
 > If a configuration change commits before a fresh consumption or issuance
 > commits, that operation either observed the new configuration, or it had
-> already linearised before the change by holding the shared lock that
-> prevented the change from committing.
+> already linearised before the change by holding a lock that prevented the
+> change from committing.
 
 `org_id` is immutable on both tables. Moving a row between organisations
 would mean two different locks governing one statement, so the trigger
@@ -130,21 +156,29 @@ refuses it outright rather than picking one.
 ### Lock order — read this before adding a management path
 
 ```
-GRANT/ISSUE → TOKEN → CONFIG → FORENSIC CHAIN → PRINCIPAL ROW → GRANT ROW → claim/audit
+issuance     ISSUE  → CONFIG_GLOBAL → CONFIG_ORG → PRINCIPAL → GRANT → RESERVATION
+consumption  GRANT  → TOKEN → CONFIG_ORG → FORENSIC CHAIN → PRINCIPAL → GRANT ROW → claim/audit
+writer       CONFIG_GLOBAL → CONFIG_ORG → administrative audit → commit
 ```
 
-A management path must take **CONFIG (exclusive) first**, then do its
-administrative audit work:
+A management path must take the **configuration locks first**, and then do
+its administrative audit work:
 
 ```
-CONFIG exclusive → configuration mutation → administrative audit → commit
+CONFIG_GLOBAL exclusive → CONFIG_ORG exclusive → configuration mutation
+                        → administrative audit → commit
 ```
 
 It must **never** take `FORENSIC CHAIN → CONFIG`. Consumption holds CONFIG
 before CHAIN, so the reverse order closes the ABBA cycle Gate 7 was opened
 to remove. Concretely: write the configuration row **before** the audit row,
-because the trigger takes CONFIG at the moment the configuration row is
-written — a path that wrote its audit row first would still invert.
+because the trigger takes the configuration locks at the moment the
+configuration row is written — a path that wrote its audit row first would
+still invert.
+
+Do **not** add `CONFIG_GLOBAL` to consumption. It changes no decision
+consumption makes, and it would put every spend on the platform behind a
+single lock that operators take exclusively.
 
 ## Management writes
 

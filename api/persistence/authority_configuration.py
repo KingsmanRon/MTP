@@ -96,24 +96,59 @@ SELECT
 """
 
 
-#: The SHARED configuration lock. Any transaction that will COMMIT a
-#: decision derived from the authority configuration takes this first and
-#: holds it to commit; every mutation of authority_requirements /
-#: authority_controls takes the EXCLUSIVE form (migration 029 takes it from
-#: a BEFORE trigger, so a writer cannot forget).
+#: The SHARED configuration locks. Any transaction that will COMMIT a
+#: decision derived from the authority configuration takes them before
+#: reading it and holds them to commit; every mutation of
+#: authority_requirements / authority_controls takes the EXCLUSIVE form
+#: (migrations 029 and 030 take it from a BEFORE trigger, so a writer
+#: cannot forget).
 #:
-#: Both halves of the key are derived by PostgreSQL:
-#: ``authority_config_lock_namespace()`` is defined by migration 029 and is
-#: the SAME function the write trigger calls. Nothing about the key is
-#: computed in Python, so a reader and a writer cannot come to address two
-#: different locks through a difference in string formatting -- which is
-#: the one failure mode that would look like serialisation and provide
-#: none. A hash collision merely serialises two organisations that did not
-#: need it; it can never produce a missed lock.
+#: EVERY part of both keys is derived by PostgreSQL.
+#: ``authority_config_lock_namespace()`` and ``authority_config_lock_key()``
+#: are the SAME functions the write trigger calls, so there is one
+#: definition of each key and nothing here to fall out of step with it. A
+#: reader and a writer that each built the key their own way would believe
+#: they were serialising while addressing two different locks -- the one
+#: failure mode that looks like serialisation and provides none. A hash
+#: collision merely serialises two scopes that did not need it; it can
+#: never produce a missed lock.
+#:
+#: The organisation id is passed as a UUID and rendered by PostgreSQL, not
+#: by Python: ``uuid::text`` is the canonical form on both sides, and
+#: leaving the conversion to the database removes the last place the two
+#: could disagree.
 _SHARED_LOCK: Final[str] = (
     "SELECT pg_advisory_xact_lock_shared("
-    "hashtext(authority_config_lock_namespace()), hashtext($1))"
+    "hashtext(authority_config_lock_namespace()), "
+    "hashtext(authority_config_lock_key($1)))"
 )
+
+#: The PLATFORM-WIDE configuration lock, SHARED. ``authority_config_lock_key``
+#: maps NULL to the global scope, so the global key is never spelled here
+#: either.
+_GLOBAL_SHARED_LOCK: Final[str] = (
+    "SELECT pg_advisory_xact_lock_shared("
+    "hashtext(authority_config_lock_namespace()), "
+    "hashtext(authority_config_lock_key(NULL)))"
+)
+
+
+async def lock_authority_configuration_global_shared(conn: Any) -> None:
+    """Take the shared PLATFORM-WIDE configuration lock.
+
+    The top of the configuration hierarchy. Issuance takes this BEFORE the
+    organisation's own lock, because the effective configuration for any
+    organisation consults the global ``authority_issuance`` control: a halt
+    that is not locked against is a halt that can commit underneath an
+    issuance already in flight, and that issuance would still write its
+    grant.
+
+    Consumption deliberately does not take it. Consumption does not consult
+    the global control -- halting new issuance must not invalidate authority
+    already issued -- so taking it would serialise every spend on the
+    platform behind a lock that changes no decision it makes.
+    """
+    await conn.execute(_GLOBAL_SHARED_LOCK)
 
 
 async def lock_authority_configuration_shared(
@@ -125,8 +160,17 @@ async def lock_authority_configuration_shared(
     decision, before the configuration is read, and the transaction must
     hold it through commit. Reading the configuration without it, or
     acquiring it after the read, leaves the window this exists to close.
+
+    A caller that also needs the global lock must take that one FIRST. The
+    write trigger takes global-then-organisation unconditionally, so
+    CONFIG_ORG -> CONFIG_GLOBAL is the one edge that must never be built.
     """
-    await conn.execute(_SHARED_LOCK, str(organisation_id))
+    await conn.execute(
+        _SHARED_LOCK,
+        organisation_id
+        if isinstance(organisation_id, UUID)
+        else UUID(str(organisation_id)),
+    )
 
 
 class AuthorityConfigurationUnavailable(RuntimeError):
