@@ -133,6 +133,52 @@ _GLOBAL_SHARED_LOCK: Final[str] = (
 )
 
 
+#: The EXCLUSIVE forms. Migrations 029/030 take these from a BEFORE trigger
+#: on every configuration write, so nothing has to remember them -- but a
+#: management transaction that must read the row it is about to change takes
+#: them itself, FIRST, in the same order. Without that the pre-image it
+#: records could be a version another writer has already replaced by the time
+#: the trigger fires, and the audit record would name a transition that never
+#: happened. Re-taking a lock the transaction already holds is free.
+_GLOBAL_EXCLUSIVE_LOCK: Final[str] = (
+    "SELECT pg_advisory_xact_lock("
+    "hashtext(authority_config_lock_namespace()), "
+    "hashtext(authority_config_lock_key(NULL)))"
+)
+
+_EXCLUSIVE_LOCK: Final[str] = (
+    "SELECT pg_advisory_xact_lock("
+    "hashtext(authority_config_lock_namespace()), "
+    "hashtext(authority_config_lock_key($1)))"
+)
+
+
+async def lock_authority_configuration_global_exclusive(conn: Any) -> None:
+    """Take the EXCLUSIVE platform-wide configuration lock.
+
+    The top of the hierarchy, and the first lock any configuration writer
+    takes -- whatever the scope of the row it is about to write.
+    """
+    await conn.execute(_GLOBAL_EXCLUSIVE_LOCK)
+
+
+async def lock_authority_configuration_exclusive(
+    conn: Any, *, organisation_id: Any
+) -> None:
+    """Take the EXCLUSIVE configuration lock for one organisation.
+
+    ``lock_authority_configuration_global_exclusive`` must already have been
+    taken on this connection. ``CONFIG_ORG -> CONFIG_GLOBAL`` is the one edge
+    that must never be built.
+    """
+    await conn.execute(
+        _EXCLUSIVE_LOCK,
+        organisation_id
+        if isinstance(organisation_id, UUID)
+        else UUID(str(organisation_id)),
+    )
+
+
 async def lock_authority_configuration_global_shared(conn: Any) -> None:
     """Take the shared PLATFORM-WIDE configuration lock.
 

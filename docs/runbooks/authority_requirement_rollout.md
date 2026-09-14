@@ -182,13 +182,95 @@ single lock that operators take exclusively.
 
 ## Management writes
 
-There is no authority-management write surface, and the runtime role cannot
-create one by accident: it holds `SELECT` only. When that surface is built:
+A configuration change and its administrative audit record commit in **one
+transaction**, or neither commits. There is no supported path that produces a
+policy change nobody can attribute, or an audit record for a change that
+rolled back.
 
-- every requirement/control change must write an immutable
-  `administrative_audit_events` row in the **same transaction**, enforced by
-  the database rather than by convention;
-- the guard must not fabricate actor, reason or approval provenance — those
-  are supplied by the caller and recorded, not invented by a trigger;
-- prefer a narrow management role or function; the generic runtime role must
-  not regain configuration DML.
+### The primitive
+
+`api/persistence/authority_configuration_management.py`:
+
+- `apply_authority_configuration_change(management_db, …)` — one change in a
+  transaction of its own;
+- `apply_authority_configuration_change_on(conn, …)` — the same on a
+  caller-supplied connection, for a surface that must do something else in
+  the same atomic act.
+
+`setting` is `"requirement"`, `"authority_issuance"` or
+`"requirement_enforcement"`. There is deliberately **no generic
+INSERT/UPDATE/DELETE contract**: a caller states which setting it is changing
+and to what, and supplies `actor`, `reason` and `approval_reference`. Absent,
+blank or whitespace-only values are refused before anything is written — the
+`CHECK` constraints behind them are the backstop, not the contract.
+
+The audit record carries who, what row, from what, to what, why, under which
+approval, when, and for which organisation / principal / action-class scope.
+Its own id is the correlation reference and is returned to the caller.
+
+### Transaction boundary and lock order
+
+```
+BEGIN
+  CONFIG_GLOBAL exclusive
+  CONFIG_ORG    exclusive        (organisation-scoped changes only)
+  read the row being replaced    -- the audit pre-image
+  write the configuration row    -- the 029/030 trigger re-takes the same
+                                    two keys, in the same order, free
+  append administrative_audit_events
+COMMIT
+```
+
+The two locks are taken **before** the pre-image read on purpose. The trigger
+would take them anyway, but only when the write statement runs, and a read
+before that could report a version another writer had already replaced —
+making the recorded transition one that never happened. This is the same
+order the trigger uses, not a different one.
+
+The configuration row is written **before** the audit row. The trigger takes
+the configuration locks at the moment the configuration row is written, so a
+path that wrote its audit row first would invert the accepted order even
+though both rows still committed together.
+
+`administrative_audit_events` carries no forensic-chain trigger, so this path
+never takes the per-agent chain lock. `CONFIG → FORENSIC CHAIN` cannot invert
+with consumption's `CONFIG_ORG → FORENSIC CHAIN` because this side of it does
+not exist. That is asserted from `pg_locks`, not assumed.
+
+### Why there is no audit trigger on the configuration tables
+
+An `AFTER` trigger would make the audit automatic and harder to forget. It is
+not used:
+
+- the record must name the actor, the reason and the approval reference. A
+  trigger sees only the row, so those would travel in session GUCs — unset by
+  an emergency operator, and the audit then records nobody;
+- it would make every direct SQL write acquire whatever the audit path
+  acquires, inside transactions whose lock graph nobody has proved. The
+  Gate-7 deadlock was exactly that shape.
+
+### The direct-SQL boundary — read this before an incident
+
+The 029/030 trigger guarantees **lock ordering** for any writer, including
+raw SQL. It cannot guarantee **audit semantics**: nothing in the database
+forces a direct `UPDATE authority_controls …` to also write an audit row.
+
+- the **runtime role** (`inntris_worker`) is `SELECT`-only on
+  `authority_requirements`, `authority_controls` and — for writes —
+  `administrative_audit_events`. It cannot change configuration at all, and
+  must never be given the privilege to. Migration 028 exists for this;
+- the **tenant role** (`inntris_api`) is `SELECT`-only on configuration,
+  scoped by RLS to its own organisation, and cannot see the administrative
+  audit trail at all;
+- the **supported** production configuration change is the primitive above,
+  running as `inntris_authority_admin` (migration 031, password provisioned
+  by `scripts/configure_authority_management_role.py`, never by migration
+  history). That role may change the two configuration tables and append to
+  `administrative_audit_events`, and nothing else — no `DELETE` anywhere;
+- **migrator / operator emergency SQL** bypasses the primitive and therefore
+  bypasses the audit record. It is exceptional. If it is used, the operator
+  must record the change out of band — who, what, from what, to what, why,
+  under which approval — and reconcile it against
+  `administrative_audit_events` afterwards, because the table will not show
+  it. Treat an emergency configuration change with no corresponding audit row
+  as an unexplained change until that reconciliation exists.
