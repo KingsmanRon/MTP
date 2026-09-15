@@ -197,6 +197,26 @@ rolled back.
   caller-supplied connection, for a surface that must do something else in
   the same atomic act.
 
+**The caller of `*_on` must already have opened a transaction, and the
+primitive refuses to run otherwise.** Outside one, asyncpg commits every
+statement by itself: each configuration lock is released as its statement
+ends and serialises nothing, the configuration row commits alone, and a
+failing audit insert leaves the change with no record of it — invariant 7
+violated, silently. The check is the first thing `*_on` does, before the
+locks, the pre-image read and both writes, and it fails closed: a connection
+that cannot report its transaction state is refused too.
+
+It does **not** open a transaction of its own. `*_on` exists so several
+actions can be composed inside one caller-owned transaction; a transaction
+opened here would commit the first of them independently and break exactly
+the composition it is for. Use the wrapper for a single change:
+
+```python
+async with management_db.acquire() as conn, conn.transaction():
+    await apply_authority_configuration_change_on(conn, …)   # one
+    await apply_authority_configuration_change_on(conn, …)   # or several
+```
+
 `setting` is `"requirement"`, `"authority_issuance"` or
 `"requirement_enforcement"`. There is deliberately **no generic
 INSERT/UPDATE/DELETE contract**: a caller states which setting it is changing

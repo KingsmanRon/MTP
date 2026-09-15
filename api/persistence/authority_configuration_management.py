@@ -14,6 +14,16 @@ inside ONE transaction. Nothing here catches a failure and continues: an
 audit insert that fails takes the configuration change down with it, because
 that is the only outcome that keeps the two honest.
 
+That transaction belongs to the CALLER, and the primitive refuses to run
+without one. Outside a transaction asyncpg commits every statement by
+itself, which would release each configuration lock as its statement ended
+and commit the configuration row before the audit row was even attempted --
+producing exactly the state this module exists to prevent. The check is the
+first thing it does, and it fails closed rather than opening a transaction
+of its own: ``*_on`` exists so several actions can be composed inside one
+caller-owned transaction, and a transaction opened here would silently
+commit the first of them.
+
 Why this is not a trigger
 -------------------------
 An AFTER trigger on the configuration tables could write the audit row
@@ -143,6 +153,62 @@ class AuthorityConfigurationChange:
         }
 
 
+def _require_caller_transaction(conn: Any) -> None:
+    """Refuse unless the caller already owns an open transaction.
+
+    Without this the primitive's own contract is unenforced, and the failure
+    is silent. On a bare asyncpg connection every statement runs in its own
+    implicit transaction, so:
+
+    * each ``pg_advisory_xact_lock`` is released as its statement ends --
+      the configuration locks are held for microseconds instead of until
+      commit, and serialise nothing;
+    * the configuration UPSERT commits on its own;
+    * a failing audit INSERT then leaves configuration changed with no audit
+      record. Invariant 7 violated, and nothing in the database or the code
+      says so.
+
+    Reproduced deterministically before this guard existed: a real audit
+    failure raised, the requirement row survived at its new value, and no
+    audit event was written.
+
+    It deliberately does NOT open a transaction of its own. ``*_on`` exists
+    so a trusted management surface can compose several actions inside ONE
+    caller-owned transaction; a transaction opened here would commit the
+    first action independently and quietly break that composition. The
+    caller owns the boundary, so the caller must have opened it -- and
+    ``apply_authority_configuration_change`` is the wrapper for the ordinary
+    single-change case.
+
+    Fail closed: a connection that cannot answer the question is refused too.
+    Not knowing whether the write will be atomic is not permission to try.
+    """
+    probe = getattr(conn, "is_in_transaction", None)
+    if probe is None or not callable(probe):
+        raise AuthorityConfigurationManagementError(
+            "this connection cannot report its transaction state, so the "
+            "configuration change and its audit record cannot be shown to "
+            "commit together; open a transaction and pass a connection that "
+            "can, or use apply_authority_configuration_change()"
+        )
+    try:
+        inside = bool(probe())
+    except Exception as exc:
+        raise AuthorityConfigurationManagementError(
+            "the connection's transaction state could not be established; "
+            "refusing to write a configuration change that may not be atomic"
+        ) from exc
+    if not inside:
+        raise AuthorityConfigurationManagementError(
+            "apply_authority_configuration_change_on() requires the caller to "
+            "have opened a transaction: outside one, each statement commits "
+            "by itself and an audit failure would leave the configuration "
+            "changed with no record of it. Open one (async with "
+            "conn.transaction()) and compose inside it, or use "
+            "apply_authority_configuration_change() for a single change"
+        )
+
+
 def _required_text(value: Any, field: str) -> str:
     """A management change names its actor, its reason and its approval.
 
@@ -243,6 +309,10 @@ async def apply_authority_configuration_change_on(
 
     ``setting`` is ``"requirement"`` or the name of a control.
     """
+    # Before the arguments, before the locks, before any read or write: if
+    # the caller does not own a transaction, nothing here can be atomic.
+    _require_caller_transaction(conn)
+
     actor_text = _required_text(actor, "actor")
     reason_text = _required_text(reason, "reason")
     approval_text = _required_text(approval_reference, "approval_reference")

@@ -906,3 +906,241 @@ class TestRecordAndAuthority:
         assert not any(role.values()), (
             f"the management role has privileged attributes: {dict(role)}"
         )
+
+
+# --- A15-A20: the caller owns the transaction, and must prove it ----------
+
+
+async def install_audit_failure(conn, sentinel: str) -> None:
+    """A real audit failure, in the database, for one approval reference."""
+    await conn.execute(
+        f"""
+        CREATE OR REPLACE FUNCTION test_contract_fail_audit()
+        RETURNS TRIGGER AS $t$
+        BEGIN
+            IF NEW.approval_reference = '{sentinel}' THEN
+                RAISE EXCEPTION 'forced administrative audit failure';
+            END IF;
+            RETURN NEW;
+        END;
+        $t$ LANGUAGE plpgsql;
+        DROP TRIGGER IF EXISTS test_contract_fail_audit ON administrative_audit_events;
+        CREATE TRIGGER test_contract_fail_audit
+            BEFORE INSERT ON administrative_audit_events
+            FOR EACH ROW EXECUTE FUNCTION test_contract_fail_audit();
+        """
+    )
+
+
+async def remove_audit_failure(conn) -> None:
+    await conn.execute(
+        "DROP TRIGGER IF EXISTS test_contract_fail_audit ON administrative_audit_events;"
+        "DROP FUNCTION IF EXISTS test_contract_fail_audit();"
+    )
+
+
+class TestCallerTransactionContract:
+    """``*_on`` is composable, so its transaction is the caller's to own.
+
+    Before the guard existed, calling it on a bare connection let asyncpg
+    commit every statement by itself: each configuration lock was released as
+    its statement ended, the configuration row committed alone, and a failing
+    audit insert left the change with no record of it.
+    """
+
+    async def test_A15_a_bare_connection_is_refused_before_any_write(
+        self, writer, approval
+    ) -> None:
+        org_id, _agent = await make_principal(writer)
+
+        conn = await asyncpg.connect(MANAGEMENT_URL)
+        try:
+            assert not conn.is_in_transaction()
+            with pytest.raises(
+                AuthorityConfigurationManagementError, match="requires the caller"
+            ):
+                await apply_authority_configuration_change_on(
+                    conn, setting="requirement", new_value=True,
+                    organisation_id=org_id, actor=ACTOR, reason=REASON,
+                    approval_reference=approval,
+                )
+            assert not conn.is_in_transaction(), (
+                "the guard opened a transaction of its own; *_on must leave "
+                "the boundary to the caller"
+            )
+        finally:
+            await conn.close(timeout=5)
+
+        assert not await requirement_rows(writer, org_id), (
+            "a configuration row was written outside a caller transaction"
+        )
+        assert not await audit_events(writer, approval)
+
+    async def test_A16_the_counterexample_is_refused_before_the_mutation(
+        self, writer, approval
+    ) -> None:
+        """The exact shape that violated invariant 7.
+
+        With a real audit failure armed, a bare-connection call that reached
+        the mutation would fail with the trigger's error and leave the
+        configuration row committed. Failing with the typed guard error and
+        leaving no row is what distinguishes "refused before the mutation"
+        from "rolled back after it".
+        """
+        org_id, _agent = await make_principal(writer)
+        await install_audit_failure(writer, approval)
+        try:
+            conn = await asyncpg.connect(MANAGEMENT_URL)
+            try:
+                with pytest.raises(AuthorityConfigurationManagementError) as refused:
+                    await apply_authority_configuration_change_on(
+                        conn, setting="requirement", new_value=True,
+                        organisation_id=org_id, actor=ACTOR, reason=REASON,
+                        approval_reference=approval,
+                    )
+            finally:
+                await conn.close(timeout=5)
+        finally:
+            await remove_audit_failure(writer)
+
+        assert "forced administrative audit failure" not in str(refused.value), (
+            "the call reached the audit insert, so it had already performed "
+            "the configuration mutation"
+        )
+        assert not await requirement_rows(writer, org_id), (
+            "configuration changed with no audit record -- invariant 7"
+        )
+        assert not await audit_events(writer, approval)
+
+    async def test_A17_inside_an_explicit_transaction_it_still_works(
+        self, writer, approval
+    ) -> None:
+        org_id, _agent = await make_principal(writer)
+        conn = await asyncpg.connect(MANAGEMENT_URL)
+        try:
+            async with conn.transaction():
+                change = await apply_authority_configuration_change_on(
+                    conn, setting="requirement", new_value=True,
+                    organisation_id=org_id, actor=ACTOR, reason=REASON,
+                    approval_reference=approval,
+                )
+        finally:
+            await conn.close(timeout=5)
+
+        rows = await requirement_rows(writer, org_id)
+        assert len(rows) == 1 and rows[0]["required"] is True
+        assert rows[0]["id"] == change.configuration_row_id
+        assert len(await audit_events(writer, approval)) == 1
+
+    async def test_A18_two_changes_compose_inside_one_caller_transaction(
+        self, writer, approval
+    ) -> None:
+        """The reason ``*_on`` exists, and the reason it must not self-open."""
+        org_id, agent_id = await make_principal(writer)
+        conn = await asyncpg.connect(MANAGEMENT_URL)
+        try:
+            tx = conn.transaction()
+            await tx.start()
+            first = await apply_authority_configuration_change_on(
+                conn, setting="requirement", new_value=True,
+                organisation_id=org_id, principal_id=agent_id,
+                actor=ACTOR, reason=REASON, approval_reference=approval,
+            )
+            second = await apply_authority_configuration_change_on(
+                conn, setting="authority_issuance", new_value=True,
+                organisation_id=org_id, actor=ACTOR, reason=REASON,
+                approval_reference=approval,
+            )
+
+            # All four rows are visible inside the one transaction...
+            assert await conn.fetchval(
+                "SELECT COUNT(*) FROM authority_requirements WHERE id = $1",
+                first.configuration_row_id,
+            ) == 1
+            assert await conn.fetchval(
+                "SELECT COUNT(*) FROM authority_controls WHERE id = $1",
+                second.configuration_row_id,
+            ) == 1
+            assert await conn.fetchval(
+                "SELECT COUNT(*) FROM administrative_audit_events WHERE id = ANY($1::UUID[])",
+                [first.audit_event_id, second.audit_event_id],
+            ) == 2
+
+            # ...and one rollback removes all four.
+            await tx.rollback()
+        finally:
+            await conn.close(timeout=5)
+
+        assert not await requirement_rows(writer, org_id)
+        assert await writer.fetchval(
+            "SELECT COUNT(*) FROM authority_controls WHERE org_id = $1", org_id
+        ) == 0
+        assert not await audit_events(writer, approval)
+
+    async def test_A19_a_failed_second_change_takes_the_first_down_with_it(
+        self, writer, approval
+    ) -> None:
+        org_id, _agent = await make_principal(writer)
+        doomed = f"{approval}-DOOMED"
+        await install_audit_failure(writer, doomed)
+        conn = await asyncpg.connect(MANAGEMENT_URL)
+        try:
+            with pytest.raises(asyncpg.PostgresError, match="forced administrative"):
+                async with conn.transaction():
+                    await apply_authority_configuration_change_on(
+                        conn, setting="requirement", new_value=True,
+                        organisation_id=org_id, actor=ACTOR, reason=REASON,
+                        approval_reference=approval,
+                    )
+                    await apply_authority_configuration_change_on(
+                        conn, setting="authority_issuance", new_value=True,
+                        organisation_id=org_id, actor=ACTOR, reason=REASON,
+                        approval_reference=doomed,
+                    )
+        finally:
+            await conn.close(timeout=5)
+            await remove_audit_failure(writer)
+
+        assert not await requirement_rows(writer, org_id), (
+            "the first composed change survived the failure of the second"
+        )
+        assert not await audit_events(writer, approval), (
+            "an audit record survived for a change that was rolled back"
+        )
+        assert not await audit_events(writer, doomed)
+
+    async def test_A20_the_wrapper_remains_green_and_atomic(
+        self, management, writer, approval
+    ) -> None:
+        """The ordinary single-change path opens its own transaction."""
+        org_id, _agent = await make_principal(writer)
+
+        change = await apply_authority_configuration_change(
+            management, setting="requirement", new_value=False,
+            organisation_id=org_id, actor=ACTOR, reason=REASON,
+            approval_reference=approval,
+        )
+        rows = await requirement_rows(writer, org_id)
+        assert len(rows) == 1 and rows[0]["required"] is False
+        assert len(await audit_events(writer, approval)) == 1
+
+        # ...and is still atomic under a real audit failure.
+        doomed = f"{approval}-DOOMED"
+        await install_audit_failure(writer, doomed)
+        try:
+            with pytest.raises(asyncpg.PostgresError, match="forced administrative"):
+                await apply_authority_configuration_change(
+                    management, setting="requirement", new_value=True,
+                    organisation_id=org_id, actor=ACTOR, reason=REASON,
+                    approval_reference=doomed,
+                )
+        finally:
+            await remove_audit_failure(writer)
+
+        rows = await requirement_rows(writer, org_id)
+        assert len(rows) == 1
+        assert rows[0]["required"] is False, (
+            "the wrapper let a change survive its audit failure"
+        )
+        assert rows[0]["id"] == change.configuration_row_id
+        assert not await audit_events(writer, doomed)
