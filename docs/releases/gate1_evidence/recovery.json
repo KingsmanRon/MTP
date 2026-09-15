@@ -1,0 +1,79 @@
+[
+  {
+    "scenario": "A failure before the first authority migration",
+    "injected": "a live query holds AccessShareLock on agents; 0019 cannot take ACCESS EXCLUSIVE and hits lock_timeout",
+    "migration_failed": true,
+    "state_after": {
+      "revision": "0018_merkle_anchor_visibility",
+      "agents_unique": 0,
+      "audit_unique": 0,
+      "authority_tables": 0,
+      "admin_scope_column": 0
+    },
+    "old_app_still_works": {
+      "audit_insert": true,
+      "chain_assigned": true,
+      "admin_insert": true,
+      "admin_scope_defaulted_to": "n/a (pre-031)"
+    },
+    "operator_action": "none. The database is still at the deployed revision and nothing partial was applied; retry the pre-deploy migration in a quieter window.",
+    "retry_succeeds": true,
+    "retry_method": "stepwise (one revision per invocation)",
+    "retry_revision": "0027_authority_config_mgmt"
+  },
+  {
+    "scenario": "B failure mid-chain",
+    "injected": "0019/0020 applied; a live query holds AccessShareLock on audit_logs; 0021's unique constraint hits lock_timeout",
+    "migration_failed": true,
+    "state_after": {
+      "revision": "0020_authority_evidence",
+      "agents_unique": 1,
+      "audit_unique": 0,
+      "authority_tables": 2,
+      "admin_scope_column": 0
+    },
+    "old_app_still_works": {
+      "audit_insert": true,
+      "chain_assigned": true,
+      "admin_insert": true,
+      "admin_scope_defaulted_to": "n/a (pre-031)"
+    },
+    "operator_action": "none, and NO downgrade. Each migration commits or rolls back as a whole, so the database sits at the last completed revision with a consistent schema. The partially applied authority tables are inert to the old application. Retry forward.",
+    "retry_succeeds": true,
+    "retry_method": "stepwise (one revision per invocation)",
+    "retry_revision": "0027_authority_config_mgmt"
+  },
+  {
+    "scenario": "C schema migrated, old application still serving",
+    "injected": "the pre-deploy migration succeeded; the application rollout has not happened yet",
+    "state_after": {
+      "revision": "0027_authority_config_mgmt",
+      "agents_unique": 1,
+      "audit_unique": 1,
+      "authority_tables": 4,
+      "admin_scope_column": 1
+    },
+    "old_app_still_works": {
+      "audit_insert": true,
+      "chain_assigned": true,
+      "admin_insert": true,
+      "admin_scope_defaulted_to": "organisation"
+    },
+    "new_tables_inert": {
+      "execution_authority_grants_rows": 0
+    },
+    "operator_action": "none. This is the normal pre-deploy window and the old application is unaffected -- proved by running the deployed branch's own suite against this database with an identical pass/fail set. Roll the application forward when ready."
+  },
+  {
+    "scenario": "D application rolled back after the database reached head",
+    "injected": "the new application was deployed and then rolled back; the database stays at 0027",
+    "database_left_at": "0027_authority_config_mgmt",
+    "old_app_still_works": {
+      "audit_insert": true,
+      "chain_assigned": true,
+      "admin_insert": true,
+      "admin_scope_defaulted_to": "organisation"
+    },
+    "operator_action": "roll the application back and leave the database forward. Alembic downgrade is NOT the recovery mechanism -- 0023-0027 raise NotImplementedError on downgrade by design. Recovery is either (1) deploy the previous application image, which the old-app/new-db result shows is safe, or (2) restore from a snapshot taken before the pre-deploy migration, which loses everything written since. (1) is the expected path; (2) is only for a schema fault that a reviewed forward migration cannot repair."
+  }
+]

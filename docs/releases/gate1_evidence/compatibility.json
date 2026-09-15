@@ -1,0 +1,82 @@
+[
+  {
+    "check": "1 pre-existing data readable",
+    "pass": true,
+    "detail": "{\"organizations\": 25, \"agents\": 500, \"audit_logs\": 500000, \"approval_token_consumptions\": 41613, \"merkle_proofs\": 20000, \"administrative_audit_events\": 2000}"
+  },
+  {
+    "check": "2 historical audit chain intact",
+    "pass": true,
+    "detail": "500000 rows, 0 broken links or sequence gaps"
+  },
+  {
+    "check": "3 legacy receipt version semantics unchanged",
+    "pass": true,
+    "detail": "500000 historical rows still classify v1 (policy_hash NULL); 0 rows gained a policy_hash"
+  },
+  {
+    "check": "5 no legacy token became a v0.5 grant",
+    "pass": true,
+    "detail": "41613 historical token consumptions, 0 grant rows -- no conversion, no backfill"
+  },
+  {
+    "check": "4 unconsumed legacy token claims once, creates no grant",
+    "pass": true,
+    "detail": "single-use still enforced by approval_token_consumptions; 0 grant rows created by the legacy claim"
+  },
+  {
+    "check": "14 existing administrative rows defaulted to organisation scope",
+    "pass": true,
+    "detail": "2000/2000 organisation scope, 0 inconsistent"
+  },
+  {
+    "check": "6 new grant issuance works",
+    "pass": true,
+    "detail": "outcome=issued"
+  },
+  {
+    "check": "7 new consumption works",
+    "pass": true,
+    "detail": "outcome=authorised"
+  },
+  {
+    "check": "8 same-ref recovery works",
+    "pass": true,
+    "detail": "outcome=recovered"
+  },
+  {
+    "check": "9 different-ref reuse refused",
+    "pass": true,
+    "detail": "outcome=rejected, reason=execution_ref_conflict"
+  },
+  {
+    "check": "10 Gate-2 requirement configuration works after migration",
+    "pass": true,
+    "detail": "effective_required=True, audit event a8746495-0b71-4924-aff2-0bdc8a3040ee scope=organisation"
+  },
+  {
+    "check": "10b the new requirement is enforced, not merely stored",
+    "pass": true,
+    "detail": "outcome=refused, reason=authority_required_but_missing"
+  },
+  {
+    "check": "15 platform administrative events representable",
+    "pass": true,
+    "detail": "scope=platform, org_id=None"
+  },
+  {
+    "check": "11 tenant isolation holds after migration",
+    "pass": true,
+    "detail": "other-org agents visible=0, own=20, own requirements=1, admin audit visible=None (InsufficientPrivilegeError), tenant configuration write accepted=False"
+  },
+  {
+    "check": "12 runtime role cannot mutate authority configuration",
+    "pass": true,
+    "detail": "{\"authority_requirements.INSERT\": \"denied\", \"authority_requirements.UPDATE\": \"denied\", \"authority_requirements.DELETE\": \"denied\", \"authority_controls.INSERT\": \"denied\", \"authority_controls.UPDATE\": \"denied\", \"authority_controls.DELETE\": \"denied\"}"
+  },
+  {
+    "check": "13 management role has exactly the accepted privileges",
+    "pass": true,
+    "detail": "{\"rolsuper\": false, \"rolbypassrls\": false, \"rolcreaterole\": false, \"rolcreatedb\": false, \"rolcanlogin\": true, \"req_ins\": true, \"req_upd\": true, \"req_del\": false, \"ctl_ins\": true, \"ctl_upd\": true, \"ctl_del\": false, \"aud_ins\": true, \"aud_del\": false, \"forensic_ins\": false}"
+  }
+]

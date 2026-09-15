@@ -1,0 +1,208 @@
+[
+  {
+    "revision": "0019_authority_persistence",
+    "returncode": 0,
+    "seconds": 0.398,
+    "access_exclusive": [
+      "agents:AccessExclusiveLock"
+    ],
+    "other_strong_locks": [
+      "agents:ShareLock",
+      "agents:ShareRowExclusiveLock",
+      "audit_logs:ShareRowExclusiveLock",
+      "organizations:ShareRowExclusiveLock",
+      "spend_reservations:ShareRowExclusiveLock"
+    ],
+    "blocked_sessions": 1,
+    "worst_reader_latency_s": {
+      "audit_logs": 0.028,
+      "agents": 0.011,
+      "administrative_audit_events": 0.001
+    },
+    "reader_errors": [],
+    "tables_rewritten": [],
+    "row_counts_changed": {},
+    "total_indexes_after": 73,
+    "output_tail": [
+      "INFO  [alembic.runtime.migration] Running upgrade 0018_merkle_anchor_visibility -> 0019_authority_persistence, Persist execution authority grants and their issuance identity."
+    ]
+  },
+  {
+    "revision": "0020_authority_evidence",
+    "returncode": 0,
+    "seconds": 0.378,
+    "access_exclusive": [],
+    "other_strong_locks": [],
+    "blocked_sessions": 0,
+    "worst_reader_latency_s": {
+      "audit_logs": 0.016,
+      "agents": 0.001,
+      "administrative_audit_events": 0.001
+    },
+    "reader_errors": [],
+    "tables_rewritten": [],
+    "row_counts_changed": {},
+    "total_indexes_after": 76,
+    "output_tail": [
+      "INFO  [alembic.runtime.migration] Running upgrade 0019_authority_persistence -> 0020_authority_evidence, Erasure-safe authority decision evidence."
+    ]
+  },
+  {
+    "revision": "0021_authority_evidence_int",
+    "returncode": 0,
+    "seconds": 0.954,
+    "access_exclusive": [
+      "audit_logs:AccessExclusiveLock"
+    ],
+    "other_strong_locks": [
+      "audit_logs:ShareLock"
+    ],
+    "blocked_sessions": 26,
+    "worst_reader_latency_s": {
+      "audit_logs": 0.572,
+      "agents": 0.001,
+      "administrative_audit_events": 0.001
+    },
+    "reader_errors": [],
+    "tables_rewritten": [],
+    "row_counts_changed": {},
+    "total_indexes_after": 77,
+    "output_tail": [
+      "INFO  [alembic.runtime.migration] Running upgrade 0020_authority_evidence -> 0021_authority_evidence_int, Make authority decision evidence identities unable to contradict."
+    ]
+  },
+  {
+    "revision": "0022_authority_evidence_nn",
+    "returncode": 0,
+    "seconds": 0.403,
+    "access_exclusive": [
+      "authority_decision_evidence:AccessExclusiveLock"
+    ],
+    "other_strong_locks": [],
+    "blocked_sessions": 0,
+    "worst_reader_latency_s": {
+      "audit_logs": 0.016,
+      "agents": 0.002,
+      "administrative_audit_events": 0.001
+    },
+    "reader_errors": [],
+    "tables_rewritten": [],
+    "row_counts_changed": {},
+    "total_indexes_after": 77,
+    "output_tail": [
+      "INFO  [alembic.runtime.migration] Running upgrade 0021_authority_evidence_int -> 0022_authority_evidence_nn, Forensic identity CHECKs must fail closed on missing or null values."
+    ]
+  },
+  {
+    "revision": "0023_authority_requirement",
+    "returncode": 0,
+    "seconds": 0.384,
+    "access_exclusive": [],
+    "other_strong_locks": [
+      "agents:ShareRowExclusiveLock",
+      "organizations:ShareRowExclusiveLock"
+    ],
+    "blocked_sessions": 0,
+    "worst_reader_latency_s": {
+      "audit_logs": 0.015,
+      "agents": 0.001,
+      "administrative_audit_events": 0.001
+    },
+    "reader_errors": [],
+    "tables_rewritten": [],
+    "row_counts_changed": {},
+    "total_indexes_after": 82,
+    "output_tail": [
+      "INFO  [alembic.runtime.migration] Running upgrade 0022_authority_evidence_nn -> 0023_authority_requirement, Server-controlled delegated-authority requirement rollout."
+    ]
+  },
+  {
+    "revision": "0024_authority_config_hard",
+    "returncode": 0,
+    "seconds": 0.371,
+    "access_exclusive": [],
+    "other_strong_locks": [],
+    "blocked_sessions": 0,
+    "worst_reader_latency_s": {
+      "audit_logs": 0.014,
+      "agents": 0.001,
+      "administrative_audit_events": 0.001
+    },
+    "reader_errors": [],
+    "tables_rewritten": [],
+    "row_counts_changed": {},
+    "total_indexes_after": 82,
+    "output_tail": [
+      "INFO  [alembic.runtime.migration] Running upgrade 0023_authority_requirement -> 0024_authority_config_hard, Authority configuration is read-only at runtime."
+    ]
+  },
+  {
+    "revision": "0025_authority_config_lin",
+    "returncode": 0,
+    "seconds": 0.381,
+    "access_exclusive": [],
+    "other_strong_locks": [
+      "authority_controls:ShareRowExclusiveLock",
+      "authority_requirements:ShareRowExclusiveLock"
+    ],
+    "blocked_sessions": 0,
+    "worst_reader_latency_s": {
+      "audit_logs": 0.015,
+      "agents": 0.001,
+      "administrative_audit_events": 0.001
+    },
+    "reader_errors": [],
+    "tables_rewritten": [],
+    "row_counts_changed": {},
+    "total_indexes_after": 82,
+    "output_tail": [
+      "INFO  [alembic.runtime.migration] Running upgrade 0024_authority_config_hard -> 0025_authority_config_lin, Authority configuration changes serialise against fresh consumption."
+    ]
+  },
+  {
+    "revision": "0026_authority_config_glob",
+    "returncode": 0,
+    "seconds": 0.462,
+    "access_exclusive": [],
+    "other_strong_locks": [],
+    "blocked_sessions": 0,
+    "worst_reader_latency_s": {
+      "audit_logs": 0.015,
+      "agents": 0.001,
+      "administrative_audit_events": 0.001
+    },
+    "reader_errors": [],
+    "tables_rewritten": [],
+    "row_counts_changed": {},
+    "total_indexes_after": 82,
+    "output_tail": [
+      "INFO  [alembic.runtime.migration] Running upgrade 0025_authority_config_lin -> 0026_authority_config_glob, The global configuration lock ranks above the per-organisation one."
+    ]
+  },
+  {
+    "revision": "0027_authority_config_mgmt",
+    "returncode": 0,
+    "seconds": 0.392,
+    "access_exclusive": [
+      "administrative_audit_events:AccessExclusiveLock",
+      "authority_controls:AccessExclusiveLock",
+      "authority_requirements:AccessExclusiveLock"
+    ],
+    "other_strong_locks": [
+      "administrative_audit_events:ShareLock"
+    ],
+    "blocked_sessions": 0,
+    "worst_reader_latency_s": {
+      "audit_logs": 0.015,
+      "agents": 0.002,
+      "administrative_audit_events": 0.004
+    },
+    "reader_errors": [],
+    "tables_rewritten": [],
+    "row_counts_changed": {},
+    "total_indexes_after": 83,
+    "output_tail": [
+      "INFO  [alembic.runtime.migration] Running upgrade 0026_authority_config_glob -> 0027_authority_config_mgmt, A trusted identity for authority-configuration changes, and a platform audit scope."
+    ]
+  }
+]
