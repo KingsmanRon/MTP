@@ -179,14 +179,41 @@ def test_env_py_resolves_asyncpg_dsn_as_psycopg2() -> None:
 
 
 def test_online_migrations_are_serialized_before_revision_reads() -> None:
-    """Concurrent Railway pre-deploys must not race alembic_version updates."""
+    """Concurrent Railway pre-deploys must not race alembic_version updates.
+
+    The lock must be SESSION scoped. It used to be transaction scoped, which
+    forced the whole revision series into one transaction -- and that made
+    `alembic upgrade head` unable to upgrade an existing database at all,
+    because a transaction-scoped lock taken by migration 029 survived into
+    030, whose drift guard refused. See docs/releases/GATE1_STAGING_MIGRATION.md.
+
+    This checks the shape; the behaviour is proved against real databases and
+    real concurrent migrators in tests/test_alembic_migration_model.py.
+    """
     env_src = (_REPO / "alembic" / "env.py").read_text(encoding="utf-8")
     online_src = env_src.split("def run_migrations_online()", maxsplit=1)[1]
 
-    lock_position = online_src.index("pg_advisory_xact_lock")
+    lock_position = online_src.index("pg_advisory_lock(")
     migration_position = online_src.index("context.run_migrations()")
+    unlock_position = online_src.index("pg_advisory_unlock(")
 
-    assert lock_position < migration_position
+    assert lock_position < migration_position, (
+        "the invocation lock must be acquired before any migration runs"
+    )
+    assert migration_position < unlock_position, (
+        "the invocation lock must be held across the whole series"
+    )
+    assert "finally:" in online_src[migration_position:unlock_position], (
+        "the invocation lock must be released on the failure path too"
+    )
+    assert "pg_advisory_xact_lock" not in online_src, (
+        "the invocation lock must not be transaction scoped: it has to "
+        "outlive each per-revision transaction"
+    )
+    assert "transaction_per_migration=True" in online_src, (
+        "each revision must commit on its own, or a transaction-scoped lock "
+        "taken by one migration leaks into the next"
+    )
 
 
 def test_worker_runs_migrations_before_starting() -> None:

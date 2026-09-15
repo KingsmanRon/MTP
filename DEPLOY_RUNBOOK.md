@@ -8,7 +8,7 @@ How the production system is wired and the exact steps to ship a change safely.
 |-------|-------|-------|
 | **Vercel** | Frontend (Next.js in `frontend/`) | Root Directory **must** be `frontend`. Production branch = the repo default branch. |
 | **Railway `web`** | FastAPI API (`Procfile: web`) | Runs `alembic upgrade head` as a pre-deploy step (see `railway.json`). |
-| **Railway `worker`** | Anchor worker (`Procfile: worker`) | Should use `railway.worker.json` so it does **not** also run migrations. |
+| **Railway `worker`** | Anchor worker (`Procfile: worker`) | Also runs `alembic upgrade head` as a pre-deploy step (see `railway.worker.json`). Deliberate — see [Both services migrate](#both-services-migrate-and-that-is-safe). |
 | **Railway `redis`** | Nonce dedup + cache | Managed Railway Redis; no repo build. |
 | **Supabase** | PostgreSQL | Schema is **Alembic-managed** (`alembic/versions/`). |
 
@@ -26,10 +26,60 @@ command and builder.
 - **`web` service** → config path `railway.json` (default). Adds
   `preDeployCommand: alembic upgrade head`.
 - **`worker` service** → set its **Config file path** to `railway.worker.json`
-  (Service → Settings → Config-as-code). This omits the migration so `web` and
-  `worker` never race to run the same migration. If you skip this, the worker will
-  also run `alembic upgrade head`; today that is a harmless no-op (DB is at head),
-  but a *future* migration could fail the worker deploy on a concurrent run.
+  (Service → Settings → Config-as-code). It declares the **same**
+  `preDeployCommand: alembic upgrade head`.
+
+### Both services migrate, and that is safe
+
+Earlier revisions of this runbook said the worker "does not also run
+migrations". That was never true of `railway.worker.json`, which has always
+declared the same pre-deploy command. The configuration is now the documented
+behaviour, because the invocation is safe to run concurrently:
+
+```
+API pre-deploy ──┐
+                 ├── one SESSION advisory lock serialises them
+worker pre-deploy┘
+        ↓
+   one invocation migrates 0018 → head, one revision per transaction
+        ↓
+   the waiting invocation acquires the lock, reads alembic_version,
+   finds head, applies nothing, exits 0
+        ↓
+   both service deployments continue
+```
+
+`alembic/env.py` takes `pg_advisory_lock` on a **dedicated connection** for
+the whole invocation and releases it in a `finally`. A migrator that is killed
+mid-series releases it when its session ends — no operator action, and the
+database is left at the last revision that **committed**, never half-applied.
+
+Proved against a populated database at the deployed revision: the worker
+applied nine revisions in 1.79 s while the API waited 1.82 s and then exited
+as a clean no-op, with a single `alembic_version` row and no deadlock. See
+`docs/releases/GATE1_STAGING_MIGRATION.md` and `scripts/gate1/`.
+
+**Deployment sequence — do not vary it.** The database must reach head
+*before* new application containers serve traffic; that is exactly what a
+pre-deploy command gives you. The reverse is unsafe: the new application
+against an old schema raises `UndefinedFunctionError` on issuance. Rolling
+**back** is application-only — leave the database forward, which the old
+application tolerates (proved by running its own suite against both schemas
+with identical results).
+
+### One revision, one transaction
+
+`alembic/env.py` sets `transaction_per_migration=True`. Each revision commits
+on its own, so a transaction-scoped advisory lock taken by one migration is
+released before the next runs. This is not a preference: with a single
+transaction across the series, `alembic upgrade head` **could not upgrade an
+existing database at all** — migration 030's drift guard correctly refused
+when it found a configuration lock migration 029 had left behind. The
+invocation lock is therefore SESSION scoped and lives on its own connection;
+it cannot be transaction scoped on the migration connection.
+
+Do not "simplify" this back into one transaction, and do not weaken a
+migration's drift guard to make one transaction work.
 
 ### Migrations need a non-transaction-pooler connection
 The pre-deploy `alembic upgrade head` uses `ALEMBIC_DATABASE_URL` if set, else the
@@ -53,6 +103,16 @@ for an already-deployed DB (run as `postgres` in the Supabase SQL editor):
 ```sql
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.alembic_version TO inntris_worker;
 ```
+
+### Do NOT set `AUTHORITY_MANAGEMENT_DATABASE_URL` on any service
+
+`inntris_authority_admin` (migration 031) may change authority configuration.
+Neither the API nor the worker imports the management primitive, so neither
+needs that credential — and giving it to them would hand every runtime
+container the privilege migration 028 deliberately removed. Provision it with
+`scripts/configure_authority_management_role.py`, keep it as an operator
+secret, and supply it only to an authorised management job. See
+`docs/runbooks/authority_requirement_rollout.md`.
 
 ## Environment variables (Railway `web`)
 

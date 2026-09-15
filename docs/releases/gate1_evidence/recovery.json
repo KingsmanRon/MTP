@@ -18,7 +18,7 @@
     },
     "operator_action": "none. The database is still at the deployed revision and nothing partial was applied; retry the pre-deploy migration in a quieter window.",
     "retry_succeeds": true,
-    "retry_method": "stepwise (one revision per invocation)",
+    "retry_method": "alembic upgrade head (ONE invocation)",
     "retry_revision": "0027_authority_config_mgmt"
   },
   {
@@ -38,9 +38,9 @@
       "admin_insert": true,
       "admin_scope_defaulted_to": "n/a (pre-031)"
     },
-    "operator_action": "none, and NO downgrade. Each migration commits or rolls back as a whole, so the database sits at the last completed revision with a consistent schema. The partially applied authority tables are inert to the old application. Retry forward.",
+    "operator_action": "none, and NO downgrade. One revision is one transaction, so the database sits at the last revision that committed, with a consistent schema. The partially applied authority tables are inert to the old application. Retry forward.",
     "retry_succeeds": true,
-    "retry_method": "stepwise (one revision per invocation)",
+    "retry_method": "alembic upgrade head (ONE invocation)",
     "retry_revision": "0027_authority_config_mgmt"
   },
   {

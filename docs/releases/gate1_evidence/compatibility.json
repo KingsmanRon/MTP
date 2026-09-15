@@ -2,7 +2,7 @@
   {
     "check": "1 pre-existing data readable",
     "pass": true,
-    "detail": "{\"organizations\": 25, \"agents\": 500, \"audit_logs\": 500000, \"approval_token_consumptions\": 41613, \"merkle_proofs\": 20000, \"administrative_audit_events\": 2000}"
+    "detail": "{\"organizations\": 25, \"agents\": 500, \"audit_logs\": 500000, \"approval_token_consumptions\": 41781, \"merkle_proofs\": 20000, \"administrative_audit_events\": 2000}"
   },
   {
     "check": "2 historical audit chain intact",
@@ -17,7 +17,7 @@
   {
     "check": "5 no legacy token became a v0.5 grant",
     "pass": true,
-    "detail": "41613 historical token consumptions, 0 grant rows -- no conversion, no backfill"
+    "detail": "41781 historical token consumptions, 0 grant rows -- no conversion, no backfill"
   },
   {
     "check": "4 unconsumed legacy token claims once, creates no grant",
@@ -52,7 +52,7 @@
   {
     "check": "10 Gate-2 requirement configuration works after migration",
     "pass": true,
-    "detail": "effective_required=True, audit event a8746495-0b71-4924-aff2-0bdc8a3040ee scope=organisation"
+    "detail": "effective_required=True, audit event 95d9d4e7-3ba9-4c56-aeea-c3d9b48ece1d scope=organisation"
   },
   {
     "check": "10b the new requirement is enforced, not merely stored",

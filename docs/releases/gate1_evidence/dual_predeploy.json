@@ -1,0 +1,26 @@
+{
+  "start_revision": "0018_merkle_anchor_visibility",
+  "end_revision": "0027_authority_config_mgmt",
+  "alembic_version_rows": 1,
+  "invocations": [
+    {
+      "service": "railway web (API)",
+      "returncode": 0,
+      "seconds": 1.818,
+      "applied_migrations": false,
+      "revisions_applied": 0,
+      "deadlock": false
+    },
+    {
+      "service": "railway worker",
+      "returncode": 0,
+      "seconds": 1.792,
+      "applied_migrations": true,
+      "revisions_applied": 9,
+      "deadlock": false
+    }
+  ],
+  "exactly_one_migrated": true,
+  "both_exited_cleanly": true,
+  "deadlock": false
+}

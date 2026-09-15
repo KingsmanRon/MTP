@@ -40,10 +40,22 @@ target_metadata = None
 
 # Railway deploys the API and worker from the same commit. Both services run
 # ``alembic upgrade head`` before replacing their containers, so they can reach
-# ``alembic_version`` at the same time. A transaction-scoped Postgres advisory
-# lock serialises that critical section. The process waiting on the lock reads
-# the revision only after the first migration commits and therefore exits as a
-# clean no-op instead of racing the version-row update.
+# ``alembic_version`` at the same time. A Postgres advisory lock serialises
+# that critical section: the process waiting on it reads the revision only
+# after the first migration commits, and therefore exits as a clean no-op
+# instead of racing the version-row update.
+#
+# The lock is SESSION scoped (``pg_advisory_lock``) and held on a connection
+# of its own. It used to be transaction scoped (``pg_advisory_xact_lock``) on
+# the migration connection, which forced the whole revision series into ONE
+# transaction -- and that is what made an upgrade of an existing database
+# impossible: a transaction-scoped lock taken by one migration survived into
+# the next, and migration 030's drift guard correctly refused when it found
+# a lock migration 029 had left behind. See
+# docs/releases/GATE1_STAGING_MIGRATION.md.
+#
+# A session lock is released when the session ends, so a migrator that dies
+# mid-series frees it without operator intervention.
 _MIGRATION_LOCK_KEY = 4_803_921_115_399_370_837
 
 
@@ -83,7 +95,34 @@ def run_migrations_offline() -> None:
 
 
 def run_migrations_online() -> None:
-    """Connect and run migrations against the live database."""
+    """Connect and run migrations against the live database.
+
+    The transaction model is::
+
+        session migration lock   (its own connection, AUTOCOMMIT)
+            revision N   -> COMMIT
+            revision N+1 -> COMMIT
+            ...
+        release session migration lock   (finally)
+
+    ONE REVISION PER TRANSACTION. ``transaction_per_migration=True`` is what
+    makes an upgrade of an existing database possible at all: a migration
+    that takes a transaction-scoped lock -- as the authority-configuration
+    write trigger does -- must not still be holding it when the next
+    migration runs. Sharing one transaction across the series is what broke
+    Gate 1.
+
+    THE INVOCATION LOCK IS ON ITS OWN CONNECTION. Two reasons. It must
+    outlive every individual migration transaction, which a transaction-
+    scoped lock on the migration connection cannot; and acquiring it must not
+    open a transaction that Alembic then inherits, so that connection runs in
+    AUTOCOMMIT. The lock connection issues no DDL and holds no transaction
+    open, so it does not hold back vacuum while a long migration runs.
+
+    A session lock dies with its session, so a migrator killed mid-series
+    releases it without anyone having to intervene -- and the database is
+    left at the last revision that committed, not in a half-applied state.
+    """
     configuration = config.get_section(config.config_ini_section) or {}
     configuration["sqlalchemy.url"] = _resolve_dsn()
 
@@ -93,17 +132,36 @@ def run_migrations_online() -> None:
         poolclass=pool.NullPool,
     )
 
-    with connectable.connect() as connection:
-        context.configure(
-            connection=connection,
-            target_metadata=target_metadata,
+    lock_connection = connectable.connect().execution_options(
+        isolation_level="AUTOCOMMIT"
+    )
+    try:
+        # Blocks until any other migrator in this deployment has finished and
+        # committed. The waiter then reads alembic_version afresh and finds
+        # the work already done.
+        lock_connection.execute(
+            text("SELECT pg_advisory_lock(:lock_key)"),
+            {"lock_key": _MIGRATION_LOCK_KEY},
         )
-        with context.begin_transaction():
-            connection.execute(
-                text("SELECT pg_advisory_xact_lock(:lock_key)"),
+        with connectable.connect() as connection:
+            context.configure(
+                connection=connection,
+                target_metadata=target_metadata,
+                transaction_per_migration=True,
+            )
+            with context.begin_transaction():
+                context.run_migrations()
+    finally:
+        # Released explicitly so a pooled or long-lived session cannot keep
+        # the next deployment waiting. Ending the session would release it
+        # too; this makes the intent visible.
+        try:
+            lock_connection.execute(
+                text("SELECT pg_advisory_unlock(:lock_key)"),
                 {"lock_key": _MIGRATION_LOCK_KEY},
             )
-            context.run_migrations()
+        finally:
+            lock_connection.close()
 
 
 if context.is_offline_mode():

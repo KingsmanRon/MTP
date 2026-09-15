@@ -287,6 +287,32 @@ forces a direct `UPDATE authority_controls …` to also write an audit row.
   by `scripts/configure_authority_management_role.py`, never by migration
   history). That role may change the two configuration tables and append to
   `administrative_audit_events`, and nothing else — no `DELETE` anywhere;
+### The management credential is not a runtime credential
+
+`AUTHORITY_MANAGEMENT_DATABASE_URL` is deliberately **not** set on the API or
+the worker, and must not be.
+
+- migration 031 creates `inntris_authority_admin` with **no password**;
+- `scripts/configure_authority_management_role.py` provisions one explicitly,
+  as a SCRAM verifier, never through migration history;
+- the credential is held as a **trusted operator/management secret**, separate
+  from `DATABASE_URL`;
+- normal API and worker processes never receive it. Nothing in `api/`,
+  `workers/` or `mcp_server/` imports the management primitive — only tests
+  and the Gate-1 harness do — so they have no use for it;
+- it is supplied only to an authorised management operation or job, for the
+  duration of a configuration change.
+
+This is the point of having a second identity at all. Putting the credential
+in the runtime environment would give every API container the ability to
+change authority configuration, which is exactly what migration 028 removed
+and what 031's least-privilege role exists to avoid. An unset variable is not
+a gap here; it is the design.
+
+If a future feature genuinely needs the running API to change authority
+configuration, that is an architecture decision to be taken deliberately —
+not a variable to be quietly added to the runtime environment.
+
 - **migrator / operator emergency SQL** bypasses the primitive and therefore
   bypasses the audit record. It is exceptional. If it is used, the operator
   must record the change out of band — who, what, from what, to what, why,

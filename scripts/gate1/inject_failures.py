@@ -22,37 +22,6 @@ MIG = os.environ["ALEMBIC_DATABASE_URL"]
 RESULTS: list[dict] = []
 
 
-CHAIN = [
-    "0019_authority_persistence", "0020_authority_evidence",
-    "0021_authority_evidence_int", "0022_authority_evidence_nn",
-    "0023_authority_requirement", "0024_authority_config_hard",
-    "0025_authority_config_lin", "0026_authority_config_glob",
-    "0027_authority_config_mgmt",
-]
-
-
-def upgrade_stepwise(from_revision: str | None = None) -> tuple[int, str]:
-    """One revision per invocation.
-
-    ``alembic upgrade head`` in a single invocation CANNOT reach head from an
-    existing revision on this stack: env.py wraps the whole run in one
-    transaction, so 029's drift guard still holds its transaction-scoped
-    configuration lock when 030's drift guard counts them and refuses. Each
-    revision in its own invocation is its own transaction, which is the only
-    upgrade path that works today. Recorded here rather than worked around
-    silently.
-    """
-    started = not from_revision
-    for revision in CHAIN:
-        if not started:
-            started = revision == from_revision
-            continue
-        code, out = alembic("upgrade", revision)
-        if code != 0:
-            return code, out
-    return 0, ""
-
-
 def alembic(*args: str) -> tuple[int, str]:
     proc = subprocess.run(
         [sys.executable, "-m", "alembic", *args],
@@ -163,10 +132,10 @@ async def main() -> int:
     })
 
     # ...and a retry with the lock released must succeed.
-    code, _ = upgrade_stepwise()
+    code, _ = alembic("upgrade", "head")
     conn = await asyncpg.connect(conn_url)
     RESULTS[-1]["retry_succeeds"] = code == 0
-    RESULTS[-1]["retry_method"] = "stepwise (one revision per invocation)"
+    RESULTS[-1]["retry_method"] = "alembic upgrade head (ONE invocation)"
     RESULTS[-1]["retry_revision"] = await revision(conn)
     await conn.close(timeout=5)
 
@@ -184,16 +153,16 @@ async def main() -> int:
         "migration_failed": attempt["returncode"] != 0,
         "state_after": after,
         "old_app_still_works": probe,
-        "operator_action": "none, and NO downgrade. Each migration commits or "
-                           "rolls back as a whole, so the database sits at the "
-                           "last completed revision with a consistent schema. "
+        "operator_action": "none, and NO downgrade. One revision is one "
+                           "transaction, so the database sits at the last "
+                           "revision that committed, with a consistent schema. "
                            "The partially applied authority tables are inert to "
                            "the old application. Retry forward.",
     })
-    code, _ = upgrade_stepwise()
+    code, _ = alembic("upgrade", "head")
     conn = await asyncpg.connect(conn_url)
     RESULTS[-1]["retry_succeeds"] = code == 0
-    RESULTS[-1]["retry_method"] = "stepwise (one revision per invocation)"
+    RESULTS[-1]["retry_method"] = "alembic upgrade head (ONE invocation)"
     RESULTS[-1]["retry_revision"] = await revision(conn)
     await conn.close(timeout=5)
 
