@@ -234,6 +234,46 @@ export default function SecurityPage() {
           </div>
         </section>
 
+        {/* ── Security leadership ──────────────────────────────────── */}
+        <section
+          id="security-leadership"
+          aria-labelledby="security-leadership-heading"
+          className="scroll-mt-24 border-b border-border bg-background"
+        >
+          <div className="mx-auto max-w-4xl px-6 py-16 lg:px-8">
+            <h2
+              id="security-leadership-heading"
+              className="text-2xl font-semibold tracking-tight md:text-3xl"
+            >
+              Security Leadership
+            </h2>
+            <h3 className="mt-6 text-lg font-semibold tracking-tight">
+              Ronald Maduna
+            </h3>
+            <p className="mt-1 text-base leading-7 text-muted-foreground">
+              Founder &amp; Security Lead, Inntris
+            </p>
+            <a
+              href="mailto:ronald@inntris.com"
+              className={cn(
+                "mt-2 inline-block break-words rounded-sm font-mono text-base text-brandInk underline-offset-4 hover:underline",
+                focusRing,
+              )}
+            >
+              ronald@inntris.com
+            </a>
+            <p className="mt-4 text-base leading-7 text-muted-foreground">
+              Responsible for product security, vulnerability management, security research
+              coordination, and oversight of authorised security testing across Inntris-owned
+              systems and infrastructure.
+            </p>
+            <p className="mt-4 text-base leading-7 text-muted-foreground">
+              Security issues and vulnerability disclosures can be reported through the existing
+              channels published on this page.
+            </p>
+          </div>
+        </section>
+
         {/* ── Published boundaries ─────────────────────────────────── */}
         <section id="boundaries" className="scroll-mt-24 border-b border-border bg-background">
           <div className="mx-auto max-w-4xl px-6 py-16 lg:px-8">
