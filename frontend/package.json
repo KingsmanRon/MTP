@@ -9,8 +9,9 @@
     "start": "next start",
     "lint": "next lint",
     "type-check": "tsc --noEmit",
-    "test": "jest",
-    "test:watch": "jest --watch"
+    "test": "npm run test:dependency-security && jest",
+    "test:watch": "jest --watch",
+    "test:dependency-security": "node --test scripts/dependency-security.test.cjs"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.51.1",
@@ -19,7 +20,7 @@
     "ethers": "^6.17.0",
     "ioredis": "^5.10.1",
     "lucide-react": "^0.408.0",
-    "next": "^15.5.22",
+    "next": "^15.5.28",
     "next-themes": "^0.3.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
@@ -37,17 +38,23 @@
     "@types/react-dom": "^18.3.0",
     "autoprefixer": "^10.4.19",
     "eslint": "^8.57.0",
-    "eslint-config-next": "^15.5.18",
+    "eslint-config-next": "^15.5.28",
     "jest": "^30.3.0",
     "jest-environment-jsdom": "^30.3.0",
     "postcss": "^8.5.18",
     "tailwindcss": "^3.4.6",
     "ts-jest": "^29.4.6",
-    "typescript": "^5.5.3"
+    "typescript": "^5.5.3",
+    "braces": "file:vendor/braces"
   },
   "overrides": {
     "postcss": "$postcss",
-    "sharp": "^0.35.3",
-    "brace-expansion": "^5.0.9"
+    "sharp": "^0.35.5",
+    "brace-expansion": "^5.0.12",
+    "braces": "$braces",
+    "postcss-selector-parser": "^7.1.7",
+    "@istanbuljs/load-nyc-config": {
+      "js-yaml": "^4.3.0"
+    }
   }
 }

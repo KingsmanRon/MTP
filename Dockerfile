@@ -17,7 +17,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 
 # Install build dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# Refresh inherited OS packages as well as newly installed dependencies.
+RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
     build-essential \
     libpq-dev \
     libffi-dev \
@@ -49,7 +50,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PORT=8000
 
 # Install runtime dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# Refresh inherited OS packages as well as newly installed dependencies.
+RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
     libpq5 \
     curl \
     && rm -rf /var/lib/apt/lists/* \
