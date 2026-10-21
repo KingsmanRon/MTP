@@ -9,7 +9,9 @@
 services:
   postgres:
     # Pin releases so deployments do not change when an upstream latest tag moves.
-    image: timescale/timescaledb:2.28.2-pg15
+    # Matches the CI/production major. TimescaleDB is optional in schemas.sql.
+    # Existing PG15 volumes require a supported dump/restore or upgrade first.
+    image: postgres:17.6-alpine3.22
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-inntris_migrator}
@@ -68,6 +70,8 @@ services:
       ALEMBIC_DATABASE_URL: ${ALEMBIC_DATABASE_URL:?Set the privileged migration DSN}
       DATABASE_URL: ${DATABASE_URL:?Set the separate inntris_worker runtime DSN}
       RUNTIME_DATABASE_PASSWORD: ${RUNTIME_DATABASE_PASSWORD:?Set the runtime role password}
+      TENANT_DATABASE_URL: ${TENANT_DATABASE_URL:?Set the separate inntris_tenant_login DSN}
+      TENANT_DATABASE_PASSWORD: ${TENANT_DATABASE_PASSWORD:?Set the tenant login password}
     depends_on:
       postgres:
         condition: service_healthy
@@ -85,6 +89,7 @@ services:
     environment:
       ENVIRONMENT: ${ENVIRONMENT:-production}
       DATABASE_URL: ${DATABASE_URL:?Set the inntris_worker runtime DSN}
+      TENANT_DATABASE_URL: ${TENANT_DATABASE_URL:?Set the separate inntris_tenant_login DSN}
       REDIS_URL: ${REDIS_URL:?Set the authenticated Redis URL}
       SERVER_SECRET: ${SERVER_SECRET:?Set SERVER_SECRET to at least 32 random characters}
       MASTER_ADMIN_KEY: ${MASTER_ADMIN_KEY:-}
@@ -123,6 +128,8 @@ services:
       - no-new-privileges:true
 
   anchor-worker:
+    profiles:
+      - anchoring
     build:
       context: .
       dockerfile: Dockerfile
@@ -135,8 +142,10 @@ services:
       # Read-only failover so an already-broadcast transaction can still
       # reconcile while the primary refuses receipt reads (for example 403).
       BLOCKCHAIN_READ_PROVIDER_URLS: ${BLOCKCHAIN_READ_PROVIDER_URLS:-https://mainnet.base.org}
-      ANCHOR_CONTRACT_ADDRESS: ${ANCHOR_CONTRACT_ADDRESS:?Set the deployed anchor contract}
-      BLOCKCHAIN_PRIVATE_KEY: ${BLOCKCHAIN_PRIVATE_KEY:?Set the dedicated anchor wallet key}
+      # Compose interpolates even disabled profiles. The worker itself rejects
+      # empty credentials before connecting to a chain when explicitly enabled.
+      ANCHOR_CONTRACT_ADDRESS: ${ANCHOR_CONTRACT_ADDRESS:-}
+      BLOCKCHAIN_PRIVATE_KEY: ${BLOCKCHAIN_PRIVATE_KEY:-}
       ANCHOR_BATCH_SIZE: ${ANCHOR_BATCH_SIZE:-1000}
       # Ten minutes, matching the worker and production runbook default.
       ANCHOR_INTERVAL_MINUTES: ${ANCHOR_INTERVAL_MINUTES:-10}

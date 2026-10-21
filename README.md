@@ -133,8 +133,8 @@ cp .env.example .env
 ### 2. Start Services
 
 ```bash
-# Start all services (PostgreSQL, Redis, API, Worker)
-docker compose up -d
+# Start PostgreSQL 17.6, Redis, migrations and API
+docker compose up -d --build
 
 # View logs
 docker compose logs -f api
@@ -142,6 +142,10 @@ docker compose logs -f api
 # Check health
 curl http://localhost:8000/health
 ```
+
+Follow the [self-host deployment runbook](docs/runbooks/self_host.md) for
+credentials, tenant checks and recovery. Anchoring is opt-in with the
+`anchoring` profile and requires separate blockchain configuration.
 
 ### 3. Register an Organization & Agent
 
@@ -544,12 +548,16 @@ For buyer-facing security material, deployment-evidence boundaries, and the
 ### Docker Production
 
 ```bash
-# Build production images
-docker compose build
+# Configure all credentials and production settings first; see the runbook.
+docker compose up -d --build
 
-# Deploy with external database
-DATABASE_URL=postgresql://... docker compose up -d api anchor-worker
+# Only after configuring the chain, contract and dedicated signing wallet:
+docker compose --profile anchoring up -d --build anchor-worker
 ```
+
+This reference includes a local PostgreSQL service. For external databases,
+adapt the service dependencies and provision the owner, system and tenant
+roles as described in the [runbook](docs/runbooks/self_host.md).
 
 ### Kubernetes
 

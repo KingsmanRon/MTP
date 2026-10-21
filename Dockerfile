@@ -32,7 +32,10 @@ ENV PATH="/opt/venv/bin:$PATH"
 # setuptools/wheel come from the base image's ensurepip and lag behind the
 # security-fixed releases, so upgrade them inside the venv before installing.
 COPY requirements.txt .
-RUN pip install --upgrade pip 'setuptools>=78.1.1' wheel && \
+# Optional enterprise proxy CA; BuildKit never stores this secret in a layer.
+RUN --mount=type=secret,id=build_ca_bundle \
+    if [ -f /run/secrets/build_ca_bundle ]; then export PIP_CERT=/run/secrets/build_ca_bundle; fi && \
+    pip install --upgrade pip 'setuptools>=78.1.1' wheel && \
     pip install -r requirements.txt
 
 # -----------------------------------------------------------------------------
@@ -69,7 +72,9 @@ COPY --from=builder /opt/venv /opt/venv
 # installers are removed. Must run after the venv is copied, since it strips
 # pip from the venv too. Explicit interpreter paths matter here: PATH puts the
 # venv first, so a bare `pip` would not reach the system copy.
-RUN /usr/local/bin/python -m pip install --no-cache-dir --upgrade 'setuptools>=78.1.1' \
+RUN --mount=type=secret,id=build_ca_bundle \
+    if [ -f /run/secrets/build_ca_bundle ]; then export PIP_CERT=/run/secrets/build_ca_bundle; fi && \
+    /usr/local/bin/python -m pip install --no-cache-dir --upgrade 'setuptools>=78.1.1' \
     && /usr/local/bin/python -m pip uninstall -y pip \
     && /opt/venv/bin/python -m pip uninstall -y pip \
     && rm -rf /root/.cache
@@ -85,6 +90,8 @@ COPY --chown=inntris:inntris alembic/ ./alembic/
 COPY --chown=inntris:inntris database/ ./database/
 COPY --chown=inntris:inntris alembic.ini ./alembic.ini
 COPY --chown=inntris:inntris scripts/configure_runtime_role.py ./scripts/configure_runtime_role.py
+COPY --chown=inntris:inntris scripts/configure_tenant_role.py ./scripts/configure_tenant_role.py
+COPY --chown=inntris:inntris scripts/verify_tenant_role.py ./scripts/verify_tenant_role.py
 
 # -----------------------------------------------------------------------------
 # Stage 3: Database migrations and runtime role provisioning
@@ -94,8 +101,8 @@ FROM production-base AS migrate
 USER inntris
 
 # The privileged migration DSN is confined to this one-shot container.  The
-# script then provisions inntris_worker from a separate runtime credential.
-CMD ["sh", "-c", "alembic upgrade head && python /app/scripts/configure_runtime_role.py"]
+# scripts provision distinct system and tenant logins and verify isolation.
+CMD ["sh", "-c", "alembic upgrade head && python /app/scripts/configure_runtime_role.py && python /app/scripts/configure_tenant_role.py && python -m scripts.verify_tenant_role"]
 
 # -----------------------------------------------------------------------------
 # Stage 4: Core API Service
