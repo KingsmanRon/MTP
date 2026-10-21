@@ -47,5 +47,8 @@
   "repository": {
     "type": "git",
     "url": ""
+  },
+  "overrides": {
+    "esbuild": "^0.28.2"
   }
 }
