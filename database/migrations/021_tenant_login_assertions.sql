@@ -109,7 +109,13 @@ BEGIN
       INTO leaked_acl_count
       FROM pg_class c
       JOIN pg_namespace n ON n.oid = c.relnamespace
-      CROSS JOIN LATERAL aclexplode(COALESCE(c.relacl, '{}'::aclitem[])) acl
+      -- pg_dump/restore may normalize owner-only ACLs to NULL. aclexplode
+      -- rejects a zero-dimensional empty array; use PostgreSQL's owner-only
+      -- table default for absent/empty ACLs. Effective privileges are also
+      -- checked below, including ownership and inherited access.
+      CROSS JOIN LATERAL aclexplode(
+          COALESCE(NULLIF(c.relacl, '{}'::aclitem[]), acldefault('r', c.relowner))
+      ) acl
      WHERE n.nspname = 'public'
        AND c.relkind IN ('r', 'p', 'v', 'm', 'f')
        AND acl.grantee IN (0, tenant_oid)

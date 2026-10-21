@@ -7,6 +7,7 @@ PR.
 
 | Runbook | Phase | Purpose |
 |---------|-------|---------|
+| [self_host.md](self_host.md) | Pilot | Fresh PostgreSQL 17.6 deployment, tenant credential provisioning, smoke checks and restore rehearsal. |
 | [incident_response.md](incident_response.md) | 3.4 | Triage playbook for the incident classes the platform reports on, including an anchor stuck at `submitted` because the RPC refuses reads (3a). |
 | [secrets_rotation.md](secrets_rotation.md) | 3.5 | Inventory of every env-var secret plus a per-secret rotation procedure. |
 | [timelock_admin.md](timelock_admin.md) | 3.3 | Deploying and operating the Safe + TimelockController topology for `AnchorRegistry` admin ops. |
